@@ -59,6 +59,7 @@ public class PoisonRingOverlay extends Overlay {
         int extent = (int) -(360 * progress); 
 
         graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        graphics.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE);
         graphics.setColor(plugin.isVenom() ? config.venomColor() : config.poisonColor());
         graphics.setStroke(new BasicStroke(config.lineThickness()));
 

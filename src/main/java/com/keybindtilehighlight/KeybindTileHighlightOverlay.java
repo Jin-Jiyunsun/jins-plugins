@@ -44,6 +44,7 @@ import net.runelite.client.ui.overlay.OverlayUtil;
 class KeybindTileHighlightOverlay extends Overlay
 {
 	private static final Stroke BORDER_STROKE = new BasicStroke(2f);
+	private static final long RAINBOW_CYCLE_MS = 3000;
 
 	private final Client client;
 	private final KeybindTileHighlightConfig config;
@@ -91,12 +92,18 @@ class KeybindTileHighlightOverlay extends Overlay
 			return null;
 		}
 
-		Color color = config.highlightColor();
+		Color color = config.rainbowMode() ? rainbowColor() : config.highlightColor();
 		int fillAlpha = (int) Math.round(config.fillOpacity() / 100.0 * 255);
 		Color fill = new Color(color.getRed(), color.getGreen(), color.getBlue(), fillAlpha);
 		OverlayUtil.renderPolygon(graphics, poly, color, fill, BORDER_STROKE);
 
 		return null;
+	}
+
+	private static Color rainbowColor()
+	{
+		float hue = (System.currentTimeMillis() % RAINBOW_CYCLE_MS) / (float) RAINBOW_CYCLE_MS;
+		return Color.getHSBColor(hue, 1f, 1f);
 	}
 
 	private boolean isMouseInViewport()

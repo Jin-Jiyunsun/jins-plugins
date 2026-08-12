@@ -31,6 +31,7 @@ import net.runelite.client.config.ConfigGroup;
 import net.runelite.client.config.ConfigItem;
 import net.runelite.client.config.Keybind;
 import net.runelite.client.config.Range;
+import net.runelite.client.config.Units;
 
 @ConfigGroup(KeybindTileHighlightConfig.GROUP)
 public interface KeybindTileHighlightConfig extends Config
@@ -61,14 +62,26 @@ public interface KeybindTileHighlightConfig extends Config
 	}
 
 	@Range(min = 0, max = 100)
+	@Units(Units.PERCENT)
 	@ConfigItem(
 			keyName = "fillOpacity",
 			name = "Fill opacity",
-			description = "Opacity of the tile fill, as a percentage from 0 to 100.",
+			description = "Opacity of the tile fill, as a percentage.",
 			position = 2
 	)
 	default int fillOpacity()
 	{
-		return 20;
+		return 25;
+	}
+
+	@ConfigItem(
+			keyName = "rainbowMode",
+			name = "Rainbow mode",
+			description = "Cycle the highlight colour through the rainbow, overriding the highlight colour setting while enabled.",
+			position = 3
+	)
+	default boolean rainbowMode()
+	{
+		return false;
 	}
 }

@@ -44,7 +44,6 @@ import net.runelite.client.ui.overlay.OverlayUtil;
 class KeybindTileHighlightOverlay extends Overlay
 {
 	private static final Stroke BORDER_STROKE = new BasicStroke(2f);
-	private static final int FILL_ALPHA = 50;
 
 	private final Client client;
 	private final KeybindTileHighlightConfig config;
@@ -64,7 +63,7 @@ class KeybindTileHighlightOverlay extends Overlay
 	@Override
 	public Dimension render(Graphics2D graphics)
 	{
-		if (!plugin.isHotkeyHeld() || client.isMenuOpen())
+		if (!plugin.isKeybindHeld() || client.isMenuOpen())
 		{
 			return null;
 		}
@@ -93,7 +92,8 @@ class KeybindTileHighlightOverlay extends Overlay
 		}
 
 		Color color = config.highlightColor();
-		Color fill = new Color(color.getRed(), color.getGreen(), color.getBlue(), FILL_ALPHA);
+		int fillAlpha = (int) Math.round(config.fillOpacity() / 100.0 * 255);
+		Color fill = new Color(color.getRed(), color.getGreen(), color.getBlue(), fillAlpha);
 		OverlayUtil.renderPolygon(graphics, poly, color, fill, BORDER_STROKE);
 
 		return null;
@@ -111,6 +111,6 @@ class KeybindTileHighlightOverlay extends Overlay
 		int y = mouse.getY() - client.getViewportYOffset();
 
 		return x >= 0 && x < client.getViewportWidth()
-			&& y >= 0 && y < client.getViewportHeight();
+				&& y >= 0 && y < client.getViewportHeight();
 	}
 }

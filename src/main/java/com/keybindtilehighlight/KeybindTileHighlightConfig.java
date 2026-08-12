@@ -30,6 +30,7 @@ import net.runelite.client.config.Config;
 import net.runelite.client.config.ConfigGroup;
 import net.runelite.client.config.ConfigItem;
 import net.runelite.client.config.Keybind;
+import net.runelite.client.config.Range;
 
 @ConfigGroup(KeybindTileHighlightConfig.GROUP)
 public interface KeybindTileHighlightConfig extends Config
@@ -37,10 +38,10 @@ public interface KeybindTileHighlightConfig extends Config
 	String GROUP = "keybind-tile-highlight";
 
 	@ConfigItem(
-		keyName = "highlightKeybind",
-		name = "Highlight key",
-		description = "Hold this key to highlight the tile under the mouse.",
-		position = 0
+			keyName = "highlightKeybind",
+			name = "Highlight key",
+			description = "Hold this key to highlight the tile under the mouse.",
+			position = 0
 	)
 	default Keybind highlightKeybind()
 	{
@@ -49,13 +50,25 @@ public interface KeybindTileHighlightConfig extends Config
 
 	@Alpha
 	@ConfigItem(
-		keyName = "highlightColor",
-		name = "Highlight colour",
-		description = "Colour of the highlighted tile.",
-		position = 1
+			keyName = "highlightColor",
+			name = "Highlight colour",
+			description = "Colour of the highlighted tile.",
+			position = 1
 	)
 	default Color highlightColor()
 	{
 		return Color.YELLOW;
+	}
+
+	@Range(min = 0, max = 100)
+	@ConfigItem(
+			keyName = "fillOpacity",
+			name = "Fill opacity",
+			description = "Opacity of the tile fill, as a percentage from 0 to 100.",
+			position = 2
+	)
+	default int fillOpacity()
+	{
+		return 20;
 	}
 }

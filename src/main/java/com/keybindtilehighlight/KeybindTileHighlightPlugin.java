@@ -25,21 +25,23 @@
 package com.keybindtilehighlight;
 
 import com.google.inject.Provides;
+import java.awt.event.KeyEvent;
 import javax.inject.Inject;
 import lombok.Getter;
 import net.runelite.client.config.ConfigManager;
+import net.runelite.client.config.Keybind;
+import net.runelite.client.input.KeyListener;
 import net.runelite.client.input.KeyManager;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.ui.overlay.OverlayManager;
-import net.runelite.client.util.HotkeyListener;
 
 @PluginDescriptor(
-	name = "Keybind Tile Highlight",
-	description = "Highlight the tile under the mouse while a hotkey is held",
-	tags = {"tiles", "overlay", "highlight", "hotkey"}
+		name = "Keybind Tile Highlight",
+		description = "Highlight the tile under the mouse while a keybind is held",
+		tags = {"tiles", "overlay", "highlight", "keybind"}
 )
-public class KeybindTileHighlightPlugin extends Plugin
+public class KeybindTileHighlightPlugin extends Plugin implements KeyListener
 {
 	@Inject
 	private KeybindTileHighlightConfig config;
@@ -54,21 +56,21 @@ public class KeybindTileHighlightPlugin extends Plugin
 	private KeyManager keyManager;
 
 	@Getter
-	private volatile boolean hotkeyHeld;
+	private volatile boolean keybindHeld;
 
 	@Override
 	protected void startUp()
 	{
 		overlayManager.add(overlay);
-		keyManager.registerKeyListener(hotkeyListener);
+		keyManager.registerKeyListener(this);
 	}
 
 	@Override
 	protected void shutDown()
 	{
-		keyManager.unregisterKeyListener(hotkeyListener);
+		keyManager.unregisterKeyListener(this);
 		overlayManager.remove(overlay);
-		hotkeyHeld = false;
+		keybindHeld = false;
 	}
 
 	@Provides
@@ -77,18 +79,51 @@ public class KeybindTileHighlightPlugin extends Plugin
 		return configManager.getConfig(KeybindTileHighlightConfig.class);
 	}
 
-	private final HotkeyListener hotkeyListener = new HotkeyListener(() -> config.highlightKeybind())
+	@Override
+	public void keyTyped(KeyEvent e)
 	{
-		@Override
-		public void hotkeyPressed()
+	}
+
+	@Override
+	public void keyPressed(KeyEvent e)
+	{
+		if (matches(e))
 		{
-			hotkeyHeld = true;
+			keybindHeld = true;
+		}
+	}
+
+	@Override
+	public void keyReleased(KeyEvent e)
+	{
+		if (matches(e))
+		{
+			keybindHeld = false;
+		}
+	}
+
+	@Override
+	public void focusLost()
+	{
+		keybindHeld = false;
+	}
+
+	private boolean matches(KeyEvent e)
+	{
+		Keybind keybind = config.highlightKeybind();
+		if (Keybind.NOT_SET.equals(keybind))
+		{
+			return false;
 		}
 
-		@Override
-		public void hotkeyReleased()
+		int keyCode = e.getExtendedKeyCode();
+		Integer eventModifier = Keybind.getModifierForKeyCode(keyCode);
+
+		if (eventModifier != null && keybind.getKeyCode() == KeyEvent.VK_UNDEFINED)
 		{
-			hotkeyHeld = false;
+			return (keybind.getModifiers() & eventModifier) == eventModifier;
 		}
-	};
+
+		return keybind.matches(e);
+	}
 }

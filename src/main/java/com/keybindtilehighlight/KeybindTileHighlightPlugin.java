@@ -53,10 +53,6 @@ public class KeybindTileHighlightPlugin extends Plugin
 	@Inject
 	private KeyManager keyManager;
 
-	/**
-	 * Written on the AWT thread by the hotkey listener, read on the client thread by the
-	 * overlay, so it must be volatile.
-	 */
 	@Getter
 	private volatile boolean hotkeyHeld;
 
@@ -72,7 +68,6 @@ public class KeybindTileHighlightPlugin extends Plugin
 	{
 		keyManager.unregisterKeyListener(hotkeyListener);
 		overlayManager.remove(overlay);
-		// Don't leave the highlight latched on if the plugin is disabled mid-press
 		hotkeyHeld = false;
 	}
 

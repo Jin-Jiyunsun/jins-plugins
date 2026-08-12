@@ -64,8 +64,6 @@ class KeybindTileHighlightOverlay extends Overlay
 	@Override
 	public Dimension render(Graphics2D graphics)
 	{
-		// getSelectedSceneTile() goes stale rather than returning null while a right-click
-		// menu is open, which would leave the highlight stuck on the tile the menu opened on
 		if (!plugin.isHotkeyHeld() || client.isMenuOpen())
 		{
 			return null;
@@ -82,7 +80,6 @@ class KeybindTileHighlightOverlay extends Overlay
 			return null;
 		}
 
-		// Re-read every frame so the highlight follows the cursor with no tracking of its own
 		Tile tile = wv.getSelectedSceneTile();
 		if (tile == null)
 		{
@@ -102,12 +99,6 @@ class KeybindTileHighlightOverlay extends Overlay
 		return null;
 	}
 
-	/**
-	 * In resizable mode the viewport spans the whole canvas, so interfaces drawn over the
-	 * scene still count as inside it and the tile beneath them stays highlighted. In fixed
-	 * mode the surrounding panels sit outside the viewport, so the highlight drops away as
-	 * the cursor leaves the scene.
-	 */
 	private boolean isMouseInViewport()
 	{
 		Point mouse = client.getMouseCanvasPosition();

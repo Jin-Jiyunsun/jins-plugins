@@ -1,6 +1,6 @@
 # Keybind Tile Highlight
 
-![keybind_tile_highlight.webp](../../Desktop/keybind_tile_highlight.webp)
+<img width="719" height="538" alt="keybind_tile_highlight" src="https://github.com/user-attachments/assets/4e408c40-9133-490c-ae9c-69380f7ba964" />
 
 ## Setup
 Highlights the game tile under your mouse cursor while a configurable keybind is held down.

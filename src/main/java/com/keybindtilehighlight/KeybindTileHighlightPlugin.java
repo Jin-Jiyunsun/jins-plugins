@@ -55,12 +55,22 @@ public class KeybindTileHighlightPlugin extends Plugin implements KeyListener
 	@Inject
 	private KeyManager keyManager;
 
+	@Inject
+	private ConfigManager configManager;
+
 	@Getter
-	private volatile boolean keybindHeld;
+	private volatile boolean keybind1Held;
+
+	@Getter
+	private volatile boolean keybind2Held;
+
+	@Getter
+	private volatile int mostRecentKeybind;
 
 	@Override
 	protected void startUp()
 	{
+		migrateRainbowMode();
 		overlayManager.add(overlay);
 		keyManager.registerKeyListener(this);
 	}
@@ -70,7 +80,9 @@ public class KeybindTileHighlightPlugin extends Plugin implements KeyListener
 	{
 		keyManager.unregisterKeyListener(this);
 		overlayManager.remove(overlay);
-		keybindHeld = false;
+		keybind1Held = false;
+		keybind2Held = false;
+		mostRecentKeybind = 0;
 	}
 
 	@Provides
@@ -87,30 +99,62 @@ public class KeybindTileHighlightPlugin extends Plugin implements KeyListener
 	@Override
 	public void keyPressed(KeyEvent e)
 	{
-		if (matches(e))
+		if (matches(config.highlightKeybind(), e))
 		{
-			keybindHeld = true;
+			if (!keybind1Held)
+			{
+				mostRecentKeybind = 1;
+			}
+			keybind1Held = true;
+		}
+
+		if (matches(config.highlightKeybind2(), e))
+		{
+			if (!keybind2Held)
+			{
+				mostRecentKeybind = 2;
+			}
+			keybind2Held = true;
 		}
 	}
 
 	@Override
 	public void keyReleased(KeyEvent e)
 	{
-		if (matches(e))
+		if (matches(config.highlightKeybind(), e))
 		{
-			keybindHeld = false;
+			keybind1Held = false;
+		}
+
+		if (matches(config.highlightKeybind2(), e))
+		{
+			keybind2Held = false;
 		}
 	}
 
 	@Override
 	public void focusLost()
 	{
-		keybindHeld = false;
+		keybind1Held = false;
+		keybind2Held = false;
 	}
 
-	private boolean matches(KeyEvent e)
+	private void migrateRainbowMode()
 	{
-		Keybind keybind = config.highlightKeybind();
+		String legacyValue = configManager.getConfiguration(KeybindTileHighlightConfig.GROUP, "rainbowMode");
+		if (!"true".equals(legacyValue) && !"false".equals(legacyValue))
+		{
+			return;
+		}
+
+		KeybindTileHighlightConfig.RainbowMode migrated = "true".equals(legacyValue)
+				? KeybindTileHighlightConfig.RainbowMode.SOLID
+				: KeybindTileHighlightConfig.RainbowMode.OFF;
+		configManager.setConfiguration(KeybindTileHighlightConfig.GROUP, "rainbowMode", migrated);
+	}
+
+	private boolean matches(Keybind keybind, KeyEvent e)
+	{
 		if (Keybind.NOT_SET.equals(keybind))
 		{
 			return false;

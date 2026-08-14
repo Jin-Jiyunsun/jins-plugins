@@ -29,6 +29,7 @@ import net.runelite.client.config.Alpha;
 import net.runelite.client.config.Config;
 import net.runelite.client.config.ConfigGroup;
 import net.runelite.client.config.ConfigItem;
+import net.runelite.client.config.ConfigSection;
 import net.runelite.client.config.Keybind;
 import net.runelite.client.config.Range;
 import net.runelite.client.config.Units;
@@ -38,11 +39,46 @@ public interface KeybindTileHighlightConfig extends Config
 {
 	String GROUP = "keybind-tile-highlight";
 
+	enum RainbowMode
+	{
+		OFF("Off"),
+		SOLID("Solid"),
+		GRADIENT("Gradient");
+
+		private final String label;
+
+		RainbowMode(String label)
+		{
+			this.label = label;
+		}
+
+		@Override
+		public String toString()
+		{
+			return label;
+		}
+	}
+
+	@ConfigSection(
+			name = "Keybind 1",
+			description = "Settings for the first highlight keybind.",
+			position = 0
+	)
+	String keybind1Section = "keybind1Section";
+
+	@ConfigSection(
+			name = "Keybind 2",
+			description = "Settings for the second highlight keybind.",
+			position = 1
+	)
+	String keybind2Section = "keybind2Section";
+
 	@ConfigItem(
 			keyName = "highlightKeybind",
 			name = "Highlight key",
 			description = "Hold this key to highlight the tile under the mouse.",
-			position = 0
+			position = 0,
+			section = keybind1Section
 	)
 	default Keybind highlightKeybind()
 	{
@@ -53,8 +89,9 @@ public interface KeybindTileHighlightConfig extends Config
 	@ConfigItem(
 			keyName = "highlightColor",
 			name = "Highlight colour",
-			description = "Colour of the highlighted tile.",
-			position = 1
+			description = "Colour of the highlighted tile for keybind 1.",
+			position = 1,
+			section = keybind1Section
 	)
 	default Color highlightColor()
 	{
@@ -66,8 +103,9 @@ public interface KeybindTileHighlightConfig extends Config
 	@ConfigItem(
 			keyName = "fillOpacity",
 			name = "Fill opacity",
-			description = "Opacity of the tile fill, as a percentage.",
-			position = 2
+			description = "Opacity of the tile fill, as a percentage of keybind 1.",
+			position = 2,
+			section = keybind1Section
 	)
 	default int fillOpacity()
 	{
@@ -75,13 +113,54 @@ public interface KeybindTileHighlightConfig extends Config
 	}
 
 	@ConfigItem(
+			keyName = "highlightKeybind2",
+			name = "Highlight key",
+			description = "Hold this key to highlight the tile under the mouse.",
+			position = 0,
+			section = keybind2Section
+	)
+	default Keybind highlightKeybind2()
+	{
+		return Keybind.NOT_SET;
+	}
+
+	@Alpha
+	@ConfigItem(
+			keyName = "highlightColor2",
+			name = "Highlight colour",
+			description = "Colour of the tile highlighted for keybind 2.",
+			position = 1,
+			section = keybind2Section
+	)
+	default Color highlightColor2()
+	{
+		return Color.CYAN;
+	}
+
+	@Range(min = 0, max = 100)
+	@Units(Units.PERCENT)
+	@ConfigItem(
+			keyName = "fillOpacity2",
+			name = "Fill opacity",
+			description = "Opacity of the tile fill, as a percentage for keybind 2.",
+			position = 2,
+			section = keybind2Section
+	)
+	default int fillOpacity2()
+	{
+		return 25;
+	}
+
+	@ConfigItem(
 			keyName = "rainbowMode",
 			name = "Rainbow mode",
-			description = "Cycle the highlight colour through the rainbow, overriding the highlight colour setting while enabled.",
-			position = 3
+			description = "<html>Off: Use each keybind's configured colour.<br>"
+					+ "Solid: Cycle both highlights through a single hue.<br>"
+					+ "Gradient: Scroll a rainbow gradient across the tile.</html>",
+			position = 2
 	)
-	default boolean rainbowMode()
+	default RainbowMode rainbowMode()
 	{
-		return false;
+		return RainbowMode.OFF;
 	}
 }

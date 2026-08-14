@@ -28,8 +28,10 @@ import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Graphics2D;
+import java.awt.LinearGradientPaint;
 import java.awt.Polygon;
 import java.awt.Stroke;
+import java.awt.geom.Point2D;
 import javax.inject.Inject;
 import net.runelite.api.Client;
 import net.runelite.api.Perspective;
@@ -45,6 +47,8 @@ class KeybindTileHighlightOverlay extends Overlay
 {
 	private static final Stroke BORDER_STROKE = new BasicStroke(2f);
 	private static final long RAINBOW_CYCLE_MS = 3000;
+	private static final int RAINBOW_STOPS = 36;
+	private static final float RAINBOW_HUE_SPAN = 0.75f;
 
 	private final Client client;
 	private final KeybindTileHighlightConfig config;
@@ -64,7 +68,15 @@ class KeybindTileHighlightOverlay extends Overlay
 	@Override
 	public Dimension render(Graphics2D graphics)
 	{
-		if (!plugin.isKeybindHeld() || client.isMenuOpen())
+		if (client.isMenuOpen())
+		{
+			return null;
+		}
+
+		boolean held1 = plugin.isKeybind1Held();
+		boolean held2 = plugin.isKeybind2Held();
+
+		if (!held1 && !held2)
 		{
 			return null;
 		}
@@ -92,12 +104,86 @@ class KeybindTileHighlightOverlay extends Overlay
 			return null;
 		}
 
-		Color color = config.rainbowMode() ? rainbowColor() : config.highlightColor();
-		int fillAlpha = (int) Math.round(config.fillOpacity() / 100.0 * 255);
-		Color fill = new Color(color.getRed(), color.getGreen(), color.getBlue(), fillAlpha);
-		OverlayUtil.renderPolygon(graphics, poly, color, fill, BORDER_STROKE);
+		if (held1 && held2)
+		{
+			if (plugin.getMostRecentKeybind() == 1)
+			{
+				renderHighlight(graphics, poly, config.highlightColor(), config.fillOpacity());
+			}
+			else
+			{
+				renderHighlight(graphics, poly, config.highlightColor2(), config.fillOpacity2());
+			}
+		}
+		else if (held1)
+		{
+			renderHighlight(graphics, poly, config.highlightColor(), config.fillOpacity());
+		}
+		else
+		{
+			renderHighlight(graphics, poly, config.highlightColor2(), config.fillOpacity2());
+		}
 
 		return null;
+	}
+
+	private void renderHighlight(Graphics2D graphics, Polygon poly, Color configuredColor, int fillOpacityPercent)
+	{
+		switch (config.rainbowMode())
+		{
+			case GRADIENT:
+				renderGradientHighlight(graphics, poly, fillOpacityPercent);
+				break;
+			case SOLID:
+				renderSolidHighlight(graphics, poly, rainbowColor(), fillOpacityPercent);
+				break;
+			case OFF:
+			default:
+				renderSolidHighlight(graphics, poly, configuredColor, fillOpacityPercent);
+				break;
+		}
+	}
+
+	private void renderSolidHighlight(Graphics2D graphics, Polygon poly, Color color, int fillOpacityPercent)
+	{
+		int fillAlpha = (int) Math.round(fillOpacityPercent / 100.0 * 255);
+		Color fill = new Color(color.getRed(), color.getGreen(), color.getBlue(), fillAlpha);
+		OverlayUtil.renderPolygon(graphics, poly, color, fill, BORDER_STROKE);
+	}
+
+	private void renderGradientHighlight(Graphics2D graphics, Polygon poly, int fillOpacityPercent)
+	{
+		Point2D start = new Point2D.Float(poly.xpoints[0], poly.ypoints[0]);
+		Point2D end = new Point2D.Float(poly.xpoints[2], poly.ypoints[2]);
+
+		if (start.equals(end))
+		{
+			renderSolidHighlight(graphics, poly, rainbowColor(), fillOpacityPercent);
+			return;
+		}
+
+		float offset = (System.currentTimeMillis() % RAINBOW_CYCLE_MS) / (float) RAINBOW_CYCLE_MS;
+		int fillAlpha = (int) Math.round(fillOpacityPercent / 100.0 * 255);
+
+		float[] fractions = new float[RAINBOW_STOPS];
+		Color[] fillColors = new Color[RAINBOW_STOPS];
+		Color[] borderColors = new Color[RAINBOW_STOPS];
+
+		for (int i = 0; i < RAINBOW_STOPS; i++)
+		{
+			fractions[i] = i / (float) (RAINBOW_STOPS - 1);
+			float hue = (fractions[i] * RAINBOW_HUE_SPAN + offset) % 1f;
+			Color base = Color.getHSBColor(hue, 1f, 1f);
+			fillColors[i] = new Color(base.getRed(), base.getGreen(), base.getBlue(), fillAlpha);
+			borderColors[i] = base;
+		}
+
+		graphics.setPaint(new LinearGradientPaint(start, end, fractions, fillColors));
+		graphics.fill(poly);
+
+		graphics.setStroke(BORDER_STROKE);
+		graphics.setPaint(new LinearGradientPaint(start, end, fractions, borderColors));
+		graphics.draw(poly);
 	}
 
 	private static Color rainbowColor()

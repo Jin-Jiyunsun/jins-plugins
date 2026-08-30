@@ -1,10 +1,9 @@
-package com.example;
+package com.tabkeybinds;
 
 import net.runelite.client.RuneLite;
-import com.tabkeybinds.TabKeybindsPlugin;
 import net.runelite.client.externalplugins.ExternalPluginManager;
 
-public class ExamplePluginTest
+public class TabKeybindsPluginTest
 {
 	public static void main(String[] args) throws Exception
 	{

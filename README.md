@@ -1,5 +1,5 @@
 # Tab Keybind Display
-
+<img width="966" height="922" alt="keybind tab display image" src="https://github.com/user-attachments/assets/8ba8e160-1b5d-4b6a-bf6b-1beb92df4abd" />
 Shows the keybind for each interface tab directly on the tab itself, so you can
 see at a glance which key opens Inventory, Prayer, Combat, etc. This is useful
 if you are learning your tab keybinds or if you just find a visual reminder

@@ -170,6 +170,12 @@ public class TabKeybindsOverlay extends Overlay
 		graphics.setFont(FontManager.getRunescapeSmallFont());
 		FontMetrics metrics = graphics.getFontMetrics();
 
+		TabKeybindsConfig.TabTextCase textCase = config.textCase();
+		boolean useGlobalPosition = config.useGlobalPosition();
+		TabKeybindsConfig.TabTextPosition globalPosition = useGlobalPosition ? config.globalPosition() : null;
+		boolean useGlobalColor = config.useGlobalColor();
+		Color globalColor = useGlobalColor ? config.textColor() : null;
+
 		for (TabDef tab : TABS)
 		{
 			String text = plugin.getKeyText(tab.varbit);
@@ -204,7 +210,7 @@ public class TabKeybindsOverlay extends Overlay
 				continue;
 			}
 
-			switch (config.textCase())
+			switch (textCase)
 			{
 				case UPPERCASE:
 					text = text.toUpperCase();
@@ -219,8 +225,8 @@ public class TabKeybindsOverlay extends Overlay
 
 			int textWidth = metrics.stringWidth(text);
 
-			TabKeybindsConfig.TabTextPosition position = config.useGlobalPosition()
-				? config.globalPosition()
+			TabKeybindsConfig.TabTextPosition position = useGlobalPosition
+				? globalPosition
 				: tab.position.apply(config);
 			int[] xy = textXY(bounds, textWidth, metrics, position);
 			int x = xy[0];
@@ -247,7 +253,7 @@ public class TabKeybindsOverlay extends Overlay
 			x = Math.max(bounds.x, Math.min(x, bounds.x + bounds.width - textWidth));
 			y = Math.max(bounds.y + metrics.getAscent(), Math.min(y, bounds.y + bounds.height - metrics.getDescent()));
 
-			Color drawColor = config.useGlobalColor() ? config.textColor() : tab.color.apply(config);
+			Color drawColor = useGlobalColor ? globalColor : tab.color.apply(config);
 
 			graphics.setColor(Color.BLACK);
 			graphics.drawString(text, x - 1, y - 1);

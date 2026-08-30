@@ -12,6 +12,7 @@ import net.runelite.api.EnumComposition;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.VarbitChanged;
 import net.runelite.client.config.ConfigManager;
+import net.runelite.client.config.Keybind;
 import net.runelite.client.config.ModifierlessKeybind;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.events.ConfigChanged;
@@ -157,38 +158,54 @@ public class TabKeybindsPlugin extends Plugin
 			return null;
 		}
 
+		ModifierlessKeybind remapped;
 		switch (label.toUpperCase())
 		{
 			case "F1":
-				return remapConfig.f1();
+				remapped = remapConfig.f1();
+				break;
 			case "F2":
-				return remapConfig.f2();
+				remapped = remapConfig.f2();
+				break;
 			case "F3":
-				return remapConfig.f3();
+				remapped = remapConfig.f3();
+				break;
 			case "F4":
-				return remapConfig.f4();
+				remapped = remapConfig.f4();
+				break;
 			case "F5":
-				return remapConfig.f5();
+				remapped = remapConfig.f5();
+				break;
 			case "F6":
-				return remapConfig.f6();
+				remapped = remapConfig.f6();
+				break;
 			case "F7":
-				return remapConfig.f7();
+				remapped = remapConfig.f7();
+				break;
 			case "F8":
-				return remapConfig.f8();
+				remapped = remapConfig.f8();
+				break;
 			case "F9":
-				return remapConfig.f9();
+				remapped = remapConfig.f9();
+				break;
 			case "F10":
-				return remapConfig.f10();
+				remapped = remapConfig.f10();
+				break;
 			case "F11":
-				return remapConfig.f11();
+				remapped = remapConfig.f11();
+				break;
 			case "F12":
-				return remapConfig.f12();
+				remapped = remapConfig.f12();
+				break;
 			case "ESC":
 			case "ESCAPE":
-				return remapConfig.esc();
+				remapped = remapConfig.esc();
+				break;
 			default:
 				return null;
 		}
+
+		return remapped == null || remapped.equals(Keybind.NOT_SET) ? null : remapped;
 	}
 
 	private boolean isKeyRemappingActive()
@@ -250,7 +267,7 @@ public class TabKeybindsPlugin extends Plugin
 		if (lower.startsWith("numpad"))
 		{
 			String remainder = name.substring(6).trim();
-			while (!remainder.isEmpty() && (remainder.charAt(0) == '-' || remainder.charAt(0) == '_'))
+			if (remainder.length() > 1 && (remainder.charAt(0) == '-' || remainder.charAt(0) == '_'))
 			{
 				remainder = remainder.substring(1).trim();
 			}
@@ -306,6 +323,12 @@ public class TabKeybindsPlugin extends Plugin
 		map.put("delete", "Del");
 		map.put("insert", "Ins");
 		map.put("windows", "Win");
+		map.put("caps lock", "Caps");
+		map.put("num lock", "Num");
+		map.put("scroll lock", "Scrl");
+		map.put("print screen", "PrtSc");
+		map.put("context menu", "Menu");
+		map.put("space", "Spc");
 		return Collections.unmodifiableMap(map);
 	}
 }

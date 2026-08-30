@@ -1,4 +1,4 @@
-# Tab Keybinds
+# Tab Keybind Display
 
 A RuneLite plugin that draws a small text label on top of each interface tab
 (Combat, Skills, Inventory, Prayer, etc.) showing the keybind you use to open it.

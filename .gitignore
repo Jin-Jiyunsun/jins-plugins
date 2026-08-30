@@ -7,3 +7,10 @@ build
 nbactions.xml
 nb-configuration.xml
 nbproject/
+
+# Local agent/dev notes - not part of the released plugin.
+# README.md is deliberately NOT ignored: the Plugin Hub renders it as this
+# plugin's public page, so it ships with the code.
+CLAUDE.md
+NOTES.md
+PICKUP.md

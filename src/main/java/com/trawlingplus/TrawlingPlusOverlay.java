@@ -6,7 +6,6 @@ import java.awt.Dimension;
 import java.awt.Graphics2D;
 import java.awt.Polygon;
 import java.awt.RenderingHints;
-import java.awt.Stroke;
 import java.awt.geom.Path2D;
 import java.util.ArrayList;
 import java.util.List;
@@ -25,14 +24,10 @@ import net.runelite.client.ui.overlay.OverlayUtil;
 
 class TrawlingPlusOverlay extends Overlay
 {
-	// Round joins and caps so the short segments the curve is drawn with blend into one smooth line.
-	private static final Stroke ROUTE_STROKE = new BasicStroke(2f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND);
-
 	// Stops are drawn as a square this many tiles across, roughly the size of a shoal.
 	private static final int STOP_SIZE = 3;
 
-	// The stops' outline and faint fill, as RuneLite draws a highlighted tile.
-	private static final Stroke STOP_STROKE = new BasicStroke(2);
+	// The stops' faint fill, as RuneLite draws a highlighted tile.
 	private static final Color STOP_FILL = new Color(0, 0, 0, 50);
 
 	// A direction arrow's length in tiles at 100% scaling, and its shape as fractions of its length:
@@ -268,8 +263,9 @@ class TrawlingPlusOverlay extends Overlay
 
 	private void drawLine(Graphics2D graphics, Line line)
 	{
+		// Round joins and caps so the short segments the curve is drawn with blend into one smooth line.
 		graphics.setColor(config.routeColour());
-		graphics.setStroke(ROUTE_STROKE);
+		graphics.setStroke(new BasicStroke(thickness(config.routeLineThickness()), BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
 		graphics.draw(line.path);
 	}
 
@@ -370,7 +366,8 @@ class TrawlingPlusOverlay extends Overlay
 		Polygon area = local == null ? null : Perspective.getCanvasTileAreaPoly(client, local, STOP_SIZE);
 		if (area != null)
 		{
-			OverlayUtil.renderPolygon(graphics, area, withOpacity(colour, opacity), withOpacity(STOP_FILL, opacity), STOP_STROKE);
+			OverlayUtil.renderPolygon(graphics, area, withOpacity(colour, opacity), withOpacity(STOP_FILL, opacity),
+				new BasicStroke(thickness(config.stopThickness())));
 		}
 	}
 
@@ -396,6 +393,14 @@ class TrawlingPlusOverlay extends Overlay
 	private static double scaled(double length, int percent)
 	{
 		return length * Math.max(TrawlingPlusConfig.MIN_ARROW_SCALE, Math.min(TrawlingPlusConfig.MAX_ARROW_SCALE, percent)) / 100;
+	}
+
+	/**
+	 * A thickness setting in pixels, kept within its limits.
+	 */
+	private static int thickness(int pixels)
+	{
+		return Math.max(TrawlingPlusConfig.MIN_LINE_THICKNESS, Math.min(TrawlingPlusConfig.MAX_LINE_THICKNESS, pixels));
 	}
 
 	private Point toCanvas(WorldView view, double x, double y)

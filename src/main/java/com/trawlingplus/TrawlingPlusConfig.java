@@ -23,6 +23,9 @@ public interface TrawlingPlusConfig extends Config
 	int MIN_ARROW_SCALE = 50;
 	int MAX_ARROW_SCALE = 150;
 
+	int MIN_LINE_THICKNESS = 1;
+	int MAX_LINE_THICKNESS = 3;
+
 	@ConfigSection(
 		name = "Route line",
 		description = "The line each shoal swims along",
@@ -105,7 +108,7 @@ public interface TrawlingPlusConfig extends Config
 	)
 	default int animationDuration()
 	{
-		return 7;
+		return 6;
 	}
 
 	@ConfigItem(
@@ -133,11 +136,28 @@ public interface TrawlingPlusConfig extends Config
 		return new Color(0, 200, 255, 200);
 	}
 
+	@Range(
+		min = MIN_LINE_THICKNESS,
+		max = MAX_LINE_THICKNESS
+	)
+	@Units(Units.PIXELS)
+	@ConfigItem(
+		keyName = "routeLineThickness",
+		name = "Thickness",
+		description = "Thickness of the route line",
+		position = 5,
+		section = routeLineSection
+	)
+	default int routeLineThickness()
+	{
+		return 2;
+	}
+
 	@ConfigItem(
 		keyName = "showDirectionArrows",
 		name = "Show",
 		description = "Show arrows along each route pointing the way shoals swim",
-		position = 5,
+		position = 6,
 		section = directionArrowsSection
 	)
 	default boolean showDirectionArrows()
@@ -154,12 +174,12 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "directionArrowSpacing",
 		name = "Spacing",
 		description = "Distance between direction arrows",
-		position = 6,
+		position = 7,
 		section = directionArrowsSection
 	)
 	default int directionArrowSpacing()
 	{
-		return 15;
+		return 7;
 	}
 
 	@Range(
@@ -169,9 +189,9 @@ public interface TrawlingPlusConfig extends Config
 	@Units(Units.PERCENT)
 	@ConfigItem(
 		keyName = "directionArrowScale",
-		name = "Arrow scaling",
+		name = "Scaling",
 		description = "Size of the direction arrows",
-		position = 7,
+		position = 8,
 		section = directionArrowsSection
 	)
 	default int directionArrowScale()
@@ -184,7 +204,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "directionArrowColour",
 		name = "Colour",
 		description = "Colour of the direction arrows",
-		position = 8,
+		position = 9,
 		section = directionArrowsSection
 	)
 	default Color directionArrowColour()
@@ -196,7 +216,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "showShoalHeadingArrow",
 		name = "Show",
 		description = "Show an arrow on each shoal pointing the way it's heading, hidden while it's at a stop",
-		position = 9,
+		position = 10,
 		section = headingArrowSection
 	)
 	default boolean showShoalHeadingArrow()
@@ -211,9 +231,9 @@ public interface TrawlingPlusConfig extends Config
 	@Units(Units.PERCENT)
 	@ConfigItem(
 		keyName = "shoalHeadingArrowScale",
-		name = "Arrow scaling",
+		name = "Scaling",
 		description = "Size of the shoal heading arrow, and of the arrow leading an animated section",
-		position = 10,
+		position = 11,
 		section = headingArrowSection
 	)
 	default int shoalHeadingArrowScale()
@@ -226,19 +246,19 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "shoalHeadingArrowColour",
 		name = "Colour",
 		description = "Colour of the shoal heading arrow",
-		position = 11,
+		position = 12,
 		section = headingArrowSection
 	)
 	default Color shoalHeadingArrowColour()
 	{
-		return new Color(255, 200, 0);
+		return new Color(255, 221, 0);
 	}
 
 	@ConfigItem(
 		keyName = "showStops",
 		name = "Show",
 		description = "Mark where shoals stop, with each shoal's next stop highlighted",
-		position = 12,
+		position = 13,
 		section = stopsSection
 	)
 	default boolean showStops()
@@ -251,12 +271,12 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "stopColour",
 		name = "Colour",
 		description = "Colour of the stops",
-		position = 13,
+		position = 14,
 		section = stopsSection
 	)
 	default Color stopColour()
 	{
-		return new Color(255, 255, 255, 150);
+		return new Color(255, 255, 255, 225);
 	}
 
 	@Alpha
@@ -264,11 +284,28 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "nextStopColour",
 		name = "Next stop colour",
 		description = "Colour of each shoal's next stop",
-		position = 14,
+		position = 15,
 		section = stopsSection
 	)
 	default Color nextStopColour()
 	{
-		return new Color(255, 200, 0, 230);
+		return new Color(255, 221, 0, 225);
+	}
+
+	@Range(
+		min = MIN_LINE_THICKNESS,
+		max = MAX_LINE_THICKNESS
+	)
+	@Units(Units.PIXELS)
+	@ConfigItem(
+		keyName = "stopThickness",
+		name = "Thickness",
+		description = "Thickness of the stops' outlines",
+		position = 16,
+		section = stopsSection
+	)
+	default int stopThickness()
+	{
+		return 2;
 	}
 }

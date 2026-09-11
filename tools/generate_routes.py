@@ -1,8 +1,10 @@
-"""Generates src/main/resources/com/trawlingplus/routes.json from the OSRS Wiki.
+"""Generates src/main/resources/com/trawlingplus/routes.json.
 
-Shoal route data on the Old School RuneScape Wiki is licensed under CC BY-NC-SA 3.0, so
-the generated file carries that license and an attribution line; the plugin's own code
-stays BSD-2. Re-run this whenever the wiki's shoal routes change:
+Routes come from the OSRS Wiki, except where tools/recorded_routes.json has a route recorded
+in-game, which replaces the wiki's version of it. Wiki route data is licensed under
+CC BY-NC-SA 3.0, so the generated file marks each route's source and carries that license for
+the ones taken from the wiki; the plugin's own code stays BSD-2. Re-run this whenever
+tools/recorded_routes.json or the wiki's shoal routes change:
 
     python tools/generate_routes.py
 """
@@ -18,6 +20,7 @@ from pathlib import Path
 API = "https://oldschool.runescape.wiki/api.php"
 USER_AGENT = "trawling-plus route generator (https://github.com/Jin-Jiyunsun/jins-plugins)"
 OUTPUT = Path(__file__).resolve().parent.parent / "src" / "main" / "resources" / "com" / "trawlingplus" / "routes.json"
+RECORDED = Path(__file__).resolve().parent / "recorded_routes.json"
 
 SPECIES = [
     ("Giant krill", "Giant_krill_shoal"),
@@ -110,13 +113,8 @@ def parse_species(name, page):
         if len(stops) < 2 or len(path) < 2:
             raise SystemExit(f"{page} / {route_name}: too few points ({len(stops)} stops, {len(path)} path)")
 
-        for s in stops:
-            off = distance_to_loop(s, path)
-            if off > STOP_TOLERANCE:
-                print(f"  warning: {name} / {route_name}: stop {s} is {off:.1f} tiles from the path")
-
         lap_ticks = int(lap.group(1).replace(",", ""))
-        routes.append({"name": route_name, "lapTicks": lap_ticks, "stops": stops, "path": path})
+        routes.append({"name": route_name, "source": "wiki", "lapTicks": lap_ticks, "stops": stops, "path": path})
         print(f"  {route_name}: {len(stops)} stops, {len(path)} path points, lap {lap_ticks} ticks")
 
     return {
@@ -127,6 +125,34 @@ def parse_species(name, page):
     }
 
 
+def apply_recordings(species):
+    if not RECORDED.exists():
+        return
+
+    for recording in json.loads(RECORDED.read_text(encoding="utf-8"))["routes"]:
+        route = next((r for s in species if s["name"] == recording["species"]
+                      for r in s["routes"] if r["name"] == recording["route"]), None)
+        if route is None:
+            raise SystemExit(f"recorded {recording['species']} / {recording['route']} matches no wiki route")
+        route.update(source="recording", lapTicks=recording["lapTicks"], stops=recording["stops"], path=recording["path"])
+        print(f"{recording['species']} / {recording['route']}: using the in-game recording from {recording['recorded']}")
+
+
+def check_stops(species):
+    for s in species:
+        for route in s["routes"]:
+            for stop in route["stops"]:
+                off = distance_to_loop(stop, route["path"])
+                if off > STOP_TOLERANCE:
+                    print(f"  warning: {s['name']} / {route['name']}: stop {stop} is {off:.1f} tiles from the path")
+
+
+def dump(data):
+    text = json.dumps(data, indent="\t", ensure_ascii=False)
+    # Keep each [x, y] pair on one line so the file stays readable and diffs stay small.
+    return re.sub(r"\[\s+(-?\d+(?:\.\d+)?),\s+(-?\d+(?:\.\d+)?)\s+\]", r"[\1, \2]", text)
+
+
 def main():
     species = []
     for index, (name, page) in enumerate(SPECIES):
@@ -135,20 +161,25 @@ def main():
         print(name)
         species.append(parse_species(name, page))
 
+    apply_recordings(species)
+    check_stops(species)
+
     data = {
-        "attribution": "Shoal route data from the Old School RuneScape Wiki (https://oldschool.runescape.wiki), "
-                       "licensed under CC BY-NC-SA 3.0 (https://creativecommons.org/licenses/by-nc-sa/3.0/).",
-        "format": "Each route is a loop. Stops and path points are [x, y] world tiles on plane 0, listed in "
-                  "order around the loop; the last point connects back to the first.",
+        "attribution": "Routes marked \"source\": \"wiki\" are from the Old School RuneScape Wiki "
+                       "(https://oldschool.runescape.wiki), licensed under CC BY-NC-SA 3.0 "
+                       "(https://creativecommons.org/licenses/by-nc-sa/3.0/). Routes marked "
+                       "\"source\": \"recording\" were recorded in-game for Trawling Plus.",
+        "format": "Each route is a loop. Stops and path points are [x, y] world tiles on plane 0 (recorded "
+                  "routes to a quarter of a tile), listed in the order shoals swim them; the last point "
+                  "connects back to the first.",
         "species": species,
     }
 
-    text = json.dumps(data, indent="\t", ensure_ascii=False)
-    # Keep each [x, y] pair on one line so the file stays readable and diffs stay small.
-    text = re.sub(r"\[\s+(\d+),\s+(\d+)\s+\]", r"[\1, \2]", text)
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
-    OUTPUT.write_text(text + "\n", encoding="utf-8")
-    print(f"Wrote {sum(len(s['routes']) for s in species)} routes to {OUTPUT}")
+    OUTPUT.write_text(dump(data) + "\n", encoding="utf-8")
+    sources = [r["source"] for s in species for r in s["routes"]]
+    print(f"Wrote {len(sources)} routes to {OUTPUT} "
+          f"({sources.count('recording')} recorded, {sources.count('wiki')} from the wiki)")
 
 
 if __name__ == "__main__":

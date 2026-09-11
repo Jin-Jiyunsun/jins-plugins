@@ -52,6 +52,15 @@ final class Shoal
 	}
 
 	/**
+	 * Swaps in the same route with its line smoothed differently. Its stops are the same, so a next
+	 * section that's drawing itself out carries on.
+	 */
+	void reshapeRoute(ShoalRoute route)
+	{
+		this.route = route;
+	}
+
+	/**
 	 * Tracks whether the shoal is swimming or sitting still, once per game tick. The heading arrow
 	 * hides the tick the shoal stops and shows again the tick it moves off.
 	 */

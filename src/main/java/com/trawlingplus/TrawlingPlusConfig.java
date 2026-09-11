@@ -13,6 +13,7 @@ import net.runelite.client.config.Units;
 public interface TrawlingPlusConfig extends Config
 {
 	String GROUP = "trawling-plus";
+	String SMOOTHING_KEY = "routeSmoothing";
 
 	int MIN_ANIMATION_SECONDS = 3;
 	int MAX_ANIMATION_SECONDS = 10;
@@ -53,6 +54,26 @@ public interface TrawlingPlusConfig extends Config
 		position = 6
 	)
 	String stopsSection = "stops";
+
+	enum Smoothing
+	{
+		NONE("None"),
+		LIGHT("Light"),
+		HEAVY("Heavy");
+
+		private final String name;
+
+		Smoothing(String name)
+		{
+			this.name = name;
+		}
+
+		@Override
+		public String toString()
+		{
+			return name;
+		}
+	}
 
 	enum RouteDisplay
 	{
@@ -154,10 +175,22 @@ public interface TrawlingPlusConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = SMOOTHING_KEY,
+		name = "Smoothing",
+		description = "Straight lines between the route's points (None), gently rounded corners (Light), or the smoothest curves (Heavy)",
+		position = 6,
+		section = routeLineSection
+	)
+	default Smoothing routeSmoothing()
+	{
+		return Smoothing.LIGHT;
+	}
+
+	@ConfigItem(
 		keyName = "showDirectionArrows",
 		name = "Show",
 		description = "Show arrows along each route pointing the way shoals swim",
-		position = 6,
+		position = 7,
 		section = directionArrowsSection
 	)
 	default boolean showDirectionArrows()
@@ -174,7 +207,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "directionArrowSpacing",
 		name = "Spacing",
 		description = "Distance between direction arrows",
-		position = 7,
+		position = 8,
 		section = directionArrowsSection
 	)
 	default int directionArrowSpacing()
@@ -191,7 +224,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "directionArrowScale",
 		name = "Scaling",
 		description = "Size of the direction arrows",
-		position = 8,
+		position = 9,
 		section = directionArrowsSection
 	)
 	default int directionArrowScale()
@@ -204,7 +237,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "directionArrowColour",
 		name = "Colour",
 		description = "Colour of the direction arrows",
-		position = 9,
+		position = 10,
 		section = directionArrowsSection
 	)
 	default Color directionArrowColour()
@@ -216,7 +249,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "showShoalHeadingArrow",
 		name = "Show",
 		description = "Show an arrow on each shoal pointing the way it's heading, hidden while it's at a stop",
-		position = 10,
+		position = 11,
 		section = headingArrowSection
 	)
 	default boolean showShoalHeadingArrow()
@@ -233,7 +266,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "shoalHeadingArrowScale",
 		name = "Scaling",
 		description = "Size of the shoal heading arrow, and of the arrow leading an animated section",
-		position = 11,
+		position = 12,
 		section = headingArrowSection
 	)
 	default int shoalHeadingArrowScale()
@@ -246,7 +279,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "shoalHeadingArrowColour",
 		name = "Colour",
 		description = "Colour of the shoal heading arrow",
-		position = 12,
+		position = 13,
 		section = headingArrowSection
 	)
 	default Color shoalHeadingArrowColour()
@@ -258,7 +291,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "showStops",
 		name = "Show",
 		description = "Mark where shoals stop, with each shoal's next stop highlighted",
-		position = 13,
+		position = 14,
 		section = stopsSection
 	)
 	default boolean showStops()
@@ -271,7 +304,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "stopColour",
 		name = "Colour",
 		description = "Colour of the stops",
-		position = 14,
+		position = 15,
 		section = stopsSection
 	)
 	default Color stopColour()
@@ -284,7 +317,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "nextStopColour",
 		name = "Next stop colour",
 		description = "Colour of each shoal's next stop",
-		position = 15,
+		position = 16,
 		section = stopsSection
 	)
 	default Color nextStopColour()
@@ -301,7 +334,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "stopThickness",
 		name = "Thickness",
 		description = "Thickness of the stops' outlines",
-		position = 16,
+		position = 17,
 		section = stopsSection
 	)
 	default int stopThickness()

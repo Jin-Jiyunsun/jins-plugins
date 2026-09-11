@@ -5,8 +5,10 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Deque;
 import java.util.List;
 
 /**
@@ -21,16 +23,27 @@ final class ShoalRoute
 	// Longest gap between the points the overlay draws the route through, in tiles.
 	private static final double SAMPLE_SPACING = 1.0;
 
-	// Spacing of the points a route's curve is built from, in tiles.
-	private static final double SMOOTH_SPACING = 0.5;
+	// Spacing of the points a route's curve is laid down as, in tiles. The line is drawn as straight
+	// pieces between them, and at a quarter of a tile the corners between pieces don't show, even on
+	// tight bends seen close up.
+	private static final double SMOOTH_SPACING = 0.25;
+
+	// A curve point this close to the line through the points either side of it is dropped, in tiles.
+	// It makes no visible difference, and takes most of the points out of long straight stretches.
+	private static final double CURVE_TOLERANCE = 0.01;
 
 	// Centripetal Catmull-Rom: curves through every point without overshooting or looping at sharp turns.
 	private static final double SMOOTH_ALPHA = 0.5;
 
-	// Before smoothing, long straight stretches are split into points this far apart, in tiles, so the
-	// curve only rounds off corners instead of swinging wide between them. At 6 tiles, Rainbow Reef's
-	// curve stays within a quarter of a tile of where the recorded shoal actually swam.
-	private static final double CONTROL_SPACING = 6.0;
+	// Before light smoothing, long straight stretches are split into points this far apart, in tiles,
+	// so the curve only rounds off corners instead of swinging wide between them. On Rainbow Reef it
+	// stays within a quarter of a tile of where the recorded shoal actually swam.
+	private static final double CATMULL_ROM_SPACING = 6.0;
+
+	// Heavy smoothing respaces the points this far apart all the way round, bends included, so it
+	// rounds the bends off too. On Rainbow Reef it's under a tenth of a tile off on average, and cuts
+	// the tightest bend by up to two thirds of a tile.
+	private static final double B_SPLINE_SPACING = 3.0;
 
 	// A shoal this close to a stop counts as sitting at it, so its next stop is the one after.
 	private static final double AT_STOP_TILES = 3.0;
@@ -129,9 +142,9 @@ final class ShoalRoute
 	}
 
 	/**
-	 * Loads every route from routes.json, each path smoothed into a curve through its points.
+	 * Reads every route from routes.json.
 	 */
-	static List<ShoalRoute> load(Gson gson) throws IOException
+	static RouteData read(Gson gson) throws IOException
 	{
 		try (InputStream in = ShoalRoute.class.getResourceAsStream(RESOURCE))
 		{
@@ -139,17 +152,36 @@ final class ShoalRoute
 			{
 				throw new IOException("Missing " + RESOURCE);
 			}
+			return gson.fromJson(new InputStreamReader(in, StandardCharsets.UTF_8), RouteData.class);
+		}
+	}
 
-			RouteData data = gson.fromJson(new InputStreamReader(in, StandardCharsets.UTF_8), RouteData.class);
-			List<ShoalRoute> routes = new ArrayList<>();
-			for (RouteData.Species species : data.species)
+	/**
+	 * Builds every route, in the order routes.json lists them, with its path smoothed as chosen.
+	 */
+	static List<ShoalRoute> build(RouteData data, TrawlingPlusConfig.Smoothing smoothing)
+	{
+		List<ShoalRoute> routes = new ArrayList<>();
+		for (RouteData.Species species : data.species)
+		{
+			for (RouteData.Route route : species.routes)
 			{
-				for (RouteData.Route route : species.routes)
-				{
-					routes.add(new ShoalRoute(species.name, route.name, smooth(route.path), route.stops));
-				}
+				routes.add(new ShoalRoute(species.name, route.name, shape(route.path, smoothing), route.stops));
 			}
-			return routes;
+		}
+		return routes;
+	}
+
+	private static double[][] shape(double[][] path, TrawlingPlusConfig.Smoothing smoothing)
+	{
+		switch (smoothing)
+		{
+			case NONE:
+				return path;
+			case HEAVY:
+				return bSpline(path);
+			default:
+				return catmullRom(path);
 		}
 	}
 
@@ -157,14 +189,14 @@ final class ShoalRoute
 	 * Turns a closed loop of points into a smooth curve through all of them, as a denser loop of points.
 	 * Corners are rounded off; straight stretches stay straight.
 	 */
-	static double[][] smooth(double[][] points)
+	static double[][] catmullRom(double[][] points)
 	{
 		if (points.length < 3)
 		{
 			return points;
 		}
 
-		double[][] controls = subdivide(points);
+		double[][] controls = subdivide(points, CATMULL_ROM_SPACING);
 		int count = controls.length;
 		List<double[]> curve = new ArrayList<>();
 		for (int i = 0; i < count; i++)
@@ -180,20 +212,158 @@ final class ShoalRoute
 			int steps = Math.max(1, (int) Math.ceil(Math.hypot(p2[0] - p1[0], p2[1] - p1[1]) / SMOOTH_SPACING));
 			for (int step = 0; step < steps; step++)
 			{
-				curve.add(catmullRom(p0, p1, p2, p3, t1, t2, t3, t1 + (t2 - t1) * step / steps));
+				curve.add(catmullRomPoint(p0, p1, p2, p3, t1, t2, t3, t1 + (t2 - t1) * step / steps));
 			}
 		}
-		return curve.toArray(new double[0][]);
+		return trim(curve.toArray(new double[0][]));
 	}
 
-	private static double[][] subdivide(double[][] points)
+	/**
+	 * Turns a closed loop of points into a smoother curve that doesn't have to pass through them, as a
+	 * denser loop of points. It irons out small wobbles and rounds bends off more; straight stretches
+	 * stay straight.
+	 */
+	static double[][] bSpline(double[][] points)
+	{
+		if (points.length < 3)
+		{
+			return points;
+		}
+
+		double[][] controls = respace(points, B_SPLINE_SPACING);
+		int count = controls.length;
+		List<double[]> curve = new ArrayList<>();
+		for (int i = 0; i < count; i++)
+		{
+			double[] p0 = controls[(i + count - 1) % count];
+			double[] p1 = controls[i];
+			double[] p2 = controls[(i + 1) % count];
+			double[] p3 = controls[(i + 2) % count];
+
+			int steps = Math.max(1, (int) Math.ceil(Math.hypot(p2[0] - p1[0], p2[1] - p1[1]) / SMOOTH_SPACING));
+			for (int step = 0; step < steps; step++)
+			{
+				// Uniform cubic B-spline weights, which always add up to 1.
+				double t = (double) step / steps;
+				double w0 = (1 - t) * (1 - t) * (1 - t) / 6;
+				double w1 = (3 * t * t * t - 6 * t * t + 4) / 6;
+				double w2 = (-3 * t * t * t + 3 * t * t + 3 * t + 1) / 6;
+				double w3 = t * t * t / 6;
+				curve.add(new double[]{
+					w0 * p0[0] + w1 * p1[0] + w2 * p2[0] + w3 * p3[0],
+					w0 * p0[1] + w1 * p1[1] + w2 * p2[1] + w3 * p3[1]
+				});
+			}
+		}
+		return trim(curve.toArray(new double[0][]));
+	}
+
+	/**
+	 * Drops the points of a curve that aren't needed to draw it: those within CURVE_TOLERANCE of the
+	 * line through the points either side of them, once the ones between have gone. Long straight
+	 * stretches come out as a couple of points; bends keep theirs.
+	 */
+	private static double[][] trim(double[][] curve)
+	{
+		int count = curve.length;
+		if (count < 3)
+		{
+			return curve;
+		}
+
+		// The loop is trimmed as two halves, so its first point and the one opposite always stay.
+		boolean[] keep = new boolean[count];
+		keep[0] = true;
+		keep[count / 2] = true;
+		Deque<int[]> pending = new ArrayDeque<>();
+		pending.push(new int[]{0, count / 2});
+		pending.push(new int[]{count / 2, count});
+		while (!pending.isEmpty())
+		{
+			int[] span = pending.pop();
+			double[] from = curve[span[0]];
+			double[] to = curve[span[1] % count];
+			double worst = 0;
+			int furthest = -1;
+			for (int i = span[0] + 1; i < span[1]; i++)
+			{
+				double offset = distanceToSegment(curve[i], from, to);
+				if (offset > worst)
+				{
+					worst = offset;
+					furthest = i;
+				}
+			}
+
+			if (furthest >= 0 && worst > CURVE_TOLERANCE)
+			{
+				keep[furthest] = true;
+				pending.push(new int[]{span[0], furthest});
+				pending.push(new int[]{furthest, span[1]});
+			}
+		}
+
+		List<double[]> trimmed = new ArrayList<>();
+		for (int i = 0; i < count; i++)
+		{
+			if (keep[i])
+			{
+				trimmed.add(curve[i]);
+			}
+		}
+		return trimmed.toArray(new double[0][]);
+	}
+
+	private static double distanceToSegment(double[] point, double[] from, double[] to)
+	{
+		double dx = to[0] - from[0];
+		double dy = to[1] - from[1];
+		double lengthSquared = dx * dx + dy * dy;
+		double t = lengthSquared == 0 ? 0
+			: Math.max(0, Math.min(1, ((point[0] - from[0]) * dx + (point[1] - from[1]) * dy) / lengthSquared));
+		return Math.hypot(point[0] - (from[0] + t * dx), point[1] - (from[1] + t * dy));
+	}
+
+	/**
+	 * Points spaced evenly round a closed loop, starting at its first point, as close to the given
+	 * distance apart as divides the loop evenly.
+	 */
+	private static double[][] respace(double[][] points, double spacing)
+	{
+		int count = points.length;
+		double[] reached = new double[count + 1];
+		for (int i = 0; i < count; i++)
+		{
+			double[] next = points[(i + 1) % count];
+			reached[i + 1] = reached[i] + Math.hypot(next[0] - points[i][0], next[1] - points[i][1]);
+		}
+
+		int pieces = Math.max(3, (int) (reached[count] / spacing));
+		double step = reached[count] / pieces;
+		double[][] respaced = new double[pieces][];
+		int segment = 0;
+		for (int piece = 0; piece < pieces; piece++)
+		{
+			double at = piece * step;
+			while (segment < count - 1 && reached[segment + 1] < at)
+			{
+				segment++;
+			}
+			double length = reached[segment + 1] - reached[segment];
+			double fraction = length == 0 ? 0 : (at - reached[segment]) / length;
+			respaced[piece] = lerp(points[segment], points[(segment + 1) % count], fraction);
+		}
+		return respaced;
+	}
+
+	private static double[][] subdivide(double[][] points, double spacing)
 	{
 		List<double[]> controls = new ArrayList<>();
 		for (int i = 0; i < points.length; i++)
 		{
 			double[] a = points[i];
 			double[] b = points[(i + 1) % points.length];
-			int pieces = Math.max(1, (int) Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / CONTROL_SPACING));
+			int pieces = Math.max(1, (int) Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / spacing));
 			for (int piece = 0; piece < pieces; piece++)
 			{
 				controls.add(lerp(a, b, (double) piece / pieces));
@@ -208,7 +378,7 @@ final class ShoalRoute
 		return Math.max(1e-6, Math.pow(Math.hypot(b[0] - a[0], b[1] - a[1]), SMOOTH_ALPHA));
 	}
 
-	private static double[] catmullRom(double[] p0, double[] p1, double[] p2, double[] p3, double t1, double t2, double t3, double t)
+	private static double[] catmullRomPoint(double[] p0, double[] p1, double[] p2, double[] p3, double t1, double t2, double t3, double t)
 	{
 		// Barry and Goldman's pyramidal form, with the first knot at zero.
 		double[] a1 = lerp(p0, p1, t / t1);

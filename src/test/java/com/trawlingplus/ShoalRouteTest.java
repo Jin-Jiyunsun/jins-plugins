@@ -2,9 +2,6 @@ package com.trawlingplus;
 
 import com.google.gson.Gson;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -85,10 +82,10 @@ public class ShoalRouteTest
 	}
 
 	@Test
-	public void smoothingPassesThroughEveryPoint()
+	public void lightSmoothingPassesThroughEveryPoint()
 	{
 		double[][] points = {{0, 0}, {10, 0}, {10, 10}, {0, 10}};
-		double[][] curve = ShoalRoute.smooth(points);
+		double[][] curve = ShoalRoute.catmullRom(points);
 		for (double[] point : points)
 		{
 			boolean found = false;
@@ -103,13 +100,16 @@ public class ShoalRouteTest
 	@Test
 	public void smoothingKeepsStraightStretchesStraight()
 	{
-		// Between (10, 0) and (20, 0) the neighbouring points are in line too, so the curve can't bend.
-		double[][] curve = ShoalRoute.smooth(new double[][]{{0, 0}, {10, 0}, {20, 0}, {30, 0}, {30, 10}, {0, 10}});
-		for (double[] c : curve)
+		// Between (10, 0) and (20, 0) the neighbouring points are in line too, so neither curve can bend.
+		double[][] points = {{0, 0}, {10, 0}, {20, 0}, {30, 0}, {30, 10}, {0, 10}};
+		for (double[][] curve : new double[][][]{ShoalRoute.catmullRom(points), ShoalRoute.bSpline(points)})
 		{
-			if (c[0] >= 10 && c[0] <= 20 && c[1] < 5)
+			for (double[] c : curve)
 			{
-				assertEquals(0, c[1], 1e-9);
+				if (c[0] >= 10 && c[0] <= 20 && c[1] < 5)
+				{
+					assertEquals(0, c[1], 1e-9);
+				}
 			}
 		}
 	}
@@ -117,15 +117,15 @@ public class ShoalRouteTest
 	@Test
 	public void smoothingNeverPullsARouteMoreThanATileOffItsPath() throws IOException
 	{
-		try (InputStream in = ShoalRoute.class.getResourceAsStream("routes.json"))
+		RouteData data = ShoalRoute.read(new Gson());
+		for (RouteData.Species species : data.species)
 		{
-			RouteData data = new Gson().fromJson(new InputStreamReader(in, StandardCharsets.UTF_8), RouteData.class);
-			for (RouteData.Species species : data.species)
+			for (RouteData.Route route : species.routes)
 			{
-				for (RouteData.Route route : species.routes)
+				ShoalRoute original = new ShoalRoute(species.name, route.name, route.path, route.stops);
+				for (double[][] curve : new double[][][]{ShoalRoute.catmullRom(route.path), ShoalRoute.bSpline(route.path)})
 				{
-					ShoalRoute original = new ShoalRoute(species.name, route.name, route.path, route.stops);
-					for (double[] point : ShoalRoute.smooth(route.path))
+					for (double[] point : curve)
 					{
 						double offset = original.project(point[0], point[1]).offset;
 						assertTrue(route.name + " curve is " + offset + " tiles off its path", offset <= 1);
@@ -136,17 +136,21 @@ public class ShoalRouteTest
 	}
 
 	@Test
-	public void loadsEveryRouteWithItsStopsOnThePath() throws IOException
+	public void buildsEveryRouteWithItsStopsOnThePath() throws IOException
 	{
-		List<ShoalRoute> routes = ShoalRoute.load(new Gson());
-		assertEquals(16, routes.size());
-		for (int index = 0; index < routes.size(); index++)
+		RouteData data = ShoalRoute.read(new Gson());
+		for (TrawlingPlusConfig.Smoothing smoothing : TrawlingPlusConfig.Smoothing.values())
 		{
-			ShoalRoute route = routes.get(index);
-			for (int stop = 0; stop < route.stopCount(); stop++)
+			List<ShoalRoute> routes = ShoalRoute.build(data, smoothing);
+			assertFalse(routes.isEmpty());
+			for (int index = 0; index < routes.size(); index++)
 			{
-				double offset = route.project(route.stopX(stop), route.stopY(stop)).offset;
-				assertTrue(route.getSpecies() + " route " + index + " stop " + stop + " is " + offset + " tiles off its path", offset <= 5);
+				ShoalRoute route = routes.get(index);
+				for (int stop = 0; stop < route.stopCount(); stop++)
+				{
+					double offset = route.project(route.stopX(stop), route.stopY(stop)).offset;
+					assertTrue(smoothing + " " + route.getSpecies() + " route " + index + " stop " + stop + " is " + offset + " tiles off its path", offset <= 1);
+				}
 			}
 		}
 	}

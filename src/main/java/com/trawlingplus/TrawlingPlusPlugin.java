@@ -27,6 +27,7 @@ import net.runelite.api.gameval.ObjectID;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
+import net.runelite.client.events.ConfigChanged;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.ui.overlay.OverlayManager;
@@ -55,8 +56,9 @@ public class TrawlingPlusPlugin extends Plugin
 		ObjectID.SAILING_SHOAL_CLICKBOX_VIBRANT
 	);
 
-	// A shoal further than this from every candidate route isn't matched to one, in tiles.
-	private static final double MAX_ROUTE_OFFSET = 10;
+	// A shoal further than this from every candidate route isn't matched to one, in tiles. Recorded
+	// routes are accurate to a fraction of a tile, so a shoal this far off one isn't swimming it.
+	private static final double MAX_ROUTE_OFFSET = 3;
 
 	@Inject
 	private Client client;
@@ -73,6 +75,10 @@ public class TrawlingPlusPlugin extends Plugin
 	@Inject
 	private Gson gson;
 
+	@Inject
+	private TrawlingPlusConfig config;
+
+	private RouteData routeData;
 	private List<ShoalRoute> routes = Collections.emptyList();
 
 	// All keyed by the id of each world entity's own world view, which is what ties a shoal's
@@ -84,7 +90,8 @@ public class TrawlingPlusPlugin extends Plugin
 	@Override
 	protected void startUp() throws IOException
 	{
-		routes = ShoalRoute.load(gson);
+		routeData = ShoalRoute.read(gson);
+		routes = ShoalRoute.build(routeData, config.routeSmoothing());
 		overlayManager.add(overlay);
 		clientThread.invoke(this::findExistingShoals);
 		log.debug("Trawling Plus started with {} routes", routes.size());
@@ -116,6 +123,31 @@ public class TrawlingPlusPlugin extends Plugin
 		{
 			clearShoals();
 		}
+	}
+
+	@Subscribe
+	public void onConfigChanged(ConfigChanged event)
+	{
+		if (TrawlingPlusConfig.GROUP.equals(event.getGroup()) && TrawlingPlusConfig.SMOOTHING_KEY.equals(event.getKey()))
+		{
+			// Config changes arrive on the Swing thread; reshape the routes on the client thread, where
+			// shoals are matched to them and they're drawn.
+			clientThread.invoke(this::reshapeRoutes);
+		}
+	}
+
+	private void reshapeRoutes()
+	{
+		List<ShoalRoute> reshaped = ShoalRoute.build(routeData, config.routeSmoothing());
+		for (Shoal shoal : shoals.values())
+		{
+			int index = routes.indexOf(shoal.getRoute());
+			if (index >= 0)
+			{
+				shoal.reshapeRoute(reshaped.get(index));
+			}
+		}
+		routes = reshaped;
 	}
 
 	@Subscribe

@@ -26,6 +26,9 @@ class TrawlingPlusOverlay extends Overlay
 	private static final Color STOP_COLOUR = new Color(255, 255, 255, 150);
 	private static final Color NEXT_STOP_COLOUR = new Color(255, 200, 0, 230);
 
+	// Direction arrows are opaque, so they read clearly on top of the see-through route line.
+	private static final Color ARROW_COLOUR = new Color(0, 200, 255);
+
 	// Round joins and caps so the short segments the curve is drawn with blend into one smooth line.
 	private static final Stroke ROUTE_STROKE = new BasicStroke(2f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND);
 
@@ -40,6 +43,13 @@ class TrawlingPlusOverlay extends Overlay
 	private static final double ARROW_HALF_LENGTH = 0.75;
 	private static final double ARROW_HALF_WIDTH = 0.6;
 	private static final double ARROW_NOTCH = 0.3;
+
+	// The arrow marking where a shoal is and which way it's heading: bigger than the direction arrows,
+	// in the next stop's yellow but fully opaque, and drawn last so it sits on top of everything else.
+	private static final Color SHOAL_ARROW_COLOUR = new Color(255, 200, 0);
+	private static final double SHOAL_ARROW_HALF_LENGTH = 1.2;
+	private static final double SHOAL_ARROW_HALF_WIDTH = 1.0;
+	private static final double SHOAL_ARROW_NOTCH = 0.45;
 
 	private final Client client;
 	private final TrawlingPlusPlugin plugin;
@@ -75,6 +85,7 @@ class TrawlingPlusOverlay extends Overlay
 		{
 			drawNextStops(graphics);
 		}
+		drawShoalArrows(graphics);
 
 		if (antialiasing != null)
 		{
@@ -173,51 +184,87 @@ class TrawlingPlusOverlay extends Overlay
 	 */
 	private void drawArrows(Graphics2D graphics, WorldView view, ShoalRoute route, double from, double stretch)
 	{
-		graphics.setColor(ROUTE_COLOUR);
+		graphics.setColor(ARROW_COLOUR);
 		for (int arrow = 0; arrow * ARROW_SPACING < route.length(); arrow++)
 		{
 			double at = arrow * ARROW_SPACING;
 			if (route.forward(from, at) < stretch)
 			{
-				drawArrow(graphics, view, route, route.sampleAt(at));
+				Path2D head = arrowhead(view, route.pointAt(at), ARROW_HALF_LENGTH, ARROW_HALF_WIDTH, ARROW_NOTCH);
+				if (head != null)
+				{
+					graphics.fill(head);
+				}
 			}
 		}
 	}
 
 	/**
-	 * Draws an arrowhead lying flat on the water at a drawing point, pointing along the route.
+	 * Marks where each shoal is on its route with an arrow pointing the way it's heading.
 	 */
-	private void drawArrow(Graphics2D graphics, WorldView view, ShoalRoute route, int sample)
+	private void drawShoalArrows(Graphics2D graphics)
 	{
-		int next = (sample + 1) % route.sampleCount();
-		double x = route.sampleX(sample);
-		double y = route.sampleY(sample);
-		double dx = route.sampleX(next) - x;
-		double dy = route.sampleY(next) - y;
-		double length = Math.hypot(dx, dy);
-		if (length == 0)
+		if (!config.showShoalHeadingArrow())
 		{
 			return;
 		}
-		dx /= length;
-		dy /= length;
 
-		Point tip = toCanvas(view, x + dx * ARROW_HALF_LENGTH, y + dy * ARROW_HALF_LENGTH);
-		Point left = toCanvas(view, x - dx * ARROW_HALF_LENGTH - dy * ARROW_HALF_WIDTH, y - dy * ARROW_HALF_LENGTH + dx * ARROW_HALF_WIDTH);
-		Point notch = toCanvas(view, x - dx * ARROW_NOTCH, y - dy * ARROW_NOTCH);
-		Point right = toCanvas(view, x - dx * ARROW_HALF_LENGTH + dy * ARROW_HALF_WIDTH, y - dy * ARROW_HALF_LENGTH - dx * ARROW_HALF_WIDTH);
-		if (tip == null || left == null || notch == null || right == null)
+		long now = System.currentTimeMillis();
+		for (Shoal shoal : plugin.getShoals())
 		{
-			return;
+			ShoalRoute route = shoal.getRoute();
+			WorldView view = shoal.parentView(client);
+			double[] position = shoal.position(client);
+			if (route == null || view == null || position == null)
+			{
+				continue;
+			}
+
+			// Fades out while the shoal sits at a stop, and back in as it's about to set off again.
+			double opacity = shoal.headingArrowOpacity(now);
+			if (opacity <= 0)
+			{
+				continue;
+			}
+
+			// Snap the arrow onto the route, so it slides along the line with the shoal.
+			double[] at = route.pointAt(route.project(position[0], position[1]).distance);
+			Path2D arrow = arrowhead(view, at, SHOAL_ARROW_HALF_LENGTH, SHOAL_ARROW_HALF_WIDTH, SHOAL_ARROW_NOTCH);
+			if (arrow != null)
+			{
+				graphics.setColor(new Color(SHOAL_ARROW_COLOUR.getRed(), SHOAL_ARROW_COLOUR.getGreen(),
+					SHOAL_ARROW_COLOUR.getBlue(), (int) Math.round(255 * opacity)));
+				graphics.fill(arrow);
+			}
+		}
+	}
+
+	/**
+	 * An arrowhead lying flat on the water, centred on a point of a route and pointing along it, or
+	 * null if any of it can't be drawn. The point is {x, y, dx, dy}, as ShoalRoute.pointAt gives it.
+	 */
+	private Path2D arrowhead(WorldView view, double[] at, double halfLength, double halfWidth, double notch)
+	{
+		double x = at[0];
+		double y = at[1];
+		double dx = at[2];
+		double dy = at[3];
+		Point tip = toCanvas(view, x + dx * halfLength, y + dy * halfLength);
+		Point left = toCanvas(view, x - dx * halfLength - dy * halfWidth, y - dy * halfLength + dx * halfWidth);
+		Point back = toCanvas(view, x - dx * notch, y - dy * notch);
+		Point right = toCanvas(view, x - dx * halfLength + dy * halfWidth, y - dy * halfLength - dx * halfWidth);
+		if (tip == null || left == null || back == null || right == null)
+		{
+			return null;
 		}
 
 		Path2D.Double arrow = new Path2D.Double();
 		arrow.moveTo(tip.getX(), tip.getY());
 		arrow.lineTo(left.getX(), left.getY());
-		arrow.lineTo(notch.getX(), notch.getY());
+		arrow.lineTo(back.getX(), back.getY());
 		arrow.lineTo(right.getX(), right.getY());
 		arrow.closePath();
-		graphics.fill(arrow);
+		return arrow;
 	}
 
 	private void drawStop(Graphics2D graphics, WorldView view, ShoalRoute route, int stop, Color colour)

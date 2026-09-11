@@ -49,4 +49,15 @@ public interface TrawlingPlusConfig extends Config
 	{
 		return true;
 	}
+
+	@ConfigItem(
+		keyName = "showShoalHeadingArrow",
+		name = "Shoal heading arrow",
+		description = "Mark each shoal's place on its route with an arrow pointing the way it's heading, hidden while it sits at a stop",
+		position = 2
+	)
+	default boolean showShoalHeadingArrow()
+	{
+		return true;
+	}
 }

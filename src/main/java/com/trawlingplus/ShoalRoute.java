@@ -334,6 +334,40 @@ final class ShoalRoute
 	}
 
 	/**
+	 * The point at a distance round the route and the direction the route runs there, as
+	 * {x, y, dx, dy} with the direction a unit vector.
+	 */
+	double[] pointAt(double distance)
+	{
+		int count = sampleX.length;
+		double at = forward(0, distance);
+		int next = sampleAt(at);
+		int previous = (next + count - 1) % count;
+		double start = sampleDistance[previous];
+		double end = sampleDistance[next];
+		if (end <= start)
+		{
+			// The stretch between the last sample and the first, closing the loop.
+			end += length;
+		}
+		if (at < start)
+		{
+			at += length;
+		}
+
+		double fraction = end == start ? 0 : (at - start) / (end - start);
+		double dx = sampleX[next] - sampleX[previous];
+		double dy = sampleY[next] - sampleY[previous];
+		double step = Math.hypot(dx, dy);
+		return new double[]{
+			sampleX[previous] + dx * fraction,
+			sampleY[previous] + dy * fraction,
+			step == 0 ? 0 : dx / step,
+			step == 0 ? 0 : dy / step
+		};
+	}
+
+	/**
 	 * The index of the first drawing sample at or after the given distance round the route.
 	 */
 	int sampleAt(double distance)

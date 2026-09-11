@@ -65,6 +65,17 @@ public class ShoalRouteTest
 	}
 
 	@Test
+	public void pointAtFollowsTheRouteAndTheWayItRuns()
+	{
+		assertPoint(SQUARE.pointAt(5), 5, 0, 1, 0);
+		assertPoint(SQUARE.pointAt(12.5), 10, 2.5, 0, 1);
+		// On the closing edge, heading back to the start.
+		assertPoint(SQUARE.pointAt(39.5), 0, 0.5, 0, -1);
+		// Distances past the end wrap round.
+		assertPoint(SQUARE.pointAt(45), 5, 0, 1, 0);
+	}
+
+	@Test
 	public void overlapsOnlyRectanglesItReachesInto()
 	{
 		assertTrue(SQUARE.overlaps(5, 5, 20, 20));
@@ -137,5 +148,13 @@ public class ShoalRouteTest
 				assertTrue(route.getName() + " stop " + stop + " is " + offset + " tiles off its path", offset <= 5);
 			}
 		}
+	}
+
+	private static void assertPoint(double[] point, double x, double y, double dx, double dy)
+	{
+		assertEquals(x, point[0], 1e-9);
+		assertEquals(y, point[1], 1e-9);
+		assertEquals(dx, point[2], 1e-9);
+		assertEquals(dy, point[3], 1e-9);
 	}
 }

@@ -181,16 +181,20 @@ public class TrawlingPlusPlugin extends Plugin
 				shoals.put(entry.getKey(), shoal);
 			}
 
+			double[] position = shoal.position(client);
+			if (position == null)
+			{
+				continue;
+			}
+			shoal.update(shoal.target(client));
+
 			// Match once, and again if a mixed shoal turns back into a species that doesn't fit its route.
 			String species = SPECIES_BY_CLICKBOX.get(clickbox);
 			ShoalRoute route = shoal.getRoute();
 			if (route == null || (species != null && !species.equals(route.getSpecies())))
 			{
-				double[] position = shoal.position(client);
-				if (position != null)
-				{
-					shoal.setRoute(nearestRoute(position[0], position[1], species));
-				}
+				route = nearestRoute(position[0], position[1], species);
+				shoal.setRoute(route);
 			}
 		}
 	}

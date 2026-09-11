@@ -14,14 +14,22 @@ final class Shoal
 	// How long the heading arrow takes to fade fully in or out, in milliseconds: about a game tick.
 	private static final double FADE_MILLIS = 600;
 
+	// Once the route to a new next stop has drawn itself out, how long the stop takes to fade in, in
+	// milliseconds. How long the route takes to draw out is set in the config.
+	private static final double STOP_REVEAL_MILLIS = 300;
+
 	private final WorldEntity entity;
 	private ShoalRoute route;
 
-	private double[] lastTarget;
+	private double[] lastPosition;
 	// Hidden until the shoal is seen swimming, and whenever it sits still.
 	private boolean headingArrowHidden = true;
 	private double headingArrowOpacity;
 	private long lastFadeMillis = -1;
+
+	// The next stop the route is being drawn out to, and when that started.
+	private int revealStop = -1;
+	private long revealStartMillis;
 
 	Shoal(WorldEntity entity)
 	{
@@ -35,36 +43,25 @@ final class Shoal
 
 	void setRoute(ShoalRoute route)
 	{
+		if (route != this.route)
+		{
+			// Stop numbers belong to a route, so draw the new one out from the start.
+			revealStop = -1;
+		}
 		this.route = route;
 	}
 
 	/**
-	 * Tracks whether the shoal is swimming or sitting still, once per game tick, from where it's
-	 * heading. While a shoal swims its target moves on every tick; the first tick it doesn't, the
-	 * shoal is easing into a stop, about a tick before it comes to rest. The heading arrow hides then,
-	 * and shows again on the tick the target moves off.
+	 * Tracks whether the shoal is swimming or sitting still, once per game tick. The heading arrow
+	 * hides the tick the shoal stops and shows again the tick it moves off.
 	 */
-	void update(double[] target)
+	void update(double[] position)
 	{
-		if (target == null)
+		if (lastPosition != null)
 		{
-			return;
+			headingArrowHidden = position[0] == lastPosition[0] && position[1] == lastPosition[1];
 		}
-
-		if (lastTarget != null)
-		{
-			headingArrowHidden = target[0] == lastTarget[0] && target[1] == lastTarget[1];
-		}
-		lastTarget = target;
-	}
-
-	/**
-	 * Whether the heading arrow should be hidden: the shoal is sitting still, or hasn't been seen
-	 * swimming yet.
-	 */
-	boolean isHeadingArrowHidden()
-	{
-		return headingArrowHidden;
+		lastPosition = position;
 	}
 
 	/**
@@ -87,6 +84,39 @@ final class Shoal
 	}
 
 	/**
+	 * Notes the stop the shoal is heading for, once per frame. When it changes, the route to the new
+	 * stop starts drawing itself out.
+	 */
+	void headFor(int nextStop, long nowMillis)
+	{
+		if (nextStop != revealStop)
+		{
+			revealStop = nextStop;
+			revealStartMillis = nowMillis;
+		}
+	}
+
+	/**
+	 * How much of the route to the next stop is drawn so far, from 0 to 1, when it takes the given
+	 * time to draw out.
+	 */
+	double routeReveal(long nowMillis, long revealMillis)
+	{
+		double t = Math.min(1, Math.max(0, nowMillis - revealStartMillis) / (double) revealMillis);
+		// Smoothstep, so the line sets off gently, glides along, and settles into the stop.
+		return t * t * (3 - 2 * t);
+	}
+
+	/**
+	 * How opaque the next stop is, from 0 to 1. It fades in once the route has been drawn out to it.
+	 */
+	double nextStopReveal(long nowMillis, long revealMillis)
+	{
+		double t = Math.min(1, Math.max(0, nowMillis - revealStartMillis - revealMillis) / STOP_REVEAL_MILLIS);
+		return t * t * (3 - 2 * t);
+	}
+
+	/**
 	 * The world view the shoal swims around in, which is normally the top-level one.
 	 */
 	WorldView parentView(Client client)
@@ -103,17 +133,6 @@ final class Shoal
 		LocalPoint local = entity.getLocalLocation();
 		WorldView view = local == null ? null : client.getWorldView(local.getWorldView());
 		return view == null ? null : toWorld(view, local);
-	}
-
-	/**
-	 * Where the shoal is heading this tick, in world tile coordinates; its position if it has no
-	 * target; or null.
-	 */
-	double[] target(Client client)
-	{
-		LocalPoint target = entity.getTargetLocation();
-		WorldView view = parentView(client);
-		return target == null || view == null ? position(client) : toWorld(view, target);
 	}
 
 	private static double[] toWorld(WorldView view, LocalPoint local)

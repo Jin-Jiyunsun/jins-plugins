@@ -136,16 +136,17 @@ public class ShoalRouteTest
 	}
 
 	@Test
-	public void loadsEveryWikiRouteWithItsStopsOnThePath() throws IOException
+	public void loadsEveryRouteWithItsStopsOnThePath() throws IOException
 	{
 		List<ShoalRoute> routes = ShoalRoute.load(new Gson());
 		assertEquals(16, routes.size());
-		for (ShoalRoute route : routes)
+		for (int index = 0; index < routes.size(); index++)
 		{
+			ShoalRoute route = routes.get(index);
 			for (int stop = 0; stop < route.stopCount(); stop++)
 			{
 				double offset = route.project(route.stopX(stop), route.stopY(stop)).offset;
-				assertTrue(route.getName() + " stop " + stop + " is " + offset + " tiles off its path", offset <= 5);
+				assertTrue(route.getSpecies() + " route " + index + " stop " + stop + " is " + offset + " tiles off its path", offset <= 5);
 			}
 		}
 	}

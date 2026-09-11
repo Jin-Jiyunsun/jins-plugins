@@ -186,7 +186,7 @@ public class TrawlingPlusPlugin extends Plugin
 			{
 				continue;
 			}
-			shoal.update(shoal.target(client));
+			shoal.update(position);
 
 			// Match once, and again if a mixed shoal turns back into a species that doesn't fit its route.
 			String species = SPECIES_BY_CLICKBOX.get(clickbox);

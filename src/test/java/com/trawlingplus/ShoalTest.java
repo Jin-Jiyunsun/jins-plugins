@@ -1,31 +1,10 @@
 package com.trawlingplus;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
 import org.junit.Test;
 
 public class ShoalTest
 {
-	@Test
-	public void headingArrowShowsWhileTheShoalSwims()
-	{
-		Shoal shoal = new Shoal(null);
-		shoal.update(new double[]{0, 0});
-		shoal.update(new double[]{2, 0});
-		assertFalse(shoal.isHeadingArrowHidden());
-	}
-
-	@Test
-	public void headingArrowHidesTheTickTheShoalStops()
-	{
-		Shoal shoal = new Shoal(null);
-		shoal.update(new double[]{0, 0});
-		shoal.update(new double[]{2, 0});
-		shoal.update(new double[]{2, 0});
-		assertTrue(shoal.isHeadingArrowHidden());
-	}
-
 	@Test
 	public void headingArrowShowsTheTickTheShoalMovesOff()
 	{
@@ -36,8 +15,11 @@ public class ShoalTest
 		{
 			shoal.update(new double[]{2, 0});
 		}
+		assertEquals(0, shoal.headingArrowOpacity(0), 1e-9);
+		assertEquals(0, shoal.headingArrowOpacity(600), 1e-9);
+
 		shoal.update(new double[]{4, 0});
-		assertFalse(shoal.isHeadingArrowHidden());
+		assertEquals(1, shoal.headingArrowOpacity(1200), 1e-9);
 	}
 
 	@Test
@@ -47,12 +29,12 @@ public class ShoalTest
 		for (int tick = 0; tick < 200; tick++)
 		{
 			shoal.update(new double[]{5, 5});
-			assertTrue("hidden on tick " + tick, shoal.isHeadingArrowHidden());
+			assertEquals("opacity on tick " + tick, 0, shoal.headingArrowOpacity(tick * 600L), 1e-9);
 		}
 
 		// Until it swims off.
 		shoal.update(new double[]{7, 5});
-		assertFalse(shoal.isHeadingArrowHidden());
+		assertEquals(1, shoal.headingArrowOpacity(200 * 600L), 1e-9);
 	}
 
 	@Test
@@ -82,5 +64,45 @@ public class ShoalTest
 		shoal.update(new double[]{2, 0});
 		assertEquals(0.5, shoal.headingArrowOpacity(900), 1e-9);
 		assertEquals(0, shoal.headingArrowOpacity(1200), 1e-9);
+	}
+
+	@Test
+	public void routeDrawsOutToANewNextStopOverTheAnimationDuration()
+	{
+		Shoal shoal = new Shoal(null);
+		shoal.headFor(2, 1000);
+		assertEquals(0, shoal.routeReveal(1000, 7000), 1e-9);
+		assertEquals(0.104, shoal.routeReveal(2400, 7000), 1e-9);
+		assertEquals(0.5, shoal.routeReveal(4500, 7000), 1e-9);
+		assertEquals(1, shoal.routeReveal(8000, 7000), 1e-9);
+		assertEquals(1, shoal.routeReveal(11000, 7000), 1e-9);
+
+		// A shorter animation gets there sooner.
+		assertEquals(0.5, shoal.routeReveal(2500, 3000), 1e-9);
+		assertEquals(1, shoal.routeReveal(4000, 3000), 1e-9);
+	}
+
+	@Test
+	public void nextStopFadesInOnceTheRouteReachesIt()
+	{
+		Shoal shoal = new Shoal(null);
+		shoal.headFor(2, 1000);
+		assertEquals(0, shoal.nextStopReveal(4500, 7000), 1e-9);
+		assertEquals(0, shoal.nextStopReveal(8000, 7000), 1e-9);
+		assertEquals(0.5, shoal.nextStopReveal(8150, 7000), 1e-9);
+		assertEquals(1, shoal.nextStopReveal(8300, 7000), 1e-9);
+	}
+
+	@Test
+	public void revealOnlyRestartsWhenTheNextStopChanges()
+	{
+		Shoal shoal = new Shoal(null);
+		shoal.headFor(2, 1000);
+		shoal.headFor(2, 7800);
+		assertEquals(1, shoal.routeReveal(8000, 7000), 1e-9);
+
+		shoal.headFor(3, 9000);
+		assertEquals(0, shoal.routeReveal(9000, 7000), 1e-9);
+		assertEquals(0, shoal.nextStopReveal(9000, 7000), 1e-9);
 	}
 }

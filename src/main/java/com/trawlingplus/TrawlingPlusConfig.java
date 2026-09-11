@@ -1,13 +1,55 @@
 package com.trawlingplus;
 
+import java.awt.Color;
+import net.runelite.client.config.Alpha;
 import net.runelite.client.config.Config;
 import net.runelite.client.config.ConfigGroup;
 import net.runelite.client.config.ConfigItem;
+import net.runelite.client.config.ConfigSection;
+import net.runelite.client.config.Range;
+import net.runelite.client.config.Units;
 
 @ConfigGroup(TrawlingPlusConfig.GROUP)
 public interface TrawlingPlusConfig extends Config
 {
 	String GROUP = "trawling-plus";
+
+	int MIN_ANIMATION_SECONDS = 3;
+	int MAX_ANIMATION_SECONDS = 10;
+
+	int MIN_ARROW_SPACING = 3;
+	int MAX_ARROW_SPACING = 15;
+
+	int MIN_ARROW_SCALE = 50;
+	int MAX_ARROW_SCALE = 150;
+
+	@ConfigSection(
+		name = "Route line",
+		description = "The line each shoal swims along",
+		position = 3
+	)
+	String routeLineSection = "routeLine";
+
+	@ConfigSection(
+		name = "Direction arrows",
+		description = "Arrows showing which way shoals swim",
+		position = 4
+	)
+	String directionArrowsSection = "directionArrows";
+
+	@ConfigSection(
+		name = "Shoal heading arrow",
+		description = "The arrow marking each shoal on its route",
+		position = 5
+	)
+	String headingArrowSection = "headingArrow";
+
+	@ConfigSection(
+		name = "Stops",
+		description = "Where shoals stop along their routes",
+		position = 6
+	)
+	String stopsSection = "stops";
 
 	enum RouteDisplay
 	{
@@ -31,7 +73,7 @@ public interface TrawlingPlusConfig extends Config
 	@ConfigItem(
 		keyName = "routeDisplay",
 		name = "Route display",
-		description = "Show each shoal's whole route, or only the stretch up to its next stop",
+		description = "Show whole routes, or only each shoal's route to its next stop",
 		position = 0
 	)
 	default RouteDisplay routeDisplay()
@@ -40,24 +82,193 @@ public interface TrawlingPlusConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = "showDirectionArrows",
-		name = "Direction arrows",
-		description = "Draw arrows along each route showing which way its shoal swims round it",
+		keyName = "revealNextSection",
+		name = "Animate next section",
+		description = "In Next stop only, draw each new section out from the shoal instead of showing it at once",
 		position = 1
+	)
+	default boolean revealNextSection()
+	{
+		return true;
+	}
+
+	@Range(
+		min = MIN_ANIMATION_SECONDS,
+		max = MAX_ANIMATION_SECONDS
+	)
+	@Units(Units.SECONDS)
+	@ConfigItem(
+		keyName = "animationDuration",
+		name = "Animation duration",
+		description = "How long each new section takes to draw out",
+		position = 2
+	)
+	default int animationDuration()
+	{
+		return 7;
+	}
+
+	@ConfigItem(
+		keyName = "showRouteLine",
+		name = "Show",
+		description = "Show the route line",
+		position = 3,
+		section = routeLineSection
+	)
+	default boolean showRouteLine()
+	{
+		return true;
+	}
+
+	@Alpha
+	@ConfigItem(
+		keyName = "routeColour",
+		name = "Colour",
+		description = "Colour of the route line",
+		position = 4,
+		section = routeLineSection
+	)
+	default Color routeColour()
+	{
+		return new Color(0, 200, 255, 200);
+	}
+
+	@ConfigItem(
+		keyName = "showDirectionArrows",
+		name = "Show",
+		description = "Show arrows along each route pointing the way shoals swim",
+		position = 5,
+		section = directionArrowsSection
 	)
 	default boolean showDirectionArrows()
 	{
 		return true;
 	}
 
+	@Range(
+		min = MIN_ARROW_SPACING,
+		max = MAX_ARROW_SPACING
+	)
+	@Units(" tiles")
+	@ConfigItem(
+		keyName = "directionArrowSpacing",
+		name = "Spacing",
+		description = "Distance between direction arrows",
+		position = 6,
+		section = directionArrowsSection
+	)
+	default int directionArrowSpacing()
+	{
+		return 15;
+	}
+
+	@Range(
+		min = MIN_ARROW_SCALE,
+		max = MAX_ARROW_SCALE
+	)
+	@Units(Units.PERCENT)
+	@ConfigItem(
+		keyName = "directionArrowScale",
+		name = "Arrow scaling",
+		description = "Size of the direction arrows",
+		position = 7,
+		section = directionArrowsSection
+	)
+	default int directionArrowScale()
+	{
+		return 100;
+	}
+
+	@Alpha
+	@ConfigItem(
+		keyName = "directionArrowColour",
+		name = "Colour",
+		description = "Colour of the direction arrows",
+		position = 8,
+		section = directionArrowsSection
+	)
+	default Color directionArrowColour()
+	{
+		return new Color(0, 200, 255);
+	}
+
 	@ConfigItem(
 		keyName = "showShoalHeadingArrow",
-		name = "Shoal heading arrow",
-		description = "Mark each shoal's place on its route with an arrow pointing the way it's heading, hidden while it sits at a stop",
-		position = 2
+		name = "Show",
+		description = "Show an arrow on each shoal pointing the way it's heading, hidden while it's at a stop",
+		position = 9,
+		section = headingArrowSection
 	)
 	default boolean showShoalHeadingArrow()
 	{
 		return true;
+	}
+
+	@Range(
+		min = MIN_ARROW_SCALE,
+		max = MAX_ARROW_SCALE
+	)
+	@Units(Units.PERCENT)
+	@ConfigItem(
+		keyName = "shoalHeadingArrowScale",
+		name = "Arrow scaling",
+		description = "Size of the shoal heading arrow, and of the arrow leading an animated section",
+		position = 10,
+		section = headingArrowSection
+	)
+	default int shoalHeadingArrowScale()
+	{
+		return 100;
+	}
+
+	@Alpha
+	@ConfigItem(
+		keyName = "shoalHeadingArrowColour",
+		name = "Colour",
+		description = "Colour of the shoal heading arrow",
+		position = 11,
+		section = headingArrowSection
+	)
+	default Color shoalHeadingArrowColour()
+	{
+		return new Color(255, 200, 0);
+	}
+
+	@ConfigItem(
+		keyName = "showStops",
+		name = "Show",
+		description = "Mark where shoals stop, with each shoal's next stop highlighted",
+		position = 12,
+		section = stopsSection
+	)
+	default boolean showStops()
+	{
+		return true;
+	}
+
+	@Alpha
+	@ConfigItem(
+		keyName = "stopColour",
+		name = "Colour",
+		description = "Colour of the stops",
+		position = 13,
+		section = stopsSection
+	)
+	default Color stopColour()
+	{
+		return new Color(255, 255, 255, 150);
+	}
+
+	@Alpha
+	@ConfigItem(
+		keyName = "nextStopColour",
+		name = "Next stop colour",
+		description = "Colour of each shoal's next stop",
+		position = 14,
+		section = stopsSection
+	)
+	default Color nextStopColour()
+	{
+		return new Color(255, 200, 0, 230);
 	}
 }

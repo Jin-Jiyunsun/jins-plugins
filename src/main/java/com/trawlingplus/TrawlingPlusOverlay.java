@@ -8,8 +8,11 @@ import java.awt.Polygon;
 import java.awt.RenderingHints;
 import java.awt.Stroke;
 import java.awt.geom.Path2D;
+import java.util.ArrayList;
+import java.util.List;
 import javax.inject.Inject;
 import net.runelite.api.Client;
+import net.runelite.api.Constants;
 import net.runelite.api.GameState;
 import net.runelite.api.Perspective;
 import net.runelite.api.Point;
@@ -22,34 +25,28 @@ import net.runelite.client.ui.overlay.OverlayUtil;
 
 class TrawlingPlusOverlay extends Overlay
 {
-	private static final Color ROUTE_COLOUR = new Color(0, 200, 255, 200);
-	private static final Color STOP_COLOUR = new Color(255, 255, 255, 150);
-	private static final Color NEXT_STOP_COLOUR = new Color(255, 200, 0, 230);
-
-	// Direction arrows are opaque, so they read clearly on top of the see-through route line.
-	private static final Color ARROW_COLOUR = new Color(0, 200, 255);
-
 	// Round joins and caps so the short segments the curve is drawn with blend into one smooth line.
 	private static final Stroke ROUTE_STROKE = new BasicStroke(2f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND);
 
 	// Stops are drawn as a square this many tiles across, roughly the size of a shoal.
 	private static final int STOP_SIZE = 3;
 
-	// Direction arrows are drawn this far apart along a route, in tiles.
-	private static final double ARROW_SPACING = 15;
+	// The stops' outline and faint fill, as RuneLite draws a highlighted tile.
+	private static final Stroke STOP_STROKE = new BasicStroke(2);
+	private static final Color STOP_FILL = new Color(0, 0, 0, 50);
 
-	// An arrowhead's size in tiles: half its length, half its width, and how far behind its middle
-	// the notch between its wings sits.
-	private static final double ARROW_HALF_LENGTH = 0.75;
-	private static final double ARROW_HALF_WIDTH = 0.6;
-	private static final double ARROW_NOTCH = 0.3;
+	// A direction arrow's length in tiles at 100% scaling, and its shape as fractions of its length:
+	// half its width, and how far behind its middle the notch between its wings sits.
+	private static final double ARROW_LENGTH = 1.5;
+	private static final double ARROW_HALF_WIDTH = 0.4;
+	private static final double ARROW_NOTCH = 0.2;
 
-	// The arrow marking where a shoal is and which way it's heading: bigger than the direction arrows,
-	// in the next stop's yellow but fully opaque, and drawn last so it sits on top of everything else.
-	private static final Color SHOAL_ARROW_COLOUR = new Color(255, 200, 0);
-	private static final double SHOAL_ARROW_HALF_LENGTH = 1.2;
-	private static final double SHOAL_ARROW_HALF_WIDTH = 1.0;
-	private static final double SHOAL_ARROW_NOTCH = 0.45;
+	// The same for the arrow marking where a shoal is and which way it's heading, which also leads a
+	// route as it draws out to the next stop. The heading arrow is drawn last, so it sits on top of
+	// everything else.
+	private static final double SHOAL_ARROW_LENGTH = 2.4;
+	private static final double SHOAL_ARROW_HALF_WIDTH = 1.0 / 2.4;
+	private static final double SHOAL_ARROW_NOTCH = 0.45 / 2.4;
 
 	private final Client client;
 	private final TrawlingPlusPlugin plugin;
@@ -77,15 +74,23 @@ class TrawlingPlusOverlay extends Overlay
 		Object antialiasing = graphics.getRenderingHint(RenderingHints.KEY_ANTIALIASING);
 		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
-		if (config.routeDisplay() == TrawlingPlusConfig.RouteDisplay.WHOLE_ROUTE)
+		// Where each shoal is on its route, found once per frame and shared by everything drawn below.
+		List<PlacedShoal> shoals = placeShoals();
+		long now = System.currentTimeMillis();
+
+		// With the route line, stops and direction arrows all off, only the shoals' heading arrows are drawn.
+		if (config.showRouteLine() || config.showStops() || config.showDirectionArrows())
 		{
-			drawAllRoutes(graphics);
+			if (config.routeDisplay() == TrawlingPlusConfig.RouteDisplay.WHOLE_ROUTE)
+			{
+				drawAllRoutes(graphics, shoals);
+			}
+			else
+			{
+				drawNextStops(graphics, shoals, now);
+			}
 		}
-		else
-		{
-			drawNextStops(graphics);
-		}
-		drawShoalArrows(graphics);
+		drawShoalArrows(graphics, shoals, now);
 
 		if (antialiasing != null)
 		{
@@ -94,7 +99,26 @@ class TrawlingPlusOverlay extends Overlay
 		return null;
 	}
 
-	private void drawAllRoutes(Graphics2D graphics)
+	/**
+	 * Every shoal that's matched to a route and can be placed on it this frame.
+	 */
+	private List<PlacedShoal> placeShoals()
+	{
+		List<PlacedShoal> placed = new ArrayList<>();
+		for (Shoal shoal : plugin.getShoals())
+		{
+			ShoalRoute route = shoal.getRoute();
+			WorldView view = shoal.parentView(client);
+			double[] position = shoal.position(client);
+			if (route != null && view != null && position != null)
+			{
+				placed.add(new PlacedShoal(shoal, route, view, position));
+			}
+		}
+		return placed;
+	}
+
+	private void drawAllRoutes(Graphics2D graphics, List<PlacedShoal> shoals)
 	{
 		// Every route that reaches into the loaded scene, whether or not its shoal is in view.
 		WorldView view = client.getTopLevelWorldView();
@@ -103,77 +127,148 @@ class TrawlingPlusOverlay extends Overlay
 			return;
 		}
 
+		int beyond = tilesBeyondScene(view);
 		for (ShoalRoute route : plugin.getRoutes())
 		{
-			if (route.overlaps(view.getBaseX(), view.getBaseY(), view.getBaseX() + view.getSizeX(), view.getBaseY() + view.getSizeY()))
+			if (route.overlaps(view.getBaseX() - beyond, view.getBaseY() - beyond,
+				view.getBaseX() + view.getSizeX() + beyond, view.getBaseY() + view.getSizeY() + beyond))
 			{
-				drawWholeRoute(graphics, view, route);
+				drawWholeRoute(graphics, view, route, shoals);
 			}
 		}
 	}
 
-	private void drawNextStops(Graphics2D graphics)
+	private void drawNextStops(Graphics2D graphics, List<PlacedShoal> shoals, long now)
 	{
-		for (Shoal shoal : plugin.getShoals())
+		for (PlacedShoal placed : shoals)
 		{
-			ShoalRoute route = shoal.getRoute();
-			WorldView view = shoal.parentView(client);
-			double[] position = shoal.position(client);
-			if (route != null && view != null && position != null)
-			{
-				drawToNextStop(graphics, view, route, position);
-			}
+			drawToNextStop(graphics, placed, now);
 		}
 	}
 
-	private void drawWholeRoute(Graphics2D graphics, WorldView view, ShoalRoute route)
+	private void drawWholeRoute(Graphics2D graphics, WorldView view, ShoalRoute route, List<PlacedShoal> shoals)
 	{
-		Line line = new Line();
-		int samples = route.sampleCount();
-		for (int step = 0; step <= samples; step++)
+		if (config.showRouteLine())
 		{
-			int sample = step % samples;
-			line.add(toCanvas(view, route.sampleX(sample), route.sampleY(sample)));
+			Line line = new Line();
+			int samples = route.sampleCount();
+			for (int step = 0; step <= samples; step++)
+			{
+				int sample = step % samples;
+				line.add(toCanvas(view, route.sampleX(sample), route.sampleY(sample)));
+			}
+			drawLine(graphics, line);
 		}
-		drawLine(graphics, line);
+
 		if (config.showDirectionArrows())
 		{
 			drawArrows(graphics, view, route, 0, route.length());
 		}
 
-		for (int stop = 0; stop < route.stopCount(); stop++)
+		if (config.showStops())
 		{
-			drawStop(graphics, view, route, stop, STOP_COLOUR);
+			boolean[] next = nextStops(route, shoals);
+			for (int stop = 0; stop < route.stopCount(); stop++)
+			{
+				drawStop(graphics, view, route, stop, next[stop] ? config.nextStopColour() : config.stopColour(), 1);
+			}
 		}
 	}
 
-	private void drawToNextStop(Graphics2D graphics, WorldView view, ShoalRoute route, double[] position)
+	/**
+	 * Which of a route's stops are the next stop of a shoal on it. A route whose shoal isn't in the
+	 * loaded scene has none.
+	 */
+	private static boolean[] nextStops(ShoalRoute route, List<PlacedShoal> shoals)
 	{
-		double distance = route.project(position[0], position[1]).distance;
-		int next = route.nextStop(distance);
-		int from = route.sampleAt(distance);
-		int steps = Math.floorMod(route.sampleAt(route.stopDistance(next)) - from, route.sampleCount());
-
-		Line line = new Line();
-		line.add(toCanvas(view, position[0], position[1]));
-		for (int step = 0; step < steps; step++)
+		boolean[] next = new boolean[route.stopCount()];
+		for (PlacedShoal placed : shoals)
 		{
-			int sample = (from + step) % route.sampleCount();
-			line.add(toCanvas(view, route.sampleX(sample), route.sampleY(sample)));
+			if (placed.route == route)
+			{
+				next[placed.next] = true;
+			}
 		}
-		line.add(toCanvas(view, route.stopX(next), route.stopY(next)));
-		drawLine(graphics, line);
+		return next;
+	}
+
+	private void drawToNextStop(Graphics2D graphics, PlacedShoal placed, long now)
+	{
+		ShoalRoute route = placed.route;
+		WorldView view = placed.view;
+		double distance = placed.distance;
+		int next = placed.next;
+		double stretch = route.forward(distance, route.stopDistance(next));
+
+		// When the shoal moves on to a new next stop, the route to it draws itself out from the shoal,
+		// arrows appearing as it reaches them, and the stop fades in once the route gets there.
+		double routeReveal = 1;
+		double stopReveal = 1;
+		if (config.revealNextSection())
+		{
+			long revealMillis = 1000L * Math.max(TrawlingPlusConfig.MIN_ANIMATION_SECONDS,
+				Math.min(TrawlingPlusConfig.MAX_ANIMATION_SECONDS, config.animationDuration()));
+			placed.shoal.headFor(next, now);
+			routeReveal = placed.shoal.routeReveal(now, revealMillis);
+			stopReveal = placed.shoal.nextStopReveal(now, revealMillis);
+		}
+		double drawn = stretch * routeReveal;
+
+		if (config.showRouteLine())
+		{
+			int from = route.sampleAt(distance);
+			int steps = Math.floorMod(route.sampleAt(route.stopDistance(next)) - from, route.sampleCount());
+
+			Line line = new Line();
+			line.add(toCanvas(view, placed.position[0], placed.position[1]));
+			for (int step = 0; step < steps; step++)
+			{
+				int sample = (from + step) % route.sampleCount();
+				if (route.forward(distance, route.sampleDistance(sample)) >= drawn)
+				{
+					break;
+				}
+				line.add(toCanvas(view, route.sampleX(sample), route.sampleY(sample)));
+			}
+
+			if (routeReveal < 1)
+			{
+				double[] end = route.pointAt(distance + drawn);
+				line.add(toCanvas(view, end[0], end[1]));
+			}
+			else
+			{
+				line.add(toCanvas(view, route.stopX(next), route.stopY(next)));
+			}
+			drawLine(graphics, line);
+		}
+
 		if (config.showDirectionArrows())
 		{
-			drawArrows(graphics, view, route, distance, route.forward(distance, route.stopDistance(next)));
+			drawArrows(graphics, view, route, distance, drawn);
 		}
 
-		drawStop(graphics, view, route, next, NEXT_STOP_COLOUR);
+		if (config.showStops() && stopReveal > 0)
+		{
+			drawStop(graphics, view, route, next, config.nextStopColour(), stopReveal);
+		}
+
+		// An arrow leads the route as it draws out, and fades away as the stop fades in.
+		double tipOpacity = 1 - stopReveal;
+		if (config.showDirectionArrows() && tipOpacity > 0)
+		{
+			Path2D tip = arrowhead(view, route.pointAt(distance + drawn), shoalArrowLength(), SHOAL_ARROW_HALF_WIDTH, SHOAL_ARROW_NOTCH);
+			if (tip != null)
+			{
+				graphics.setColor(withOpacity(config.directionArrowColour(), tipOpacity));
+				graphics.fill(tip);
+			}
+		}
 	}
 
-	private static void drawLine(Graphics2D graphics, Line line)
+	private void drawLine(Graphics2D graphics, Line line)
 	{
-		graphics.setColor(ROUTE_COLOUR);
+		graphics.setColor(config.routeColour());
 		graphics.setStroke(ROUTE_STROKE);
 		graphics.draw(line.path);
 	}
@@ -184,13 +279,20 @@ class TrawlingPlusOverlay extends Overlay
 	 */
 	private void drawArrows(Graphics2D graphics, WorldView view, ShoalRoute route, double from, double stretch)
 	{
-		graphics.setColor(ARROW_COLOUR);
-		for (int arrow = 0; arrow * ARROW_SPACING < route.length(); arrow++)
+		// Clamped as well as limited in the settings panel, since a spacing of 0 would never finish.
+		int spacing = Math.max(TrawlingPlusConfig.MIN_ARROW_SPACING,
+			Math.min(TrawlingPlusConfig.MAX_ARROW_SPACING, config.directionArrowSpacing()));
+		double length = scaled(ARROW_LENGTH, config.directionArrowScale());
+
+		// The first arrow sits one spacing in from the start of the route, so where the loop closes, its
+		// last arrow and first arrow are never closer than the spacing.
+		graphics.setColor(config.directionArrowColour());
+		for (int arrow = 1; arrow * spacing < route.length(); arrow++)
 		{
-			double at = arrow * ARROW_SPACING;
+			double at = arrow * spacing;
 			if (route.forward(from, at) < stretch)
 			{
-				Path2D head = arrowhead(view, route.pointAt(at), ARROW_HALF_LENGTH, ARROW_HALF_WIDTH, ARROW_NOTCH);
+				Path2D head = arrowhead(view, route.pointAt(at), length, ARROW_HALF_WIDTH, ARROW_NOTCH);
 				if (head != null)
 				{
 					graphics.fill(head);
@@ -202,38 +304,29 @@ class TrawlingPlusOverlay extends Overlay
 	/**
 	 * Marks where each shoal is on its route with an arrow pointing the way it's heading.
 	 */
-	private void drawShoalArrows(Graphics2D graphics)
+	private void drawShoalArrows(Graphics2D graphics, List<PlacedShoal> shoals, long now)
 	{
 		if (!config.showShoalHeadingArrow())
 		{
 			return;
 		}
 
-		long now = System.currentTimeMillis();
-		for (Shoal shoal : plugin.getShoals())
+		Color colour = config.shoalHeadingArrowColour();
+		double length = shoalArrowLength();
+		for (PlacedShoal placed : shoals)
 		{
-			ShoalRoute route = shoal.getRoute();
-			WorldView view = shoal.parentView(client);
-			double[] position = shoal.position(client);
-			if (route == null || view == null || position == null)
-			{
-				continue;
-			}
-
 			// Fades out while the shoal sits at a stop, and back in as it's about to set off again.
-			double opacity = shoal.headingArrowOpacity(now);
+			double opacity = placed.shoal.headingArrowOpacity(now);
 			if (opacity <= 0)
 			{
 				continue;
 			}
 
 			// Snap the arrow onto the route, so it slides along the line with the shoal.
-			double[] at = route.pointAt(route.project(position[0], position[1]).distance);
-			Path2D arrow = arrowhead(view, at, SHOAL_ARROW_HALF_LENGTH, SHOAL_ARROW_HALF_WIDTH, SHOAL_ARROW_NOTCH);
+			Path2D arrow = arrowhead(placed.view, placed.route.pointAt(placed.distance), length, SHOAL_ARROW_HALF_WIDTH, SHOAL_ARROW_NOTCH);
 			if (arrow != null)
 			{
-				graphics.setColor(new Color(SHOAL_ARROW_COLOUR.getRed(), SHOAL_ARROW_COLOUR.getGreen(),
-					SHOAL_ARROW_COLOUR.getBlue(), (int) Math.round(255 * opacity)));
+				graphics.setColor(withOpacity(colour, opacity));
 				graphics.fill(arrow);
 			}
 		}
@@ -242,9 +335,13 @@ class TrawlingPlusOverlay extends Overlay
 	/**
 	 * An arrowhead lying flat on the water, centred on a point of a route and pointing along it, or
 	 * null if any of it can't be drawn. The point is {x, y, dx, dy}, as ShoalRoute.pointAt gives it.
+	 * The length is in tiles; the half width and notch are fractions of it.
 	 */
-	private Path2D arrowhead(WorldView view, double[] at, double halfLength, double halfWidth, double notch)
+	private Path2D arrowhead(WorldView view, double[] at, double length, double halfWidthFraction, double notchFraction)
 	{
+		double halfLength = length / 2;
+		double halfWidth = length * halfWidthFraction;
+		double notch = length * notchFraction;
 		double x = at[0];
 		double y = at[1];
 		double dx = at[2];
@@ -267,36 +364,108 @@ class TrawlingPlusOverlay extends Overlay
 		return arrow;
 	}
 
-	private void drawStop(Graphics2D graphics, WorldView view, ShoalRoute route, int stop, Color colour)
+	private void drawStop(Graphics2D graphics, WorldView view, ShoalRoute route, int stop, Color colour, double opacity)
 	{
 		LocalPoint local = toLocal(view, route.stopX(stop), route.stopY(stop));
 		Polygon area = local == null ? null : Perspective.getCanvasTileAreaPoly(client, local, STOP_SIZE);
 		if (area != null)
 		{
-			OverlayUtil.renderPolygon(graphics, area, colour);
+			OverlayUtil.renderPolygon(graphics, area, withOpacity(colour, opacity), withOpacity(STOP_FILL, opacity), STOP_STROKE);
 		}
+	}
+
+	/**
+	 * A colour with its own transparency scaled by an opacity from 0 to 1.
+	 */
+	private static Color withOpacity(Color colour, double opacity)
+	{
+		return new Color(colour.getRed(), colour.getGreen(), colour.getBlue(), (int) Math.round(colour.getAlpha() * opacity));
+	}
+
+	/**
+	 * The length of the shoal heading arrow, and of the arrow leading an animated section, in tiles.
+	 */
+	private double shoalArrowLength()
+	{
+		return scaled(SHOAL_ARROW_LENGTH, config.shoalHeadingArrowScale());
+	}
+
+	/**
+	 * An arrow's length in tiles, from its length at 100% and an arrow scaling setting.
+	 */
+	private static double scaled(double length, int percent)
+	{
+		return length * Math.max(TrawlingPlusConfig.MIN_ARROW_SCALE, Math.min(TrawlingPlusConfig.MAX_ARROW_SCALE, percent)) / 100;
 	}
 
 	private Point toCanvas(WorldView view, double x, double y)
 	{
 		LocalPoint local = toLocal(view, x, y);
-		return local == null ? null : Perspective.localToCanvas(client, local, view.getPlane());
+		if (local == null)
+		{
+			return null;
+		}
+
+		// The world view's own height lookup reaches into the extra map loaded around the scene; the one
+		// Perspective.localToCanvas(client, local, plane) uses stops at the scene's edge and gives 0 beyond it.
+		int height = view.getTileHeight(local.getX(), local.getY(), view.getPlane());
+		return Perspective.localToCanvas(client, view.getId(), local.getX(), local.getY(), height);
 	}
 
 	/**
-	 * Converts world tile coordinates to a local point, or null if they're outside the loaded scene.
+	 * Converts world tile coordinates to a local point, or null if they're outside the loaded map.
 	 */
-	private static LocalPoint toLocal(WorldView view, double x, double y)
+	private LocalPoint toLocal(WorldView view, double x, double y)
 	{
 		int localX = (int) Math.round((x - view.getBaseX()) * Perspective.LOCAL_TILE_SIZE) + Perspective.LOCAL_HALF_TILE_SIZE;
 		int localY = (int) Math.round((y - view.getBaseY()) * Perspective.LOCAL_TILE_SIZE) + Perspective.LOCAL_HALF_TILE_SIZE;
-		if (localX < 0 || localY < 0
-			|| localX >= view.getSizeX() * Perspective.LOCAL_TILE_SIZE
-			|| localY >= view.getSizeY() * Perspective.LOCAL_TILE_SIZE)
+		int beyond = tilesBeyondScene(view) * Perspective.LOCAL_TILE_SIZE;
+		if (localX < -beyond || localY < -beyond
+			|| localX >= view.getSizeX() * Perspective.LOCAL_TILE_SIZE + beyond
+			|| localY >= view.getSizeY() * Perspective.LOCAL_TILE_SIZE + beyond)
 		{
 			return null;
 		}
 		return new LocalPoint(localX, localY, view);
+	}
+
+	/**
+	 * How many tiles of map are loaded beyond each edge of a world view's scene. The GPU and 117 HD
+	 * plugins' extended map loading adds whole chunks around the top-level scene, up to the extended
+	 * scene's size; other world views have none.
+	 */
+	private int tilesBeyondScene(WorldView view)
+	{
+		if (!view.isTopLevel())
+		{
+			return 0;
+		}
+		int most = (Constants.EXTENDED_SCENE_SIZE - Constants.SCENE_SIZE) / 2;
+		return Math.max(0, Math.min(most, client.getExpandedMapLoading() * Constants.CHUNK_SIZE));
+	}
+
+	/**
+	 * A shoal matched to a route, with where it is this frame, how far round its route that is, and the
+	 * stop it's heading for. Placing a shoal searches its whole route, so it's done once per frame.
+	 */
+	private static final class PlacedShoal
+	{
+		final Shoal shoal;
+		final ShoalRoute route;
+		final WorldView view;
+		final double[] position;
+		final double distance;
+		final int next;
+
+		PlacedShoal(Shoal shoal, ShoalRoute route, WorldView view, double[] position)
+		{
+			this.shoal = shoal;
+			this.route = route;
+			this.view = view;
+			this.position = position;
+			distance = route.project(position[0], position[1]).distance;
+			next = route.nextStop(distance);
+		}
 	}
 
 	/**

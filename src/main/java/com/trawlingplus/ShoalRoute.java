@@ -12,7 +12,7 @@ import java.util.List;
 /**
  * One shoal route: a closed loop of path points with stops along it. Positions are world tile
  * coordinates, and distances are measured in tiles round the loop in the direction shoals swim,
- * which is the order the wiki lists the points in.
+ * which is the order routes.json lists the points in.
  */
 final class ShoalRoute
 {
@@ -36,7 +36,6 @@ final class ShoalRoute
 	private static final double AT_STOP_TILES = 3.0;
 
 	private final String species;
-	private final String name;
 	private final double[] pathX;
 	private final double[] pathY;
 	private final double[] pathDistance;
@@ -59,7 +58,6 @@ final class ShoalRoute
 		}
 
 		this.species = species;
-		this.name = name;
 		this.stops = stops;
 
 		int points = path.length;
@@ -231,11 +229,6 @@ final class ShoalRoute
 		return species;
 	}
 
-	String getName()
-	{
-		return name;
-	}
-
 	double length()
 	{
 		return length;
@@ -331,6 +324,11 @@ final class ShoalRoute
 	double sampleY(int sample)
 	{
 		return sampleY[sample];
+	}
+
+	double sampleDistance(int sample)
+	{
+		return sampleDistance[sample];
 	}
 
 	/**

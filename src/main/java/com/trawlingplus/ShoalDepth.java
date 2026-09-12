@@ -7,16 +7,27 @@ import net.runelite.api.gameval.AnimationID;
  */
 enum ShoalDepth
 {
-	SHALLOW("Shallow"),
-	MODERATE("Moderate"),
-	DEEP("Deep"),
-	UNKNOWN("Unknown");
+	SHALLOW("Shallow", 1),
+	MODERATE("Moderate", 2),
+	DEEP("Deep", 3),
+	UNKNOWN("Unknown", -1);
 
 	private final String name;
+	private final int netDepth;
 
-	ShoalDepth(String name)
+	ShoalDepth(String name, int netDepth)
 	{
 		this.name = name;
+		this.netDepth = netDepth;
+	}
+
+	/**
+	 * The value the depth varbit of a net holds while it is set to this depth, or -1 when unknown.
+	 * A raised net reads 0, which is no depth at all.
+	 */
+	int netDepth()
+	{
+		return netDepth;
 	}
 
 	@Override

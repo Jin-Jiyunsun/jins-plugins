@@ -9,13 +9,13 @@ import java.awt.Polygon;
 import java.awt.RenderingHints;
 import java.awt.geom.Path2D;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import javax.inject.Inject;
 import net.runelite.api.Client;
 import net.runelite.api.Constants;
 import net.runelite.api.GameState;
 import net.runelite.api.Perspective;
-import net.runelite.api.Player;
 import net.runelite.api.Point;
 import net.runelite.api.WorldEntity;
 import net.runelite.api.WorldEntityConfig;
@@ -88,12 +88,17 @@ class TrawlingPlusOverlay extends Overlay
 		Object antialiasing = graphics.getRenderingHint(RenderingHints.KEY_ANTIALIASING);
 		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
+		// With the route line, stops and direction arrows all off, only the shoals' heading arrows are drawn.
+		boolean routes = config.showRouteLine() || config.showStops() || config.showDirectionArrows();
+
 		// Where each shoal is on its route, found once per frame and shared by everything drawn below.
-		List<PlacedShoal> shoals = placeShoals();
+		// Placing a shoal searches its route, so it is skipped when nothing on screen needs it.
+		List<PlacedShoal> shoals = routes || config.showShoalHeadingArrow()
+			? placeShoals()
+			: Collections.emptyList();
 		long now = System.currentTimeMillis();
 
-		// With the route line, stops and direction arrows all off, only the shoals' heading arrows are drawn.
-		if (config.showRouteLine() || config.showStops() || config.showDirectionArrows())
+		if (routes)
 		{
 			if (config.routeDisplay() == TrawlingPlusConfig.RouteDisplay.WHOLE_ROUTE)
 			{
@@ -287,9 +292,8 @@ class TrawlingPlusOverlay extends Overlay
 	 */
 	private void drawDepth(Graphics2D graphics)
 	{
-		WorldEntity boat = config.showShoalDepth() ? ownBoat() : null;
-		double[] afloat = boat == null ? null : worldPlace(boat.getLocalLocation());
-		ShoalDepth depth = afloat == null ? ShoalDepth.UNKNOWN : nearestDepth(afloat);
+		WorldEntity boat = config.showShoalDepth() ? plugin.ownBoat() : null;
+		ShoalDepth depth = boat == null ? ShoalDepth.UNKNOWN : plugin.getNearestDepth();
 		if (depth != ShoalDepth.UNKNOWN)
 		{
 			// Kept while the text fades out, so it does not change word on the way.
@@ -344,27 +348,6 @@ class TrawlingPlusOverlay extends Overlay
 	}
 
 	/**
-	 * The boat of the player, or null while they are not aboard one.
-	 */
-	private WorldEntity ownBoat()
-	{
-		WorldView top = client.getTopLevelWorldView();
-		if (top == null)
-		{
-			return null;
-		}
-
-		for (WorldEntity boat : top.worldEntities())
-		{
-			if (boat.getOwnerType() == WorldEntity.OWNER_TYPE_SELF_PLAYER)
-			{
-				return boat;
-			}
-		}
-		return null;
-	}
-
-	/**
 	 * How opaque the depth text is right now, from 0 to 1. It moves a little towards shown or hidden
 	 * on each call, so the text fades instead of popping. Call once per frame.
 	 */
@@ -392,48 +375,6 @@ class TrawlingPlusOverlay extends Overlay
 			default:
 				return config.moderateDepthColour();
 		}
-	}
-
-	/**
-	 * How deep the shoal nearest a place is swimming, or unknown if there is none to read.
-	 */
-	private ShoalDepth nearestDepth(double[] place)
-	{
-		ShoalDepth depth = ShoalDepth.UNKNOWN;
-		double nearest = Double.MAX_VALUE;
-		for (Shoal shoal : plugin.getShoals())
-		{
-			double[] at = shoal.position(client);
-			if (at == null)
-			{
-				continue;
-			}
-
-			double gap = Math.hypot(at[0] - place[0], at[1] - place[1]);
-			if (gap < nearest)
-			{
-				nearest = gap;
-				depth = shoal.getDepth();
-			}
-		}
-		return depth;
-	}
-
-	/**
-	 * A local point in world tile coordinates, including the fraction of a tile, or null.
-	 */
-	private double[] worldPlace(LocalPoint local)
-	{
-		WorldView view = local == null ? null : client.getWorldView(local.getWorldView());
-		if (view == null)
-		{
-			return null;
-		}
-
-		return new double[]{
-			view.getBaseX() + (double) (local.getX() - Perspective.LOCAL_HALF_TILE_SIZE) / Perspective.LOCAL_TILE_SIZE,
-			view.getBaseY() + (double) (local.getY() - Perspective.LOCAL_HALF_TILE_SIZE) / Perspective.LOCAL_TILE_SIZE
-		};
 	}
 
 	private void drawLine(Graphics2D graphics, Line line)

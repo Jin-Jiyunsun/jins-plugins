@@ -351,7 +351,7 @@ public interface TrawlingPlusConfig extends Config
 
 	@ConfigItem(
 		keyName = "showShoalDepth",
-		name = "Show",
+		name = "Show at helm",
 		description = "Show how deep the nearest shoal is swimming, at the helm of your boat",
 		position = 18,
 		section = depthSection
@@ -398,5 +398,41 @@ public interface TrawlingPlusConfig extends Config
 	default Color deepDepthColour()
 	{
 		return new Color(255, 70, 70);
+	}
+
+	@ConfigItem(
+		keyName = "showNetDepths",
+		name = "Net depths",
+		description = "Letter beside each net on the panel showing its depth: R, S, M or D",
+		position = 22,
+		section = depthSection
+	)
+	default boolean showNetDepths()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "showNetButton",
+		name = "Depth guide",
+		description = "Highlight the button that moves a net towards the depth of the nearest shoal",
+		position = 23,
+		section = depthSection
+	)
+	default boolean showNetButton()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "showNetCorrect",
+		name = "Tick on correct depth",
+		description = "Tick a net that is already at the depth of the nearest shoal",
+		position = 24,
+		section = depthSection
+	)
+	default boolean showNetCorrect()
+	{
+		return true;
 	}
 }

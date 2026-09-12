@@ -14,9 +14,11 @@ import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.GameObject;
 import net.runelite.api.GameState;
+import net.runelite.api.Perspective;
 import net.runelite.api.NPC;
 import net.runelite.api.Tile;
 import net.runelite.api.WorldEntity;
+import net.runelite.api.coords.LocalPoint;
 import net.runelite.api.WorldView;
 import net.runelite.api.events.GameObjectDespawned;
 import net.runelite.api.events.GameObjectSpawned;
@@ -88,12 +90,16 @@ public class TrawlingPlusPlugin extends Plugin
 	private TrawlingPlusOverlay overlay;
 
 	@Inject
+	private TrawlingPlusNetOverlay netOverlay;
+
+	@Inject
 	private Gson gson;
 
 	@Inject
 	private TrawlingPlusConfig config;
 
 	private RouteData routeData;
+	private ShoalDepth nearestDepth = ShoalDepth.UNKNOWN;
 	private List<ShoalRoute> routes = Collections.emptyList();
 
 	// All keyed by the id of each world entity's own world view, which is what ties a shoal's
@@ -108,6 +114,7 @@ public class TrawlingPlusPlugin extends Plugin
 		routeData = ShoalRoute.read(gson);
 		routes = ShoalRoute.build(routeData, config.routeSmoothing());
 		overlayManager.add(overlay);
+		overlayManager.add(netOverlay);
 		clientThread.invoke(this::findExistingShoals);
 		log.debug("Trawling Plus started with {} routes", routes.size());
 	}
@@ -116,6 +123,7 @@ public class TrawlingPlusPlugin extends Plugin
 	protected void shutDown()
 	{
 		overlayManager.remove(overlay);
+		overlayManager.remove(netOverlay);
 		// shutDown runs on the Swing thread; clear on the client thread so it can't race a game tick.
 		clientThread.invoke(this::clearShoals);
 		log.debug("Trawling Plus stopped");
@@ -245,6 +253,9 @@ public class TrawlingPlusPlugin extends Plugin
 				shoal.setRoute(route);
 			}
 		}
+
+		// Worked out here rather than in each overlay, which would repeat it every frame.
+		nearestDepth = nearestDepth();
 	}
 
 	private void findExistingShoals()
@@ -288,6 +299,85 @@ public class TrawlingPlusPlugin extends Plugin
 				}
 			}
 		}
+	}
+
+	/**
+	 * How deep the shoal nearest the boat of the player is swimming, as worked out on the last tick.
+	 */
+	ShoalDepth getNearestDepth()
+	{
+		return nearestDepth;
+	}
+
+	/**
+	 * The boat of the player, or null while they are not aboard one.
+	 */
+	WorldEntity ownBoat()
+	{
+		WorldView top = client.getTopLevelWorldView();
+		if (top == null)
+		{
+			return null;
+		}
+
+		for (WorldEntity boat : top.worldEntities())
+		{
+			if (boat.getOwnerType() == WorldEntity.OWNER_TYPE_SELF_PLAYER)
+			{
+				return boat;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * How deep the shoal nearest the boat of the player is swimming, or unknown if there is no boat or
+	 * no shoal to read.
+	 */
+	private ShoalDepth nearestDepth()
+	{
+		WorldEntity boat = ownBoat();
+		double[] afloat = boat == null ? null : worldPlace(boat.getLocalLocation());
+		if (afloat == null)
+		{
+			return ShoalDepth.UNKNOWN;
+		}
+
+		ShoalDepth depth = ShoalDepth.UNKNOWN;
+		double nearest = Double.MAX_VALUE;
+		for (Shoal shoal : shoals.values())
+		{
+			double[] at = shoal.position(client);
+			if (at == null)
+			{
+				continue;
+			}
+
+			double gap = Math.hypot(at[0] - afloat[0], at[1] - afloat[1]);
+			if (gap < nearest)
+			{
+				nearest = gap;
+				depth = shoal.getDepth();
+			}
+		}
+		return depth;
+	}
+
+	/**
+	 * A local point in world tile coordinates, including the fraction of a tile, or null.
+	 */
+	private double[] worldPlace(LocalPoint local)
+	{
+		WorldView view = local == null ? null : client.getWorldView(local.getWorldView());
+		if (view == null)
+		{
+			return null;
+		}
+
+		return new double[]{
+			view.getBaseX() + (double) (local.getX() - Perspective.LOCAL_HALF_TILE_SIZE) / Perspective.LOCAL_TILE_SIZE,
+			view.getBaseY() + (double) (local.getY() - Perspective.LOCAL_HALF_TILE_SIZE) / Perspective.LOCAL_TILE_SIZE
+		};
 	}
 
 	/**

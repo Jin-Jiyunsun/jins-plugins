@@ -22,6 +22,7 @@ final class Shoal
 	private ShoalRoute route;
 
 	private double[] lastPosition;
+	private ShoalDepth depth = ShoalDepth.UNKNOWN;
 	// Hidden until the shoal is seen swimming, and whenever it sits still.
 	private boolean headingArrowHidden = true;
 	private double headingArrowOpacity;
@@ -58,6 +59,16 @@ final class Shoal
 	void reshapeRoute(ShoalRoute route)
 	{
 		this.route = route;
+	}
+
+	ShoalDepth getDepth()
+	{
+		return depth;
+	}
+
+	void setDepth(ShoalDepth depth)
+	{
+		this.depth = depth;
 	}
 
 	/**

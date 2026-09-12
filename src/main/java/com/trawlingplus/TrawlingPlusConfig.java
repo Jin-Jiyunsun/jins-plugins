@@ -49,6 +49,13 @@ public interface TrawlingPlusConfig extends Config
 	String headingArrowSection = "headingArrow";
 
 	@ConfigSection(
+		name = "Shoal depth",
+		description = "How deep the nearest shoal is swimming, shown at the helm",
+		position = 7
+	)
+	String depthSection = "shoalDepth";
+
+	@ConfigSection(
 		name = "Stops",
 		description = "Where shoals stop along their routes",
 		position = 6
@@ -340,5 +347,56 @@ public interface TrawlingPlusConfig extends Config
 	default int stopThickness()
 	{
 		return 2;
+	}
+
+	@ConfigItem(
+		keyName = "showShoalDepth",
+		name = "Show",
+		description = "Show how deep the nearest shoal is swimming, at the helm of your boat",
+		position = 18,
+		section = depthSection
+	)
+	default boolean showShoalDepth()
+	{
+		return true;
+	}
+
+	@Alpha
+	@ConfigItem(
+		keyName = "shallowDepthColour",
+		name = "Shallow",
+		description = "Colour of the text while the nearest shoal is shallow",
+		position = 19,
+		section = depthSection
+	)
+	default Color shallowDepthColour()
+	{
+		return new Color(0, 220, 80);
+	}
+
+	@Alpha
+	@ConfigItem(
+		keyName = "moderateDepthColour",
+		name = "Moderate",
+		description = "Colour of the text while the nearest shoal is at moderate depth",
+		position = 20,
+		section = depthSection
+	)
+	default Color moderateDepthColour()
+	{
+		return new Color(255, 165, 0);
+	}
+
+	@Alpha
+	@ConfigItem(
+		keyName = "deepDepthColour",
+		name = "Deep",
+		description = "Colour of the text while the nearest shoal is deep",
+		position = 21,
+		section = depthSection
+	)
+	default Color deepDepthColour()
+	{
+		return new Color(255, 70, 70);
 	}
 }

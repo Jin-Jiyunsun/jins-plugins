@@ -3,6 +3,7 @@ package com.trawlingplus;
 import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Dimension;
+import java.awt.FontMetrics;
 import java.awt.Graphics2D;
 import java.awt.Polygon;
 import java.awt.RenderingHints;
@@ -14,7 +15,10 @@ import net.runelite.api.Client;
 import net.runelite.api.Constants;
 import net.runelite.api.GameState;
 import net.runelite.api.Perspective;
+import net.runelite.api.Player;
 import net.runelite.api.Point;
+import net.runelite.api.WorldEntity;
+import net.runelite.api.WorldEntityConfig;
 import net.runelite.api.WorldView;
 import net.runelite.api.coords.LocalPoint;
 import net.runelite.client.ui.overlay.Overlay;
@@ -26,6 +30,17 @@ class TrawlingPlusOverlay extends Overlay
 {
 	// Stops are drawn as a square this many tiles across, roughly the size of a shoal.
 	private static final int STOP_SIZE = 3;
+
+	// How far above the deck the depth text floats, in local units: about two tiles, which clears the
+	// mast and the crew.
+	private static final int DEPTH_TEXT_HEIGHT = 250;
+
+	// A dark box behind the depth text, so it reads against the water whatever colour the text is.
+	private static final Color DEPTH_TEXT_BACKGROUND = new Color(0, 0, 0, 150);
+	private static final int DEPTH_TEXT_PADDING = 3;
+
+	// How long the depth text takes to fade fully in or out, in milliseconds.
+	private static final double DEPTH_FADE_MILLIS = 1000;
 
 	// The stops' faint fill, as RuneLite draws a highlighted tile.
 	private static final Color STOP_FILL = new Color(0, 0, 0, 50);
@@ -46,6 +61,10 @@ class TrawlingPlusOverlay extends Overlay
 	private final Client client;
 	private final TrawlingPlusPlugin plugin;
 	private final TrawlingPlusConfig config;
+
+	private double depthFade;
+	private long lastDepthFadeMillis = -1;
+	private ShoalDepth fadingDepth = ShoalDepth.UNKNOWN;
 
 	@Inject
 	TrawlingPlusOverlay(Client client, TrawlingPlusPlugin plugin, TrawlingPlusConfig config)
@@ -86,6 +105,7 @@ class TrawlingPlusOverlay extends Overlay
 			}
 		}
 		drawShoalArrows(graphics, shoals, now);
+		drawDepth(graphics);
 
 		if (antialiasing != null)
 		{
@@ -259,6 +279,161 @@ class TrawlingPlusOverlay extends Overlay
 				graphics.fill(tip);
 			}
 		}
+	}
+
+	/**
+	 * Writes how deep the nearest shoal is swimming at the helm of the boat of the player, fading in
+	 * as a shoal comes into range and out again as it leaves.
+	 */
+	private void drawDepth(Graphics2D graphics)
+	{
+		WorldEntity boat = config.showShoalDepth() ? ownBoat() : null;
+		double[] afloat = boat == null ? null : worldPlace(boat.getLocalLocation());
+		ShoalDepth depth = afloat == null ? ShoalDepth.UNKNOWN : nearestDepth(afloat);
+		if (depth != ShoalDepth.UNKNOWN)
+		{
+			// Kept while the text fades out, so it does not change word on the way.
+			fadingDepth = depth;
+		}
+
+		double opacity = depthOpacity(depth != ShoalDepth.UNKNOWN, System.currentTimeMillis());
+		WorldView deck = boat == null ? null : boat.getWorldView();
+		WorldEntityConfig hull = boat == null ? null : boat.getConfig();
+		if (opacity <= 0 || deck == null || hull == null || fadingDepth == ShoalDepth.UNKNOWN)
+		{
+			return;
+		}
+
+		// The helm sits a quarter of the hull length behind the middle of the boat, and the text a
+		// tile and a half further back again. A hull an odd number of tiles wide has its middle
+		// tile half a tile off the middle of the view.
+		int across = deck.getSizeX() * Perspective.LOCAL_TILE_SIZE / 2;
+		if ((hull.getBoundsWidth() / Perspective.LOCAL_TILE_SIZE) % 2 != 0)
+		{
+			across -= Perspective.LOCAL_HALF_TILE_SIZE;
+		}
+		LocalPoint atStern = new LocalPoint(across,
+			deck.getSizeY() * Perspective.LOCAL_TILE_SIZE / 2 + hull.getBoundsHeight() / 4
+				+ Perspective.LOCAL_TILE_SIZE * 3 / 2, deck);
+		LocalPoint afloatAtStern = boat.transformToMainWorld(atStern);
+		if (afloatAtStern == null)
+		{
+			return;
+		}
+
+		String text = fadingDepth.toString();
+		Point at = Perspective.getCanvasTextLocation(client, graphics, afloatAtStern, text, DEPTH_TEXT_HEIGHT);
+		if (at == null)
+		{
+			return;
+		}
+
+		// getCanvasTextLocation gives the left end of the text baseline.
+		FontMetrics letters = graphics.getFontMetrics();
+		graphics.setColor(withOpacity(DEPTH_TEXT_BACKGROUND, opacity));
+		graphics.fillRoundRect(at.getX() - DEPTH_TEXT_PADDING,
+			at.getY() - letters.getAscent() - DEPTH_TEXT_PADDING,
+			letters.stringWidth(text) + DEPTH_TEXT_PADDING * 2,
+			letters.getHeight() + DEPTH_TEXT_PADDING * 2, 6, 6);
+
+		// The shadow is drawn here rather than with OverlayUtil so that it fades along with the text.
+		graphics.setColor(withOpacity(Color.BLACK, opacity));
+		graphics.drawString(text, at.getX() + 1, at.getY() + 1);
+		graphics.setColor(withOpacity(depthColour(fadingDepth), opacity));
+		graphics.drawString(text, at.getX(), at.getY());
+	}
+
+	/**
+	 * The boat of the player, or null while they are not aboard one.
+	 */
+	private WorldEntity ownBoat()
+	{
+		WorldView top = client.getTopLevelWorldView();
+		if (top == null)
+		{
+			return null;
+		}
+
+		for (WorldEntity boat : top.worldEntities())
+		{
+			if (boat.getOwnerType() == WorldEntity.OWNER_TYPE_SELF_PLAYER)
+			{
+				return boat;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * How opaque the depth text is right now, from 0 to 1. It moves a little towards shown or hidden
+	 * on each call, so the text fades instead of popping. Call once per frame.
+	 */
+	private double depthOpacity(boolean showing, long nowMillis)
+	{
+		if (lastDepthFadeMillis >= 0)
+		{
+			double step = Math.max(0, nowMillis - lastDepthFadeMillis) / DEPTH_FADE_MILLIS;
+			depthFade = showing ? Math.min(1, depthFade + step) : Math.max(0, depthFade - step);
+		}
+		lastDepthFadeMillis = nowMillis;
+
+		// Smoothstep, so the fade eases in and out rather than changing at a constant rate.
+		return depthFade * depthFade * (3 - 2 * depthFade);
+	}
+
+	private Color depthColour(ShoalDepth depth)
+	{
+		switch (depth)
+		{
+			case SHALLOW:
+				return config.shallowDepthColour();
+			case DEEP:
+				return config.deepDepthColour();
+			default:
+				return config.moderateDepthColour();
+		}
+	}
+
+	/**
+	 * How deep the shoal nearest a place is swimming, or unknown if there is none to read.
+	 */
+	private ShoalDepth nearestDepth(double[] place)
+	{
+		ShoalDepth depth = ShoalDepth.UNKNOWN;
+		double nearest = Double.MAX_VALUE;
+		for (Shoal shoal : plugin.getShoals())
+		{
+			double[] at = shoal.position(client);
+			if (at == null)
+			{
+				continue;
+			}
+
+			double gap = Math.hypot(at[0] - place[0], at[1] - place[1]);
+			if (gap < nearest)
+			{
+				nearest = gap;
+				depth = shoal.getDepth();
+			}
+		}
+		return depth;
+	}
+
+	/**
+	 * A local point in world tile coordinates, including the fraction of a tile, or null.
+	 */
+	private double[] worldPlace(LocalPoint local)
+	{
+		WorldView view = local == null ? null : client.getWorldView(local.getWorldView());
+		if (view == null)
+		{
+			return null;
+		}
+
+		return new double[]{
+			view.getBaseX() + (double) (local.getX() - Perspective.LOCAL_HALF_TILE_SIZE) / Perspective.LOCAL_TILE_SIZE,
+			view.getBaseY() + (double) (local.getY() - Perspective.LOCAL_HALF_TILE_SIZE) / Perspective.LOCAL_TILE_SIZE
+		};
 	}
 
 	private void drawLine(Graphics2D graphics, Line line)

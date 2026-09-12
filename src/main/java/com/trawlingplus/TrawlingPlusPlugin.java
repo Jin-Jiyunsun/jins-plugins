@@ -14,6 +14,7 @@ import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.GameObject;
 import net.runelite.api.GameState;
+import net.runelite.api.NPC;
 import net.runelite.api.Tile;
 import net.runelite.api.WorldEntity;
 import net.runelite.api.WorldView;
@@ -54,6 +55,20 @@ public class TrawlingPlusPlugin extends Plugin
 		ObjectID.SAILING_SHOAL_CLICKBOX_SHIMMERING,
 		ObjectID.SAILING_SHOAL_CLICKBOX_GLISTENING,
 		ObjectID.SAILING_SHOAL_CLICKBOX_VIBRANT
+	);
+
+	// The depth each shoal swims at when nothing says otherwise, used until its ripples or fish are
+	// seen animating. Most sit at moderate; krill, haddock and the shimmering ones stay shallow.
+	private static final Map<Integer, ShoalDepth> RESTING_DEPTH_BY_CLICKBOX = Map.of(
+		ObjectID.SAILING_SHOAL_CLICKBOX_GIANT_KRILL, ShoalDepth.SHALLOW,
+		ObjectID.SAILING_SHOAL_CLICKBOX_HADDOCK, ShoalDepth.SHALLOW,
+		ObjectID.SAILING_SHOAL_CLICKBOX_SHIMMERING, ShoalDepth.SHALLOW,
+		ObjectID.SAILING_SHOAL_CLICKBOX_YELLOWFIN, ShoalDepth.MODERATE,
+		ObjectID.SAILING_SHOAL_CLICKBOX_HALIBUT, ShoalDepth.MODERATE,
+		ObjectID.SAILING_SHOAL_CLICKBOX_BLUEFIN, ShoalDepth.MODERATE,
+		ObjectID.SAILING_SHOAL_CLICKBOX_MARLIN, ShoalDepth.MODERATE,
+		ObjectID.SAILING_SHOAL_CLICKBOX_GLISTENING, ShoalDepth.MODERATE,
+		ObjectID.SAILING_SHOAL_CLICKBOX_VIBRANT, ShoalDepth.MODERATE
 	);
 
 	// A shoal further than this from every candidate route isn't matched to one, in tiles. Recorded
@@ -219,6 +234,7 @@ public class TrawlingPlusPlugin extends Plugin
 				continue;
 			}
 			shoal.update(position);
+			shoal.setDepth(depthOf(entry.getValue(), RESTING_DEPTH_BY_CLICKBOX.getOrDefault(clickbox, ShoalDepth.UNKNOWN)));
 
 			// Match once, and again if a mixed shoal turns back into a species that doesn't fit its route.
 			String species = SPECIES_BY_CLICKBOX.get(clickbox);
@@ -272,6 +288,29 @@ public class TrawlingPlusPlugin extends Plugin
 				}
 			}
 		}
+	}
+
+	/**
+	 * How deep a shoal is swimming, from the animation its ripples and fish play, falling back to the
+	 * depth its species rests at until they are close enough to be animating.
+	 */
+	private static ShoalDepth depthOf(WorldEntity entity, ShoalDepth resting)
+	{
+		WorldView view = entity.getWorldView();
+		if (view == null)
+		{
+			return resting;
+		}
+
+		for (NPC npc : view.npcs())
+		{
+			ShoalDepth depth = ShoalDepth.fromAnimation(npc.getAnimation());
+			if (depth != null)
+			{
+				return depth;
+			}
+		}
+		return resting;
 	}
 
 	private ShoalRoute nearestRoute(double x, double y, String species)

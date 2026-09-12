@@ -71,8 +71,10 @@ class TrawlingPlusNetOverlay extends Overlay
 	@Override
 	public Dimension render(Graphics2D graphics)
 	{
-		// Each piece of the panel stands on its own; with all three off there is nothing to draw.
-		boolean anything = config.showNetDepths() || config.showNetButton() || config.showNetCorrect();
+		// Each piece of the panel stands on its own; with all three off there is nothing to draw, and
+		// neither is there on a boat with no trawling net to mark up.
+		boolean anything = plugin.showGuides()
+			&& (config.showNetDepths() || config.showNetButton() || config.showNetCorrect());
 		Widget rows = anything
 			? client.getWidget(InterfaceID.SailingSidepanel.FACILITIES_ROWS)
 			: null;

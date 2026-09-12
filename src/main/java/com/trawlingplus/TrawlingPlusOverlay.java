@@ -92,7 +92,9 @@ class TrawlingPlusOverlay extends Overlay
 	@Override
 	public Dimension render(Graphics2D graphics)
 	{
-		if (client.getGameState() != GameState.LOGGED_IN)
+		// Routes included: there is no point being shown where the fish are by a boat that cannot
+		// catch them, though how strict to be about that is the Show guides setting.
+		if (client.getGameState() != GameState.LOGGED_IN || !plugin.showGuides())
 		{
 			return null;
 		}

@@ -16,6 +16,7 @@ import net.runelite.api.GameObject;
 import net.runelite.api.GameState;
 import net.runelite.api.Perspective;
 import net.runelite.api.NPC;
+import net.runelite.api.Player;
 import net.runelite.api.Tile;
 import net.runelite.api.WorldEntity;
 import net.runelite.api.coords.LocalPoint;
@@ -27,6 +28,7 @@ import net.runelite.api.events.GameTick;
 import net.runelite.api.events.WorldEntityDespawned;
 import net.runelite.api.events.WorldEntitySpawned;
 import net.runelite.api.gameval.ObjectID;
+import net.runelite.api.gameval.VarbitID;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
@@ -100,6 +102,7 @@ public class TrawlingPlusPlugin extends Plugin
 
 	private RouteData routeData;
 	private Shoal nearestShoal;
+	private boolean showGuides;
 	private List<ShoalRoute> routes = Collections.emptyList();
 
 	// All keyed by the id of each world entity's own world view, which is what ties a shoal's
@@ -256,6 +259,7 @@ public class TrawlingPlusPlugin extends Plugin
 
 		// Worked out here rather than in each overlay, which would repeat it every frame.
 		nearestShoal = nearest();
+		showGuides = guidesWanted();
 	}
 
 	private void findExistingShoals()
@@ -315,6 +319,51 @@ public class TrawlingPlusPlugin extends Plugin
 	Shoal getNearestShoal()
 	{
 		return nearestShoal;
+	}
+
+	/**
+	 * Whether anything should be drawn at all, as worked out on the last tick, which is as much of the
+	 * Show guides setting as the overlays need to know.
+	 */
+	boolean showGuides()
+	{
+		return showGuides;
+	}
+
+	/**
+	 * Whether the setting is satisfied: always, or a boat fitted with a trawling net, or being aboard
+	 * one. The varbits describe the boat of the player wherever they happen to be standing, so being
+	 * aboard is asked separately.
+	 */
+	private boolean guidesWanted()
+	{
+		TrawlingPlusConfig.ShowGuides wanted = config.showGuides();
+		if (wanted == TrawlingPlusConfig.ShowGuides.ALWAYS)
+		{
+			return true;
+		}
+
+		if (wanted == TrawlingPlusConfig.ShowGuides.WITH_NETS_ABOARD && !aboard())
+		{
+			return false;
+		}
+
+		// Each slot names the hotspot its net is built on, so an empty slot names no hotspot.
+		return client.getVarbitValue(VarbitID.SAILING_SIDEPANEL_BOAT_TRAWLING_NET_0_HOTSPOT_ID) > 0
+			|| client.getVarbitValue(VarbitID.SAILING_SIDEPANEL_BOAT_TRAWLING_NET_1_HOTSPOT_ID) > 0;
+	}
+
+	/**
+	 * Whether the player is stood on their own boat. Everyone aboard stands in the boat's own world
+	 * view rather than the one the sea is in.
+	 */
+	private boolean aboard()
+	{
+		WorldEntity boat = ownBoat();
+		WorldView deck = boat == null ? null : boat.getWorldView();
+		Player player = client.getLocalPlayer();
+		WorldView standing = player == null ? null : player.getWorldView();
+		return deck != null && standing != null && deck.getId() == standing.getId();
 	}
 
 	/**
@@ -442,6 +491,7 @@ public class TrawlingPlusPlugin extends Plugin
 		clickboxByView.clear();
 		shoals.clear();
 		nearestShoal = null;
+		showGuides = false;
 	}
 
 	@Provides

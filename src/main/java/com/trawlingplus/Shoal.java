@@ -146,6 +146,26 @@ final class Shoal
 	}
 
 	/**
+	 * Whether the shoal is being drawn in the world right now. Only a shoal the client is rendering
+	 * may be marked on a map: a remembered position is not the plugin's to show, and one that has
+	 * swum out of range is no longer the plugin's to know.
+	 */
+	boolean rendered(Client client)
+	{
+		LocalPoint local = entity.getLocalLocation();
+		WorldView view = local == null ? null : client.getWorldView(local.getWorldView());
+		if (view == null)
+		{
+			return false;
+		}
+
+		// Inside the scene the client is drawing, rather than the wider area it has loaded around it.
+		return local.getX() >= 0 && local.getY() >= 0
+			&& local.getX() < view.getSizeX() * Perspective.LOCAL_TILE_SIZE
+			&& local.getY() < view.getSizeY() * Perspective.LOCAL_TILE_SIZE;
+	}
+
+	/**
 	 * The shoal's position in world tile coordinates, including the fraction of a tile, or null.
 	 */
 	double[] position(Client client)

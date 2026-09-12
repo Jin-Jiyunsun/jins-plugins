@@ -95,6 +95,12 @@ public class TrawlingPlusPlugin extends Plugin
 	private TrawlingPlusNetOverlay netOverlay;
 
 	@Inject
+	private TrawlingPlusMapOverlay mapOverlay;
+
+	@Inject
+	private TrawlingPlusMinimapOverlay minimapOverlay;
+
+	@Inject
 	private Gson gson;
 
 	@Inject
@@ -118,6 +124,8 @@ public class TrawlingPlusPlugin extends Plugin
 		routes = ShoalRoute.build(routeData, config.routeSmoothing());
 		overlayManager.add(overlay);
 		overlayManager.add(netOverlay);
+		overlayManager.add(mapOverlay);
+		overlayManager.add(minimapOverlay);
 		clientThread.invoke(this::findExistingShoals);
 		log.debug("Trawling Plus started with {} routes", routes.size());
 	}
@@ -127,6 +135,8 @@ public class TrawlingPlusPlugin extends Plugin
 	{
 		overlayManager.remove(overlay);
 		overlayManager.remove(netOverlay);
+		overlayManager.remove(mapOverlay);
+		overlayManager.remove(minimapOverlay);
 		// shutDown runs on the Swing thread; clear on the client thread so it can't race a game tick.
 		clientThread.invoke(this::clearShoals);
 		log.debug("Trawling Plus stopped");

@@ -30,42 +30,42 @@ public interface TrawlingPlusConfig extends Config
 	@ConfigSection(
 		name = "Route line",
 		description = "The line each shoal swims along",
-		position = 4
+		position = 5
 	)
 	String routeLineSection = "routeLine";
 
 	@ConfigSection(
 		name = "Direction arrows",
 		description = "Arrows showing which way shoals swim",
-		position = 5
+		position = 6
 	)
 	String directionArrowsSection = "directionArrows";
 
 	@ConfigSection(
 		name = "Shoal heading arrow",
 		description = "The arrow marking each shoal on its route",
-		position = 6
+		position = 7
 	)
 	String headingArrowSection = "headingArrow";
 
 	@ConfigSection(
 		name = "Shoal depth",
 		description = "How deep the nearest shoal is swimming, shown at the helm",
-		position = 8
+		position = 9
 	)
 	String depthSection = "shoalDepth";
 
 	@ConfigSection(
 		name = "Stops",
 		description = "Where shoals stop along their routes",
-		position = 7
+		position = 8
 	)
 	String stopsSection = "stops";
 
 	@ConfigSection(
 		name = "Fishable area",
 		description = "The water a shoal can be fished from",
-		position = 9
+		position = 10
 	)
 	String areaSection = "fishableArea";
 
@@ -78,6 +78,27 @@ public interface TrawlingPlusConfig extends Config
 		private final String name;
 
 		Smoothing(String name)
+		{
+			this.name = name;
+		}
+
+		@Override
+		public String toString()
+		{
+			return name;
+		}
+	}
+
+	enum ShowOnMaps
+	{
+		OFF("Off"),
+		MINIMAP("Minimap"),
+		WORLD_MAP("World"),
+		BOTH("Both");
+
+		private final String name;
+
+		ShowOnMaps(String name)
 		{
 			this.name = name;
 		}
@@ -140,10 +161,21 @@ public interface TrawlingPlusConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "showOnMaps",
+		name = "Show on maps",
+		description = "Where to draw routes besides the water: the nearest shoal's route on the minimap, every route on the world map, or both",
+		position = 1
+	)
+	default ShowOnMaps showOnMaps()
+	{
+		return ShowOnMaps.BOTH;
+	}
+
+	@ConfigItem(
 		keyName = "routeDisplay",
 		name = "Route display",
 		description = "Show whole routes, or only each shoal's route to its next stop",
-		position = 1
+		position = 2
 	)
 	default RouteDisplay routeDisplay()
 	{
@@ -154,7 +186,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "revealNextSection",
 		name = "Animate next section",
 		description = "In Next stop only, draw each new section out from the shoal instead of showing it at once",
-		position = 2
+		position = 3
 	)
 	default boolean revealNextSection()
 	{
@@ -170,7 +202,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "animationDuration",
 		name = "Animation duration",
 		description = "How long each new section takes to draw out",
-		position = 3
+		position = 4
 	)
 	default int animationDuration()
 	{

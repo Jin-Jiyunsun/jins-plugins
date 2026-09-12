@@ -62,6 +62,13 @@ public interface TrawlingPlusConfig extends Config
 	)
 	String stopsSection = "stops";
 
+	@ConfigSection(
+		name = "Fishable area",
+		description = "The water a shoal can be fished from",
+		position = 8
+	)
+	String areaSection = "fishableArea";
+
 	enum Smoothing
 	{
 		NONE("None"),
@@ -434,5 +441,46 @@ public interface TrawlingPlusConfig extends Config
 	default boolean showNetCorrect()
 	{
 		return true;
+	}
+
+	@ConfigItem(
+		keyName = "showFishableArea",
+		name = "Show",
+		description = "Outline the water the nearest shoal can be fished from",
+		position = 25,
+		section = areaSection
+	)
+	default boolean showFishableArea()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "fishableAreaColour",
+		name = "Colour",
+		description = "Colour of the fishable area",
+		position = 26,
+		section = areaSection
+	)
+	default Color fishableAreaColour()
+	{
+		return new Color(80, 200, 255, 180);
+	}
+
+	@Range(
+		min = MIN_LINE_THICKNESS,
+		max = MAX_LINE_THICKNESS
+	)
+	@Units(Units.PIXELS)
+	@ConfigItem(
+		keyName = "fishableAreaThickness",
+		name = "Thickness",
+		description = "Thickness of the fishable area outline",
+		position = 27,
+		section = areaSection
+	)
+	default int fishableAreaThickness()
+	{
+		return 2;
 	}
 }

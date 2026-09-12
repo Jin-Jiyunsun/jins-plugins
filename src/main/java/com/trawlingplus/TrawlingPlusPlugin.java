@@ -99,7 +99,7 @@ public class TrawlingPlusPlugin extends Plugin
 	private TrawlingPlusConfig config;
 
 	private RouteData routeData;
-	private ShoalDepth nearestDepth = ShoalDepth.UNKNOWN;
+	private Shoal nearestShoal;
 	private List<ShoalRoute> routes = Collections.emptyList();
 
 	// All keyed by the id of each world entity's own world view, which is what ties a shoal's
@@ -255,7 +255,7 @@ public class TrawlingPlusPlugin extends Plugin
 		}
 
 		// Worked out here rather than in each overlay, which would repeat it every frame.
-		nearestDepth = nearestDepth();
+		nearestShoal = nearest();
 	}
 
 	private void findExistingShoals()
@@ -306,7 +306,15 @@ public class TrawlingPlusPlugin extends Plugin
 	 */
 	ShoalDepth getNearestDepth()
 	{
-		return nearestDepth;
+		return nearestShoal == null ? ShoalDepth.UNKNOWN : nearestShoal.getDepth();
+	}
+
+	/**
+	 * The shoal nearest the boat of the player, as worked out on the last tick, or null.
+	 */
+	Shoal getNearestShoal()
+	{
+		return nearestShoal;
 	}
 
 	/**
@@ -331,20 +339,19 @@ public class TrawlingPlusPlugin extends Plugin
 	}
 
 	/**
-	 * How deep the shoal nearest the boat of the player is swimming, or unknown if there is no boat or
-	 * no shoal to read.
+	 * The shoal nearest the boat of the player, or null if there is no boat or no shoal to measure to.
 	 */
-	private ShoalDepth nearestDepth()
+	private Shoal nearest()
 	{
 		WorldEntity boat = ownBoat();
 		double[] afloat = boat == null ? null : worldPlace(boat.getLocalLocation());
 		if (afloat == null)
 		{
-			return ShoalDepth.UNKNOWN;
+			return null;
 		}
 
-		ShoalDepth depth = ShoalDepth.UNKNOWN;
-		double nearest = Double.MAX_VALUE;
+		Shoal nearest = null;
+		double nearestGap = Double.MAX_VALUE;
 		for (Shoal shoal : shoals.values())
 		{
 			double[] at = shoal.position(client);
@@ -354,13 +361,13 @@ public class TrawlingPlusPlugin extends Plugin
 			}
 
 			double gap = Math.hypot(at[0] - afloat[0], at[1] - afloat[1]);
-			if (gap < nearest)
+			if (gap < nearestGap)
 			{
-				nearest = gap;
-				depth = shoal.getDepth();
+				nearestGap = gap;
+				nearest = shoal;
 			}
 		}
-		return depth;
+		return nearest;
 	}
 
 	/**
@@ -434,6 +441,7 @@ public class TrawlingPlusPlugin extends Plugin
 		entities.clear();
 		clickboxByView.clear();
 		shoals.clear();
+		nearestShoal = null;
 	}
 
 	@Provides

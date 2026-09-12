@@ -33,6 +33,18 @@ class TrawlingPlusOverlay extends Overlay
 
 	// How far above the deck the depth text floats, in local units: about two tiles, which clears the
 	// mast and the crew.
+	// How far the drawn fishable area reaches from the shoal, in tiles. The area the game itself uses
+	// is not round: it caps each axis at about 10.5 tiles and the distance at about 13.5, so it is a
+	// square with its corners cut off, measured in game sat still with the net running. A circle of the
+	// axis reach sits just inside all of that, so water inside the ring can always be fished from, and
+	// the corners it leaves out are water that can be.
+	private static final double FISHABLE_REACH = 10.5;
+
+	// How many points the ring is drawn from, spread evenly around it. Each one is a projection, done
+	// every frame, so it is only as many as it takes to read as a circle rather than a polygon.
+	private static final int AREA_POINTS = 64;
+	private static final int AREA_FILL_ALPHA = 30;
+
 	private static final int DEPTH_TEXT_HEIGHT = 250;
 
 	// A dark box behind the depth text, so it reads against the water whatever colour the text is.
@@ -110,6 +122,10 @@ class TrawlingPlusOverlay extends Overlay
 			}
 		}
 		drawShoalArrows(graphics, shoals, now);
+		if (config.showFishableArea())
+		{
+			drawFishableArea(graphics);
+		}
 		drawDepth(graphics);
 
 		if (antialiasing != null)
@@ -501,6 +517,47 @@ class TrawlingPlusOverlay extends Overlay
 	private double shoalArrowLength()
 	{
 		return scaled(SHOAL_ARROW_LENGTH, config.shoalHeadingArrowScale());
+	}
+
+	/**
+	 * Outlines the water the nearest shoal can be fished from, as a ring around the shoal. It is
+	 * centred on the shoal itself, so it travels with the shoal and only sits still because the shoal
+	 * does.
+	 */
+	private void drawFishableArea(Graphics2D graphics)
+	{
+		Shoal shoal = plugin.getNearestShoal();
+		WorldView view = shoal == null ? null : shoal.parentView(client);
+		double[] at = shoal == null ? null : shoal.position(client);
+		if (view == null || at == null)
+		{
+			return;
+		}
+
+		// Walked around the ring a point at a time, so one running off the loaded map still draws the
+		// part that is on it.
+		Polygon area = new Polygon();
+		for (int step = 0; step < AREA_POINTS; step++)
+		{
+			double angle = 2 * Math.PI * step / AREA_POINTS;
+			Point edge = toCanvas(view, at[0] + Math.cos(angle) * FISHABLE_REACH,
+				at[1] + Math.sin(angle) * FISHABLE_REACH);
+			if (edge != null)
+			{
+				area.addPoint(edge.getX(), edge.getY());
+			}
+		}
+
+		if (area.npoints < AREA_POINTS / 4)
+		{
+			// Too little of it is on screen to make a shape out of.
+			return;
+		}
+
+		Color colour = config.fishableAreaColour();
+		OverlayUtil.renderPolygon(graphics, area, colour,
+			new Color(colour.getRed(), colour.getGreen(), colour.getBlue(), AREA_FILL_ALPHA),
+			new BasicStroke(thickness(config.fishableAreaThickness())));
 	}
 
 	/**

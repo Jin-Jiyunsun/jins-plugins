@@ -240,16 +240,25 @@ class TrawlingPlusNetOverlay extends Overlay
 		return -1;
 	}
 
+	/**
+	 * A colour with any transparency taken out. Text is always drawn solid, whatever a saved colour
+	 * says, since see-through lettering is only ever harder to read.
+	 */
+	static Color opaque(Color colour)
+	{
+		return new Color(colour.getRed(), colour.getGreen(), colour.getBlue());
+	}
+
 	private Color letterColour(int depth)
 	{
 		switch (depth)
 		{
 			case 1:
-				return config.shallowDepthColour();
+				return opaque(config.shallowDepthColour());
 			case 2:
-				return config.moderateDepthColour();
+				return opaque(config.moderateDepthColour());
 			case 3:
-				return config.deepDepthColour();
+				return opaque(config.deepDepthColour());
 			default:
 				return RAISED_COLOUR;
 		}

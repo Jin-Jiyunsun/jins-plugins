@@ -212,8 +212,9 @@ final class Shoal
 	double routeReveal(long nowMillis, long revealMillis)
 	{
 		double t = Math.min(1, Math.max(0, nowMillis - revealStartMillis) / (double) revealMillis);
-		// Smoothstep, so the line sets off gently, glides along, and settles into the stop.
-		return t * t * (3 - 2 * t);
+		// Sets off gently and settles into the stop, but without creeping in, which read as dragging on:
+		// it arrives at a third of its average speed rather than coming to a crawl.
+		return t * t * (8 - 5 * t) / 3;
 	}
 
 	/**

@@ -154,7 +154,7 @@ class TrawlingPlusOverlay extends Overlay
 		{
 			if (config.routeDisplay() == TrawlingPlusConfig.RouteDisplay.WHOLE_ROUTE)
 			{
-				drawAllRoutes(graphics, shoals);
+				drawAllRoutes(graphics, shoals, now);
 			}
 			else
 			{
@@ -194,7 +194,7 @@ class TrawlingPlusOverlay extends Overlay
 		return placed;
 	}
 
-	private void drawAllRoutes(Graphics2D graphics, List<PlacedShoal> shoals)
+	private void drawAllRoutes(Graphics2D graphics, List<PlacedShoal> shoals, long now)
 	{
 		// Only the route the boat is nearest, whether or not its shoal is in view. Drawing every route
 		// that reaches into the loaded scene means several at once in seas where they run close, which
@@ -210,7 +210,7 @@ class TrawlingPlusOverlay extends Overlay
 		if (route.overlaps(view.getBaseX() - beyond, view.getBaseY() - beyond,
 			view.getBaseX() + view.getSizeX() + beyond, view.getBaseY() + view.getSizeY() + beyond))
 		{
-			drawWholeRoute(graphics, view, route, shoals);
+			drawWholeRoute(graphics, view, route, shoals, now);
 		}
 	}
 
@@ -222,7 +222,8 @@ class TrawlingPlusOverlay extends Overlay
 		}
 	}
 
-	private void drawWholeRoute(Graphics2D graphics, WorldView view, ShoalRoute route, List<PlacedShoal> shoals)
+	private void drawWholeRoute(Graphics2D graphics, WorldView view, ShoalRoute route, List<PlacedShoal> shoals,
+		long now)
 	{
 		if (config.showRouteLine())
 		{
@@ -269,6 +270,8 @@ class TrawlingPlusOverlay extends Overlay
 				drawStop(graphics, view, route, stop, next[stop] ? config.nextStopColour() : config.stopColour(), 1);
 			}
 		}
+
+		drawHeadArrows(graphics, view, route, shoals, now);
 	}
 
 	/**
@@ -288,6 +291,57 @@ class TrawlingPlusOverlay extends Overlay
 		return next;
 	}
 
+	/**
+	 * In Whole route the line is already drawn, so all that is left of the animation is the arrow at its
+	 * head. When a shoal sets off for a new stop, the arrow runs along the route from the shoal to that
+	 * stop over the animation duration, then fades as it arrives, the same as it does in Next stop only.
+	 */
+	private void drawHeadArrows(Graphics2D graphics, WorldView view, ShoalRoute route, List<PlacedShoal> shoals,
+		long now)
+	{
+		if (!config.revealNextSection())
+		{
+			return;
+		}
+
+		long revealMillis = revealMillis();
+		for (PlacedShoal placed : shoals)
+		{
+			if (placed.route != route)
+			{
+				continue;
+			}
+
+			// Kept up to date whether or not the arrow is drawn, so switching direction arrows on does
+			// not replay a stretch the shoal set off along a while ago.
+			placed.shoal.headFor(placed.next, now);
+			double opacity = 1 - placed.shoal.nextStopReveal(now, revealMillis);
+			if (!config.showDirectionArrows() || opacity <= 0)
+			{
+				continue;
+			}
+
+			double stretch = route.forward(placed.distance, route.stopDistance(placed.next));
+			double drawn = stretch * placed.shoal.routeReveal(now, revealMillis);
+			Path2D tip = arrowhead(view, route.pointAt(placed.distance + drawn), shoalArrowLength(),
+				SHOAL_ARROW_HALF_WIDTH, SHOAL_ARROW_NOTCH);
+			if (tip != null)
+			{
+				graphics.setColor(withOpacity(config.directionArrowColour(), opacity));
+				graphics.fill(tip);
+			}
+		}
+	}
+
+	/**
+	 * How long a new stretch of route takes to animate, in milliseconds.
+	 */
+	private long revealMillis()
+	{
+		return 1000L * Math.max(TrawlingPlusConfig.MIN_ANIMATION_SECONDS,
+			Math.min(TrawlingPlusConfig.MAX_ANIMATION_SECONDS, config.animationDuration()));
+	}
+
 	private void drawToNextStop(Graphics2D graphics, PlacedShoal placed, long now)
 	{
 		ShoalRoute route = placed.route;
@@ -302,8 +356,7 @@ class TrawlingPlusOverlay extends Overlay
 		double stopReveal = 1;
 		if (config.revealNextSection())
 		{
-			long revealMillis = 1000L * Math.max(TrawlingPlusConfig.MIN_ANIMATION_SECONDS,
-				Math.min(TrawlingPlusConfig.MAX_ANIMATION_SECONDS, config.animationDuration()));
+			long revealMillis = revealMillis();
 			placed.shoal.headFor(next, now);
 			routeReveal = placed.shoal.routeReveal(now, revealMillis);
 			stopReveal = placed.shoal.nextStopReveal(now, revealMillis);
@@ -368,6 +421,18 @@ class TrawlingPlusOverlay extends Overlay
 	 */
 	private void drawDepth(Graphics2D graphics)
 	{
+		if (!config.showHeadsUpDisplay())
+		{
+			// Switched off, so off the screen at once rather than faded away, and faded back in from
+			// nothing when it is switched on again.
+			for (int line = 0; line < HELM_LINES; line++)
+			{
+				helmFades[line] = 0;
+			}
+			lastHelmFadeMillis = -1;
+			return;
+		}
+
 		// Each line of the display stands on its own. Only the depth waits on a depth being known; the
 		// rest have nothing to do with it and are not held up by it.
 		WorldEntity boat = plugin.ownBoat();
@@ -518,7 +583,7 @@ class TrawlingPlusOverlay extends Overlay
 	{
 		// Round joins and caps so the short segments the curve is drawn with blend into one smooth line.
 		graphics.setColor(config.routeColour());
-		graphics.setStroke(new BasicStroke(thickness(config.routeLineThickness()), BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+		graphics.setStroke(new BasicStroke(config.routeLineThickness().pixels(), BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
 		graphics.draw(line.path);
 	}
 
@@ -530,11 +595,11 @@ class TrawlingPlusOverlay extends Overlay
 		switch (depth)
 		{
 			case SHALLOW:
-				return config.shallowDepthColour();
+				return TrawlingPlusNetOverlay.opaque(config.shallowDepthColour());
 			case DEEP:
-				return config.deepDepthColour();
+				return TrawlingPlusNetOverlay.opaque(config.deepDepthColour());
 			default:
-				return config.moderateDepthColour();
+				return TrawlingPlusNetOverlay.opaque(config.moderateDepthColour());
 		}
 	}
 
@@ -689,7 +754,7 @@ class TrawlingPlusOverlay extends Overlay
 		if (area != null)
 		{
 			OverlayUtil.renderPolygon(graphics, area, withOpacity(colour, opacity), withOpacity(STOP_FILL, opacity),
-				new BasicStroke(thickness(config.stopThickness())));
+				new BasicStroke(config.stopThickness().pixels()));
 		}
 	}
 
@@ -748,7 +813,7 @@ class TrawlingPlusOverlay extends Overlay
 		}
 
 		OverlayUtil.renderPolygon(graphics, ring, config.fishableAreaColour(),
-			areaFill(config.fishableAreaColour()), areaOutline(thickness(config.fishableAreaThickness())));
+			areaFill(config.fishableAreaColour()), areaOutline(config.fishableAreaThickness().pixels()));
 	}
 
 	/**
@@ -780,14 +845,6 @@ class TrawlingPlusOverlay extends Overlay
 	private static double scaled(double length, int percent)
 	{
 		return length * Math.max(TrawlingPlusConfig.MIN_ARROW_SCALE, Math.min(TrawlingPlusConfig.MAX_ARROW_SCALE, percent)) / 100;
-	}
-
-	/**
-	 * A thickness setting in pixels, kept within its limits.
-	 */
-	private static int thickness(int pixels)
-	{
-		return Math.max(TrawlingPlusConfig.MIN_LINE_THICKNESS, Math.min(TrawlingPlusConfig.MAX_LINE_THICKNESS, pixels));
 	}
 
 	private Point toCanvas(WorldView view, double x, double y)

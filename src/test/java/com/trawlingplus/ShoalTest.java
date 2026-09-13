@@ -72,13 +72,13 @@ public class ShoalTest
 		Shoal shoal = new Shoal(null);
 		shoal.headFor(2, 1000);
 		assertEquals(0, shoal.routeReveal(1000, 7000), 1e-9);
-		assertEquals(0.104, shoal.routeReveal(2400, 7000), 1e-9);
-		assertEquals(0.5, shoal.routeReveal(4500, 7000), 1e-9);
+		assertEquals(0.28 / 3, shoal.routeReveal(2400, 7000), 1e-9);
+		assertEquals(11.0 / 24, shoal.routeReveal(4500, 7000), 1e-9);
 		assertEquals(1, shoal.routeReveal(8000, 7000), 1e-9);
 		assertEquals(1, shoal.routeReveal(11000, 7000), 1e-9);
 
 		// A shorter animation gets there sooner.
-		assertEquals(0.5, shoal.routeReveal(2500, 3000), 1e-9);
+		assertEquals(11.0 / 24, shoal.routeReveal(2500, 3000), 1e-9);
 		assertEquals(1, shoal.routeReveal(4000, 3000), 1e-9);
 	}
 

@@ -20,8 +20,12 @@ final class ShoalRoute
 {
 	private static final String RESOURCE = "routes.json";
 
-	// Longest gap between the points the overlay draws the route through, in tiles.
-	private static final double SAMPLE_SPACING = 1.0;
+	// Longest gap between the points the overlay draws the route through, in tiles. Every gap being
+	// split is already a straight piece of the finished curve, so this only ever adds points along
+	// straights: bends are made of pieces shorter than this and keep exactly the points they have.
+	// The line looks the same at any spacing; closer points only stop it nearer the edge of the
+	// loaded map, and three tiles apart is close enough.
+	private static final double SAMPLE_SPACING = 3.0;
 
 	// Spacing of the points a route's curve is laid down as, in tiles. The line is drawn as straight
 	// pieces between them, and at a quarter of a tile the corners between pieces don't show, even on
@@ -41,9 +45,10 @@ final class ShoalRoute
 	private static final double CATMULL_ROM_SPACING = 6.0;
 
 	// Heavy smoothing respaces the points this far apart all the way round, bends included, so it
-	// rounds the bends off too. On Rainbow Reef it's under a tenth of a tile off on average, and cuts
-	// the tightest bend by up to two thirds of a tile.
-	private static final double B_SPLINE_SPACING = 3.0;
+	// rounds the bends off too. At 5 tiles it sits about a fifth of a tile off the recorded laps on
+	// average and never more than a tile and a quarter, comfortably inside the 3 tiles a shoal may
+	// stray from its route before it stops being matched to it.
+	private static final double B_SPLINE_SPACING = 5.0;
 
 	// A shoal this close to a stop counts as sitting at it, so its next stop is the one after.
 	private static final double AT_STOP_TILES = 3.0;
@@ -562,26 +567,30 @@ final class ShoalRoute
 		double bestDistance = 0;
 		for (int i = 0; i < points; i++)
 		{
+			int j = (i + 1) % points;
+			double dx = pathX[j] - pathX[i];
+			double dy = pathY[j] - pathY[i];
+			double lengthSquared = dx * dx + dy * dy;
+			double segmentLength = Math.sqrt(lengthSquared);
+
 			if (near >= 0)
 			{
-				// Whichever way round is shorter, since the route is a loop.
-				double gap = forward(near, pathDistance[i]);
-				if (Math.min(gap, length - gap) > window)
+				// Any piece reaching into the window, not only one starting inside it: a long straight starts
+				// well behind a shoal partway along it, and leaving it out snapped the shoal ahead to the
+				// corner at its far end. Measured from the back of the window, round the loop.
+				double reach = forward(near - window, pathDistance[i]);
+				if (reach > 2 * window && reach + segmentLength < length)
 				{
 					continue;
 				}
 			}
 
-			int j = (i + 1) % points;
-			double dx = pathX[j] - pathX[i];
-			double dy = pathY[j] - pathY[i];
-			double lengthSquared = dx * dx + dy * dy;
 			double t = lengthSquared == 0 ? 0 : Math.max(0, Math.min(1, ((x - pathX[i]) * dx + (y - pathY[i]) * dy) / lengthSquared));
 			double offset = Math.hypot(x - (pathX[i] + t * dx), y - (pathY[i] + t * dy));
 			if (offset < bestOffset)
 			{
 				bestOffset = offset;
-				bestDistance = pathDistance[i] + t * Math.sqrt(lengthSquared);
+				bestDistance = pathDistance[i] + t * segmentLength;
 			}
 		}
 		return new Projection(bestDistance % length, bestOffset);

@@ -34,49 +34,49 @@ public interface TrawlingPlusConfig extends Config
 	@ConfigSection(
 		name = "Direction arrows",
 		description = "Arrows showing which way shoals swim",
-		position = 10
+		position = 11
 	)
 	String directionArrowsSection = "directionArrows";
 
 	@ConfigSection(
 		name = "Stops",
 		description = "Where shoals stop along their routes",
-		position = 15
+		position = 16
 	)
 	String stopsSection = "stops";
 
 	@ConfigSection(
 		name = "Shoal heading arrow",
 		description = "The arrow marking each shoal on its route",
-		position = 20
+		position = 21
 	)
 	String headingArrowSection = "headingArrow";
 
 	@ConfigSection(
 		name = "Fishable area",
 		description = "The water a shoal can be fished from",
-		position = 24
+		position = 25
 	)
 	String areaSection = "fishableArea";
 
 	@ConfigSection(
 		name = "Heads up display",
 		description = "What is shown on your own boat, at the helm",
-		position = 28
+		position = 29
 	)
 	String hudSection = "headsUpDisplay";
 
 	@ConfigSection(
 		name = "Depth colours",
 		description = "Colours for each depth, used at the helm and on the side panel",
-		position = 38
+		position = 39
 	)
 	String depthSection = "shoalDepth";
 
 	@ConfigSection(
 		name = "Side panel",
 		description = "Marks on the trawling nets in the sailing side panel",
-		position = 34
+		position = 35
 	)
 	String sidePanelSection = "sidePanel";
 
@@ -298,11 +298,24 @@ public interface TrawlingPlusConfig extends Config
 		return Smoothing.LIGHT;
 	}
 
+	// DEBUG: remove before release, along with the dots it draws in TrawlingPlusOverlay.
+	@ConfigItem(
+		keyName = "debugRoutePoints",
+		name = "Show points (debug)",
+		description = "Mark each point the route line is drawn through.",
+		position = 10,
+		section = routeLineSection
+	)
+	default boolean debugRoutePoints()
+	{
+		return false;
+	}
+
 	@ConfigItem(
 		keyName = "showDirectionArrows",
 		name = "Show",
 		description = "Show arrows along the route.<br>They point the way the shoals swim.",
-		position = 11,
+		position = 12,
 		section = directionArrowsSection
 	)
 	default boolean showDirectionArrows()
@@ -319,7 +332,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "directionArrowSpacing",
 		name = "Spacing",
 		description = "Distance between direction arrows.",
-		position = 12,
+		position = 13,
 		section = directionArrowsSection
 	)
 	default int directionArrowSpacing()
@@ -336,7 +349,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "directionArrowScale",
 		name = "Scaling",
 		description = "Size of the direction arrows.",
-		position = 13,
+		position = 14,
 		section = directionArrowsSection
 	)
 	default int directionArrowScale()
@@ -349,7 +362,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "directionArrowColour",
 		name = "Colour",
 		description = "Colour of the direction arrows.",
-		position = 14,
+		position = 15,
 		section = directionArrowsSection
 	)
 	default Color directionArrowColour()
@@ -361,7 +374,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "showShoalHeadingArrow",
 		name = "Show",
 		description = "Show which way the shoal is heading, as an arrow.",
-		position = 21,
+		position = 22,
 		section = headingArrowSection
 	)
 	default boolean showShoalHeadingArrow()
@@ -378,7 +391,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "shoalHeadingArrowScale",
 		name = "Scaling",
 		description = "Size of the shoal heading arrow.",
-		position = 22,
+		position = 23,
 		section = headingArrowSection
 	)
 	default int shoalHeadingArrowScale()
@@ -391,7 +404,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "shoalHeadingArrowColour",
 		name = "Colour",
 		description = "Colour of the shoal heading arrow.",
-		position = 23,
+		position = 24,
 		section = headingArrowSection
 	)
 	default Color shoalHeadingArrowColour()
@@ -403,7 +416,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "showStops",
 		name = "Show",
 		description = "Mark where the shoals stop.<br>The next stop is highlighted.",
-		position = 16,
+		position = 17,
 		section = stopsSection
 	)
 	default boolean showStops()
@@ -416,7 +429,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "stopColour",
 		name = "Colour",
 		description = "Colour of the stops.",
-		position = 17,
+		position = 18,
 		section = stopsSection
 	)
 	default Color stopColour()
@@ -429,7 +442,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "nextStopColour",
 		name = "Next stop colour",
 		description = "Colour of the next stop.",
-		position = 18,
+		position = 19,
 		section = stopsSection
 	)
 	default Color nextStopColour()
@@ -441,7 +454,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "stopThickness",
 		name = "Thickness",
 		description = "Thickness of the stop outlines.",
-		position = 19,
+		position = 20,
 		section = stopsSection
 	)
 	default LineThickness stopThickness()
@@ -453,7 +466,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "showHeadsUpDisplay",
 		name = "Show",
 		description = "Show the heads up display at the helm.",
-		position = 29,
+		position = 30,
 		section = hudSection
 	)
 	default boolean showHeadsUpDisplay()
@@ -465,7 +478,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "showShoalDepth",
 		name = "Depth",
 		description = "Show the nearest shoal's depth.<br>Coloured by Depth colours section.",
-		position = 30,
+		position = 31,
 		section = hudSection
 	)
 	default boolean showShoalDepth()
@@ -477,7 +490,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "showDepthTick",
 		name = "Tick on correct depth",
 		description = "Show a tick beside the HUD depth when it's correct.",
-		position = 31,
+		position = 32,
 		section = hudSection
 	)
 	default boolean showDepthTick()
@@ -489,7 +502,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "showTimeAtStop",
 		name = "Time left at stop",
 		description = "Show how long until the shoal swims on.",
-		position = 32,
+		position = 33,
 		section = hudSection
 	)
 	default boolean showTimeAtStop()
@@ -501,7 +514,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "showBaited",
 		name = "Baited",
 		description = "Show if the shoal has been baited.",
-		position = 33,
+		position = 34,
 		section = hudSection
 	)
 	default boolean showBaited()
@@ -513,7 +526,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "shallowDepthColour",
 		name = "Shallow",
 		description = "Colour of shallow depth.",
-		position = 39,
+		position = 40,
 		section = depthSection
 	)
 	default Color shallowDepthColour()
@@ -525,7 +538,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "moderateDepthColour",
 		name = "Moderate",
 		description = "Colour of moderate depth.",
-		position = 40,
+		position = 41,
 		section = depthSection
 	)
 	default Color moderateDepthColour()
@@ -537,7 +550,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "deepDepthColour",
 		name = "Deep",
 		description = "Colour of deep depth.",
-		position = 41,
+		position = 42,
 		section = depthSection
 	)
 	default Color deepDepthColour()
@@ -549,7 +562,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "showNetDepths",
 		name = "Net depths",
 		description = "Show each net's depth as a letter.<br><b>R</b>: raised, <b>S</b>: shallow, <b>M</b>: moderate, <b>D</b>: deep.<br>Coloured by Depth colours section.",
-		position = 35,
+		position = 36,
 		section = sidePanelSection
 	)
 	default boolean showNetDepths()
@@ -561,7 +574,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "showNetButton",
 		name = "Depth guide",
 		description = "Highlight the raise or lower button needed<br>to reach the target depth.",
-		position = 36,
+		position = 37,
 		section = sidePanelSection
 	)
 	default boolean showNetButton()
@@ -573,7 +586,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "showNetCorrect",
 		name = "Tick on correct depth",
 		description = "Show a tick on the side panel's net<br>when its depth is correct.",
-		position = 37,
+		position = 38,
 		section = sidePanelSection
 	)
 	default boolean showNetCorrect()
@@ -585,7 +598,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "showFishableArea",
 		name = "Show",
 		description = "Show an estimate of the fishable area,<br>as a ring centred on the shoal.",
-		position = 25,
+		position = 26,
 		section = areaSection
 	)
 	default boolean showFishableArea()
@@ -598,7 +611,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "fishableAreaColour",
 		name = "Colour",
 		description = "Colour of the fishable area.",
-		position = 26,
+		position = 27,
 		section = areaSection
 	)
 	default Color fishableAreaColour()
@@ -610,7 +623,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "fishableAreaThickness",
 		name = "Thickness",
 		description = "Thickness of the fishable area outline.",
-		position = 27,
+		position = 28,
 		section = areaSection
 	)
 	default LineThickness fishableAreaThickness()

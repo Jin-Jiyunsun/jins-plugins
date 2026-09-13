@@ -215,13 +215,28 @@ public class TrawlingPlusPlugin extends Plugin
 		List<ShoalRoute> reshaped = ShoalRoute.build(routeData, config.routeSmoothing());
 		for (Shoal shoal : shoals.values())
 		{
-			int index = routes.indexOf(shoal.getRoute());
-			if (index >= 0)
+			ShoalRoute route = counterpart(shoal.getRoute(), reshaped);
+			if (route != null)
 			{
-				shoal.reshapeRoute(reshaped.get(index));
+				shoal.reshapeRoute(route);
 			}
 		}
+
+		// The route being drawn and the one waiting to take over from it are swapped for their new shapes
+		// too. Left as they were, Whole route kept drawing the old shape for as long as that route stayed
+		// nearest, since its new shape is never meaningfully nearer than its old one.
+		nearestRoute = counterpart(nearestRoute, reshaped);
+		contender = counterpart(contender, reshaped);
 		routes = reshaped;
+	}
+
+	/**
+	 * The same route out of a freshly built list, or null if it is not one of the current routes.
+	 */
+	private ShoalRoute counterpart(ShoalRoute route, List<ShoalRoute> reshaped)
+	{
+		int index = route == null ? -1 : routes.indexOf(route);
+		return index < 0 ? null : reshaped.get(index);
 	}
 
 	@Subscribe

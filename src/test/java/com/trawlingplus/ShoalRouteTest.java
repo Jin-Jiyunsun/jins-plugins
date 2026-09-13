@@ -31,6 +31,21 @@ public class ShoalRouteTest
 	}
 
 	@Test
+	public void followingAlongALongStraightNeverJumpsAhead()
+	{
+		// Sides far longer than the stretch of route a shoal is followed within.
+		ShoalRoute big = new ShoalRoute("Test", "Big", 0, 0,
+			new double[][]{{0, 0}, {40, 0}, {40, 40}, {0, 40}},
+			new double[][]{{40, 0}});
+		double distance = big.project(0, 0).distance;
+		for (double x = 0.5; x < 40; x += 0.5)
+		{
+			distance = big.project(x, 0, distance).distance;
+			assertEquals("following at x = " + x, x, distance, 1e-9);
+		}
+	}
+
+	@Test
 	public void nextStopIsTheFirstOneAhead()
 	{
 		assertEquals(0, SQUARE.nextStop(5));
@@ -52,11 +67,21 @@ public class ShoalRouteTest
 	}
 
 	@Test
+	public void piecesShorterThanTheSpacingAreNotSplit()
+	{
+		ShoalRoute small = new ShoalRoute("Test", "Small", 0, 0,
+			new double[][]{{0, 0}, {2, 0}, {2, 2}, {0, 2}},
+			new double[][]{{2, 0}});
+		assertEquals(4, small.sampleCount());
+	}
+
+	@Test
 	public void samplesCoverTheLoopInOrder()
 	{
-		assertEquals(40, SQUARE.sampleCount());
+		// Each 10 tile side is a straight, split into four pieces no longer than 3 tiles.
+		assertEquals(16, SQUARE.sampleCount());
 		assertEquals(0, SQUARE.sampleAt(0));
-		assertEquals(10, SQUARE.sampleAt(10));
+		assertEquals(4, SQUARE.sampleAt(10));
 		// Past the last sample wraps back round to the first.
 		assertEquals(0, SQUARE.sampleAt(39.5));
 	}
@@ -115,7 +140,8 @@ public class ShoalRouteTest
 	}
 
 	@Test
-	public void smoothingNeverPullsARouteMoreThanATileOffItsPath() throws IOException
+	// Two tiles leaves room under the 3 a shoal may stray from its route before it stops being matched.
+	public void smoothingNeverPullsARouteMoreThanTwoTilesOffItsPath() throws IOException
 	{
 		RouteData data = ShoalRoute.read(new Gson());
 		for (RouteData.Species species : data.species)
@@ -129,7 +155,7 @@ public class ShoalRouteTest
 					for (double[] point : curve)
 					{
 						double offset = original.project(point[0], point[1]).offset;
-						assertTrue(route.name + " curve is " + offset + " tiles off its path", offset <= 1);
+						assertTrue(route.name + " curve is " + offset + " tiles off its path", offset <= 2);
 					}
 				}
 			}

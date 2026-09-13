@@ -139,6 +139,7 @@ class TrawlingPlusOverlay extends Overlay
 
 		Object antialiasing = graphics.getRenderingHint(RenderingHints.KEY_ANTIALIASING);
 		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+		debugDots = config.debugRoutePoints() ? new ArrayList<>() : null;
 
 		// With the route line, stops and direction arrows all off, only the shoals' heading arrows are drawn.
 		boolean routes = config.showRouteLine() || config.showStops() || config.showDirectionArrows();
@@ -167,6 +168,10 @@ class TrawlingPlusOverlay extends Overlay
 			drawFishableArea(graphics);
 		}
 		drawDepth(graphics);
+
+		// DEBUG: remove before release. Last of all, so the dots sit on top of everything else drawn.
+		drawDots(graphics, debugDots);
+		debugDots = null;
 
 		if (antialiasing != null)
 		{
@@ -237,6 +242,7 @@ class TrawlingPlusOverlay extends Overlay
 			double toY = view.getBaseY() + view.getSizeY() + beyond;
 
 			Line line = new Line();
+			List<Point> dots = debugDots();
 			for (int block = 0; block < route.blockCount(); block++)
 			{
 				if (!route.blockWithin(block, fromX, fromY, toX, toY))
@@ -248,7 +254,9 @@ class TrawlingPlusOverlay extends Overlay
 
 				for (int sample = route.blockFrom(block); sample < route.blockTo(block); sample++)
 				{
-					line.add(toCanvas(view, route.sampleX(sample), route.sampleY(sample)));
+					Point at = toCanvas(view, route.sampleX(sample), route.sampleY(sample));
+					line.add(at);
+					mark(dots, at);
 				}
 			}
 
@@ -323,7 +331,8 @@ class TrawlingPlusOverlay extends Overlay
 
 			double stretch = route.forward(placed.distance, route.stopDistance(placed.next));
 			double drawn = stretch * placed.shoal.routeReveal(now, revealMillis);
-			Path2D tip = arrowhead(view, route.pointAt(placed.distance + drawn), shoalArrowLength(),
+			double tipLength = shoalArrowLength();
+			Path2D tip = arrowhead(view, onRoute(route, placed.distance + drawn, tipLength), tipLength,
 				SHOAL_ARROW_HALF_WIDTH, SHOAL_ARROW_NOTCH);
 			if (tip != null)
 			{
@@ -340,6 +349,41 @@ class TrawlingPlusOverlay extends Overlay
 	{
 		return 1000L * Math.max(TrawlingPlusConfig.MIN_ANIMATION_SECONDS,
 			Math.min(TrawlingPlusConfig.MAX_ANIMATION_SECONDS, config.animationDuration()));
+	}
+
+	// DEBUG: remove before release, with the Show points (debug) setting. Marks the points a route
+	// line is drawn through, to see how many there are and where they sit.
+	private static final Color DEBUG_POINT = new Color(255, 140, 0);
+	private static final int DEBUG_POINT_SIZE = 4;
+
+	// Collected while the lines are drawn, then drawn once everything else has been.
+	private List<Point> debugDots;
+
+	private List<Point> debugDots()
+	{
+		return debugDots;
+	}
+
+	private static void mark(List<Point> dots, Point at)
+	{
+		if (dots != null && at != null)
+		{
+			dots.add(at);
+		}
+	}
+
+	private static void drawDots(Graphics2D graphics, List<Point> dots)
+	{
+		if (dots == null)
+		{
+			return;
+		}
+		graphics.setColor(DEBUG_POINT);
+		for (Point dot : dots)
+		{
+			graphics.fillOval(dot.getX() - DEBUG_POINT_SIZE / 2, dot.getY() - DEBUG_POINT_SIZE / 2,
+				DEBUG_POINT_SIZE, DEBUG_POINT_SIZE);
+		}
 	}
 
 	private void drawToNextStop(Graphics2D graphics, PlacedShoal placed, long now)
@@ -368,8 +412,13 @@ class TrawlingPlusOverlay extends Overlay
 			int from = route.sampleAt(distance);
 			int steps = Math.floorMod(route.sampleAt(route.stopDistance(next)) - from, route.sampleCount());
 
+			// Starts where the shoal is along the route rather than where the shoal itself is, so the line
+			// only ever gets shorter as the shoal swims along it. Joining it to the shoal instead leaves a
+			// first piece that swings about, since a smoothed route never runs exactly through the shoal.
 			Line line = new Line();
-			line.add(toCanvas(view, placed.position[0], placed.position[1]));
+			List<Point> dots = debugDots();
+			double[] start = route.pointAt(distance);
+			line.add(toCanvas(view, start[0], start[1]));
 			for (int step = 0; step < steps; step++)
 			{
 				int sample = (from + step) % route.sampleCount();
@@ -377,18 +426,15 @@ class TrawlingPlusOverlay extends Overlay
 				{
 					break;
 				}
-				line.add(toCanvas(view, route.sampleX(sample), route.sampleY(sample)));
+				Point at = toCanvas(view, route.sampleX(sample), route.sampleY(sample));
+				line.add(at);
+				mark(dots, at);
 			}
 
-			if (routeReveal < 1)
-			{
-				double[] end = route.pointAt(distance + drawn);
-				line.add(toCanvas(view, end[0], end[1]));
-			}
-			else
-			{
-				line.add(toCanvas(view, route.stopX(next), route.stopY(next)));
-			}
+			// Ends along the route too, level with the stop once it has drawn all the way there, rather than
+			// at the stop itself: a smoothed route passes beside a stop, and joining the two leaves a hook.
+			double[] end = route.pointAt(distance + drawn);
+			line.add(toCanvas(view, end[0], end[1]));
 			drawLine(graphics, line);
 		}
 
@@ -406,7 +452,8 @@ class TrawlingPlusOverlay extends Overlay
 		double tipOpacity = 1 - stopReveal;
 		if (config.showDirectionArrows() && tipOpacity > 0)
 		{
-			Path2D tip = arrowhead(view, route.pointAt(distance + drawn), shoalArrowLength(), SHOAL_ARROW_HALF_WIDTH, SHOAL_ARROW_NOTCH);
+			double tipLength = shoalArrowLength();
+			Path2D tip = arrowhead(view, onRoute(route, distance + drawn, tipLength), tipLength, SHOAL_ARROW_HALF_WIDTH, SHOAL_ARROW_NOTCH);
 			if (tip != null)
 			{
 				graphics.setColor(withOpacity(config.directionArrowColour(), tipOpacity));
@@ -675,7 +722,7 @@ class TrawlingPlusOverlay extends Overlay
 			double at = arrow * spacing;
 			if (route.forward(from, at) < stretch)
 			{
-				Path2D head = arrowhead(view, route.pointAt(at), length, ARROW_HALF_WIDTH, ARROW_NOTCH);
+				Path2D head = arrowhead(view, onRoute(route, at, length), length, ARROW_HALF_WIDTH, ARROW_NOTCH);
 				if (head != null)
 				{
 					graphics.fill(head);
@@ -706,13 +753,33 @@ class TrawlingPlusOverlay extends Overlay
 			}
 
 			// Snap the arrow onto the route, so it slides along the line with the shoal.
-			Path2D arrow = arrowhead(placed.view, placed.route.pointAt(placed.distance), length, SHOAL_ARROW_HALF_WIDTH, SHOAL_ARROW_NOTCH);
+			Path2D arrow = arrowhead(placed.view, onRoute(placed.route, placed.distance, length), length, SHOAL_ARROW_HALF_WIDTH, SHOAL_ARROW_NOTCH);
 			if (arrow != null)
 			{
 				graphics.setColor(withOpacity(colour, opacity));
 				graphics.fill(arrow);
 			}
 		}
+	}
+
+	/**
+	 * Where an arrow of the given length in tiles sits on a route, as {x, y, dx, dy}: aimed from the route
+	 * half its length behind to the route half its length ahead, and centred between the two. On a bend
+	 * that puts both its tip and its tail on the line, where following the direction at its middle sends
+	 * the tip off the outside of the bend.
+	 */
+	private static double[] onRoute(ShoalRoute route, double distance, double length)
+	{
+		double[] behind = route.pointAt(distance - length / 2);
+		double[] ahead = route.pointAt(distance + length / 2);
+		double dx = ahead[0] - behind[0];
+		double dy = ahead[1] - behind[1];
+		double across = Math.hypot(dx, dy);
+		if (across < 1e-9)
+		{
+			return route.pointAt(distance);
+		}
+		return new double[]{(behind[0] + ahead[0]) / 2, (behind[1] + ahead[1]) / 2, dx / across, dy / across};
 	}
 
 	/**

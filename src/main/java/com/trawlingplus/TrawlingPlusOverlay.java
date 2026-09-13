@@ -146,10 +146,10 @@ class TrawlingPlusOverlay extends Overlay
 
 		// Where each shoal is on its route, found once per frame and shared by everything drawn below.
 		// Placing a shoal searches its route, so it is skipped when nothing on screen needs it.
-		List<PlacedShoal> shoals = routes || config.showShoalHeadingArrow()
-			? placeShoals()
-			: Collections.emptyList();
 		long now = System.currentTimeMillis();
+		List<PlacedShoal> shoals = routes || config.showShoalHeadingArrow()
+			? placeShoals(now)
+			: Collections.emptyList();
 
 		if (routes)
 		{
@@ -183,7 +183,7 @@ class TrawlingPlusOverlay extends Overlay
 	/**
 	 * Every shoal that's matched to a route and can be placed on it this frame.
 	 */
-	private List<PlacedShoal> placeShoals()
+	private List<PlacedShoal> placeShoals(long now)
 	{
 		List<PlacedShoal> placed = new ArrayList<>();
 		for (Shoal shoal : plugin.getShoals())
@@ -193,7 +193,7 @@ class TrawlingPlusOverlay extends Overlay
 			double[] position = shoal.position(client);
 			if (route != null && view != null && position != null)
 			{
-				placed.add(new PlacedShoal(shoal, route, view, position));
+				placed.add(new PlacedShoal(shoal, route, view, position, now));
 			}
 		}
 		return placed;
@@ -324,7 +324,7 @@ class TrawlingPlusOverlay extends Overlay
 			// not replay a stretch the shoal set off along a while ago.
 			placed.shoal.headFor(placed.next, now);
 			double opacity = 1 - placed.shoal.nextStopReveal(now, revealMillis);
-			if (!config.showDirectionArrows() || opacity <= 0)
+			if (!config.showDirectionArrows() || opacity <= 0 || !placed.shoal.revealStarted(now))
 			{
 				continue;
 			}
@@ -396,14 +396,35 @@ class TrawlingPlusOverlay extends Overlay
 
 		// When the shoal moves on to a new next stop, the route to it draws itself out from the shoal,
 		// arrows appearing as it reaches them, and the stop fades in once the route gets there.
+		placed.shoal.headFor(next, now);
+
+		// The stop the shoal has just reached stays until it settles in there, fading out with the heading
+		// arrow, rather than vanishing the moment the shoal counts as heading for the next one.
+		int arrived = placed.shoal.arrivedStop();
+		if (arrived >= 0)
+		{
+			if (placed.headingOpacity <= 0)
+			{
+				placed.shoal.clearArrivedStop();
+			}
+			else if (config.showStops())
+			{
+				drawStop(graphics, view, route, arrived, config.nextStopColour(), placed.headingOpacity);
+			}
+		}
+
 		double routeReveal = 1;
 		double stopReveal = 1;
 		if (config.revealNextSection())
 		{
 			long revealMillis = revealMillis();
-			placed.shoal.headFor(next, now);
 			routeReveal = placed.shoal.routeReveal(now, revealMillis);
 			stopReveal = placed.shoal.nextStopReveal(now, revealMillis);
+			if (!placed.shoal.revealStarted(now))
+			{
+				// Waiting for the shoal to settle in before the way to its next stop is drawn.
+				return;
+			}
 		}
 		double drawn = stretch * routeReveal;
 
@@ -746,7 +767,7 @@ class TrawlingPlusOverlay extends Overlay
 		for (PlacedShoal placed : shoals)
 		{
 			// Fades out while the shoal sits at a stop, and back in as it's about to set off again.
-			double opacity = placed.shoal.headingArrowOpacity(now);
+			double opacity = placed.headingOpacity;
 			if (opacity <= 0)
 			{
 				continue;
@@ -972,8 +993,10 @@ class TrawlingPlusOverlay extends Overlay
 		final double[] position;
 		final double distance;
 		final int next;
+		// How far faded in the heading arrow is this frame, which the stop just reached fades out with.
+		final double headingOpacity;
 
-		PlacedShoal(Shoal shoal, ShoalRoute route, WorldView view, double[] position)
+		PlacedShoal(Shoal shoal, ShoalRoute route, WorldView view, double[] position, long now)
 		{
 			this.shoal = shoal;
 			this.route = route;
@@ -981,6 +1004,7 @@ class TrawlingPlusOverlay extends Overlay
 			this.position = position;
 			distance = shoal.followRoute(position);
 			next = route.nextStop(distance);
+			headingOpacity = shoal.headingArrowOpacity(now);
 		}
 	}
 

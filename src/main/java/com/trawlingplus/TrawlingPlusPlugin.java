@@ -319,7 +319,7 @@ public class TrawlingPlusPlugin extends Plugin
 			{
 				continue;
 			}
-			shoal.update(position);
+			shoal.update(position, shoal.target(client));
 			read(entry.getValue(), RESTING_DEPTH_BY_CLICKBOX.getOrDefault(clickbox, ShoalDepth.UNKNOWN), shoal);
 
 			// Match once, and again if a mixed shoal turns back into a species that doesn't fit its route.

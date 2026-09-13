@@ -19,12 +19,18 @@ final class Shoal
 	// milliseconds. How long the route takes to draw out is set in the config.
 	private static final double STOP_REVEAL_MILLIS = 300;
 
+	// How long a new section waits before it starts drawing out, in milliseconds. A shoal counts as
+	// heading for its next stop a little before it has finished gliding into the one it is at, so this
+	// gives it time to settle in first.
+	private static final long REVEAL_DELAY_MILLIS = 500;
+
 	private final WorldEntity entity;
 	private ShoalRoute route;
 	// Where the shoal was last found along its route, so it can be followed past a crossing.
 	private double routeDistance = -1;
 
 	private double[] lastPosition;
+	private double[] lastTarget;
 	private ShoalDepth depth = ShoalDepth.UNKNOWN;
 
 	// The bar the game draws over a shoal while it sits at a stop, which empties as the stop runs out,
@@ -47,6 +53,9 @@ final class Shoal
 
 	// The next stop the route is being drawn out to, and when that started.
 	private int revealStop = -1;
+	// The stop it was heading for before that, which it has just reached: kept on screen while the
+	// shoal settles in there, then forgotten.
+	private int arrivedStop = -1;
 	private long revealStartMillis;
 
 	Shoal(WorldEntity entity)
@@ -65,6 +74,7 @@ final class Shoal
 		{
 			// Stop numbers belong to a route, so draw the new one out from the start.
 			revealStop = -1;
+			arrivedStop = -1;
 			routeDistance = -1;
 		}
 		this.route = route;
@@ -163,14 +173,27 @@ final class Shoal
 	/**
 	 * Tracks whether the shoal is swimming or sitting still, once per game tick. The heading arrow
 	 * hides the tick the shoal stops and shows again the tick it moves off.
+	 *
+	 * Judged from where the shoal is heading whenever that can be read. The destination stops changing on
+	 * the tick the last move is sent, and changes again the tick a new one is, where the drawn position
+	 * only settles or sets off a tick later, once the client has glided it there. RuneLite confirmed that
+	 * reading the destination of a shoal is fine. The position is the fallback when there is none.
 	 */
-	void update(double[] position)
+	void update(double[] position, double[] target)
 	{
-		if (lastPosition != null)
+		if (target != null)
+		{
+			if (lastTarget != null)
+			{
+				headingArrowHidden = target[0] == lastTarget[0] && target[1] == lastTarget[1];
+			}
+		}
+		else if (lastPosition != null)
 		{
 			headingArrowHidden = position[0] == lastPosition[0] && position[1] == lastPosition[1];
 		}
 		lastPosition = position;
+		lastTarget = target;
 	}
 
 	/**
@@ -200,9 +223,32 @@ final class Shoal
 	{
 		if (nextStop != revealStop)
 		{
+			arrivedStop = revealStop;
 			revealStop = nextStop;
-			revealStartMillis = nowMillis;
+			revealStartMillis = nowMillis + REVEAL_DELAY_MILLIS;
 		}
+	}
+
+	/**
+	 * The stop the shoal has just reached, while it is still being shown, or -1.
+	 */
+	int arrivedStop()
+	{
+		return arrivedStop;
+	}
+
+	void clearArrivedStop()
+	{
+		arrivedStop = -1;
+	}
+
+	/**
+	 * Whether the section to the next stop has started drawing out, rather than still waiting for the
+	 * shoal to settle in.
+	 */
+	boolean revealStarted(long nowMillis)
+	{
+		return nowMillis >= revealStartMillis;
 	}
 
 	/**
@@ -258,6 +304,17 @@ final class Shoal
 	/**
 	 * The shoal's position in world tile coordinates, including the fraction of a tile, or null.
 	 */
+	/**
+	 * Where the shoal is swimming to in world tiles: the spot the server last sent, which the client glides
+	 * it towards until the next tick. Null when it cannot be read.
+	 */
+	double[] target(Client client)
+	{
+		LocalPoint local = entity.getTargetLocation();
+		WorldView view = local == null ? null : client.getWorldView(local.getWorldView());
+		return view == null ? null : toWorld(view, local);
+	}
+
 	double[] position(Client client)
 	{
 		LocalPoint local = entity.getLocalLocation();

@@ -19,6 +19,9 @@ class RouteData
 	static class Route
 	{
 		String name;
+		// How long a shoal sits at each stop on this route, in ticks, or 0 where it has not been timed
+		// yet. Different species sit for very different lengths, so there is no sensible default.
+		int stopTicks;
 		double[][] stops;
 		double[][] path;
 	}

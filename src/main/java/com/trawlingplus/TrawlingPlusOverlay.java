@@ -51,8 +51,23 @@ class TrawlingPlusOverlay extends Overlay
 	private static final Color DEPTH_TEXT_BACKGROUND = new Color(0, 0, 0, 150);
 	private static final int DEPTH_TEXT_PADDING = 3;
 
-	// How long the depth text takes to fade fully in or out, in milliseconds.
-	private static final double DEPTH_FADE_MILLIS = 1000;
+	// How long the display at the helm takes to fade fully in or out, in milliseconds.
+	private static final double DEPTH_FADE_MILLIS = 500;
+
+	// The word above the depth when the shoal has been baited.
+	private static final String BAITED = "Baited";
+	private static final Color BAITED_COLOUR = new Color(0, 220, 80);
+
+	// The gap between the depth and the tick that follows it once every net is set to that depth.
+	private static final int TICK_GAP = 4;
+
+	// The lines of the display at the helm, from the bottom up. The depth holds the bottom line so the
+	// display keeps its place on the boat however many of the others are showing.
+	private static final int DEPTH_LINE = 0;
+	private static final int TIME_LINE = 1;
+	private static final int BAITED_LINE = 2;
+	private static final int HELM_LINES = 3;
+	private static final Color TIME_COLOUR = Color.WHITE;
 
 	// The stops' faint fill, as RuneLite draws a highlighted tile.
 	private static final Color STOP_FILL = new Color(0, 0, 0, 50);
@@ -74,8 +89,9 @@ class TrawlingPlusOverlay extends Overlay
 	private final TrawlingPlusPlugin plugin;
 	private final TrawlingPlusConfig config;
 
-	private double depthFade;
-	private long lastDepthFadeMillis = -1;
+	// How far faded in each line of the display at the helm is, bottom line first.
+	private final double[] helmFades = new double[HELM_LINES];
+	private long lastHelmFadeMillis = -1;
 	private ShoalDepth fadingDepth = ShoalDepth.UNKNOWN;
 
 	@Inject
@@ -310,7 +326,9 @@ class TrawlingPlusOverlay extends Overlay
 	 */
 	private void drawDepth(Graphics2D graphics)
 	{
-		WorldEntity boat = config.showShoalDepth() ? plugin.ownBoat() : null;
+		// Each line of the display stands on its own. Only the depth waits on a depth being known; the
+		// rest have nothing to do with it and are not held up by it.
+		WorldEntity boat = plugin.ownBoat();
 		ShoalDepth depth = boat == null ? ShoalDepth.UNKNOWN : plugin.getNearestDepth();
 		if (depth != ShoalDepth.UNKNOWN)
 		{
@@ -318,10 +336,77 @@ class TrawlingPlusOverlay extends Overlay
 			fadingDepth = depth;
 		}
 
-		double opacity = depthOpacity(depth != ShoalDepth.UNKNOWN, System.currentTimeMillis());
+		double seconds = boat == null ? -1 : plugin.getSecondsAtStop();
+		boolean[] wanted = new boolean[HELM_LINES];
+		wanted[DEPTH_LINE] = boat != null && config.showShoalDepth() && depth != ShoalDepth.UNKNOWN;
+		wanted[TIME_LINE] = boat != null && config.showTimeAtStop() && seconds >= 0;
+		wanted[BAITED_LINE] = boat != null && config.showBaited() && plugin.isBaited();
+
+		// A line coming or going while another holds the pill up is a change inside something already
+		// on screen, so it happens at once. The fade is for the display itself arriving or leaving.
+		long now = System.currentTimeMillis();
+		double step = lastHelmFadeMillis < 0 ? 0
+			: Math.max(0, now - lastHelmFadeMillis) / DEPTH_FADE_MILLIS;
+		boolean[] wasUp = new boolean[HELM_LINES];
+		for (int line = 0; line < HELM_LINES; line++)
+		{
+			wasUp[line] = helmFades[line] > 0;
+		}
+
+		double[] opacity = new double[HELM_LINES];
+		for (int line = 0; line < HELM_LINES; line++)
+		{
+			// Another line already holding the pill up means this one is changing inside a display that
+			// is already on screen, so it changes at once rather than fading.
+			opacity[line] = fade(line, wanted[line], step, othersUp(wasUp, line));
+		}
+		lastHelmFadeMillis = now;
+
 		WorldView deck = boat == null ? null : boat.getWorldView();
 		WorldEntityConfig hull = boat == null ? null : boat.getConfig();
-		if (opacity <= 0 || deck == null || hull == null || fadingDepth == ShoalDepth.UNKNOWN)
+		if (deck == null || hull == null)
+		{
+			return;
+		}
+
+		// The lines that are actually showing, bottom first, so a gap in the middle closes up.
+		String[] text = new String[HELM_LINES];
+		Color[] colour = new Color[HELM_LINES];
+		double[] showing = new double[HELM_LINES];
+		int[] width = new int[HELM_LINES];
+		FontMetrics letters = graphics.getFontMetrics();
+		boolean ticked = opacity[DEPTH_LINE] > 0 && config.showDepthTick() && plugin.isAtDepth();
+		int count = 0;
+		int depthAt = -1;
+
+		if (opacity[DEPTH_LINE] > 0 && fadingDepth != ShoalDepth.UNKNOWN)
+		{
+			depthAt = count;
+			text[count] = fadingDepth.toString();
+			colour[count] = depthColour(fadingDepth);
+			showing[count] = opacity[DEPTH_LINE];
+			width[count] = letters.stringWidth(text[count])
+				+ (ticked ? TICK_GAP + TrawlingPlusNetOverlay.TICK_WIDTH : 0);
+			count++;
+		}
+		if (opacity[TIME_LINE] > 0)
+		{
+			text[count] = Math.max(0, Math.round(seconds)) + "s";
+			colour[count] = TIME_COLOUR;
+			showing[count] = opacity[TIME_LINE];
+			width[count] = letters.stringWidth(text[count]);
+			count++;
+		}
+		if (opacity[BAITED_LINE] > 0)
+		{
+			text[count] = BAITED;
+			colour[count] = BAITED_COLOUR;
+			showing[count] = opacity[BAITED_LINE];
+			width[count] = letters.stringWidth(BAITED);
+			count++;
+		}
+
+		if (count == 0)
 		{
 			return;
 		}
@@ -343,45 +428,61 @@ class TrawlingPlusOverlay extends Overlay
 			return;
 		}
 
-		String text = fadingDepth.toString();
-		Point at = Perspective.getCanvasTextLocation(client, graphics, afloatAtStern, text, DEPTH_TEXT_HEIGHT);
+		Point at = Perspective.getCanvasTextLocation(client, graphics, afloatAtStern, text[0],
+			DEPTH_TEXT_HEIGHT);
 		if (at == null)
 		{
 			return;
 		}
 
-		// getCanvasTextLocation gives the left end of the text baseline.
-		FontMetrics letters = graphics.getFontMetrics();
-		graphics.setColor(withOpacity(DEPTH_TEXT_BACKGROUND, opacity));
-		graphics.fillRoundRect(at.getX() - DEPTH_TEXT_PADDING,
-			at.getY() - letters.getAscent() - DEPTH_TEXT_PADDING,
-			letters.stringWidth(text) + DEPTH_TEXT_PADDING * 2,
-			letters.getHeight() + DEPTH_TEXT_PADDING * 2, 6, 6);
+		// getCanvasTextLocation gives the left end of the bottom line's baseline; the stack grows up
+		// from there and the pill grows with it.
+		int lineHeight = letters.getHeight();
+		int wide = 0;
+		double solid = 0;
+		for (int line = 0; line < count; line++)
+		{
+			wide = Math.max(wide, width[line]);
+			solid = Math.max(solid, showing[line]);
+		}
+		int left = at.getX() + (letters.stringWidth(text[0]) - wide) / 2;
+		int top = at.getY() - letters.getAscent() - (count - 1) * lineHeight;
 
-		// The shadow is drawn here rather than with OverlayUtil so that it fades along with the text.
-		graphics.setColor(withOpacity(Color.BLACK, opacity));
-		graphics.drawString(text, at.getX() + 1, at.getY() + 1);
-		graphics.setColor(withOpacity(depthColour(fadingDepth), opacity));
-		graphics.drawString(text, at.getX(), at.getY());
+		// One pill around the lot, as opaque as whichever line is showing the most, so it does not
+		// flicker as one of them fades while the others stay.
+		graphics.setColor(withOpacity(DEPTH_TEXT_BACKGROUND, solid));
+		graphics.fillRoundRect(left - DEPTH_TEXT_PADDING, top - DEPTH_TEXT_PADDING,
+			wide + DEPTH_TEXT_PADDING * 2, lineHeight * count + DEPTH_TEXT_PADDING * 2, 6, 6);
+
+		for (int line = 0; line < count; line++)
+		{
+			int from = left + (wide - width[line]) / 2;
+			int baseline = at.getY() - line * lineHeight;
+			line(graphics, text[line], from, baseline, colour[line], showing[line]);
+			if (line == depthAt && ticked)
+			{
+				TrawlingPlusNetOverlay.drawTick(graphics,
+					from + letters.stringWidth(text[line]) + TICK_GAP,
+					baseline - letters.getAscent() / 2,
+					withOpacity(TrawlingPlusNetOverlay.TICK, showing[line]));
+			}
+		}
 	}
 
 	/**
-	 * How opaque the depth text is right now, from 0 to 1. It moves a little towards shown or hidden
-	 * on each call, so the text fades instead of popping. Call once per frame.
+	 * Draws one piece of a route's line.
 	 */
-	private double depthOpacity(boolean showing, long nowMillis)
+	private void drawLine(Graphics2D graphics, Line line)
 	{
-		if (lastDepthFadeMillis >= 0)
-		{
-			double step = Math.max(0, nowMillis - lastDepthFadeMillis) / DEPTH_FADE_MILLIS;
-			depthFade = showing ? Math.min(1, depthFade + step) : Math.max(0, depthFade - step);
-		}
-		lastDepthFadeMillis = nowMillis;
-
-		// Smoothstep, so the fade eases in and out rather than changing at a constant rate.
-		return depthFade * depthFade * (3 - 2 * depthFade);
+		// Round joins and caps so the short segments the curve is drawn with blend into one smooth line.
+		graphics.setColor(config.routeColour());
+		graphics.setStroke(new BasicStroke(thickness(config.routeLineThickness()), BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+		graphics.draw(line.path);
 	}
 
+	/**
+	 * The colour a depth is shown in.
+	 */
 	private Color depthColour(ShoalDepth depth)
 	{
 		switch (depth)
@@ -395,14 +496,59 @@ class TrawlingPlusOverlay extends Overlay
 		}
 	}
 
-	private void drawLine(Graphics2D graphics, Line line)
+	/**
+	 * Whether any line other than the given one is showing.
+	 */
+	private static boolean othersUp(boolean[] up, int except)
 	{
-		// Round joins and caps so the short segments the curve is drawn with blend into one smooth line.
-		graphics.setColor(config.routeColour());
-		graphics.setStroke(new BasicStroke(thickness(config.routeLineThickness()), BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-		graphics.draw(line.path);
+		for (int line = 0; line < up.length; line++)
+		{
+			if (line != except && up[line])
+			{
+				return true;
+			}
+		}
+		return false;
 	}
 
+	/**
+	 * Moves one line of the display towards shown or hidden, and gives back how opaque it now is. A
+	 * line held up by one of the others changes at once instead of fading.
+	 */
+	private double fade(int line, boolean showing, double step, boolean atOnce)
+	{
+		if (atOnce)
+		{
+			helmFades[line] = showing ? 1 : 0;
+		}
+		else
+		{
+			helmFades[line] = showing ? Math.min(1, helmFades[line] + step)
+				: Math.max(0, helmFades[line] - step);
+		}
+
+		// Smoothstep, so the fade eases in and out rather than changing at a constant rate.
+		double faded = helmFades[line];
+		return faded * faded * (3 - 2 * faded);
+	}
+
+	/**
+	 * One line of the helm text, with the shadow drawn here rather than with OverlayUtil so that it
+	 * fades along with the text.
+	 */
+	private static void line(Graphics2D graphics, String text, int left, int baseline, Color colour,
+		double opacity)
+	{
+		graphics.setColor(withOpacity(Color.BLACK, opacity));
+		graphics.drawString(text, left + 1, baseline + 1);
+		graphics.setColor(withOpacity(colour, opacity));
+		graphics.drawString(text, left, baseline);
+	}
+
+	/**
+	 * How opaque the depth text is right now, from 0 to 1. It moves a little towards shown or hidden
+	 * on each call, so the text fades instead of popping. Call once per frame.
+	 */
 	/**
 	 * Draws the route's arrows that fall within a stretch of it, starting at a distance round the route.
 	 * Arrows sit at fixed places round the route, so they don't slide along as the shoal swims.

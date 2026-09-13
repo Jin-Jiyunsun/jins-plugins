@@ -1,6 +1,7 @@
 package com.trawlingplus;
 
 import net.runelite.api.Client;
+import net.runelite.api.Constants;
 import net.runelite.api.Perspective;
 import net.runelite.api.WorldEntity;
 import net.runelite.api.WorldView;
@@ -23,6 +24,15 @@ final class Shoal
 
 	private double[] lastPosition;
 	private ShoalDepth depth = ShoalDepth.UNKNOWN;
+
+	// The bar the game draws over a shoal while it sits at a stop, which empties as the stop runs out,
+	// and how long this species is known to sit there. The bar is the same length whatever the species
+	// but a stop is not, so without a known length there is nothing to turn the bar into a time.
+	private int barLeft = -1;
+	private int barScale;
+	private int barStopTicks;
+	private int anchorLeft;
+	private long anchorMillis;
 	// Hidden until the shoal is seen swimming, and whenever it sits still.
 	private boolean headingArrowHidden = true;
 	private double headingArrowOpacity;
@@ -69,6 +79,74 @@ final class Shoal
 	void setDepth(ShoalDepth depth)
 	{
 		this.depth = depth;
+	}
+
+	/**
+	 * Takes the stop bar as it reads this tick. A bar that has gone means the shoal is on the move, and
+	 * one that has gone up means it has settled at the next stop and the bar has been refilled.
+	 */
+	void setStopBar(int left, int scale, int tick)
+	{
+		if (left < 0 || barLeft < 0 || left > barLeft)
+		{
+			// The bar has gone, or gone back up, so this is a new stop and there is nothing pinned yet.
+			anchorMillis = 0;
+		}
+		else if (left != barLeft && anchorMillis == 0)
+		{
+			// The first step of the bar this stop, which is the moment the time left is pinned to. A
+			// step is a known point in the stop, unlike whenever the shoal happened to come into view.
+			anchorLeft = left;
+			anchorMillis = System.currentTimeMillis();
+		}
+
+		barLeft = left;
+		barScale = scale;
+	}
+
+	/**
+	 * Takes how long this species sits at a stop, in ticks, which is what turns the bar into a time.
+	 */
+	void seedStopTicks(int ticks)
+	{
+		barStopTicks = ticks;
+	}
+
+	/**
+	 * How long the shoal has left at this stop, in seconds, or -1 while it is not sitting at one, or
+	 * while how long its species sits is not known.
+	 */
+	double secondsAtStop()
+	{
+		if (barLeft < 0 || barScale <= 0 || barStopTicks <= 0 || anchorMillis == 0)
+		{
+			return -1;
+		}
+
+		// Counted off the clock from the one moment it was pinned to, rather than worked out again at
+		// every step of the bar. The bar moves two or three units at a time, so taking each step as the
+		// truth makes some seconds longer than others even when the count is right overall.
+		double millis = leftAt(anchorLeft) - (System.currentTimeMillis() - anchorMillis);
+
+		// The bar still has the last word, so it cannot run the count past the end of the stop. It can
+		// only ever bring the count forward, never put it back.
+		return Math.max(0, Math.min(millis, leftAt(barLeft)) / 1000.0);
+	}
+
+	/**
+	 * How long a given amount of bar is worth, in milliseconds.
+	 */
+	private double leftAt(int bar)
+	{
+		return (double) bar / barScale * barStopTicks * Constants.GAME_TICK_LENGTH;
+	}
+
+	/**
+	 * Whether the shoal is sitting at a stop, as of the last tick.
+	 */
+	boolean stopped()
+	{
+		return headingArrowHidden;
 	}
 
 	/**

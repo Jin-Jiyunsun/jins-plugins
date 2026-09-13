@@ -49,9 +49,16 @@ public interface TrawlingPlusConfig extends Config
 	String headingArrowSection = "headingArrow";
 
 	@ConfigSection(
-		name = "Shoal depth",
-		description = "How deep the nearest shoal is swimming, shown at the helm",
+		name = "Heads up display",
+		description = "What is shown on your own boat, at the helm",
 		position = 9
+	)
+	String hudSection = "headsUpDisplay";
+
+	@ConfigSection(
+		name = "Depth helper",
+		description = "Working out how deep the nearest shoal is, and setting the nets to match",
+		position = 10
 	)
 	String depthSection = "shoalDepth";
 
@@ -65,7 +72,7 @@ public interface TrawlingPlusConfig extends Config
 	@ConfigSection(
 		name = "Fishable area",
 		description = "The water a shoal can be fished from",
-		position = 10
+		position = 11
 	)
 	String areaSection = "fishableArea";
 
@@ -421,10 +428,10 @@ public interface TrawlingPlusConfig extends Config
 
 	@ConfigItem(
 		keyName = "showShoalDepth",
-		name = "Show at helm",
-		description = "Show how deep the nearest shoal is swimming, at the helm of your boat",
+		name = "Depth",
+		description = "Show how deep the nearest shoal is swimming, at the helm of your boat. Coloured by the depth colours in Depth helper",
 		position = 18,
-		section = depthSection
+		section = hudSection
 	)
 	default boolean showShoalDepth()
 	{
@@ -433,10 +440,46 @@ public interface TrawlingPlusConfig extends Config
 
 	@Alpha
 	@ConfigItem(
+		keyName = "showDepthTick",
+		name = "Tick on correct depth",
+		description = "Tick the depth at the helm once every trawling net on the boat is set to it",
+		position = 19,
+		section = hudSection
+	)
+	default boolean showDepthTick()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "showTimeAtStop",
+		name = "Time left at stop",
+		description = "Show how long the nearest shoal has left before it swims on, at the helm",
+		position = 20,
+		section = hudSection
+	)
+	default boolean showTimeAtStop()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "showBaited",
+		name = "Baited",
+		description = "Show when the nearest shoal has been baited, above the depth at the helm",
+		position = 21,
+		section = hudSection
+	)
+	default boolean showBaited()
+	{
+		return true;
+	}
+
+	@ConfigItem(
 		keyName = "shallowDepthColour",
 		name = "Shallow",
 		description = "Colour of the text while the nearest shoal is shallow",
-		position = 19,
+		position = 20,
 		section = depthSection
 	)
 	default Color shallowDepthColour()
@@ -449,7 +492,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "moderateDepthColour",
 		name = "Moderate",
 		description = "Colour of the text while the nearest shoal is at moderate depth",
-		position = 20,
+		position = 21,
 		section = depthSection
 	)
 	default Color moderateDepthColour()
@@ -462,7 +505,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "deepDepthColour",
 		name = "Deep",
 		description = "Colour of the text while the nearest shoal is deep",
-		position = 21,
+		position = 22,
 		section = depthSection
 	)
 	default Color deepDepthColour()
@@ -474,7 +517,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "showNetDepths",
 		name = "Net depths",
 		description = "Letter beside each net on the panel showing its depth: R, S, M or D",
-		position = 22,
+		position = 23,
 		section = depthSection
 	)
 	default boolean showNetDepths()
@@ -486,7 +529,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "showNetButton",
 		name = "Depth guide",
 		description = "Highlight the button that moves a net towards the depth of the nearest shoal",
-		position = 23,
+		position = 24,
 		section = depthSection
 	)
 	default boolean showNetButton()
@@ -498,7 +541,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "showNetCorrect",
 		name = "Tick on correct depth",
 		description = "Tick a net that is already at the depth of the nearest shoal",
-		position = 24,
+		position = 25,
 		section = depthSection
 	)
 	default boolean showNetCorrect()

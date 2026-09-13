@@ -79,6 +79,17 @@ public class TrawlingPlusPlugin extends Plugin
 	// routes are accurate to a fraction of a tile, so a shoal this far off one isn't swimming it.
 	private static final double MAX_ROUTE_OFFSET = 3;
 
+	// The two trawling net slots a boat can have: the hotspot each net is built on, and how deep it is
+	// set. A slot with no net in it names no hotspot.
+	private static final int[] NET_SLOTS = {
+		VarbitID.SAILING_SIDEPANEL_BOAT_TRAWLING_NET_0_HOTSPOT_ID,
+		VarbitID.SAILING_SIDEPANEL_BOAT_TRAWLING_NET_1_HOTSPOT_ID
+	};
+	private static final int[] NET_DEPTHS = {
+		VarbitID.SAILING_SIDEPANEL_BOAT_TRAWLING_NET_0_DEPTH,
+		VarbitID.SAILING_SIDEPANEL_BOAT_TRAWLING_NET_1_DEPTH
+	};
+
 	@Inject
 	private Client client;
 
@@ -109,6 +120,14 @@ public class TrawlingPlusPlugin extends Plugin
 	private RouteData routeData;
 	private Shoal nearestShoal;
 	private boolean showGuides;
+
+	// Which step of its route the shoal was last baited at, and whether that bait belongs to the stop
+	// it is sitting at now. Null until the first reading, so starting the plugin beside an already
+	// baited shoal does not read as a bait having just been laid.
+	private Integer baitedStep;
+	private boolean baited;
+	private boolean wasStopped;
+	private boolean netsAtDepth;
 	private List<ShoalRoute> routes = Collections.emptyList();
 
 	// All keyed by the id of each world entity's own world view, which is what ties a shoal's
@@ -256,6 +275,8 @@ public class TrawlingPlusPlugin extends Plugin
 			}
 			shoal.update(position);
 			shoal.setDepth(depthOf(entry.getValue(), RESTING_DEPTH_BY_CLICKBOX.getOrDefault(clickbox, ShoalDepth.UNKNOWN)));
+			shoal.setStopBar(stopBarOf(entry.getValue()), stopBarScaleOf(entry.getValue()),
+				client.getTickCount());
 
 			// Match once, and again if a mixed shoal turns back into a species that doesn't fit its route.
 			String species = SPECIES_BY_CLICKBOX.get(clickbox);
@@ -265,11 +286,20 @@ public class TrawlingPlusPlugin extends Plugin
 				route = nearestRoute(position[0], position[1], species);
 				shoal.setRoute(route);
 			}
+
+			// How long a stop lasts is recorded with the route it belongs to, so it arrives with the
+			// match rather than being measured or held in a table of its own.
+			if (route != null)
+			{
+				shoal.seedStopTicks(route.stopTicks());
+			}
 		}
 
 		// Worked out here rather than in each overlay, which would repeat it every frame.
 		nearestShoal = nearest();
 		showGuides = guidesWanted();
+		baited = stillBaited();
+		netsAtDepth = netsSetToDepth();
 	}
 
 	private void findExistingShoals()
@@ -332,6 +362,91 @@ public class TrawlingPlusPlugin extends Plugin
 	}
 
 	/**
+	 * Whether every trawling net on the boat is set to the depth the nearest shoal is swimming at, as
+	 * worked out on the last tick.
+	 */
+	boolean isAtDepth()
+	{
+		return netsAtDepth;
+	}
+
+	/**
+	 * Whether every net fitted is already at the depth worth fishing. A boat with no nets, or a shoal
+	 * whose depth is not known, has nothing to be right about.
+	 */
+	private boolean netsSetToDepth()
+	{
+		int wanted = getNearestDepth().netDepth();
+		if (wanted < 0)
+		{
+			return false;
+		}
+
+		boolean fitted = false;
+		for (int slot = 0; slot < NET_SLOTS.length; slot++)
+		{
+			// A slot names the hotspot its net is built on, so an empty slot names no hotspot.
+			if (client.getVarbitValue(NET_SLOTS[slot]) <= 0)
+			{
+				continue;
+			}
+
+			fitted = true;
+			if (client.getVarbitValue(NET_DEPTHS[slot]) != wanted)
+			{
+				return false;
+			}
+		}
+		return fitted;
+	}
+
+	/**
+	 * Whether the shoal nearest the boat has been baited at the stop it is sitting at, as worked out on
+	 * the last tick.
+	 */
+	boolean isBaited()
+	{
+		return baited;
+	}
+
+	/**
+	 * Works out whether the bait on the nearest shoal is still the one for the stop it is at. The game
+	 * records which step of its route a shoal was baited at rather than how long the bait has left, and
+	 * the number means nothing to us, so the change is what is watched: a new number while the shoal
+	 * sits still is a fresh bait, and a shoal swimming off leaves its bait behind with the stop.
+	 */
+	private boolean stillBaited()
+	{
+		int step = client.getVarbitValue(VarbitID.SAILING_PLAYER_TRAWLING_SHOAL_BAITED_STEP);
+		boolean laid = baitedStep != null && baitedStep != step;
+		baitedStep = step;
+
+		if (nearestShoal == null)
+		{
+			wasStopped = false;
+			return false;
+		}
+
+		boolean stopped = nearestShoal.stopped();
+		boolean held = baited;
+		if (laid)
+		{
+			// Taken wherever the shoal is rather than only once it counts as stopped. Bait is laid as
+			// the shoal arrives, and a stop is not recognised until it has held still for a tick, so
+			// insisting on both at once threw the bait away on the tick it was laid.
+			held = true;
+		}
+		else if (wasStopped && !stopped)
+		{
+			// It has set off again, leaving the bait behind with the stop.
+			held = false;
+		}
+
+		wasStopped = stopped;
+		return held;
+	}
+
+	/**
 	 * Whether anything should be drawn at all, as worked out on the last tick, which is as much of the
 	 * Show guides setting as the overlays need to know.
 	 */
@@ -359,8 +474,7 @@ public class TrawlingPlusPlugin extends Plugin
 		}
 
 		// Each slot names the hotspot its net is built on, so an empty slot names no hotspot.
-		return client.getVarbitValue(VarbitID.SAILING_SIDEPANEL_BOAT_TRAWLING_NET_0_HOTSPOT_ID) > 0
-			|| client.getVarbitValue(VarbitID.SAILING_SIDEPANEL_BOAT_TRAWLING_NET_1_HOTSPOT_ID) > 0;
+		return client.getVarbitValue(NET_SLOTS[0]) > 0 || client.getVarbitValue(NET_SLOTS[1]) > 0;
 	}
 
 	/**
@@ -447,6 +561,59 @@ public class TrawlingPlusPlugin extends Plugin
 	}
 
 	/**
+	 * How much is left of the bar the game draws over a shoal sitting at a stop, or -1 when there is no
+	 * bar because the shoal is on the move. It is drawn the way a health bar is, so that is where it is
+	 * read from.
+	 */
+	private static int stopBarOf(WorldEntity entity)
+	{
+		WorldView view = entity.getWorldView();
+		if (view == null)
+		{
+			return -1;
+		}
+
+		for (NPC npc : view.npcs())
+		{
+			if (npc.getHealthScale() > 0)
+			{
+				return npc.getHealthRatio();
+			}
+		}
+		return -1;
+	}
+
+	/**
+	 * How long the bar over a shoal at a stop is when it is full, or -1 when there is no bar.
+	 */
+	private static int stopBarScaleOf(WorldEntity entity)
+	{
+		WorldView view = entity.getWorldView();
+		if (view == null)
+		{
+			return -1;
+		}
+
+		for (NPC npc : view.npcs())
+		{
+			if (npc.getHealthScale() > 0)
+			{
+				return npc.getHealthScale();
+			}
+		}
+		return -1;
+	}
+
+	/**
+	 * How long the shoal nearest the boat has left at its stop, in seconds, or -1 if there is no such
+	 * shoal or it is on the move.
+	 */
+	double getSecondsAtStop()
+	{
+		return nearestShoal == null ? -1 : nearestShoal.secondsAtStop();
+	}
+
+	/**
 	 * How deep a shoal is swimming, from the animation its ripples and fish play, falling back to the
 	 * depth its species rests at until they are close enough to be animating.
 	 */
@@ -502,6 +669,10 @@ public class TrawlingPlusPlugin extends Plugin
 		shoals.clear();
 		nearestShoal = null;
 		showGuides = false;
+		baitedStep = null;
+		baited = false;
+		wasStopped = false;
+		netsAtDepth = false;
 	}
 
 	@Provides

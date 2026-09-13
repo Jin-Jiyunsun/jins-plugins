@@ -49,6 +49,7 @@ final class ShoalRoute
 	private static final double AT_STOP_TILES = 3.0;
 
 	private final String species;
+	private final int stopTicks;
 	private final double[] pathX;
 	private final double[] pathY;
 	private final double[] pathDistance;
@@ -63,7 +64,7 @@ final class ShoalRoute
 	private final double maxX;
 	private final double maxY;
 
-	ShoalRoute(String species, String name, double[][] path, double[][] stops)
+	ShoalRoute(String species, String name, int stopTicks, double[][] path, double[][] stops)
 	{
 		if (path.length < 2 || stops.length == 0)
 		{
@@ -71,6 +72,7 @@ final class ShoalRoute
 		}
 
 		this.species = species;
+		this.stopTicks = stopTicks;
 		this.stops = stops;
 
 		int points = path.length;
@@ -166,7 +168,8 @@ final class ShoalRoute
 		{
 			for (RouteData.Route route : species.routes)
 			{
-				routes.add(new ShoalRoute(species.name, route.name, shape(route.path, smoothing), route.stops));
+				routes.add(new ShoalRoute(species.name, route.name, route.stopTicks,
+					shape(route.path, smoothing), route.stops));
 			}
 		}
 		return routes;
@@ -392,6 +395,14 @@ final class ShoalRoute
 	private static double[] lerp(double[] a, double[] b, double fraction)
 	{
 		return new double[]{a[0] + (b[0] - a[0]) * fraction, a[1] + (b[1] - a[1]) * fraction};
+	}
+
+	/**
+	 * How long a shoal sits at each stop on this route, in ticks, or 0 where it has not been timed.
+	 */
+	int stopTicks()
+	{
+		return stopTicks;
 	}
 
 	String getSpecies()

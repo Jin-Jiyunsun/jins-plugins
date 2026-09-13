@@ -58,6 +58,7 @@ def main():
                 "recorded": recording["recorded"],
                 "world": recording["world"],
                 "lapTicks": recording["lapTicks"],
+                "stopTicks": recording.get("stopTicks", 0),
                 "stops": recording["stops"],
                 "path": recording["path"],
             })

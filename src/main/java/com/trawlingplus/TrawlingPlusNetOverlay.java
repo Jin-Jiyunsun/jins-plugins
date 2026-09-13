@@ -41,11 +41,11 @@ class TrawlingPlusNetOverlay extends Overlay
 
 	private static final Color HIGHLIGHT = new Color(255, 200, 0);
 	private static final Color PILL = new Color(0, 0, 0, 170);
-	private static final Color TICK = new Color(0, 220, 80);
+	static final Color TICK = new Color(0, 220, 80);
 	private static final int PILL_PADDING = 3;
 
 	// The tick is drawn by hand, so its size is known rather than measured.
-	private static final int TICK_WIDTH = 9;
+	static final int TICK_WIDTH = 9;
 
 	// A button counts as being on a row if their middles are within this many pixels.
 	private static final int SAME_ROW = 16;
@@ -128,7 +128,7 @@ class TrawlingPlusNetOverlay extends Overlay
 					int left = withLetter
 						? picture.x + picture.width - TICK_WIDTH - 2
 						: picture.x + (picture.width - TICK_WIDTH) / 2;
-					drawTick(graphics, left, middle);
+					drawTick(graphics, left, middle, TICK);
 				}
 			}
 			else if (config.showNetButton())
@@ -272,11 +272,12 @@ class TrawlingPlusNetOverlay extends Overlay
 	}
 
 	/**
-	 * A tick starting at the given edge and centred on the given line.
+	 * A tick starting at the given edge and centred on the given line. Shared with the display at the
+	 * helm, which ticks the depth once every net is set to it.
 	 */
-	private static void drawTick(Graphics2D graphics, int left, int middle)
+	static void drawTick(Graphics2D graphics, int left, int middle, Color colour)
 	{
-		graphics.setColor(TICK);
+		graphics.setColor(colour);
 		graphics.setStroke(new BasicStroke(2));
 		graphics.drawLine(left, middle, left + 3, middle + 4);
 		graphics.drawLine(left + 3, middle + 4, left + TICK_WIDTH, middle - 5);

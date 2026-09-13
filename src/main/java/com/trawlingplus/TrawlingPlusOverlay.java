@@ -491,13 +491,6 @@ class TrawlingPlusOverlay extends Overlay
 	{
 		if (!config.showHeadsUpDisplay())
 		{
-			// Switched off, so off the screen at once rather than faded away, and faded back in from
-			// nothing when it is switched on again.
-			for (int line = 0; line < HELM_LINES; line++)
-			{
-				helmFades[line] = 0;
-			}
-			lastHelmFadeMillis = -1;
 			return;
 		}
 

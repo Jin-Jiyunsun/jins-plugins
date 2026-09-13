@@ -9,7 +9,9 @@ import java.awt.Rectangle;
 import java.awt.Shape;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import javax.inject.Inject;
 import net.runelite.api.Client;
 import net.runelite.api.gameval.InterfaceID;
@@ -54,6 +56,17 @@ class TrawlingPlusNetOverlay extends Overlay
 	// of it. Without this the marks latch onto button frames and arrows as well.
 	private static final int PICTURE_COLUMN = 40;
 
+	// The last depth and place each net was seen with, by its position among the rows. While a net is
+	// being raised or lowered its picture briefly is not one of the four depth pictures, and drawing from
+	// what was last seen keeps the marks from flickering off for those frames.
+	private final Map<Integer, NetRow> lastSeen = new HashMap<>();
+
+	// The last button highlighted on each net, by the same position, and when it was last found. Between
+	// the steps of a net being raised or lowered its button briefly loses its action, which looks the same
+	// as nobody operating the net, so the highlight is held for up to a game tick rather than dropped.
+	private final Map<Integer, SeenButton> lastButtons = new HashMap<>();
+	private static final long BUTTON_GRACE_MILLIS = 600;
+
 	private final Client client;
 	private final TrawlingPlusPlugin plugin;
 	private final TrawlingPlusConfig config;
@@ -95,12 +108,13 @@ class TrawlingPlusNetOverlay extends Overlay
 
 		// The buttons are only wanted for the guide, and only exist while the player is at that net.
 		List<Widget> buttons = config.showNetButton() ? netButtons() : Collections.emptyList();
+		long now = System.currentTimeMillis();
 		int wanted = plugin.getNearestDepth().netDepth();
-		for (Widget net : netPictures(rows))
+		for (NetRow net : netRows(rows))
 		{
 			// The picture of a net is its depth, so a row can never be labelled with another net.
-			int depth = net.getSpriteId() - NET_PICTURE_RAISED;
-			Rectangle picture = net.getBounds();
+			int depth = net.depth;
+			Rectangle picture = net.picture;
 			// The two share the picture when both are switched on, and take the middle of it when
 			// either has the row to itself.
 			boolean withLetter = config.showNetDepths();
@@ -134,10 +148,10 @@ class TrawlingPlusNetOverlay extends Overlay
 			else if (config.showNetButton())
 			{
 				// Lowering a net takes it deeper, so the button to press follows the numbers.
-				Widget press = buttonOnRow(buttons, middle, depth < wanted);
+				Rectangle press = guideButton(buttons, net, middle, depth < wanted, now);
 				if (press != null)
 				{
-					highlight(graphics, press.getBounds());
+					highlight(graphics, press);
 				}
 			}
 		}
@@ -147,30 +161,47 @@ class TrawlingPlusNetOverlay extends Overlay
 	}
 
 	/**
-	 * The pictures of the trawling nets on the panel, top row first, which is the order the depth
-	 * varbits number them.
+	 * The trawling nets on the panel with their depths, top row first. A depth is only ever read off one
+	 * of the four depth pictures; for the moments a net's picture is anything else, it is drawn as it was
+	 * last seen.
 	 */
-	private List<Widget> netPictures(Widget rows)
+	private List<NetRow> netRows(Widget rows)
 	{
-		List<Widget> pictures = new ArrayList<>();
+		List<NetRow> nets = new ArrayList<>();
 		for (Widget child : children(rows))
 		{
-			if (child == null || child.isHidden() || child.getRelativeX() >= PICTURE_COLUMN
-				|| child.getSpriteId() < NET_PICTURE_RAISED || child.getSpriteId() > NET_PICTURE_DEEPEST)
+			if (child == null || child.getRelativeX() >= PICTURE_COLUMN)
 			{
 				continue;
 			}
 
-			// Some frames hand back a picture the panel has not laid out yet.
+			int sprite = child.getSpriteId();
+			boolean net = sprite >= NET_PICTURE_RAISED && sprite <= NET_PICTURE_DEEPEST;
 			Rectangle bounds = child.getBounds();
-			if (bounds.y >= 0 && bounds.height > 0)
+			// Some frames hand back a picture the panel has not laid out yet.
+			if (net && !child.isHidden() && bounds.y >= 0 && bounds.height > 0)
 			{
-				pictures.add(child);
+				NetRow row = new NetRow(child.getIndex(), sprite - NET_PICTURE_RAISED, bounds);
+				lastSeen.put(child.getIndex(), row);
+				nets.add(row);
+			}
+			else if (sprite > 0 && !net)
+			{
+				// The picture of something else entirely, so whatever net was in this place has gone.
+				lastSeen.remove(child.getIndex());
+			}
+			else
+			{
+				NetRow seen = lastSeen.get(child.getIndex());
+				if (seen != null)
+				{
+					nets.add(seen);
+				}
 			}
 		}
 
-		pictures.sort((one, other) -> Integer.compare(one.getBounds().y, other.getBounds().y));
-		return pictures;
+		nets.sort((one, other) -> Integer.compare(one.picture.y, other.picture.y));
+		return nets;
 	}
 
 	/**
@@ -194,6 +225,26 @@ class TrawlingPlusNetOverlay extends Overlay
 			}
 		}
 		return buttons;
+	}
+
+	/**
+	 * Where the button that moves a net the given way is, or where it last was if it went missing less
+	 * than a game tick ago, or null.
+	 */
+	private Rectangle guideButton(List<Widget> buttons, NetRow net, int middle, boolean lowering, long now)
+	{
+		Widget press = buttonOnRow(buttons, middle, lowering);
+		if (press != null)
+		{
+			Rectangle bounds = press.getBounds();
+			lastButtons.put(net.index, new SeenButton(bounds, lowering, now));
+			return bounds;
+		}
+
+		SeenButton seen = lastButtons.get(net.index);
+		return seen != null && seen.lowering == lowering && now - seen.millis <= BUTTON_GRACE_MILLIS
+			? seen.bounds
+			: null;
 	}
 
 	private static Widget buttonOnRow(List<Widget> buttons, int middle, boolean lowering)
@@ -304,5 +355,39 @@ class TrawlingPlusNetOverlay extends Overlay
 		graphics.setColor(new Color(HIGHLIGHT.getRed(), HIGHLIGHT.getGreen(), HIGHLIGHT.getBlue(), 220));
 		graphics.setStroke(new BasicStroke(2));
 		graphics.drawRoundRect(button.x, button.y, button.width - 1, button.height - 1, 6, 6);
+	}
+
+	/**
+	 * A trawling net on the panel: how deep it is set, and where its picture is.
+	 */
+	private static final class NetRow
+	{
+		final int index;
+		final int depth;
+		final Rectangle picture;
+
+		NetRow(int index, int depth, Rectangle picture)
+		{
+			this.index = index;
+			this.depth = depth;
+			this.picture = picture;
+		}
+	}
+
+	/**
+	 * A button highlighted on a net: where it was, which way it moves the net, and when it was last found.
+	 */
+	private static final class SeenButton
+	{
+		final Rectangle bounds;
+		final boolean lowering;
+		final long millis;
+
+		SeenButton(Rectangle bounds, boolean lowering, long millis)
+		{
+			this.bounds = bounds;
+			this.lowering = lowering;
+			this.millis = millis;
+		}
 	}
 }

@@ -12,6 +12,7 @@ import java.util.Set;
 import javax.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
+import net.runelite.api.Constants;
 import net.runelite.api.GameObject;
 import net.runelite.api.GameState;
 import net.runelite.api.Perspective;
@@ -79,6 +80,11 @@ public class TrawlingPlusPlugin extends Plugin
 	// routes are accurate to a fraction of a tile, so a shoal this far off one isn't swimming it.
 	private static final double MAX_ROUTE_OFFSET = 3;
 
+	// How long another route has to be the nearer one before it takes over, in ticks: about five
+	// seconds, long enough to cross the water between two routes without the drawn one changing
+	// under you, short enough not to be waiting for it once you have plainly moved on.
+	private static final int ROUTE_GRACE_TICKS = 8;
+
 	// The two trawling net slots a boat can have: the hotspot each net is built on, and how deep it is
 	// set. A slot with no net in it names no hotspot.
 	private static final int[] NET_SLOTS = {
@@ -119,6 +125,18 @@ public class TrawlingPlusPlugin extends Plugin
 
 	private RouteData routeData;
 	private Shoal nearestShoal;
+
+	// Where the boat of the player is in world tiles, or null while they are not aboard one. Worked out
+	// once a tick and handed to everything that wants it, the minimap included: it draws many times
+	// over between ticks, and the boat has not moved in between.
+	private double[] boatPlace;
+
+	// The route nearest the boat, and the one waiting to take over from it. A route is only swapped
+	// once another has been the nearer for a while: sailing the water between two of them would
+	// otherwise flick back and forth between the pair with every small movement.
+	private ShoalRoute nearestRoute;
+	private ShoalRoute contender;
+	private int contenderTicks;
 	private boolean showGuides;
 
 	// Which step of its route the shoal was last baited at, and whether that bait belongs to the stop
@@ -146,7 +164,8 @@ public class TrawlingPlusPlugin extends Plugin
 		overlayManager.add(mapOverlay);
 		overlayManager.add(minimapOverlay);
 		clientThread.invoke(this::findExistingShoals);
-		log.debug("Trawling Plus started with {} routes", routes.size());
+		log.debug("Trawling Plus started with {} routes, {} points to draw them from", routes.size(),
+			routes.stream().mapToInt(ShoalRoute::sampleCount).sum());
 	}
 
 	@Override
@@ -253,6 +272,18 @@ public class TrawlingPlusPlugin extends Plugin
 	@Subscribe
 	public void onGameTick(GameTick event)
 	{
+		// None of this means anything off a boat: the routes are out at sea and out of sight from land,
+		// and someone stood on land is not fishing. So none of it is worked out off one, and everything
+		// drawn on the water, the minimap and the side panel rests on the same answer. The world map is
+		// the exception, and needs none of this: it draws every route wherever the player happens to be.
+		WorldEntity own = ownBoat();
+		if (!aboard(own))
+		{
+			stopTracking();
+			showGuides = false;
+			return;
+		}
+
 		for (Map.Entry<Integer, WorldEntity> entry : entities.entrySet())
 		{
 			Integer clickbox = clickboxByView.get(entry.getKey());
@@ -274,9 +305,7 @@ public class TrawlingPlusPlugin extends Plugin
 				continue;
 			}
 			shoal.update(position);
-			shoal.setDepth(depthOf(entry.getValue(), RESTING_DEPTH_BY_CLICKBOX.getOrDefault(clickbox, ShoalDepth.UNKNOWN)));
-			shoal.setStopBar(stopBarOf(entry.getValue()), stopBarScaleOf(entry.getValue()),
-				client.getTickCount());
+			read(entry.getValue(), RESTING_DEPTH_BY_CLICKBOX.getOrDefault(clickbox, ShoalDepth.UNKNOWN), shoal);
 
 			// Match once, and again if a mixed shoal turns back into a species that doesn't fit its route.
 			String species = SPECIES_BY_CLICKBOX.get(clickbox);
@@ -296,8 +325,10 @@ public class TrawlingPlusPlugin extends Plugin
 		}
 
 		// Worked out here rather than in each overlay, which would repeat it every frame.
+		boatPlace = worldPlace(own.getLocalLocation());
 		nearestShoal = nearest();
 		showGuides = guidesWanted();
+		followNearestRoute();
 		baited = stillBaited();
 		netsAtDepth = netsSetToDepth();
 	}
@@ -359,6 +390,122 @@ public class TrawlingPlusPlugin extends Plugin
 	Shoal getNearestShoal()
 	{
 		return nearestShoal;
+	}
+
+	/**
+	 * Where the boat of the player is, in world tiles, as worked out on the last tick, or null while they
+	 * are not aboard one.
+	 */
+	double[] getBoatPlace()
+	{
+		return boatPlace;
+	}
+
+	/**
+	 * The route nearest the boat of the player, as worked out on the last tick, or null. Only one route
+	 * is drawn at a time, so which one that is has to be decided somewhere.
+	 */
+	ShoalRoute getNearestRoute()
+	{
+		return nearestRoute;
+	}
+
+	/**
+	 * Keeps track of which route the boat is nearest, swapping only once another has been the nearer
+	 * one for a while. Distance is to the route itself rather than to a shoal on it, so a route is
+	 * still found while sailing towards a sea with nothing in view yet.
+	 */
+	private void followNearestRoute()
+	{
+		WorldView view = client.getTopLevelWorldView();
+		double[] afloat = boatPlace;
+		if (afloat == null || view == null)
+		{
+			return;
+		}
+
+		// Only routes reaching the map that is loaded, since a route is only ever wanted to be drawn on
+		// it. Working out which of the ones an ocean away is nearest would cost more than the answer,
+		// and the answer would change nothing: none of them can be drawn.
+		int beyond = Math.max(0, Math.min((Constants.EXTENDED_SCENE_SIZE - Constants.SCENE_SIZE) / 2,
+			client.getExpandedMapLoading() * Constants.CHUNK_SIZE));
+		double fromX = view.getBaseX() - beyond;
+		double fromY = view.getBaseY() - beyond;
+		double toX = view.getBaseX() + view.getSizeX() + beyond;
+		double toY = view.getBaseY() + view.getSizeY() + beyond;
+
+		// The one already being drawn is looked at first, since the boat is usually still nearest the
+		// route it was nearest a tick ago. That gives a distance to beat straight away, and every route
+		// whose box is further off than that is then passed over without being looked through at all.
+		// How many of them are in range at all. Most of the time it is one, and one route has nothing to
+		// be nearer than, so there is nothing to work out: knowing how far away it is would only ever be
+		// used to rule others out, and there are none to rule out.
+		ShoalRoute only = null;
+		int candidates = 0;
+		for (ShoalRoute route : routes)
+		{
+			if (route.overlaps(fromX, fromY, toX, toY))
+			{
+				candidates++;
+				only = route;
+			}
+		}
+
+		if (candidates <= 1)
+		{
+			// Nothing in range leaves nothing to draw. One in range is the answer, taken straight away:
+			// waiting is for choosing between routes, and there is no choice to make.
+			if (only != nearestRoute)
+			{
+				nearestRoute = only;
+				contender = null;
+				contenderTicks = 0;
+			}
+			return;
+		}
+
+		ShoalRoute closest = nearestRoute != null && nearestRoute.overlaps(fromX, fromY, toX, toY)
+			? nearestRoute
+			: null;
+		double nearestOffset = closest == null ? Double.MAX_VALUE
+			: closest.project(afloat[0], afloat[1]).offset;
+
+		for (ShoalRoute route : routes)
+		{
+			if (route == closest || !route.overlaps(fromX, fromY, toX, toY)
+				|| route.boxDistance(afloat[0], afloat[1]) >= nearestOffset)
+			{
+				continue;
+			}
+
+			double offset = route.project(afloat[0], afloat[1]).offset;
+			if (offset < nearestOffset)
+			{
+				nearestOffset = offset;
+				closest = route;
+			}
+		}
+
+		if (closest == nearestRoute)
+		{
+			contender = null;
+			contenderTicks = 0;
+			return;
+		}
+
+		if (closest != contender)
+		{
+			contender = closest;
+			contenderTicks = 0;
+		}
+
+		// Nothing drawn yet, so there is no reason to make anyone wait for the first one.
+		if (++contenderTicks >= ROUTE_GRACE_TICKS || nearestRoute == null)
+		{
+			nearestRoute = closest;
+			contender = null;
+			contenderTicks = 0;
+		}
 	}
 
 	/**
@@ -456,21 +603,16 @@ public class TrawlingPlusPlugin extends Plugin
 	}
 
 	/**
-	 * Whether the setting is satisfied: always, or a boat fitted with a trawling net, or being aboard
-	 * one. The varbits describe the boat of the player wherever they happen to be standing, so being
-	 * aboard is asked separately.
+	 * Whether the setting is satisfied, on a boat that is already known to be underfoot: either that is
+	 * enough on its own, or the boat has to be fitted with a trawling net as well.
 	 */
 	private boolean guidesWanted()
 	{
-		TrawlingPlusConfig.ShowGuides wanted = config.showGuides();
-		if (wanted == TrawlingPlusConfig.ShowGuides.ALWAYS)
+		// Only ever asked while aboard, so what is left to settle is whether a net has to be fitted too.
+		if (config.showGuides() == TrawlingPlusConfig.ShowGuides.ALWAYS)
 		{
+			// Being on the boat at all, which by the time this is asked is already known.
 			return true;
-		}
-
-		if (wanted == TrawlingPlusConfig.ShowGuides.WITH_NETS_ABOARD && !aboard())
-		{
-			return false;
 		}
 
 		// Each slot names the hotspot its net is built on, so an empty slot names no hotspot.
@@ -481,9 +623,8 @@ public class TrawlingPlusPlugin extends Plugin
 	 * Whether the player is stood on their own boat. Everyone aboard stands in the boat's own world
 	 * view rather than the one the sea is in.
 	 */
-	private boolean aboard()
+	private boolean aboard(WorldEntity boat)
 	{
-		WorldEntity boat = ownBoat();
 		WorldView deck = boat == null ? null : boat.getWorldView();
 		Player player = client.getLocalPlayer();
 		WorldView standing = player == null ? null : player.getWorldView();
@@ -516,8 +657,7 @@ public class TrawlingPlusPlugin extends Plugin
 	 */
 	private Shoal nearest()
 	{
-		WorldEntity boat = ownBoat();
-		double[] afloat = boat == null ? null : worldPlace(boat.getLocalLocation());
+		double[] afloat = boatPlace;
 		if (afloat == null)
 		{
 			return null;
@@ -561,50 +701,6 @@ public class TrawlingPlusPlugin extends Plugin
 	}
 
 	/**
-	 * How much is left of the bar the game draws over a shoal sitting at a stop, or -1 when there is no
-	 * bar because the shoal is on the move. It is drawn the way a health bar is, so that is where it is
-	 * read from.
-	 */
-	private static int stopBarOf(WorldEntity entity)
-	{
-		WorldView view = entity.getWorldView();
-		if (view == null)
-		{
-			return -1;
-		}
-
-		for (NPC npc : view.npcs())
-		{
-			if (npc.getHealthScale() > 0)
-			{
-				return npc.getHealthRatio();
-			}
-		}
-		return -1;
-	}
-
-	/**
-	 * How long the bar over a shoal at a stop is when it is full, or -1 when there is no bar.
-	 */
-	private static int stopBarScaleOf(WorldEntity entity)
-	{
-		WorldView view = entity.getWorldView();
-		if (view == null)
-		{
-			return -1;
-		}
-
-		for (NPC npc : view.npcs())
-		{
-			if (npc.getHealthScale() > 0)
-			{
-				return npc.getHealthScale();
-			}
-		}
-		return -1;
-	}
-
-	/**
 	 * How long the shoal nearest the boat has left at its stop, in seconds, or -1 if there is no such
 	 * shoal or it is on the move.
 	 */
@@ -614,26 +710,47 @@ public class TrawlingPlusPlugin extends Plugin
 	}
 
 	/**
-	 * How deep a shoal is swimming, from the animation its ripples and fish play, falling back to the
-	 * depth its species rests at until they are close enough to be animating.
+	 * Reads what the fish inside a shoal say about it, in one walk of them: how deep it is swimming,
+	 * from the animation they play, falling back to the depth its species rests at until they are
+	 * close enough to be animating; and how much is left of the bar drawn over it while it sits at a
+	 * stop, which the game draws the way it draws a health bar. Both come off the same handful of
+	 * NPCs, so they are taken together rather than walking them again for each.
 	 */
-	private static ShoalDepth depthOf(WorldEntity entity, ShoalDepth resting)
+	private static void read(WorldEntity entity, ShoalDepth resting, Shoal shoal)
 	{
 		WorldView view = entity.getWorldView();
-		if (view == null)
-		{
-			return resting;
-		}
+		ShoalDepth depth = resting;
+		boolean swimming = false;
+		int bar = -1;
+		int scale = -1;
 
-		for (NPC npc : view.npcs())
+		for (NPC npc : view == null ? Collections.<NPC>emptyList() : view.npcs())
 		{
-			ShoalDepth depth = ShoalDepth.fromAnimation(npc.getAnimation());
-			if (depth != null)
+			if (!swimming)
 			{
-				return depth;
+				ShoalDepth animating = ShoalDepth.fromAnimation(npc.getAnimation());
+				if (animating != null)
+				{
+					depth = animating;
+					swimming = true;
+				}
+			}
+
+			if (scale < 0 && npc.getHealthScale() > 0)
+			{
+				bar = npc.getHealthRatio();
+				scale = npc.getHealthScale();
+			}
+
+			if (swimming && scale >= 0)
+			{
+				// Both found, so the rest of the shoal has nothing left to say.
+				break;
 			}
 		}
-		return resting;
+
+		shoal.setDepth(depth);
+		shoal.setStopBar(bar, scale);
 	}
 
 	private ShoalRoute nearestRoute(double x, double y, String species)
@@ -667,8 +784,21 @@ public class TrawlingPlusPlugin extends Plugin
 		entities.clear();
 		clickboxByView.clear();
 		shoals.clear();
-		nearestShoal = null;
 		showGuides = false;
+		stopTracking();
+	}
+
+	/**
+	 * Forgets everything read off the boat and the shoals around it, leaving the shoals themselves
+	 * alone: they come and go with their own events, and the world map still marks the ones in view.
+	 */
+	private void stopTracking()
+	{
+		boatPlace = null;
+		nearestShoal = null;
+		nearestRoute = null;
+		contender = null;
+		contenderTicks = 0;
 		baitedStep = null;
 		baited = false;
 		wasStopped = false;

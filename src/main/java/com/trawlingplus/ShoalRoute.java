@@ -48,8 +48,22 @@ final class ShoalRoute
 	// A shoal this close to a stop counts as sitting at it, so its next stop is the one after.
 	private static final double AT_STOP_TILES = 3.0;
 
+	// How far either way along the route a shoal is looked for, once it is known roughly where it was,
+	// in tiles. A shoal covers well under a tile a tick, so this is far more than it can have moved,
+	// and far less than the way round to the other side of a crossing.
+	private static final double FOLLOW_WINDOW = 15;
+
+	// A position further than this from the stretch it was expected on has not been followed properly,
+	// so the whole route is searched instead. The same tolerance as matching a shoal to a route.
+	private static final double FOLLOW_OFFSET = 3;
+
+	// How many points go in each run that can be skipped past in one go. Small enough that a run is a
+	// short stretch of route, large enough that there are few runs to look through.
+	private static final int BLOCK = 64;
+
 	private final String species;
 	private final int stopTicks;
+	private final double fishableReach;
 	private final double[] pathX;
 	private final double[] pathY;
 	private final double[] pathDistance;
@@ -59,12 +73,17 @@ final class ShoalRoute
 	private final double[] sampleX;
 	private final double[] sampleY;
 	private final double[] sampleDistance;
+	private final double[] blockMinX;
+	private final double[] blockMinY;
+	private final double[] blockMaxX;
+	private final double[] blockMaxY;
 	private final double minX;
 	private final double minY;
 	private final double maxX;
 	private final double maxY;
 
-	ShoalRoute(String species, String name, int stopTicks, double[][] path, double[][] stops)
+	ShoalRoute(String species, String name, int stopTicks, double fishableReach, double[][] path,
+		double[][] stops)
 	{
 		if (path.length < 2 || stops.length == 0)
 		{
@@ -73,6 +92,7 @@ final class ShoalRoute
 
 		this.species = species;
 		this.stopTicks = stopTicks;
+		this.fishableReach = fishableReach;
 		this.stops = stops;
 
 		int points = path.length;
@@ -141,6 +161,61 @@ final class ShoalRoute
 			sampleY[i] = samples.get(i)[1];
 			sampleDistance[i] = samples.get(i)[2];
 		}
+
+		// The box each run of points fits inside, worked out once here. A route is a thousand tiles
+		// round and only a stretch of it is ever on screen, so most of these can be dismissed with four
+		// comparisons rather than by asking the same of every point inside them.
+		int blocks = (sampleX.length + BLOCK - 1) / BLOCK;
+		blockMinX = new double[blocks];
+		blockMinY = new double[blocks];
+		blockMaxX = new double[blocks];
+		blockMaxY = new double[blocks];
+		for (int block = 0; block < blocks; block++)
+		{
+			double westward = Double.MAX_VALUE;
+			double southward = Double.MAX_VALUE;
+			double eastward = -Double.MAX_VALUE;
+			double northward = -Double.MAX_VALUE;
+			for (int i = blockFrom(block); i < blockTo(block); i++)
+			{
+				westward = Math.min(westward, sampleX[i]);
+				southward = Math.min(southward, sampleY[i]);
+				eastward = Math.max(eastward, sampleX[i]);
+				northward = Math.max(northward, sampleY[i]);
+			}
+			blockMinX[block] = westward;
+			blockMinY[block] = southward;
+			blockMaxX[block] = eastward;
+			blockMaxY[block] = northward;
+		}
+	}
+
+	/**
+	 * How many runs of points the route is divided into for skipping past the parts of it that are
+	 * nowhere near the screen.
+	 */
+	int blockCount()
+	{
+		return blockMinX.length;
+	}
+
+	int blockFrom(int block)
+	{
+		return block * BLOCK;
+	}
+
+	int blockTo(int block)
+	{
+		return Math.min(sampleX.length, (block + 1) * BLOCK);
+	}
+
+	/**
+	 * Whether any of a run of points could fall inside the given stretch of the world.
+	 */
+	boolean blockWithin(int block, double fromX, double fromY, double toX, double toY)
+	{
+		return blockMaxX[block] >= fromX && blockMinX[block] <= toX
+			&& blockMaxY[block] >= fromY && blockMinY[block] <= toY;
 	}
 
 	/**
@@ -168,7 +243,7 @@ final class ShoalRoute
 		{
 			for (RouteData.Route route : species.routes)
 			{
-				routes.add(new ShoalRoute(species.name, route.name, route.stopTicks,
+				routes.add(new ShoalRoute(species.name, route.name, route.stopTicks, route.fishableReach,
 					shape(route.path, smoothing), route.stops));
 			}
 		}
@@ -405,6 +480,15 @@ final class ShoalRoute
 		return stopTicks;
 	}
 
+	/**
+	 * How far from a shoal on this route it can be fished from, in tiles along each axis, or 0 where
+	 * that has not been measured.
+	 */
+	double fishableReach()
+	{
+		return fishableReach;
+	}
+
 	String getSpecies()
 	{
 		return species;
@@ -424,15 +508,70 @@ final class ShoalRoute
 	}
 
 	/**
+	 * How far a position is from the box the whole route fits inside, or 0 while it is inside it. The
+	 * route is somewhere in that box, so this is never further than the route itself: a route whose box
+	 * is already further off than the nearest found so far cannot win, and need not be looked through.
+	 */
+	double boxDistance(double x, double y)
+	{
+		double awayX = Math.max(0, Math.max(minX - x, x - maxX));
+		double awayY = Math.max(0, Math.max(minY - y, y - maxY));
+		return Math.hypot(awayX, awayY);
+	}
+
+	/**
+	 * The corners of the box the whole route fits inside, as world tiles: south west, south east,
+	 * north east, north west. Enough to find out where a route sits on a map without walking it.
+	 */
+	double[][] corners()
+	{
+		return new double[][]{{minX, minY}, {maxX, minY}, {maxX, maxY}, {minX, maxY}};
+	}
+
+	/**
 	 * Finds the point on the route nearest to a position.
 	 */
 	Projection project(double x, double y)
+	{
+		return project(x, y, -1);
+	}
+
+	/**
+	 * Where a position sits on the route. Given where it was last found, the search is kept to that
+	 * stretch of the route: a route that crosses itself has two places equally close to the crossing,
+	 * and picking whichever is a hair nearer makes whatever is following it jump between the two. A
+	 * negative distance, or a position that has strayed from that stretch, searches the whole route.
+	 */
+	Projection project(double x, double y, double near)
+	{
+		if (near >= 0)
+		{
+			Projection following = project(x, y, near, FOLLOW_WINDOW);
+			if (following.offset <= FOLLOW_OFFSET)
+			{
+				return following;
+			}
+		}
+		return project(x, y, -1, 0);
+	}
+
+	private Projection project(double x, double y, double near, double window)
 	{
 		int points = pathX.length;
 		double bestOffset = Double.MAX_VALUE;
 		double bestDistance = 0;
 		for (int i = 0; i < points; i++)
 		{
+			if (near >= 0)
+			{
+				// Whichever way round is shorter, since the route is a loop.
+				double gap = forward(near, pathDistance[i]);
+				if (Math.min(gap, length - gap) > window)
+				{
+					continue;
+				}
+			}
+
 			int j = (i + 1) % points;
 			double dx = pathX[j] - pathX[i];
 			double dy = pathY[j] - pathY[i];

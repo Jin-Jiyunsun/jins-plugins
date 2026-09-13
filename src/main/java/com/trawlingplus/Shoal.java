@@ -21,6 +21,8 @@ final class Shoal
 
 	private final WorldEntity entity;
 	private ShoalRoute route;
+	// Where the shoal was last found along its route, so it can be followed past a crossing.
+	private double routeDistance = -1;
 
 	private double[] lastPosition;
 	private ShoalDepth depth = ShoalDepth.UNKNOWN;
@@ -31,8 +33,13 @@ final class Shoal
 	private int barLeft = -1;
 	private int barScale;
 	private int barStopTicks;
-	private int anchorLeft;
-	private long anchorMillis;
+	private long stopEndsMillis = -1;
+	private boolean sawNoBar;
+
+	// A bar appearing this far below full did not just appear because a stop began. A shoal's world
+	// entity turns up a tick or two before the fish inside it do, so it can look as though there was
+	// no bar when really there was nothing to read it from yet.
+	private static final int FRESH_SLACK = 6;
 	// Hidden until the shoal is seen swimming, and whenever it sits still.
 	private boolean headingArrowHidden = true;
 	private double headingArrowOpacity;
@@ -58,6 +65,7 @@ final class Shoal
 		{
 			// Stop numbers belong to a route, so draw the new one out from the start.
 			revealStop = -1;
+			routeDistance = -1;
 		}
 		this.route = route;
 	}
@@ -69,6 +77,16 @@ final class Shoal
 	void reshapeRoute(ShoalRoute route)
 	{
 		this.route = route;
+	}
+
+	/**
+	 * Follows the shoal along its route, giving how far round it now is. Keeping hold of where it was
+	 * is what stops it jumping to the other side of a crossing where a route doubles back on itself.
+	 */
+	double followRoute(double[] position)
+	{
+		routeDistance = route.project(position[0], position[1], routeDistance).distance;
+		return routeDistance;
 	}
 
 	ShoalDepth getDepth()
@@ -85,19 +103,26 @@ final class Shoal
 	 * Takes the stop bar as it reads this tick. A bar that has gone means the shoal is on the move, and
 	 * one that has gone up means it has settled at the next stop and the bar has been refilled.
 	 */
-	void setStopBar(int left, int scale, int tick)
+	void setStopBar(int left, int scale)
 	{
-		if (left < 0 || barLeft < 0 || left > barLeft)
+		if (left < 0)
 		{
-			// The bar has gone, or gone back up, so this is a new stop and there is nothing pinned yet.
-			anchorMillis = 0;
+			// No bar, so the shoal is on the move and there is no stop to count down.
+			stopEndsMillis = -1;
+			sawNoBar = true;
 		}
-		else if (left != barLeft && anchorMillis == 0)
+		else if (barLeft < 0 || left > barLeft)
 		{
-			// The first step of the bar this stop, which is the moment the time left is pinned to. A
-			// step is a known point in the stop, unlike whenever the shoal happened to come into view.
-			anchorLeft = left;
-			anchorMillis = System.currentTimeMillis();
+			// A stop has begun, so the clock is set running for as long as one lasts. When it began is
+			// only known if the shoal was watched through the gap before it and the bar has turned up
+			// full: a bar that was already part way down belongs to a stop that started before anyone
+			// was looking, whether because the shoal was found mid stop or because it had not finished
+			// loading, and that one is not counted at all.
+			boolean fromTheStart = sawNoBar && scale > 0 && left >= scale - FRESH_SLACK;
+			stopEndsMillis = fromTheStart
+				? System.currentTimeMillis() + (long) barStopTicks * Constants.GAME_TICK_LENGTH
+				: -1;
+			sawNoBar = false;
 		}
 
 		barLeft = left;
@@ -105,7 +130,7 @@ final class Shoal
 	}
 
 	/**
-	 * Takes how long this species sits at a stop, in ticks, which is what turns the bar into a time.
+	 * Takes how long this species sits at a stop, in ticks, which is how long the clock is set for.
 	 */
 	void seedStopTicks(int ticks)
 	{
@@ -113,32 +138,18 @@ final class Shoal
 	}
 
 	/**
-	 * How long the shoal has left at this stop, in seconds, or -1 while it is not sitting at one, or
-	 * while how long its species sits is not known.
+	 * How long the shoal has left at this stop, in seconds, or -1 when that is not known exactly. It is
+	 * only known for a stop that was watched from its first tick: a shoal found part way through one
+	 * could only be guessed at from how far down its bar is, and a guess is worse than nothing here.
 	 */
 	double secondsAtStop()
 	{
-		if (barLeft < 0 || barScale <= 0 || barStopTicks <= 0 || anchorMillis == 0)
+		if (barLeft < 0 || stopEndsMillis < 0)
 		{
 			return -1;
 		}
 
-		// Counted off the clock from the one moment it was pinned to, rather than worked out again at
-		// every step of the bar. The bar moves two or three units at a time, so taking each step as the
-		// truth makes some seconds longer than others even when the count is right overall.
-		double millis = leftAt(anchorLeft) - (System.currentTimeMillis() - anchorMillis);
-
-		// The bar still has the last word, so it cannot run the count past the end of the stop. It can
-		// only ever bring the count forward, never put it back.
-		return Math.max(0, Math.min(millis, leftAt(barLeft)) / 1000.0);
-	}
-
-	/**
-	 * How long a given amount of bar is worth, in milliseconds.
-	 */
-	private double leftAt(int bar)
-	{
-		return (double) bar / barScale * barStopTicks * Constants.GAME_TICK_LENGTH;
+		return Math.max(0, (stopEndsMillis - System.currentTimeMillis()) / 1000.0);
 	}
 
 	/**

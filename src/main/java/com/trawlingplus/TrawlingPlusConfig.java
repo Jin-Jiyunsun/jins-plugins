@@ -120,8 +120,7 @@ public interface TrawlingPlusConfig extends Config
 	enum ShowGuides
 	{
 		ALWAYS("Always"),
-		WITH_NETS("Nets only"),
-		WITH_NETS_ABOARD("Nets + onboard");
+		WITH_NETS("Nets only");
 
 		private final String name;
 
@@ -159,7 +158,7 @@ public interface TrawlingPlusConfig extends Config
 	@ConfigItem(
 		keyName = "showGuides",
 		name = "Show guides",
-		description = "When to draw anything at all: always, only on a boat fitted with a trawling net, or only while aboard one",
+		description = "When to draw anything at all: whenever aboard a boat, or only when that boat is fitted with a trawling net. Nothing is drawn off a boat either way, apart from the world map",
 		position = 0
 	)
 	default ShowGuides showGuides()
@@ -170,12 +169,12 @@ public interface TrawlingPlusConfig extends Config
 	@ConfigItem(
 		keyName = "showOnMaps",
 		name = "Show on maps",
-		description = "Where to draw routes besides the water: the nearest shoal's route on the minimap, every route on the world map, or both",
+		description = "Where to draw routes besides the water: the nearest route on the minimap, without direction arrows, every route on the world map, or both",
 		position = 1
 	)
 	default ShowOnMaps showOnMaps()
 	{
-		return ShowOnMaps.BOTH;
+		return ShowOnMaps.WORLD_MAP;
 	}
 
 	@ConfigItem(

@@ -59,6 +59,7 @@ def main():
                 "world": recording["world"],
                 "lapTicks": recording["lapTicks"],
                 "stopTicks": recording.get("stopTicks", 0),
+                "fishableReach": recording.get("fishableReach", 0),
                 "stops": recording["stops"],
                 "path": recording["path"],
             })

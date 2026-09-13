@@ -7,6 +7,7 @@ import java.awt.FontMetrics;
 import java.awt.Graphics2D;
 import java.awt.Polygon;
 import java.awt.RenderingHints;
+import java.awt.Stroke;
 import java.awt.geom.Path2D;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -31,20 +32,33 @@ class TrawlingPlusOverlay extends Overlay
 	// Stops are drawn as a square this many tiles across, roughly the size of a shoal.
 	private static final int STOP_SIZE = 3;
 
-	// How far above the deck the depth text floats, in local units: about two tiles, which clears the
-	// mast and the crew.
-	// How far the drawn fishable area reaches from the shoal, in tiles. The area the game itself uses
-	// is not round: it caps each axis at about 10.5 tiles and the distance at about 13.5, so it is a
-	// square with its corners cut off, measured in game sat still with the net running. A circle of the
-	// axis reach sits just inside all of that, so water inside the ring can always be fished from, and
-	// the corners it leaves out are water that can be.
-	private static final double FISHABLE_REACH = 10.5;
-
+	// The area the game itself uses is not round: it caps each axis at the route's reach and the
+	// distance somewhat further, so it is a square with its corners cut off. A circle of the axis reach
+	// sits just inside all of that, so water inside the ring can always be fished from, and the corners
+	// it leaves out are water that can be. How far the reach is differs by species, so it is recorded
+	// with the route rather than fixed here.
+	//
 	// How many points the ring is drawn from, spread evenly around it. Each one is a projection, done
-	// every frame, so it is only as many as it takes to read as a circle rather than a polygon.
+	// every frame, so it is only as many as it takes to read as a circle rather than a polygon. Where
+	// each sits around the ring never changes, so the angles are worked out once here rather than as
+	// sixty-four sines and cosines a frame.
 	private static final int AREA_POINTS = 64;
 	private static final int AREA_FILL_ALPHA = 30;
+	private static final double[] AREA_COS = new double[AREA_POINTS];
+	private static final double[] AREA_SIN = new double[AREA_POINTS];
 
+	static
+	{
+		for (int step = 0; step < AREA_POINTS; step++)
+		{
+			double angle = 2 * Math.PI * step / AREA_POINTS;
+			AREA_COS[step] = Math.cos(angle);
+			AREA_SIN[step] = Math.sin(angle);
+		}
+	}
+
+	// How far above the deck the display at the helm floats, in local units: about two tiles, which
+	// clears the mast and the crew.
 	private static final int DEPTH_TEXT_HEIGHT = 250;
 
 	// A dark box behind the depth text, so it reads against the water whatever colour the text is.
@@ -84,6 +98,14 @@ class TrawlingPlusOverlay extends Overlay
 	private static final double SHOAL_ARROW_LENGTH = 2.4;
 	private static final double SHOAL_ARROW_HALF_WIDTH = 1.0 / 2.4;
 	private static final double SHOAL_ARROW_NOTCH = 0.45 / 2.4;
+
+	// The ring, and the colour and stroke it is drawn with, kept between frames: the shape is redrawn
+	// every frame but never changes size, and the colour and thickness only change when a setting does.
+	private final Polygon ring = new Polygon();
+	private Color areaColour;
+	private Color areaFill;
+	private Stroke areaStroke;
+	private int areaThickness;
 
 	private final Client client;
 	private final TrawlingPlusPlugin plugin;
@@ -174,21 +196,21 @@ class TrawlingPlusOverlay extends Overlay
 
 	private void drawAllRoutes(Graphics2D graphics, List<PlacedShoal> shoals)
 	{
-		// Every route that reaches into the loaded scene, whether or not its shoal is in view.
+		// Only the route the boat is nearest, whether or not its shoal is in view. Drawing every route
+		// that reaches into the loaded scene means several at once in seas where they run close, which
+		// says little and costs a good deal.
 		WorldView view = client.getTopLevelWorldView();
-		if (view == null)
+		ShoalRoute route = plugin.getNearestRoute();
+		if (view == null || route == null)
 		{
 			return;
 		}
 
 		int beyond = tilesBeyondScene(view);
-		for (ShoalRoute route : plugin.getRoutes())
+		if (route.overlaps(view.getBaseX() - beyond, view.getBaseY() - beyond,
+			view.getBaseX() + view.getSizeX() + beyond, view.getBaseY() + view.getSizeY() + beyond))
 		{
-			if (route.overlaps(view.getBaseX() - beyond, view.getBaseY() - beyond,
-				view.getBaseX() + view.getSizeX() + beyond, view.getBaseY() + view.getSizeY() + beyond))
-			{
-				drawWholeRoute(graphics, view, route, shoals);
-			}
+			drawWholeRoute(graphics, view, route, shoals);
 		}
 	}
 
@@ -204,13 +226,33 @@ class TrawlingPlusOverlay extends Overlay
 	{
 		if (config.showRouteLine())
 		{
+			// Only the runs of the route that reach the loaded map. Most of a route is well outside it,
+			// and a run can be dismissed in four comparisons instead of asking the same of all sixty
+			// four points inside it.
+			int beyond = tilesBeyondScene(view);
+			double fromX = view.getBaseX() - beyond;
+			double fromY = view.getBaseY() - beyond;
+			double toX = view.getBaseX() + view.getSizeX() + beyond;
+			double toY = view.getBaseY() + view.getSizeY() + beyond;
+
 			Line line = new Line();
-			int samples = route.sampleCount();
-			for (int step = 0; step <= samples; step++)
+			for (int block = 0; block < route.blockCount(); block++)
 			{
-				int sample = step % samples;
-				line.add(toCanvas(view, route.sampleX(sample), route.sampleY(sample)));
+				if (!route.blockWithin(block, fromX, fromY, toX, toY))
+				{
+					// Nowhere near, so the line picks up again wherever the route comes back.
+					line.add(null);
+					continue;
+				}
+
+				for (int sample = route.blockFrom(block); sample < route.blockTo(block); sample++)
+				{
+					line.add(toCanvas(view, route.sampleX(sample), route.sampleY(sample)));
+				}
 			}
+
+			// Closing the loop, so the last run joins back onto the first.
+			line.add(toCanvas(view, route.sampleX(0), route.sampleY(0)));
 			drawLine(graphics, line);
 		}
 
@@ -675,37 +717,61 @@ class TrawlingPlusOverlay extends Overlay
 	private void drawFishableArea(Graphics2D graphics)
 	{
 		Shoal shoal = plugin.getNearestShoal();
+		ShoalRoute route = shoal == null ? null : shoal.getRoute();
 		WorldView view = shoal == null ? null : shoal.parentView(client);
 		double[] at = shoal == null ? null : shoal.position(client);
-		if (view == null || at == null)
+		double reach = route == null ? 0 : route.fishableReach();
+		if (view == null || at == null || reach <= 0)
 		{
+			// Nothing to draw around a shoal whose route has not had its reach measured: a guess would
+			// be half as big again as the truth on some species.
 			return;
 		}
 
 		// Walked around the ring a point at a time, so one running off the loaded map still draws the
-		// part that is on it.
-		Polygon area = new Polygon();
+		// part that is on it. The same shape every frame, so it is drawn into the same polygon rather
+		// than a new one, off a ring of angles worked out once.
+		ring.reset();
 		for (int step = 0; step < AREA_POINTS; step++)
 		{
-			double angle = 2 * Math.PI * step / AREA_POINTS;
-			Point edge = toCanvas(view, at[0] + Math.cos(angle) * FISHABLE_REACH,
-				at[1] + Math.sin(angle) * FISHABLE_REACH);
+			Point edge = toCanvas(view, at[0] + AREA_COS[step] * reach, at[1] + AREA_SIN[step] * reach);
 			if (edge != null)
 			{
-				area.addPoint(edge.getX(), edge.getY());
+				ring.addPoint(edge.getX(), edge.getY());
 			}
 		}
 
-		if (area.npoints < AREA_POINTS / 4)
+		if (ring.npoints < AREA_POINTS / 4)
 		{
 			// Too little of it is on screen to make a shape out of.
 			return;
 		}
 
-		Color colour = config.fishableAreaColour();
-		OverlayUtil.renderPolygon(graphics, area, colour,
-			new Color(colour.getRed(), colour.getGreen(), colour.getBlue(), AREA_FILL_ALPHA),
-			new BasicStroke(thickness(config.fishableAreaThickness())));
+		OverlayUtil.renderPolygon(graphics, ring, config.fishableAreaColour(),
+			areaFill(config.fishableAreaColour()), areaOutline(thickness(config.fishableAreaThickness())));
+	}
+
+	/**
+	 * The wash inside the ring, kept between frames rather than mixed again for every one of them.
+	 */
+	private Color areaFill(Color colour)
+	{
+		if (!colour.equals(areaColour))
+		{
+			areaColour = colour;
+			areaFill = new Color(colour.getRed(), colour.getGreen(), colour.getBlue(), AREA_FILL_ALPHA);
+		}
+		return areaFill;
+	}
+
+	private Stroke areaOutline(int pixels)
+	{
+		if (areaStroke == null || pixels != areaThickness)
+		{
+			areaThickness = pixels;
+			areaStroke = new BasicStroke(pixels);
+		}
+		return areaStroke;
 	}
 
 	/**
@@ -789,7 +855,7 @@ class TrawlingPlusOverlay extends Overlay
 			this.route = route;
 			this.view = view;
 			this.position = position;
-			distance = route.project(position[0], position[1]).distance;
+			distance = shoal.followRoute(position);
 			next = route.nextStop(distance);
 		}
 	}

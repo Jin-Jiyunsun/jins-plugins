@@ -534,16 +534,16 @@ class TrawlingPlusOverlay extends Overlay
 		}
 
 		double seconds = boat == null ? -1 : plugin.getSecondsAtStop();
+		long now = System.currentTimeMillis();
 		boolean[] wanted = new boolean[HELM_LINES];
 		wanted[DEPTH_LINE] = boat != null && config.showShoalDepth() && depth != ShoalDepth.UNKNOWN;
 		wanted[TIME_LINE] = boat != null && config.showTimeAtStop() && seconds >= 0;
 		wanted[BAITED_LINE] = boat != null && config.showBaited() && plugin.isBaited();
-		wanted[FISH_LINE] = boat != null && config.showFishInNets() && plugin.netsFitted();
+		wanted[FISH_LINE] = boat != null && config.showFishInNets() && plugin.netsFitted() && plugin.fishLineWanted(now);
 		wanted[HOLD_LINE] = boat != null && config.showFishInNets() && plugin.isHoldFull();
 
 		// A line coming or going while another holds the pill up is a change inside something already
 		// on screen, so it happens at once. The fade is for the display itself arriving or leaving.
-		long now = System.currentTimeMillis();
 		double step = lastHelmFadeMillis < 0 ? 0
 			: Math.max(0, now - lastHelmFadeMillis) / HELM_FADE_MILLIS;
 		boolean[] wasUp = new boolean[HELM_LINES];

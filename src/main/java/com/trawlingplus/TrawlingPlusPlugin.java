@@ -42,6 +42,7 @@ import net.runelite.api.gameval.ItemID;
 import net.runelite.api.gameval.ObjectID;
 import net.runelite.api.gameval.VarbitID;
 import net.runelite.api.widgets.Widget;
+import net.runelite.client.Notifier;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
@@ -121,6 +122,10 @@ public class TrawlingPlusPlugin extends Plugin
 	// The nets share one catch of up to this many fish, however many are fitted.
 	private static final int NET_CAPACITY = 250;
 
+	// How long the fish line stays up once the nets are empty and raised, after they were last emptied,
+	// found empty or raised.
+	private static final long FISH_LINE_LINGER_MILLIS = 60_000;
+
 	// "You catch four giant krill!", "You catch a haddock!", "Jolly Jim catches three giant krill!"
 	private static final Pattern CATCH = Pattern.compile("^(?:You catch|.+ catches) (\\S+) ");
 
@@ -142,6 +147,9 @@ public class TrawlingPlusPlugin extends Plugin
 
 	@Inject
 	private ClientThread clientThread;
+
+	@Inject
+	private Notifier notifier;
 
 	@Inject
 	private OverlayManager overlayManager;
@@ -186,6 +194,8 @@ public class TrawlingPlusPlugin extends Plugin
 	private boolean showGuides;
 	// Whether the boat has a trawling net in either slot, updated whenever the game changes either slot.
 	private boolean netsFitted;
+	// Whether either net is lowered into the water, updated whenever the game changes either net's depth.
+	private boolean netsLowered;
 
 	// The last value of the baited step varbit, which changes with every bait, and whether the nearest
 	// shoal is baited. Null until the first reading, so starting the plugin beside an already baited
@@ -211,6 +221,8 @@ public class TrawlingPlusPlugin extends Plugin
 	// gives the true number.
 	private int fishInNets = -1;
 	private String fishLabel = fishLabel(-1);
+	// When the nets were last emptied, found empty or raised, or -1.
+	private long fishActivityMillis = -1;
 	// Filled inventory slots as of the last inventory update, on which tick that update came and how many
 	// slots it filled, or -1 before the first; and whether a partial take is waiting on that update.
 	private int inventoryFilled = -1;
@@ -220,6 +232,13 @@ public class TrawlingPlusPlugin extends Plugin
 	// Whether the hold is full: found without room when the nets were last emptied into it, or showing no
 	// free slots when last opened, until it is known to have room again.
 	private boolean holdFull;
+	// Whether the nets full notification has gone off since the nets last had room.
+	private boolean netsFullWarned;
+	// The shoal the leaving notification is watching, whether it was sitting at a stop on the last tick,
+	// and whether the stop it is at has been warned about already.
+	private Shoal leavingShoal;
+	private boolean leavingWasStopped;
+	private boolean leavingWarned;
 	private List<ShoalRoute> routes = Collections.emptyList();
 
 	// All keyed by the id of each world entity's own world view, which is what ties a shoal's
@@ -247,11 +266,12 @@ public class TrawlingPlusPlugin extends Plugin
 			// would have missed everything caught in between.
 			boolean aboard = client.getGameState() == GameState.LOGGED_IN
 				&& client.getVarbitValue(VarbitID.SAILING_PLAYER_IS_ON_PLAYER_BOAT) == 1;
-			setFish(aboard ? -1 : 0);
+			resetFish(aboard ? -1 : 0);
 			inventoryFilled = -1;
 			takePending = false;
 			// Started part way through a session, the slots won't change to say what they hold.
 			netsFitted = readNetsFitted();
+			netsLowered = readNetsLowered();
 			// Whatever the hold was doing while the plugin was off is not known, so don't warn about it.
 			holdFull = false;
 		});
@@ -302,7 +322,7 @@ public class TrawlingPlusPlugin extends Plugin
 			baitedLabel = label(-1);
 			// Logging out empties the nets into the hold, throwing away whatever doesn't fit, so every
 			// session starts with them empty.
-			setFish(0);
+			resetFish(0);
 			inventoryFilled = -1;
 			inventoryAdded = -1;
 			takePending = false;
@@ -519,6 +539,7 @@ public class TrawlingPlusPlugin extends Plugin
 		baited = stillBaited();
 		baitedLabel = label(baitLeft());
 		netsAtDepth = netsSetToDepth();
+		checkShoalLeaving();
 	}
 
 	private void findExistingShoals()
@@ -714,6 +735,50 @@ public class TrawlingPlusPlugin extends Plugin
 	}
 
 	/**
+	 * Notifies once per stop when the nearest shoal is about to leave it: as it sets off, or the set number
+	 * of seconds before, which can only be known for a stop whose timer is running.
+	 */
+	private void checkShoalLeaving()
+	{
+		Shoal shoal = nearestShoal;
+		if (shoal == null)
+		{
+			leavingShoal = null;
+			return;
+		}
+
+		boolean stopped = shoal.stopped();
+		if (shoal != leavingShoal)
+		{
+			// A shoal first seen on the move has no stop to warn about until it reaches one.
+			leavingShoal = shoal;
+			leavingWasStopped = stopped;
+			leavingWarned = !stopped;
+			return;
+		}
+
+		if (stopped && !leavingWasStopped)
+		{
+			// Arrived at a new stop, which gets a warning of its own.
+			leavingWarned = false;
+		}
+
+		int seconds = Math.max(0, Math.min(TrawlingPlusConfig.MAX_LEAVING_SECONDS, config.shoalLeavingSeconds()));
+		double left = shoal.secondsAtStop();
+		boolean due = seconds == 0
+			? !stopped && leavingWasStopped
+			: stopped && left >= 0 && left <= seconds;
+		if (due && !leavingWarned)
+		{
+			leavingWarned = true;
+			notifier.notify(config.notifyShoalLeaving(), seconds == 0
+				? "The shoal is leaving its stop."
+				: "The shoal leaves its stop in " + seconds + " seconds.");
+		}
+		leavingWasStopped = stopped;
+	}
+
+	/**
 	 * Whether every net fitted is already at the depth worth fishing. A boat with no nets, or a shoal
 	 * whose depth is not known, has nothing to be right about.
 	 */
@@ -791,6 +856,12 @@ public class TrawlingPlusPlugin extends Plugin
 		return client.getVarbitValue(NET_SLOTS[0]) > 0 || client.getVarbitValue(NET_SLOTS[1]) > 0;
 	}
 
+	private boolean readNetsLowered()
+	{
+		// A net's depth reads 0 while it is raised out of the water, and 1 to 3 at the fishing depths.
+		return client.getVarbitValue(NET_DEPTHS[0]) > 0 || client.getVarbitValue(NET_DEPTHS[1]) > 0;
+	}
+
 	/**
 	 * Keeps count of the fish in the nets from what the game says about them, since nothing else tells.
 	 * Every catch, the crew's included, is announced with how many fish it brought in, and emptying the
@@ -823,19 +894,30 @@ public class TrawlingPlusPlugin extends Plugin
 		if (message.startsWith("There are no fish in"))
 		{
 			// What opening an empty net says, in a box of its own rather than the menu a net with fish opens.
-			setFish(0);
+			noteFish(0);
 		}
 		else if (message.startsWith("You empty the net"))
 		{
 			// "..., but there was not enough space in there to do so entirely." A hold without room for them
 			// all keeps some back and doesn't say how many; one that took them all had room.
 			boolean noRoom = message.contains("not enough");
+			if (noRoom && !holdFull)
+			{
+				notifier.notify(config.notifyHoldFull(), "Your cargo hold is full.");
+			}
 			holdFull = noRoom;
-			setFish(noRoom ? -1 : 0);
+			if (noRoom)
+			{
+				setFish(-1);
+			}
+			else
+			{
+				noteFish(0);
+			}
 		}
 		else if (message.startsWith("You take all of the fish from the net"))
 		{
-			setFish(0);
+			noteFish(0);
 		}
 		else if (message.startsWith("You take some fish from the net"))
 		{
@@ -850,6 +932,12 @@ public class TrawlingPlusPlugin extends Plugin
 				takePending = true;
 			}
 		}
+		else if (message.startsWith("Your net has no more space"))
+		{
+			// "Your net has no more space for any raw bluefin." The nets hold one catch between them, so this
+			// is all of them full.
+			warnNetsFull();
+		}
 		else if (netsFitted())
 		{
 			// Only with a net fitted: the messages above name the nets, but a catch could be ordinary fishing.
@@ -861,6 +949,10 @@ public class TrawlingPlusPlugin extends Plugin
 			if (fish >= 0 && fishInNets >= 0)
 			{
 				setFish(Math.min(NET_CAPACITY, fishInNets + fish));
+				if (fishInNets >= NET_CAPACITY)
+				{
+					warnNetsFull();
+				}
 			}
 		}
 	}
@@ -891,13 +983,24 @@ public class TrawlingPlusPlugin extends Plugin
 		int varbit = event.getVarbitId();
 		if (varbit == VarbitID.SAILING_PLAYER_IS_ON_PLAYER_BOAT && event.getValue() == 0)
 		{
-			setFish(0);
+			resetFish(0);
 		}
 		else if (varbit == NET_SLOTS[0] || varbit == NET_SLOTS[1])
 		{
 			// Nets are only fitted or taken off ashore, and these arrive a few ticks after logging in, so the
 			// answer is kept here as they change rather than asked for again every tick.
 			netsFitted = readNetsFitted();
+		}
+		else if (varbit == NET_DEPTHS[0] || varbit == NET_DEPTHS[1])
+		{
+			boolean lowered = readNetsLowered();
+			if (netsLowered && !lowered && client.getVarbitValue(VarbitID.SAILING_PLAYER_IS_ON_PLAYER_BOAT) == 1)
+			{
+				// Raising the nets keeps the fish line up a while after, but only while still aboard: nets
+				// dropping out of the water as the player steps off or hops is not them being raised.
+				fishActivityMillis = System.currentTimeMillis();
+			}
+			netsLowered = lowered;
 		}
 	}
 
@@ -949,6 +1052,52 @@ public class TrawlingPlusPlugin extends Plugin
 	{
 		fishInNets = fish;
 		fishLabel = fishLabel(fish);
+		if (fish >= 0 && fish < NET_CAPACITY)
+		{
+			// The nets have room again, so the next time they fill is worth a notification.
+			netsFullWarned = false;
+		}
+	}
+
+	private void warnNetsFull()
+	{
+		if (!netsFullWarned)
+		{
+			netsFullWarned = true;
+			notifier.notify(config.notifyNetsFull(), "Your trawling nets are full.");
+		}
+	}
+
+	/**
+	 * Sets the count after the nets were just emptied or found empty, which keeps the fish line up for a
+	 * while even though there is nothing in them. Anything that leaves fish in the nets, or an unknown count,
+	 * shows the line anyway, so it goes through setFish.
+	 */
+	private void noteFish(int fish)
+	{
+		setFish(fish);
+		fishActivityMillis = System.currentTimeMillis();
+	}
+
+	/**
+	 * Sets the count without anything having been done with the nets, for logging in, stepping off the boat
+	 * or the plugin starting, and forgets any recent activity so the fish line doesn't come up by itself.
+	 */
+	private void resetFish(int fish)
+	{
+		setFish(fish);
+		fishActivityMillis = -1;
+	}
+
+	/**
+	 * Whether the fish line is worth showing: whenever there are fish in the nets or the count is not known,
+	 * whenever a net is lowered, since that is trawling under way, and otherwise for a minute after the nets
+	 * were last emptied, found empty or raised.
+	 */
+	boolean fishLineWanted(long nowMillis)
+	{
+		return fishInNets != 0 || netsLowered
+			|| (fishActivityMillis >= 0 && nowMillis - fishActivityMillis <= FISH_LINE_LINGER_MILLIS);
 	}
 
 	private static String fishLabel(int fish)
@@ -1271,6 +1420,7 @@ public class TrawlingPlusPlugin extends Plugin
 		baited = false;
 		baitedShoal = null;
 		netsAtDepth = false;
+		leavingShoal = null;
 	}
 
 	@Provides

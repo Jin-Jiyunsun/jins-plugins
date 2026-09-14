@@ -6,6 +6,7 @@ import net.runelite.client.config.Config;
 import net.runelite.client.config.ConfigGroup;
 import net.runelite.client.config.ConfigItem;
 import net.runelite.client.config.ConfigSection;
+import net.runelite.client.config.Notification;
 import net.runelite.client.config.Range;
 import net.runelite.client.config.Units;
 
@@ -23,6 +24,9 @@ public interface TrawlingPlusConfig extends Config
 
 	int MIN_ARROW_SCALE = 50;
 	int MAX_ARROW_SCALE = 150;
+
+	// Longest warning before a shoal leaves its stop, in seconds. The shortest stop known is about 42.
+	int MAX_LEAVING_SECONDS = 30;
 
 	@ConfigSection(
 		name = "Route line",
@@ -69,7 +73,7 @@ public interface TrawlingPlusConfig extends Config
 	@ConfigSection(
 		name = "Depth colours",
 		description = "Colours for each depth, used at the helm and on the side panel",
-		position = 42
+		position = 47
 	)
 	String depthSection = "shoalDepth";
 
@@ -77,7 +81,7 @@ public interface TrawlingPlusConfig extends Config
 	@ConfigSection(
 		name = "Debug",
 		description = "Aids for working on the plugin, to be removed before release",
-		position = 46,
+		position = 51,
 		closedByDefault = true
 	)
 	String debugSection = "debug";
@@ -88,6 +92,13 @@ public interface TrawlingPlusConfig extends Config
 		position = 38
 	)
 	String sidePanelSection = "sidePanel";
+
+	@ConfigSection(
+		name = "Notifications",
+		description = "Alerts for the nets, the hold and the shoal",
+		position = 42
+	)
+	String notificationsSection = "notifications";
 
 	enum LineThickness
 	{
@@ -521,7 +532,7 @@ public interface TrawlingPlusConfig extends Config
 	@ConfigItem(
 		keyName = "showFishInNets",
 		name = "Fish in nets",
-		description = "Show how many fish are in the nets,<br>and a warning when the hold is full.<br>Shows ? when unsure, until the nets<br>are emptied or opened.",
+		description = "Show how many fish are in the nets,<br>and a warning when the hold is full.<br>Hides once the nets are raised and<br>have been empty for a minute.<br>Shows ? when unsure, until the nets<br>are emptied or opened.",
 		position = 34,
 		section = hudSection
 	)
@@ -570,7 +581,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "shallowDepthColour",
 		name = "Shallow",
 		description = "Colour of shallow depth.",
-		position = 43,
+		position = 48,
 		section = depthSection
 	)
 	default Color shallowDepthColour()
@@ -582,7 +593,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "moderateDepthColour",
 		name = "Moderate",
 		description = "Colour of moderate depth.",
-		position = 44,
+		position = 49,
 		section = depthSection
 	)
 	default Color moderateDepthColour()
@@ -594,7 +605,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "deepDepthColour",
 		name = "Deep",
 		description = "Colour of deep depth.",
-		position = 45,
+		position = 50,
 		section = depthSection
 	)
 	default Color deepDepthColour()
@@ -639,6 +650,59 @@ public interface TrawlingPlusConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "notifyNetsFull",
+		name = "Nets full",
+		description = "Notify when the nets are full.",
+		position = 43,
+		section = notificationsSection
+	)
+	default Notification notifyNetsFull()
+	{
+		return Notification.OFF;
+	}
+
+	@ConfigItem(
+		keyName = "notifyHoldFull",
+		name = "Hold full",
+		description = "Notify when emptying the nets finds<br>the cargo hold full.",
+		position = 44,
+		section = notificationsSection
+	)
+	default Notification notifyHoldFull()
+	{
+		return Notification.OFF;
+	}
+
+	@ConfigItem(
+		keyName = "notifyShoalLeaving",
+		name = "Shoal leaving",
+		description = "Notify when the nearest shoal is about<br>to leave its stop.",
+		position = 45,
+		section = notificationsSection
+	)
+	default Notification notifyShoalLeaving()
+	{
+		return Notification.OFF;
+	}
+
+	@Range(
+		min = 0,
+		max = MAX_LEAVING_SECONDS
+	)
+	@Units(Units.SECONDS)
+	@ConfigItem(
+		keyName = "shoalLeavingSeconds",
+		name = "Leaving warning",
+		description = "How long before the shoal leaves to notify.<br><b>0</b>: as it sets off.<br>Above 0 needs the stop's timer running.",
+		position = 46,
+		section = notificationsSection
+	)
+	default int shoalLeavingSeconds()
+	{
+		return 0;
+	}
+
+	@ConfigItem(
 		keyName = "showFishableArea",
 		name = "Show",
 		description = "Show an estimate of the fishable area,<br>as a ring centred on the shoal.",
@@ -679,7 +743,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "debugRoutePoints",
 		name = "Show line points",
 		description = "Mark each point the route line is drawn through.",
-		position = 47,
+		position = 52,
 		section = debugSection
 	)
 	default boolean debugRoutePoints()
@@ -691,7 +755,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "debugStopNumbers",
 		name = "Show stop numbers",
 		description = "Number each stop, from 1, in the order<br>the shoal swims to them.",
-		position = 48,
+		position = 53,
 		section = debugSection
 	)
 	default boolean debugStopNumbers()

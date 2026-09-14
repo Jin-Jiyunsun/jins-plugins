@@ -32,11 +32,11 @@ class TrawlingPlusOverlay extends Overlay
 	// Stops are drawn as a square this many tiles across, roughly the size of a shoal.
 	private static final int STOP_SIZE = 3;
 
-	// The area the game itself uses is not round: it caps each axis at the route's reach and the
+	// The area the game itself uses is not round: it caps each axis at the species' reach and the
 	// distance somewhat further, so it is a square with its corners cut off. A circle of the axis reach
 	// sits just inside all of that, so water inside the ring can always be fished from, and the corners
-	// it leaves out are water that can be. How far the reach is differs by species, so it is recorded
-	// with the route rather than fixed here.
+	// it leaves out are water that can be. How far the reach is differs by species, so it comes from each
+	// species' entry in routes.json rather than being fixed here.
 	//
 	// How many points the ring is drawn from, spread evenly around it. Each one is a projection, done
 	// every frame, so it is only as many as it takes to read as a circle rather than a polygon. Where
@@ -59,17 +59,14 @@ class TrawlingPlusOverlay extends Overlay
 
 	// How far above the deck the display at the helm floats, in local units: about two tiles, which
 	// clears the mast and the crew.
-	private static final int DEPTH_TEXT_HEIGHT = 250;
+	private static final int HELM_TEXT_HEIGHT = 250;
 
-	// A dark box behind the depth text, so it reads against the water whatever colour the text is.
-	private static final Color DEPTH_TEXT_BACKGROUND = new Color(0, 0, 0, 150);
-	private static final int DEPTH_TEXT_PADDING = 3;
+	// A dark box behind the display at the helm, so its text reads against the water whatever its colour.
+	private static final Color HELM_BACKGROUND = new Color(0, 0, 0, 150);
+	private static final int HELM_PADDING = 3;
 
 	// How long the display at the helm takes to fade fully in or out, in milliseconds.
-	private static final double DEPTH_FADE_MILLIS = 500;
-
-	// The word above the depth when the shoal has been baited.
-	private static final Color BAITED_COLOUR = new Color(0, 220, 80);
+	private static final double HELM_FADE_MILLIS = 500;
 
 	// The gap between the depth and the tick that follows it once every net is set to that depth.
 	private static final int TICK_GAP = 4;
@@ -82,11 +79,9 @@ class TrawlingPlusOverlay extends Overlay
 	private static final int FISH_LINE = 3;
 	private static final int HOLD_LINE = 4;
 	private static final int HELM_LINES = 5;
-	private static final Color TIME_COLOUR = Color.WHITE;
-	private static final Color FISH_COLOUR = new Color(140, 200, 255);
 
-	// The warning on top of the display when the nets were emptied into a hold without room, pulsing
-	// between two colours, from one to the other and back in this long.
+	// The warning on top of the display while the hold is full, pulsing between two colours, from one to
+	// the other and back in this long.
 	private static final String HOLD_FULL = "Hold full";
 	private static final Color HOLD_FULL_COLOUR = new Color(255, 70, 40);
 	private static final Color HOLD_FULL_PULSE_COLOUR = new Color(255, 200, 60);
@@ -120,7 +115,7 @@ class TrawlingPlusOverlay extends Overlay
 	private final TrawlingPlusPlugin plugin;
 	private final TrawlingPlusConfig config;
 
-	// How far faded in each line of the display at the helm is, bottom line first.
+	// How far faded in each line of the display at the helm is, by line.
 	private final double[] helmFades = new double[HELM_LINES];
 	private long lastHelmFadeMillis = -1;
 	private ShoalDepth fadingDepth = ShoalDepth.UNKNOWN;
@@ -178,7 +173,7 @@ class TrawlingPlusOverlay extends Overlay
 		{
 			drawFishableArea(graphics);
 		}
-		drawDepth(graphics);
+		drawHelm(graphics);
 
 		// DEBUG: remove before release. Last of all, so the dots and numbers sit on top of everything else.
 		drawDots(graphics, debugDots);
@@ -518,10 +513,10 @@ class TrawlingPlusOverlay extends Overlay
 	}
 
 	/**
-	 * Writes how deep the nearest shoal is swimming at the helm of the boat of the player, fading in
-	 * as a shoal comes into range and out again as it leaves.
+	 * Draws the display at the helm of the player's boat: the depth, time left at the stop, fish in the
+	 * nets, bait and the hold full warning, each line fading in and out on its own.
 	 */
-	private void drawDepth(Graphics2D graphics)
+	private void drawHelm(Graphics2D graphics)
 	{
 		if (!config.showHeadsUpDisplay())
 		{
@@ -530,7 +525,7 @@ class TrawlingPlusOverlay extends Overlay
 
 		// Each line of the display stands on its own. Only the depth waits on a depth being known; the
 		// rest have nothing to do with it and are not held up by it.
-		WorldEntity boat = plugin.ownBoat();
+		WorldEntity boat = plugin.getBoat();
 		ShoalDepth depth = boat == null ? ShoalDepth.UNKNOWN : plugin.getNearestDepth();
 		if (depth != ShoalDepth.UNKNOWN)
 		{
@@ -550,7 +545,7 @@ class TrawlingPlusOverlay extends Overlay
 		// on screen, so it happens at once. The fade is for the display itself arriving or leaving.
 		long now = System.currentTimeMillis();
 		double step = lastHelmFadeMillis < 0 ? 0
-			: Math.max(0, now - lastHelmFadeMillis) / DEPTH_FADE_MILLIS;
+			: Math.max(0, now - lastHelmFadeMillis) / HELM_FADE_MILLIS;
 		boolean[] wasUp = new boolean[HELM_LINES];
 		for (int line = 0; line < HELM_LINES; line++)
 		{
@@ -596,7 +591,8 @@ class TrawlingPlusOverlay extends Overlay
 		if (opacity[BAITED_LINE] > 0)
 		{
 			text[count] = plugin.getBaitedLabel();
-			colour[count] = BAITED_COLOUR;
+			// Text, so drawn solid whatever the picked colour says.
+			colour[count] = TrawlingPlusNetOverlay.opaque(config.baitedColour());
 			showing[count] = opacity[BAITED_LINE];
 			width[count] = letters.stringWidth(text[count]);
 			count++;
@@ -604,7 +600,7 @@ class TrawlingPlusOverlay extends Overlay
 		if (opacity[FISH_LINE] > 0)
 		{
 			text[count] = plugin.getFishLabel();
-			colour[count] = FISH_COLOUR;
+			colour[count] = TrawlingPlusNetOverlay.opaque(config.fishInNetsColour());
 			showing[count] = opacity[FISH_LINE];
 			width[count] = letters.stringWidth(text[count]);
 			count++;
@@ -612,7 +608,7 @@ class TrawlingPlusOverlay extends Overlay
 		if (opacity[TIME_LINE] > 0)
 		{
 			text[count] = Math.max(0, Math.round(seconds)) + "s";
-			colour[count] = TIME_COLOUR;
+			colour[count] = TrawlingPlusNetOverlay.opaque(config.timeLeftColour());
 			showing[count] = opacity[TIME_LINE];
 			width[count] = letters.stringWidth(text[count]);
 			count++;
@@ -651,7 +647,7 @@ class TrawlingPlusOverlay extends Overlay
 		}
 
 		Point at = Perspective.getCanvasTextLocation(client, graphics, afloatAtStern, text[0],
-			DEPTH_TEXT_HEIGHT);
+			HELM_TEXT_HEIGHT);
 		if (at == null)
 		{
 			return;
@@ -672,9 +668,9 @@ class TrawlingPlusOverlay extends Overlay
 
 		// One pill around the lot, as opaque as whichever line is showing the most, so it does not
 		// flicker as one of them fades while the others stay.
-		graphics.setColor(withOpacity(DEPTH_TEXT_BACKGROUND, solid));
-		graphics.fillRoundRect(left - DEPTH_TEXT_PADDING, top - DEPTH_TEXT_PADDING,
-			wide + DEPTH_TEXT_PADDING * 2, lineHeight * count + DEPTH_TEXT_PADDING * 2, 6, 6);
+		graphics.setColor(withOpacity(HELM_BACKGROUND, solid));
+		graphics.fillRoundRect(left - HELM_PADDING, top - HELM_PADDING,
+			wide + HELM_PADDING * 2, lineHeight * count + HELM_PADDING * 2, 6, 6);
 
 		for (int line = 0; line < count; line++)
 		{
@@ -767,10 +763,6 @@ class TrawlingPlusOverlay extends Overlay
 		graphics.drawString(text, left, baseline);
 	}
 
-	/**
-	 * How opaque the depth text is right now, from 0 to 1. It moves a little towards shown or hidden
-	 * on each call, so the text fades instead of popping. Call once per frame.
-	 */
 	/**
 	 * Draws the route's arrows that fall within a stretch of it, starting at a distance round the route.
 	 * Arrows sit at fixed places round the route, so they don't slide along as the shoal swims.
@@ -1059,7 +1051,6 @@ class TrawlingPlusOverlay extends Overlay
 		final Shoal shoal;
 		final ShoalRoute route;
 		final WorldView view;
-		final double[] position;
 		final double distance;
 		final int next;
 		// How far faded in the heading arrow is this frame, which the stop just reached fades out with.
@@ -1070,7 +1061,6 @@ class TrawlingPlusOverlay extends Overlay
 			this.shoal = shoal;
 			this.route = route;
 			this.view = view;
-			this.position = position;
 			distance = shoal.followRoute(position);
 			next = route.nextStop(distance);
 			headingOpacity = shoal.headingArrowOpacity(now);

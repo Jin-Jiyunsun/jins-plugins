@@ -13,10 +13,9 @@ import net.runelite.api.Point;
  */
 final class MapRoutes
 {
-	// Arrowheads, in pixels rather than tiles: a map is drawn at whatever scale it likes, and an arrow
-	// has to stay big enough to make out and small enough not to swamp the line.
-	// Half the width of an arrowhead, and how far its back edge is notched in, as fractions of its
-	// length. The same shape the arrows on the water are drawn to.
+	// The shape of an arrowhead on a map: half its width, and how far its back edge is notched in, as
+	// fractions of its length. The length is given in pixels rather than tiles, since a map is drawn at
+	// whatever scale it likes and an arrow has to stay big enough to make out without swamping the line.
 	private static final double ARROW_HALF_WIDTH = 0.4;
 	private static final double ARROW_NOTCH = 0.25;
 

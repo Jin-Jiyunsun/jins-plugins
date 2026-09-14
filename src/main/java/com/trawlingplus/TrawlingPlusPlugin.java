@@ -103,6 +103,10 @@ public class TrawlingPlusPlugin extends Plugin
 	// under you, short enough not to be waiting for it once you have plainly moved on.
 	private static final int ROUTE_GRACE_TICKS = 8;
 
+	// A shoal arriving within this many ticks of being baited was baited as it settled in, so that
+	// arrival does not end the bait.
+	private static final int ARRIVAL_GRACE_TICKS = 2;
+
 	// The two trawling net slots a boat can have: the hotspot each net is built on, and how deep it is
 	// set. A slot with no net in it names no hotspot.
 	private static final int[] NET_SLOTS = {
@@ -169,6 +173,9 @@ public class TrawlingPlusPlugin extends Plugin
 	// once a tick and handed to everything that wants it, the minimap included: it draws many times
 	// over between ticks, and the boat has not moved in between.
 	private double[] boatPlace;
+	// The boat itself, while the player is aboard it, found on the tick for the display at the helm to
+	// be drawn on rather than searched for among every world entity each frame.
+	private WorldEntity boat;
 
 	// The route nearest the boat, and the one waiting to take over from it. A route is only swapped
 	// once another has been the nearer for a while: sailing the water between two of them would
@@ -180,9 +187,9 @@ public class TrawlingPlusPlugin extends Plugin
 	// Whether the boat has a trawling net in either slot, updated whenever the game changes either slot.
 	private boolean netsFitted;
 
-	// Which step of its route the shoal was last baited at, and whether that bait belongs to the stop
-	// it is sitting at now. Null until the first reading, so starting the plugin beside an already
-	// baited shoal does not read as a bait having just been laid.
+	// The last value of the baited step varbit, which changes with every bait, and whether the nearest
+	// shoal is baited. Null until the first reading, so starting the plugin beside an already baited
+	// shoal does not read as a bait having just been laid.
 	private Integer baitedStep;
 	private boolean baited;
 
@@ -197,9 +204,6 @@ public class TrawlingPlusPlugin extends Plugin
 	private Shoal baitedShoal;
 	private boolean baitedWasStopped;
 	private int ticksSinceBait;
-	// A shoal arriving within this many ticks of being baited was baited as it settled in, so that
-	// arrival does not end the bait.
-	private static final int ARRIVAL_GRACE_TICKS = 2;
 	private boolean netsAtDepth;
 
 	// How many fish are in the nets, or -1 while that is not known. The game never sends what the nets
@@ -306,8 +310,9 @@ public class TrawlingPlusPlugin extends Plugin
 	}
 
 	/**
-	 * Counts the bait in the cargo hold whenever it is opened, which is the only time the game sends it,
-	 * and notes how full the inventory is, which is how a partial take from the nets is measured.
+	 * Counts the bait in the cargo hold and checks whether it is full whenever it is opened, which is the
+	 * only time the game sends it, and notes how full the inventory is, which is how a partial take from
+	 * the nets is measured.
 	 */
 	@Subscribe
 	public void onItemContainerChanged(ItemContainerChanged event)
@@ -506,6 +511,7 @@ public class TrawlingPlusPlugin extends Plugin
 		}
 
 		// Worked out here rather than in each overlay, which would repeat it every frame.
+		boat = own;
 		boatPlace = worldPlace(own.getLocalLocation());
 		nearestShoal = nearest();
 		showGuides = guidesWanted();
@@ -584,6 +590,14 @@ public class TrawlingPlusPlugin extends Plugin
 	}
 
 	/**
+	 * The boat of the player while they are aboard it, as found on the last tick, or null.
+	 */
+	WorldEntity getBoat()
+	{
+		return boat;
+	}
+
+	/**
 	 * The route nearest the boat of the player, as worked out on the last tick, or null. Only one route
 	 * is drawn at a time, so which one that is has to be decided somewhere.
 	 */
@@ -616,9 +630,6 @@ public class TrawlingPlusPlugin extends Plugin
 		double toX = view.getBaseX() + view.getSizeX() + beyond;
 		double toY = view.getBaseY() + view.getSizeY() + beyond;
 
-		// The one already being drawn is looked at first, since the boat is usually still nearest the
-		// route it was nearest a tick ago. That gives a distance to beat straight away, and every route
-		// whose box is further off than that is then passed over without being looked through at all.
 		// How many of them are in range at all. Most of the time it is one, and one route has nothing to
 		// be nearer than, so there is nothing to work out: knowing how far away it is would only ever be
 		// used to rule others out, and there are none to rule out.
@@ -646,6 +657,9 @@ public class TrawlingPlusPlugin extends Plugin
 			return;
 		}
 
+		// The one already being drawn is looked at first, since the boat is usually still nearest the
+		// route it was nearest a tick ago. That gives a distance to beat straight away, and every route
+		// whose box is further off than that is then passed over without being looked through at all.
 		ShoalRoute closest = nearestRoute != null && nearestRoute.overlaps(fromX, fromY, toX, toY)
 			? nearestRoute
 			: null;
@@ -730,8 +744,7 @@ public class TrawlingPlusPlugin extends Plugin
 	}
 
 	/**
-	 * Whether the shoal nearest the boat has been baited at the stop it is sitting at, as worked out on
-	 * the last tick.
+	 * Whether the shoal nearest the boat is baited, as worked out on the last tick.
 	 */
 	boolean isBaited()
 	{
@@ -837,12 +850,12 @@ public class TrawlingPlusPlugin extends Plugin
 				takePending = true;
 			}
 		}
-		else if (netsFitted() && !message.contains("Trawler's trust"))
+		else if (netsFitted())
 		{
 			// Only with a net fitted: the messages above name the nets, but a catch could be ordinary fishing.
-			// Lines about Trawler's trust are left alone, as the fish it adds are said to come with a catch
-			// message of their own (not yet seen here). A catch whose count can't be read, like "You catch
-			// some shrimps" from ordinary fishing, is not a trawling catch and changes nothing.
+			// A catch whose count can't be read, like "You catch some shrimps" from ordinary fishing, is not a
+			// trawling catch and changes nothing. "Trawler's trust: You catch an additional fish." doesn't
+			// match either, which is right: that fish is already in the number of the catch line after it.
 			Matcher caught = CATCH.matcher(message);
 			int fish = caught.find() ? number(caught.group(1)) : -1;
 			if (fish >= 0 && fishInNets >= 0)
@@ -868,8 +881,9 @@ public class TrawlingPlusPlugin extends Plugin
 
 	/**
 	 * Stepping off the boat throws away whatever is in the nets, so they are empty once the player is no
-	 * longer aboard. Taken from the game's own flag rather than from where the player stands, which can
-	 * look like being off the boat for a moment while the area loads.
+	 * longer aboard: taken from the game's own flag rather than from where the player stands, which can
+	 * look like being off the boat for a moment while the area loads. Also keeps track of which net slots
+	 * have a net in them.
 	 */
 	@Subscribe
 	public void onVarbitChanged(VarbitChanged event)
@@ -1024,13 +1038,12 @@ public class TrawlingPlusPlugin extends Plugin
 	}
 
 	/**
-	 * Works out whether the nearest shoal has been baited. The game records which step of its route a
-	 * shoal was baited at rather than how long the bait lasts, and never says when it wears off: in the
-	 * probe logs the number stayed where it was for ten minutes after a bait, while the shoal swam on.
-	 * Jin found how long one lasts in game: until the shoal next arrives at a stop. Baited at a stop, it
-	 * lasts the rest of that stop and the swim to the next; baited on the way, until the stop it is
-	 * heading for. So a new number is a fresh bait on the nearest shoal, which stays baited until that
-	 * shoal next arrives somewhere.
+	 * Works out whether the nearest shoal is baited. The game records which step of its route a shoal was
+	 * last baited at rather than how long the bait lasts, and never says when it wears off: the number
+	 * stays where it is long after a bait, while the shoal swims on. Tested in game, a bait lasts until the
+	 * shoal next arrives at a stop. Baited at a stop, it lasts the rest of that stop and the swim to the
+	 * next; baited on the way, until the stop it is heading for. So a new number is a fresh bait on the
+	 * nearest shoal, which stays baited until that shoal next arrives somewhere.
 	 */
 	private boolean stillBaited()
 	{
@@ -1078,7 +1091,6 @@ public class TrawlingPlusPlugin extends Plugin
 		// Only ever asked while aboard, so what is left to settle is whether a net has to be fitted too.
 		if (config.showGuides() == TrawlingPlusConfig.ShowGuides.ALWAYS)
 		{
-			// Being on the boat at all, which by the time this is asked is already known.
 			return true;
 		}
 
@@ -1098,9 +1110,9 @@ public class TrawlingPlusPlugin extends Plugin
 	}
 
 	/**
-	 * The boat of the player, or null while they are not aboard one.
+	 * The player's own boat if it is in the scene, whether or not they are aboard, or null.
 	 */
-	WorldEntity ownBoat()
+	private WorldEntity ownBoat()
 	{
 		WorldView top = client.getTopLevelWorldView();
 		if (top == null)
@@ -1260,6 +1272,7 @@ public class TrawlingPlusPlugin extends Plugin
 	 */
 	private void stopTracking()
 	{
+		boat = null;
 		boatPlace = null;
 		nearestShoal = null;
 		nearestRoute = null;

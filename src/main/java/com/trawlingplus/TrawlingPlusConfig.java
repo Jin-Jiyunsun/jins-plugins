@@ -69,7 +69,7 @@ public interface TrawlingPlusConfig extends Config
 	@ConfigSection(
 		name = "Depth colours",
 		description = "Colours for each depth, used at the helm and on the side panel",
-		position = 39
+		position = 42
 	)
 	String depthSection = "shoalDepth";
 
@@ -77,7 +77,7 @@ public interface TrawlingPlusConfig extends Config
 	@ConfigSection(
 		name = "Debug",
 		description = "Aids for working on the plugin, to be removed before release",
-		position = 43,
+		position = 46,
 		closedByDefault = true
 	)
 	String debugSection = "debug";
@@ -85,7 +85,7 @@ public interface TrawlingPlusConfig extends Config
 	@ConfigSection(
 		name = "Side panel",
 		description = "Marks on the trawling nets in the sailing side panel",
-		position = 35
+		position = 38
 	)
 	String sidePanelSection = "sidePanel";
 
@@ -507,10 +507,22 @@ public interface TrawlingPlusConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "timeLeftColour",
+		name = "Time left colour",
+		description = "Colour of the time left at stop.",
+		position = 33,
+		section = hudSection
+	)
+	default Color timeLeftColour()
+	{
+		return Color.WHITE;
+	}
+
+	@ConfigItem(
 		keyName = "showFishInNets",
 		name = "Fish in nets",
 		description = "Show how many fish are in the nets,<br>and a warning when the hold is full.<br>Shows ? when unsure, until the nets<br>are emptied or opened.",
-		position = 33,
+		position = 34,
 		section = hudSection
 	)
 	default boolean showFishInNets()
@@ -519,10 +531,22 @@ public interface TrawlingPlusConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "fishInNetsColour",
+		name = "Fish in nets colour",
+		description = "Colour of the fish in nets count.",
+		position = 35,
+		section = hudSection
+	)
+	default Color fishInNetsColour()
+	{
+		return new Color(140, 200, 255);
+	}
+
+	@ConfigItem(
 		keyName = "showBaited",
 		name = "Baited",
 		description = "Show if the shoal is baited, and how much<br>bait is left.<br>Must be synced by opening the hold<br>to view how much bait is in it.",
-		position = 34,
+		position = 36,
 		section = hudSection
 	)
 	default boolean showBaited()
@@ -531,10 +555,22 @@ public interface TrawlingPlusConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "baitedColour",
+		name = "Baited colour",
+		description = "Colour of the Baited line.",
+		position = 37,
+		section = hudSection
+	)
+	default Color baitedColour()
+	{
+		return new Color(242, 180, 210);
+	}
+
+	@ConfigItem(
 		keyName = "shallowDepthColour",
 		name = "Shallow",
 		description = "Colour of shallow depth.",
-		position = 40,
+		position = 43,
 		section = depthSection
 	)
 	default Color shallowDepthColour()
@@ -546,7 +582,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "moderateDepthColour",
 		name = "Moderate",
 		description = "Colour of moderate depth.",
-		position = 41,
+		position = 44,
 		section = depthSection
 	)
 	default Color moderateDepthColour()
@@ -558,7 +594,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "deepDepthColour",
 		name = "Deep",
 		description = "Colour of deep depth.",
-		position = 42,
+		position = 45,
 		section = depthSection
 	)
 	default Color deepDepthColour()
@@ -570,7 +606,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "showNetDepths",
 		name = "Net depths",
 		description = "Show each net's depth as a letter.<br><b>R</b>: raised, <b>S</b>: shallow, <b>M</b>: moderate, <b>D</b>: deep.<br>Coloured by Depth colours section.",
-		position = 36,
+		position = 39,
 		section = sidePanelSection
 	)
 	default boolean showNetDepths()
@@ -582,7 +618,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "showNetButton",
 		name = "Depth guide",
 		description = "Highlight the raise or lower button needed<br>to reach the target depth.",
-		position = 37,
+		position = 40,
 		section = sidePanelSection
 	)
 	default boolean showNetButton()
@@ -594,7 +630,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "showNetCorrect",
 		name = "Tick on correct depth",
 		description = "Show a tick on the side panel's net<br>when its depth is correct.",
-		position = 38,
+		position = 41,
 		section = sidePanelSection
 	)
 	default boolean showNetCorrect()
@@ -643,7 +679,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "debugRoutePoints",
 		name = "Show line points",
 		description = "Mark each point the route line is drawn through.",
-		position = 44,
+		position = 47,
 		section = debugSection
 	)
 	default boolean debugRoutePoints()
@@ -655,7 +691,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "debugStopNumbers",
 		name = "Show stop numbers",
 		description = "Number each stop, from 1, in the order<br>the shoal swims to them.",
-		position = 45,
+		position = 48,
 		section = debugSection
 	)
 	default boolean debugStopNumbers()

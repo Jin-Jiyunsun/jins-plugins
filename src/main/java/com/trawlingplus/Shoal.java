@@ -35,7 +35,7 @@ final class Shoal
 	private ShoalDepth depth = ShoalDepth.UNKNOWN;
 
 	// The bar the game draws over a shoal while it sits at a stop, which empties as the stop runs out,
-	// and how long this species is known to sit there. The bar is the same length whatever the species
+	// and how long a stop on this shoal's route lasts. The bar is the same length whatever the route
 	// but a stop is not, so without a known length there is nothing to turn the bar into a time.
 	private int barLeft = -1;
 	private int barScale;
@@ -154,7 +154,7 @@ final class Shoal
 	}
 
 	/**
-	 * Takes how long this species sits at a stop, in ticks, which is how long the clock is set for.
+	 * Takes how long a stop on this shoal's route lasts, in ticks, which is how long the clock is set for.
 	 */
 	void seedStopTicks(int ticks)
 	{
@@ -316,9 +316,6 @@ final class Shoal
 	}
 
 	/**
-	 * The shoal's position in world tile coordinates, including the fraction of a tile, or null.
-	 */
-	/**
 	 * Where the shoal is swimming to in world tiles: the spot the server last sent, which the client glides
 	 * it towards until the next tick. Null when it cannot be read.
 	 */
@@ -329,6 +326,9 @@ final class Shoal
 		return view == null ? null : toWorld(view, local);
 	}
 
+	/**
+	 * The shoal's position in world tile coordinates, including the fraction of a tile, or null.
+	 */
 	double[] position(Client client)
 	{
 		LocalPoint local = entity.getLocalLocation();

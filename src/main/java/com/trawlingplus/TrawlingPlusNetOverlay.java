@@ -29,15 +29,16 @@ class TrawlingPlusNetOverlay extends Overlay
 {
 	// A row is a trawling net if its picture is one of these four, which are the net raised, then at
 	// each of the three fishing depths. The panel only gives the raise and lower buttons an action
-	// while the player stands at that net, so the picture is what the marks hang off. It has to be the
-	// picture itself: the frames and arrows beside it are shared with every other kind of row.
+	// while someone, the player or a crewmate, is operating that net, so the picture is what the marks
+	// hang off. It has to be the picture itself: the frames and arrows beside it are shared with every
+	// other kind of row.
 	private static final int NET_PICTURE_RAISED = SpriteID.IconSailingFacilities24x24._12;
 	private static final int NET_PICTURE_DEEPEST = SpriteID.IconSailingFacilities24x24._15;
 
 	private static final String LOWER = "Lower net";
 	private static final String RAISE = "Raise net";
 
-	// How the depth varbit of a net reads: raised, then the three fishing depths.
+	// The letter for each of the four net pictures, in the same order: raised, then the three fishing depths.
 	private static final String[] LETTERS = {"R", "S", "M", "D"};
 	private static final Color RAISED_COLOUR = Color.WHITE;
 
@@ -106,7 +107,7 @@ class TrawlingPlusNetOverlay extends Overlay
 			graphics.clip(window.getBounds());
 		}
 
-		// The buttons are only wanted for the guide, and only exist while the player is at that net.
+		// The buttons are only wanted for the guide, and only carry an action while someone is operating that net.
 		List<Widget> buttons = config.showNetButton() ? netButtons() : Collections.emptyList();
 		long now = System.currentTimeMillis();
 		int wanted = plugin.getNearestDepth().netDepth();
@@ -205,8 +206,8 @@ class TrawlingPlusNetOverlay extends Overlay
 	}
 
 	/**
-	 * Every raise or lower button the panel is currently offering. They only carry an action while the
-	 * player stands at that net, so there may be none at all.
+	 * Every raise or lower button the panel is currently offering. They only carry an action while someone
+	 * is operating that net, so there may be none at all.
 	 */
 	private List<Widget> netButtons()
 	{

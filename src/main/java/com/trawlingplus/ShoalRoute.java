@@ -68,7 +68,6 @@ final class ShoalRoute
 
 	private final String species;
 	private final int stopTicks;
-	private final double fishableReach;
 	private final double[] pathX;
 	private final double[] pathY;
 	private final double[] pathDistance;
@@ -87,8 +86,7 @@ final class ShoalRoute
 	private final double maxX;
 	private final double maxY;
 
-	ShoalRoute(String species, String name, int stopTicks, double fishableReach, double[][] path,
-		double[][] stops)
+	ShoalRoute(String species, String name, int stopTicks, double[][] path, double[][] stops)
 	{
 		if (path.length < 2 || stops.length == 0)
 		{
@@ -97,7 +95,6 @@ final class ShoalRoute
 
 		this.species = species;
 		this.stopTicks = stopTicks;
-		this.fishableReach = fishableReach;
 		this.stops = stops;
 
 		int points = path.length;
@@ -248,8 +245,8 @@ final class ShoalRoute
 		{
 			for (RouteData.Route route : species.routes)
 			{
-				routes.add(new ShoalRoute(species.name, route.name, route.stopTicks, route.fishableReach,
-					shape(route.path, smoothing), route.stops));
+				routes.add(new ShoalRoute(species.name, route.name, route.stopTicks, shape(route.path, smoothing),
+					route.stops));
 			}
 		}
 		return routes;
@@ -483,15 +480,6 @@ final class ShoalRoute
 	int stopTicks()
 	{
 		return stopTicks;
-	}
-
-	/**
-	 * How far from a shoal on this route it can be fished from, in tiles along each axis, or 0 where
-	 * that has not been measured.
-	 */
-	double fishableReach()
-	{
-		return fishableReach;
 	}
 
 	String getSpecies()

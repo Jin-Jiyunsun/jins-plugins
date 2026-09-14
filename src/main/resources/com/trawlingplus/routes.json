@@ -1,9 +1,29 @@
 {
 	"about": "Shoal routes recorded in-game for Trawling Plus.",
-	"format": "Each route is a loop. Stops and path points are [x, y] world tiles on plane 0, to a quarter of a tile, listed in the order shoals swim them; the last point connects back to the first.",
+	"format": "Each kind of shoal has its fishable reach in tiles along each axis (0 where not yet measured), the bait it takes (\"any\" for both kinds of offcuts, \"fine\" for fine fish offcuts only) and its recorded routes. Each route is a loop. Stops and path points are [x, y] world tiles on plane 0, to a quarter of a tile, listed in the order shoals swim them; the last point connects back to the first.",
 	"species": [
 		{
+			"name": "Giant krill",
+			"fishableReach": 10.5,
+			"bait": "any",
+			"routes": []
+		},
+		{
+			"name": "Haddock",
+			"fishableReach": 0,
+			"bait": "any",
+			"routes": []
+		},
+		{
+			"name": "Yellowfin",
+			"fishableReach": 0,
+			"bait": "fine",
+			"routes": []
+		},
+		{
 			"name": "Halibut",
+			"fishableReach": 6.5,
+			"bait": "fine",
 			"routes": [
 				{
 					"name": "Southern Expanse",
@@ -11,7 +31,6 @@
 					"world": 363,
 					"lapTicks": 1295,
 					"stopTicks": 80,
-					"fishableReach": 6.5,
 					"stops": [
 						[2063.25, 2435.75],
 						[1986.75, 2413.75],
@@ -198,6 +217,8 @@
 		},
 		{
 			"name": "Bluefin",
+			"fishableReach": 10.5,
+			"bait": "fine",
 			"routes": [
 				{
 					"name": "Rainbow Reef",
@@ -205,7 +226,6 @@
 					"world": 363,
 					"lapTicks": 1140,
 					"stopTicks": 70,
-					"fishableReach": 10.5,
 					"stops": [
 						[2338, 2303],
 						[2257.75, 2272],
@@ -333,6 +353,30 @@
 					]
 				}
 			]
+		},
+		{
+			"name": "Marlin",
+			"fishableReach": 0,
+			"bait": "fine",
+			"routes": []
+		},
+		{
+			"name": "Shimmering",
+			"fishableReach": 0,
+			"bait": "any",
+			"routes": []
+		},
+		{
+			"name": "Glistening",
+			"fishableReach": 0,
+			"bait": "fine",
+			"routes": []
+		},
+		{
+			"name": "Vibrant",
+			"fishableReach": 0,
+			"bait": "fine",
+			"routes": []
 		}
 	]
 }

@@ -1,0 +1,51 @@
+{
+	"about": "What is known about each kind of shoal, whatever route it swims, measured in game for Trawling Plus. Kept by hand; tools/generate_routes.py copies it into routes.json.",
+	"format": "fishableReach: how far from a shoal it can be fished from, in tiles along each axis, or 0 where not yet measured. bait: \"any\" where both fish offcuts and fine fish offcuts bait it, \"fine\" where only fine fish offcuts do.",
+	"species": [
+		{
+			"name": "Giant krill",
+			"fishableReach": 10.5,
+			"bait": "any"
+		},
+		{
+			"name": "Haddock",
+			"fishableReach": 0,
+			"bait": "any"
+		},
+		{
+			"name": "Yellowfin",
+			"fishableReach": 0,
+			"bait": "fine"
+		},
+		{
+			"name": "Halibut",
+			"fishableReach": 6.5,
+			"bait": "fine"
+		},
+		{
+			"name": "Bluefin",
+			"fishableReach": 10.5,
+			"bait": "fine"
+		},
+		{
+			"name": "Marlin",
+			"fishableReach": 0,
+			"bait": "fine"
+		},
+		{
+			"name": "Shimmering",
+			"fishableReach": 0,
+			"bait": "any"
+		},
+		{
+			"name": "Glistening",
+			"fishableReach": 0,
+			"bait": "fine"
+		},
+		{
+			"name": "Vibrant",
+			"fishableReach": 0,
+			"bait": "fine"
+		}
+	]
+}

@@ -1,7 +1,8 @@
-"""Generates src/main/resources/com/trawlingplus/routes.json from tools/recorded_routes.json.
+"""Generates src/main/resources/com/trawlingplus/routes.json from tools/recorded_routes.json and tools/species.json.
 
 Every route the plugin draws was recorded in-game for Trawling Plus; tools/import_recording.py adds
-recordings to tools/recorded_routes.json. Re-run this whenever a recording is added or replaced:
+recordings to tools/recorded_routes.json. What is known about each kind of shoal whatever its route, its fishable
+reach and which bait it takes, is kept by hand in tools/species.json. Re-run this whenever either changes:
 
     python tools/generate_routes.py
 """
@@ -13,8 +14,9 @@ from pathlib import Path
 
 OUTPUT = Path(__file__).resolve().parent.parent / "src" / "main" / "resources" / "com" / "trawlingplus" / "routes.json"
 RECORDED = Path(__file__).resolve().parent / "recorded_routes.json"
+SPECIES_DATA = Path(__file__).resolve().parent / "species.json"
 
-# Species in the order they're unlocked, so routes.json reads in the same order as the game.
+# Species a route can be recorded for. The mixed shoals swim the routes of these, so they have none.
 SPECIES = ["Giant krill", "Haddock", "Yellowfin", "Halibut", "Bluefin", "Marlin"]
 
 # A recorded stop further than this from its route's path is flagged, in tiles.
@@ -45,8 +47,14 @@ def main():
     if unknown:
         raise SystemExit(f"unknown species in {RECORDED.name}: {', '.join(unknown)}")
 
+    known = json.loads(SPECIES_DATA.read_text(encoding="utf-8"))["species"]
+    missing = sorted(set(SPECIES) - {entry["name"] for entry in known})
+    if missing:
+        raise SystemExit(f"no entry in {SPECIES_DATA.name} for: {', '.join(missing)}")
+
     species = []
-    for name in SPECIES:
+    for entry in known:
+        name = entry["name"]
         routes = []
         for recording in sorted((r for r in recordings if r["species"] == name), key=lambda r: r["route"]):
             for stop in recording["stops"]:
@@ -59,17 +67,24 @@ def main():
                 "world": recording["world"],
                 "lapTicks": recording["lapTicks"],
                 "stopTicks": recording.get("stopTicks", 0),
-                "fishableReach": recording.get("fishableReach", 0),
                 "stops": recording["stops"],
                 "path": recording["path"],
             })
-        if routes:
-            species.append({"name": name, "routes": routes})
+        # Every kind of shoal is written out, recorded routes or not, so what is known about it can be used
+        # on any shoal of that kind.
+        species.append({
+            "name": name,
+            "fishableReach": entry.get("fishableReach", 0),
+            "bait": entry["bait"],
+            "routes": routes,
+        })
 
     data = {
         "about": "Shoal routes recorded in-game for Trawling Plus.",
-        "format": "Each route is a loop. Stops and path points are [x, y] world tiles on plane 0, to a quarter "
-                  "of a tile, listed in the order shoals swim them; the last point connects back to the first.",
+        "format": "Each kind of shoal has its fishable reach in tiles along each axis (0 where not yet measured), "
+                  "the bait it takes (\"any\" for both kinds of offcuts, \"fine\" for fine fish offcuts only) and "
+                  "its recorded routes. Each route is a loop. Stops and path points are [x, y] world tiles on plane 0, "
+                  "to a quarter of a tile, listed in the order shoals swim them; the last point connects back to the first.",
         "species": species,
     }
 

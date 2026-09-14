@@ -8,7 +8,6 @@
 			"world": 363,
 			"lapTicks": 1140,
 			"stopTicks": 70,
-			"fishableReach": 10.5,
 			"stops": [
 				[2338, 2303],
 				[2257.75, 2272],
@@ -142,7 +141,6 @@
 			"world": 363,
 			"lapTicks": 1295,
 			"stopTicks": 80,
-			"fishableReach": 6.5,
 			"stops": [
 				[2063.25, 2435.75],
 				[1986.75, 2413.75],

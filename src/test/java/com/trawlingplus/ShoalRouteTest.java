@@ -11,7 +11,7 @@ import org.junit.Test;
 public class ShoalRouteTest
 {
 	// A 10 by 10 square swum from the origin, 40 tiles round, with stops at 10 and 30 tiles.
-	private static final ShoalRoute SQUARE = new ShoalRoute("Test", "Square", 0, 0,
+	private static final ShoalRoute SQUARE = new ShoalRoute("Test", "Square", 0,
 		new double[][]{{0, 0}, {10, 0}, {10, 10}, {0, 10}},
 		new double[][]{{10, 0}, {0, 10}});
 
@@ -34,7 +34,7 @@ public class ShoalRouteTest
 	public void followingAlongALongStraightNeverJumpsAhead()
 	{
 		// Sides far longer than the stretch of route a shoal is followed within.
-		ShoalRoute big = new ShoalRoute("Test", "Big", 0, 0,
+		ShoalRoute big = new ShoalRoute("Test", "Big", 0,
 			new double[][]{{0, 0}, {40, 0}, {40, 40}, {0, 40}},
 			new double[][]{{40, 0}});
 		double distance = big.project(0, 0).distance;
@@ -69,7 +69,7 @@ public class ShoalRouteTest
 	@Test
 	public void piecesShorterThanTheSpacingAreNotSplit()
 	{
-		ShoalRoute small = new ShoalRoute("Test", "Small", 0, 0,
+		ShoalRoute small = new ShoalRoute("Test", "Small", 0,
 			new double[][]{{0, 0}, {2, 0}, {2, 2}, {0, 2}},
 			new double[][]{{2, 0}});
 		assertEquals(4, small.sampleCount());
@@ -149,7 +149,7 @@ public class ShoalRouteTest
 			for (RouteData.Route route : species.routes)
 			{
 				ShoalRoute original = new ShoalRoute(species.name, route.name, route.stopTicks,
-					route.fishableReach, route.path, route.stops);
+					route.path, route.stops);
 				for (double[][] curve : new double[][][]{ShoalRoute.catmullRom(route.path), ShoalRoute.bSpline(route.path)})
 				{
 					for (double[] point : curve)

@@ -513,7 +513,7 @@ public interface TrawlingPlusConfig extends Config
 	@ConfigItem(
 		keyName = "showBaited",
 		name = "Baited",
-		description = "Show if the shoal has been baited.",
+		description = "Show if the shoal is baited, and how much<br>bait is left.<br>Must be synced by opening the hold<br>to view how much bait is in it.",
 		position = 34,
 		section = hudSection
 	)

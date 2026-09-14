@@ -8,13 +8,13 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import javax.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.Constants;
 import net.runelite.api.GameObject;
 import net.runelite.api.GameState;
+import net.runelite.api.ItemContainer;
 import net.runelite.api.Perspective;
 import net.runelite.api.NPC;
 import net.runelite.api.Player;
@@ -26,8 +26,11 @@ import net.runelite.api.events.GameObjectDespawned;
 import net.runelite.api.events.GameObjectSpawned;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
+import net.runelite.api.events.ItemContainerChanged;
 import net.runelite.api.events.WorldEntityDespawned;
 import net.runelite.api.events.WorldEntitySpawned;
+import net.runelite.api.gameval.InventoryID;
+import net.runelite.api.gameval.ItemID;
 import net.runelite.api.gameval.ObjectID;
 import net.runelite.api.gameval.VarbitID;
 import net.runelite.client.callback.ClientThread;
@@ -56,11 +59,16 @@ public class TrawlingPlusPlugin extends Plugin
 	);
 
 	// Mixed shoals follow their original shoal's route, but don't say which species that was.
-	private static final Set<Integer> MIXED_CLICKBOXES = Set.of(
-		ObjectID.SAILING_SHOAL_CLICKBOX_SHIMMERING,
-		ObjectID.SAILING_SHOAL_CLICKBOX_GLISTENING,
-		ObjectID.SAILING_SHOAL_CLICKBOX_VIBRANT
+	// They still have a name of their own, which is what their entry in routes.json is filed under.
+	private static final Map<Integer, String> MIXED_BY_CLICKBOX = Map.of(
+		ObjectID.SAILING_SHOAL_CLICKBOX_SHIMMERING, "Shimmering",
+		ObjectID.SAILING_SHOAL_CLICKBOX_GLISTENING, "Glistening",
+		ObjectID.SAILING_SHOAL_CLICKBOX_VIBRANT, "Vibrant"
 	);
+
+	// Inventories that belong to a boat arrive with this bit added to their id, so the cargo hold of
+	// the fourth boat comes through as 966 plus this.
+	private static final int BOAT_INVENTORY = 32768;
 
 	// The depth each shoal swims at when nothing says otherwise, used until its ripples or fish are
 	// seen animating. Most sit at moderate; krill, haddock and the shimmering ones stay shallow.
@@ -124,6 +132,8 @@ public class TrawlingPlusPlugin extends Plugin
 	private TrawlingPlusConfig config;
 
 	private RouteData routeData;
+	// What routes.json knows about each kind of shoal, by the name it is filed under.
+	private Map<String, RouteData.Species> speciesByName = Collections.emptyMap();
 	private Shoal nearestShoal;
 
 	// Where the boat of the player is in world tiles, or null while they are not aboard one. Worked out
@@ -144,7 +154,21 @@ public class TrawlingPlusPlugin extends Plugin
 	// baited shoal does not read as a bait having just been laid.
 	private Integer baitedStep;
 	private boolean baited;
-	private boolean wasStopped;
+
+	// How much of each bait the hold had when it was last opened, less what has been used since, or -1
+	// before the hold has been opened this session. The game only sends the hold when it is opened, so
+	// between openings this is an estimate. Every chum station uses one offcut per bait.
+	private int plainBait = -1;
+	private int fineBait = -1;
+	private String baitedLabel = label(-1);
+	// The shoal the last bait was laid on, until it next arrives at a stop; whether it was sitting at one
+	// on the last tick; and how many ticks ago the bait was laid.
+	private Shoal baitedShoal;
+	private boolean baitedWasStopped;
+	private int ticksSinceBait;
+	// A shoal arriving within this many ticks of being baited was baited as it settled in, so that
+	// arrival does not end the bait.
+	private static final int ARRIVAL_GRACE_TICKS = 2;
 	private boolean netsAtDepth;
 	private List<ShoalRoute> routes = Collections.emptyList();
 
@@ -159,6 +183,12 @@ public class TrawlingPlusPlugin extends Plugin
 	{
 		routeData = ShoalRoute.read(gson);
 		routes = ShoalRoute.build(routeData, config.routeSmoothing());
+		Map<String, RouteData.Species> byName = new HashMap<>();
+		for (RouteData.Species species : routeData.species)
+		{
+			byName.put(species.name, species);
+		}
+		speciesByName = byName;
 		overlayManager.add(overlay);
 		overlayManager.add(netOverlay);
 		overlayManager.add(mapOverlay);
@@ -197,6 +227,34 @@ public class TrawlingPlusPlugin extends Plugin
 		{
 			clearShoals();
 		}
+
+		if (event.getGameState() == GameState.LOGIN_SCREEN)
+		{
+			// A new session, so what the hold held last time is no longer known.
+			plainBait = -1;
+			fineBait = -1;
+			baitedLabel = label(-1);
+		}
+	}
+
+	/**
+	 * Counts the bait in the cargo hold whenever it is opened, which is the only time the game sends it.
+	 */
+	@Subscribe
+	public void onItemContainerChanged(ItemContainerChanged event)
+	{
+		int id = event.getContainerId();
+		int hold = id & ~BOAT_INVENTORY;
+		if ((id & BOAT_INVENTORY) == 0 || hold < InventoryID.SAILING_BOAT_1_CARGOHOLD
+			|| hold > InventoryID.SAILING_BOAT_5_CARGOHOLD)
+		{
+			return;
+		}
+
+		ItemContainer contents = event.getItemContainer();
+		plainBait = contents == null ? 0 : contents.count(ItemID.BRUT_FISH_CUTS);
+		fineBait = contents == null ? 0 : contents.count(ItemID.SAILING_FINE_FISH_OFFCUTS);
+		baitedLabel = label(baitLeft());
 	}
 
 	@Subscribe
@@ -313,6 +371,7 @@ public class TrawlingPlusPlugin extends Plugin
 				shoal = new Shoal(entry.getValue());
 				shoals.put(entry.getKey(), shoal);
 			}
+			shoal.setClickbox(clickbox);
 
 			double[] position = shoal.position(client);
 			if (position == null)
@@ -345,6 +404,7 @@ public class TrawlingPlusPlugin extends Plugin
 		showGuides = guidesWanted();
 		followNearestRoute();
 		baited = stillBaited();
+		baitedLabel = label(baitLeft());
 		netsAtDepth = netsSetToDepth();
 	}
 
@@ -572,10 +632,91 @@ public class TrawlingPlusPlugin extends Plugin
 	}
 
 	/**
-	 * Works out whether the bait on the nearest shoal is still the one for the stop it is at. The game
-	 * records which step of its route a shoal was baited at rather than how long the bait has left, and
-	 * the number means nothing to us, so the change is what is watched: a new number while the shoal
-	 * sits still is a fresh bait, and a shoal swimming off leaves its bait behind with the stop.
+	 * What the Baited line says, with how much bait the nearest shoal can still be given, as worked out
+	 * on the last tick or when the hold was last opened.
+	 */
+	String getBaitedLabel()
+	{
+		return baitedLabel;
+	}
+
+	/**
+	 * How much bait is left that the nearest shoal takes, or -1 when that is not known. A shoal that takes
+	 * either kind counts both together; every other shoal counts only the fine offcuts.
+	 */
+	private int baitLeft()
+	{
+		if (fineBait < 0 || nearestShoal == null)
+		{
+			return -1;
+		}
+		return takesPlainOffcuts(nearestShoal) ? plainBait + fineBait : fineBait;
+	}
+
+	/**
+	 * Takes one offcut off the count for a bait just laid on the nearest shoal. On a shoal that takes
+	 * either kind there is no telling which went, so the plain ones are assumed used first; that only
+	 * shows once a shoal that takes fine alone is baited before the hold is opened again.
+	 */
+	private void useBait()
+	{
+		if (fineBait < 0 || nearestShoal == null)
+		{
+			return;
+		}
+
+		if (takesPlainOffcuts(nearestShoal) && plainBait > 0)
+		{
+			plainBait--;
+		}
+		else if (fineBait > 0)
+		{
+			fineBait--;
+		}
+	}
+
+	/**
+	 * What routes.json knows about the kind of shoal this is, or null for one it has no entry for.
+	 */
+	private RouteData.Species speciesOf(Shoal shoal)
+	{
+		String name = SPECIES_BY_CLICKBOX.get(shoal.getClickbox());
+		return speciesByName.get(name != null ? name : MIXED_BY_CLICKBOX.get(shoal.getClickbox()));
+	}
+
+	/**
+	 * How far from a shoal it can be fished from, in tiles along each axis, or 0 where that has not been
+	 * measured for its kind.
+	 */
+	double fishableReach(Shoal shoal)
+	{
+		RouteData.Species species = speciesOf(shoal);
+		return species == null ? 0 : species.fishableReach;
+	}
+
+	/**
+	 * Whether plain fish offcuts bait this shoal as well as fine ones. A kind with no entry is taken to
+	 * need fine ones, which every kind of shoal accepts.
+	 */
+	private boolean takesPlainOffcuts(Shoal shoal)
+	{
+		RouteData.Species species = speciesOf(shoal);
+		return species != null && "any".equals(species.bait);
+	}
+
+	private static String label(int left)
+	{
+		return "Baited (" + (left < 0 ? "?" : Integer.toString(left)) + " left)";
+	}
+
+	/**
+	 * Works out whether the nearest shoal has been baited. The game records which step of its route a
+	 * shoal was baited at rather than how long the bait lasts, and never says when it wears off: in the
+	 * probe logs the number stayed where it was for ten minutes after a bait, while the shoal swam on.
+	 * Jin found how long one lasts in game: until the shoal next arrives at a stop. Baited at a stop, it
+	 * lasts the rest of that stop and the swim to the next; baited on the way, until the stop it is
+	 * heading for. So a new number is a fresh bait on the nearest shoal, which stays baited until that
+	 * shoal next arrives somewhere.
 	 */
 	private boolean stillBaited()
 	{
@@ -583,29 +724,26 @@ public class TrawlingPlusPlugin extends Plugin
 		boolean laid = baitedStep != null && baitedStep != step;
 		baitedStep = step;
 
-		if (nearestShoal == null)
+		if (laid && nearestShoal != null)
 		{
-			wasStopped = false;
-			return false;
+			baitedShoal = nearestShoal;
+			baitedWasStopped = nearestShoal.stopped();
+			ticksSinceBait = 0;
+			useBait();
 		}
-
-		boolean stopped = nearestShoal.stopped();
-		boolean held = baited;
-		if (laid)
+		else if (baitedShoal != null)
 		{
-			// Taken wherever the shoal is rather than only once it counts as stopped. Bait is laid as
-			// the shoal arrives, and a stop is not recognised until it has held still for a tick, so
-			// insisting on both at once threw the bait away on the tick it was laid.
-			held = true;
+			ticksSinceBait++;
+			boolean stopped = baitedShoal.stopped();
+			// An arrival right after the bait is the shoal settling in as it was baited, which the bait
+			// outlasts. Any later one is the next stop, where it runs out.
+			if (stopped && !baitedWasStopped && ticksSinceBait > ARRIVAL_GRACE_TICKS)
+			{
+				baitedShoal = null;
+			}
+			baitedWasStopped = stopped;
 		}
-		else if (wasStopped && !stopped)
-		{
-			// It has set off again, leaving the bait behind with the stop.
-			held = false;
-		}
-
-		wasStopped = stopped;
-		return held;
+		return nearestShoal != null && nearestShoal == baitedShoal;
 	}
 
 	/**
@@ -791,7 +929,7 @@ public class TrawlingPlusPlugin extends Plugin
 
 	private static boolean isShoalClickbox(int id)
 	{
-		return SPECIES_BY_CLICKBOX.containsKey(id) || MIXED_CLICKBOXES.contains(id);
+		return SPECIES_BY_CLICKBOX.containsKey(id) || MIXED_BY_CLICKBOX.containsKey(id);
 	}
 
 	private void clearShoals()
@@ -816,7 +954,7 @@ public class TrawlingPlusPlugin extends Plugin
 		contenderTicks = 0;
 		baitedStep = null;
 		baited = false;
-		wasStopped = false;
+		baitedShoal = null;
 		netsAtDepth = false;
 	}
 

@@ -69,7 +69,6 @@ class TrawlingPlusOverlay extends Overlay
 	private static final double DEPTH_FADE_MILLIS = 500;
 
 	// The word above the depth when the shoal has been baited.
-	private static final String BAITED = "Baited";
 	private static final Color BAITED_COLOUR = new Color(0, 220, 80);
 
 	// The gap between the depth and the tick that follows it once every net is set to that depth.
@@ -567,10 +566,10 @@ class TrawlingPlusOverlay extends Overlay
 		}
 		if (opacity[BAITED_LINE] > 0)
 		{
-			text[count] = BAITED;
+			text[count] = plugin.getBaitedLabel();
 			colour[count] = BAITED_COLOUR;
 			showing[count] = opacity[BAITED_LINE];
-			width[count] = letters.stringWidth(BAITED);
+			width[count] = letters.stringWidth(text[count]);
 			count++;
 		}
 
@@ -863,14 +862,13 @@ class TrawlingPlusOverlay extends Overlay
 	private void drawFishableArea(Graphics2D graphics)
 	{
 		Shoal shoal = plugin.getNearestShoal();
-		ShoalRoute route = shoal == null ? null : shoal.getRoute();
 		WorldView view = shoal == null ? null : shoal.parentView(client);
 		double[] at = shoal == null ? null : shoal.position(client);
-		double reach = route == null ? 0 : route.fishableReach();
+		double reach = shoal == null ? 0 : plugin.fishableReach(shoal);
 		if (view == null || at == null || reach <= 0)
 		{
-			// Nothing to draw around a shoal whose route has not had its reach measured: a guess would
-			// be half as big again as the truth on some species.
+			// Nothing to draw around a kind of shoal whose reach has not been measured: a guess would be
+			// half as big again as the truth on some species. A recorded route is not needed.
 			return;
 		}
 

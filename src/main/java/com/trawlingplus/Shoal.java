@@ -26,6 +26,7 @@ final class Shoal
 
 	private final WorldEntity entity;
 	private ShoalRoute route;
+	private int clickbox;
 	// Where the shoal was last found along its route, so it can be followed past a crossing.
 	private double routeDistance = -1;
 
@@ -66,6 +67,19 @@ final class Shoal
 	ShoalRoute getRoute()
 	{
 		return route;
+	}
+
+	/**
+	 * The clickbox object the shoal was found by, which says what species it is.
+	 */
+	int getClickbox()
+	{
+		return clickbox;
+	}
+
+	void setClickbox(int clickbox)
+	{
+		this.clickbox = clickbox;
 	}
 
 	void setRoute(ShoalRoute route)

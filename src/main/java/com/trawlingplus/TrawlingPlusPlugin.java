@@ -8,12 +8,16 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import javax.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
+import net.runelite.api.ChatMessageType;
 import net.runelite.api.Client;
 import net.runelite.api.Constants;
 import net.runelite.api.GameObject;
 import net.runelite.api.GameState;
+import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
 import net.runelite.api.Perspective;
 import net.runelite.api.NPC;
@@ -22,17 +26,22 @@ import net.runelite.api.Tile;
 import net.runelite.api.WorldEntity;
 import net.runelite.api.coords.LocalPoint;
 import net.runelite.api.WorldView;
+import net.runelite.api.events.ChatMessage;
 import net.runelite.api.events.GameObjectDespawned;
 import net.runelite.api.events.GameObjectSpawned;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.events.ItemContainerChanged;
+import net.runelite.api.events.VarbitChanged;
+import net.runelite.api.events.WidgetLoaded;
 import net.runelite.api.events.WorldEntityDespawned;
 import net.runelite.api.events.WorldEntitySpawned;
+import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.gameval.ItemID;
 import net.runelite.api.gameval.ObjectID;
 import net.runelite.api.gameval.VarbitID;
+import net.runelite.api.widgets.Widget;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
@@ -40,6 +49,7 @@ import net.runelite.client.events.ConfigChanged;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.ui.overlay.OverlayManager;
+import net.runelite.client.util.Text;
 
 @Slf4j
 @PluginDescriptor(
@@ -104,6 +114,25 @@ public class TrawlingPlusPlugin extends Plugin
 		VarbitID.SAILING_SIDEPANEL_BOAT_TRAWLING_NET_1_DEPTH
 	};
 
+	// The nets share one catch of up to this many fish, however many are fitted.
+	private static final int NET_CAPACITY = 250;
+
+	// "You catch four giant krill!", "You catch a haddock!", "Jolly Jim catches three giant krill!"
+	private static final Pattern CATCH = Pattern.compile("^(?:You catch|.+ catches) (\\S+) ");
+
+	// The first line of the menu a net opens: "There are 46 fish across the two nets on the boat."
+	private static final Pattern NET_MENU = Pattern.compile("^There (?:is|are) (\\S+) fish");
+
+	// Counts the game writes out as words rather than figures.
+	private static final Map<String, Integer> NUMBER_WORDS = Map.ofEntries(
+		Map.entry("no", 0), Map.entry("a", 1), Map.entry("an", 1), Map.entry("one", 1), Map.entry("two", 2),
+		Map.entry("three", 3), Map.entry("four", 4), Map.entry("five", 5), Map.entry("six", 6),
+		Map.entry("seven", 7), Map.entry("eight", 8), Map.entry("nine", 9), Map.entry("ten", 10),
+		Map.entry("eleven", 11), Map.entry("twelve", 12), Map.entry("thirteen", 13), Map.entry("fourteen", 14),
+		Map.entry("fifteen", 15), Map.entry("sixteen", 16), Map.entry("seventeen", 17),
+		Map.entry("eighteen", 18), Map.entry("nineteen", 19), Map.entry("twenty", 20)
+	);
+
 	@Inject
 	private Client client;
 
@@ -148,6 +177,8 @@ public class TrawlingPlusPlugin extends Plugin
 	private ShoalRoute contender;
 	private int contenderTicks;
 	private boolean showGuides;
+	// Whether the boat has a trawling net in either slot, updated whenever the game changes either slot.
+	private boolean netsFitted;
 
 	// Which step of its route the shoal was last baited at, and whether that bait belongs to the stop
 	// it is sitting at now. Null until the first reading, so starting the plugin beside an already
@@ -170,6 +201,21 @@ public class TrawlingPlusPlugin extends Plugin
 	// arrival does not end the bait.
 	private static final int ARRIVAL_GRACE_TICKS = 2;
 	private boolean netsAtDepth;
+
+	// How many fish are in the nets, or -1 while that is not known. The game never sends what the nets
+	// hold, so this adds up what it says is caught and taken, and is put right whenever a net's menu
+	// gives the true number.
+	private int fishInNets = -1;
+	private String fishLabel = fishLabel(-1);
+	// Filled inventory slots as of the last inventory update, on which tick that update came and how many
+	// slots it filled, or -1 before the first; and whether a partial take is waiting on that update.
+	private int inventoryFilled = -1;
+	private int inventoryTick = -1;
+	private int inventoryAdded = -1;
+	private boolean takePending;
+	// Whether the hold is full: found without room when the nets were last emptied into it, or showing no
+	// free slots when last opened, until it is known to have room again.
+	private boolean holdFull;
 	private List<ShoalRoute> routes = Collections.emptyList();
 
 	// All keyed by the id of each world entity's own world view, which is what ties a shoal's
@@ -189,6 +235,22 @@ public class TrawlingPlusPlugin extends Plugin
 			byName.put(species.name, species);
 		}
 		speciesByName = byName;
+		clientThread.invoke(() ->
+		{
+			// Not logged in, or not aboard, and the nets are known to be empty: logging out and stepping off
+			// the boat both empty them. Aboard part way through a session, what they hold is not known until
+			// they are emptied or opened, since a count kept from before the plugin was last switched off
+			// would have missed everything caught in between.
+			boolean aboard = client.getGameState() == GameState.LOGGED_IN
+				&& client.getVarbitValue(VarbitID.SAILING_PLAYER_IS_ON_PLAYER_BOAT) == 1;
+			setFish(aboard ? -1 : 0);
+			inventoryFilled = -1;
+			takePending = false;
+			// Started part way through a session, the slots won't change to say what they hold.
+			netsFitted = readNetsFitted();
+			// Whatever the hold was doing while the plugin was off is not known, so don't warn about it.
+			holdFull = false;
+		});
 		overlayManager.add(overlay);
 		overlayManager.add(netOverlay);
 		overlayManager.add(mapOverlay);
@@ -234,16 +296,29 @@ public class TrawlingPlusPlugin extends Plugin
 			plainBait = -1;
 			fineBait = -1;
 			baitedLabel = label(-1);
+			// Logging out empties the nets into the hold, throwing away whatever doesn't fit, so every
+			// session starts with them empty.
+			setFish(0);
+			inventoryFilled = -1;
+			inventoryAdded = -1;
+			takePending = false;
 		}
 	}
 
 	/**
-	 * Counts the bait in the cargo hold whenever it is opened, which is the only time the game sends it.
+	 * Counts the bait in the cargo hold whenever it is opened, which is the only time the game sends it,
+	 * and notes how full the inventory is, which is how a partial take from the nets is measured.
 	 */
 	@Subscribe
 	public void onItemContainerChanged(ItemContainerChanged event)
 	{
 		int id = event.getContainerId();
+		if (id == InventoryID.INV)
+		{
+			countInventory(event.getItemContainer());
+			return;
+		}
+
 		int hold = id & ~BOAT_INVENTORY;
 		if ((id & BOAT_INVENTORY) == 0 || hold < InventoryID.SAILING_BOAT_1_CARGOHOLD
 			|| hold > InventoryID.SAILING_BOAT_5_CARGOHOLD)
@@ -255,6 +330,38 @@ public class TrawlingPlusPlugin extends Plugin
 		plainBait = contents == null ? 0 : contents.count(ItemID.BRUT_FISH_CUTS);
 		fineBait = contents == null ? 0 : contents.count(ItemID.SAILING_FINE_FISH_OFFCUTS);
 		baitedLabel = label(baitLeft());
+		// The hold is only sent while its screen is open, and that screen shows in its corner how many slots
+		// are taken out of how many. Its numbers are filled in after the contents arrive.
+		clientThread.invokeLater(this::readHoldSpace);
+	}
+
+	/**
+	 * Whether the hold is full, from the numbers in the corner of its screen: the slots taken over its
+	 * capacity, such as 240 over 240. So opening a full hold warns as well as emptying the nets into one.
+	 */
+	private void readHoldSpace()
+	{
+		int taken = widgetNumber(InterfaceID.SailingBoatCargohold.OCCUPIEDSLOTS);
+		int capacity = widgetNumber(InterfaceID.SailingBoatCargohold.CAPACITY);
+		if (taken >= 0 && capacity > 0)
+		{
+			holdFull = taken >= capacity;
+		}
+	}
+
+	/**
+	 * The whole number an interface component shows, or -1 if it is not showing one.
+	 */
+	private int widgetNumber(int component)
+	{
+		Widget widget = client.getWidget(component);
+		String text = widget == null || widget.isHidden() || widget.getText() == null
+			? "" : Text.removeTags(widget.getText()).trim();
+		if (text.isEmpty() || text.length() > 5 || !text.chars().allMatch(Character::isDigit))
+		{
+			return -1;
+		}
+		return Integer.parseInt(text);
 	}
 
 	@Subscribe
@@ -641,6 +748,213 @@ public class TrawlingPlusPlugin extends Plugin
 	}
 
 	/**
+	 * What the fish line says: how many fish are in the nets, or a question mark while that is not known.
+	 */
+	String getFishLabel()
+	{
+		return fishLabel;
+	}
+
+	/**
+	 * Whether the hold is full: the nets were last emptied into it without room for them all, or it showed
+	 * no free slots when last opened, and it has not been seen with room since.
+	 */
+	boolean isHoldFull()
+	{
+		return holdFull;
+	}
+
+	/**
+	 * Whether the boat has a trawling net in either slot, kept up to date as the game changes the slots.
+	 */
+	boolean netsFitted()
+	{
+		return netsFitted;
+	}
+
+	private boolean readNetsFitted()
+	{
+		// Each slot names the hotspot its net is built on, so an empty slot names no hotspot.
+		return client.getVarbitValue(NET_SLOTS[0]) > 0 || client.getVarbitValue(NET_SLOTS[1]) > 0;
+	}
+
+	/**
+	 * Keeps count of the fish in the nets from what the game says about them, since nothing else tells.
+	 * Every catch, the crew's included, is announced with how many fish it brought in, and emptying the
+	 * nets or taking everything from them leaves none.
+	 */
+	@Subscribe
+	public void onChatMessage(ChatMessage event)
+	{
+		ChatMessageType type = event.getType();
+		if (type != ChatMessageType.SPAM && type != ChatMessageType.GAMEMESSAGE && type != ChatMessageType.MESBOX)
+		{
+			return;
+		}
+
+		String message = Text.removeTags(event.getMessage());
+		if (message.startsWith("Your crew start moving the contents of the cargo hold"))
+		{
+			// Asking the crew on the dock to move everything in the hold to the bank empties it. This is said
+			// off the boat, so it comes before the check for being aboard; what the crewmate says once it is
+			// done is in their own words, so this is the line to go by.
+			holdFull = false;
+			return;
+		}
+
+		if (boatPlace == null)
+		{
+			return;
+		}
+
+		if (message.startsWith("There are no fish in"))
+		{
+			// What opening an empty net says, in a box of its own rather than the menu a net with fish opens.
+			setFish(0);
+		}
+		else if (message.startsWith("You empty the net"))
+		{
+			// "..., but there was not enough space in there to do so entirely." A hold without room for them
+			// all keeps some back and doesn't say how many; one that took them all had room.
+			boolean noRoom = message.contains("not enough");
+			holdFull = noRoom;
+			setFish(noRoom ? -1 : 0);
+		}
+		else if (message.startsWith("You take all of the fish from the net"))
+		{
+			setFish(0);
+		}
+		else if (message.startsWith("You take some fish from the net"))
+		{
+			// An inventory without room for them all takes as many as fit, and doesn't say how many. The
+			// inventory does, and its update can come either side of this message on the same tick.
+			if (inventoryTick == client.getTickCount())
+			{
+				takeFromNets(inventoryAdded);
+			}
+			else
+			{
+				takePending = true;
+			}
+		}
+		else if (netsFitted() && !message.contains("Trawler's trust"))
+		{
+			// Only with a net fitted: the messages above name the nets, but a catch could be ordinary fishing.
+			// Lines about Trawler's trust are left alone, as the fish it adds are said to come with a catch
+			// message of their own (not yet seen here). A catch whose count can't be read, like "You catch
+			// some shrimps" from ordinary fishing, is not a trawling catch and changes nothing.
+			Matcher caught = CATCH.matcher(message);
+			int fish = caught.find() ? number(caught.group(1)) : -1;
+			if (fish >= 0 && fishInNets >= 0)
+			{
+				setFish(Math.min(NET_CAPACITY, fishInNets + fish));
+			}
+		}
+	}
+
+	/**
+	 * Opening a net asks what to do with the fish in it and says how many there are, which puts the count
+	 * right whatever it had drifted to.
+	 */
+	@Subscribe
+	public void onWidgetLoaded(WidgetLoaded event)
+	{
+		if (event.getGroupId() == InterfaceID.CHATMENU && boatPlace != null)
+		{
+			// The menu's lines are filled in after it loads.
+			clientThread.invokeLater(this::readNetMenu);
+		}
+	}
+
+	/**
+	 * Stepping off the boat throws away whatever is in the nets, so they are empty once the player is no
+	 * longer aboard. Taken from the game's own flag rather than from where the player stands, which can
+	 * look like being off the boat for a moment while the area loads.
+	 */
+	@Subscribe
+	public void onVarbitChanged(VarbitChanged event)
+	{
+		int varbit = event.getVarbitId();
+		if (varbit == VarbitID.SAILING_PLAYER_IS_ON_PLAYER_BOAT && event.getValue() == 0)
+		{
+			setFish(0);
+		}
+		else if (varbit == NET_SLOTS[0] || varbit == NET_SLOTS[1])
+		{
+			// Nets are only fitted or taken off ashore, and these arrive a few ticks after logging in, so the
+			// answer is kept here as they change rather than asked for again every tick.
+			netsFitted = readNetsFitted();
+		}
+	}
+
+	private void readNetMenu()
+	{
+		Widget options = client.getWidget(InterfaceID.Chatmenu.OPTIONS);
+		Widget[] lines = options == null ? null : options.getDynamicChildren();
+		if (lines == null || lines.length == 0 || lines[0].getText() == null)
+		{
+			return;
+		}
+
+		Matcher menu = NET_MENU.matcher(Text.removeTags(lines[0].getText()));
+		int fish = menu.find() ? number(menu.group(1)) : -1;
+		if (fish >= 0)
+		{
+			setFish(Math.min(NET_CAPACITY, fish));
+		}
+	}
+
+	private void countInventory(ItemContainer inventory)
+	{
+		int filled = 0;
+		for (Item item : inventory == null ? new Item[0] : inventory.getItems())
+		{
+			if (item.getId() >= 0)
+			{
+				filled++;
+			}
+		}
+
+		// Fish don't stack, so the slots that filled are the fish that arrived.
+		inventoryAdded = inventoryFilled < 0 ? -1 : Math.max(0, filled - inventoryFilled);
+		inventoryFilled = filled;
+		inventoryTick = client.getTickCount();
+		if (takePending)
+		{
+			takePending = false;
+			takeFromNets(inventoryAdded);
+		}
+	}
+
+	private void takeFromNets(int taken)
+	{
+		setFish(taken < 0 || fishInNets < 0 ? -1 : Math.max(0, fishInNets - taken));
+	}
+
+	private void setFish(int fish)
+	{
+		fishInNets = fish;
+		fishLabel = fishLabel(fish);
+	}
+
+	private static String fishLabel(int fish)
+	{
+		return "Fish: " + (fish < 0 ? "?" : Integer.toString(fish));
+	}
+
+	/**
+	 * A count as the game writes it, in figures or in words, or -1 for one it isn't known to write.
+	 */
+	private static int number(String written)
+	{
+		if (!written.isEmpty() && written.length() < 5 && written.chars().allMatch(Character::isDigit))
+		{
+			return Integer.parseInt(written);
+		}
+		return NUMBER_WORDS.getOrDefault(written.toLowerCase(), -1);
+	}
+
+	/**
 	 * How much bait is left that the nearest shoal takes, or -1 when that is not known. A shoal that takes
 	 * either kind counts both together; every other shoal counts only the fine offcuts.
 	 */
@@ -768,8 +1082,7 @@ public class TrawlingPlusPlugin extends Plugin
 			return true;
 		}
 
-		// Each slot names the hotspot its net is built on, so an empty slot names no hotspot.
-		return client.getVarbitValue(NET_SLOTS[0]) > 0 || client.getVarbitValue(NET_SLOTS[1]) > 0;
+		return netsFitted;
 	}
 
 	/**

@@ -74,13 +74,23 @@ class TrawlingPlusOverlay extends Overlay
 	// The gap between the depth and the tick that follows it once every net is set to that depth.
 	private static final int TICK_GAP = 4;
 
-	// The lines of the display at the helm, from the bottom up. The depth holds the bottom line so the
-	// display keeps its place on the boat however many of the others are showing.
+	// The lines of the display at the helm. The depth holds the bottom line so the display keeps its
+	// place on the boat however many of the others are showing.
 	private static final int DEPTH_LINE = 0;
 	private static final int TIME_LINE = 1;
 	private static final int BAITED_LINE = 2;
-	private static final int HELM_LINES = 3;
+	private static final int FISH_LINE = 3;
+	private static final int HOLD_LINE = 4;
+	private static final int HELM_LINES = 5;
 	private static final Color TIME_COLOUR = Color.WHITE;
+	private static final Color FISH_COLOUR = new Color(140, 200, 255);
+
+	// The warning on top of the display when the nets were emptied into a hold without room, pulsing
+	// between two colours, from one to the other and back in this long.
+	private static final String HOLD_FULL = "Hold full";
+	private static final Color HOLD_FULL_COLOUR = new Color(255, 70, 40);
+	private static final Color HOLD_FULL_PULSE_COLOUR = new Color(255, 200, 60);
+	private static final long HOLD_FULL_PULSE_MILLIS = 1000;
 
 	// The stops' faint fill, as RuneLite draws a highlighted tile.
 	private static final Color STOP_FILL = new Color(0, 0, 0, 50);
@@ -533,6 +543,8 @@ class TrawlingPlusOverlay extends Overlay
 		wanted[DEPTH_LINE] = boat != null && config.showShoalDepth() && depth != ShoalDepth.UNKNOWN;
 		wanted[TIME_LINE] = boat != null && config.showTimeAtStop() && seconds >= 0;
 		wanted[BAITED_LINE] = boat != null && config.showBaited() && plugin.isBaited();
+		wanted[FISH_LINE] = boat != null && config.showFishInNets() && plugin.netsFitted();
+		wanted[HOLD_LINE] = boat != null && config.showFishInNets() && plugin.isHoldFull();
 
 		// A line coming or going while another holds the pill up is a change inside something already
 		// on screen, so it happens at once. The fade is for the display itself arriving or leaving.
@@ -589,12 +601,30 @@ class TrawlingPlusOverlay extends Overlay
 			width[count] = letters.stringWidth(text[count]);
 			count++;
 		}
+		if (opacity[FISH_LINE] > 0)
+		{
+			text[count] = plugin.getFishLabel();
+			colour[count] = FISH_COLOUR;
+			showing[count] = opacity[FISH_LINE];
+			width[count] = letters.stringWidth(text[count]);
+			count++;
+		}
 		if (opacity[TIME_LINE] > 0)
 		{
 			text[count] = Math.max(0, Math.round(seconds)) + "s";
 			colour[count] = TIME_COLOUR;
 			showing[count] = opacity[TIME_LINE];
 			width[count] = letters.stringWidth(text[count]);
+			count++;
+		}
+		if (opacity[HOLD_LINE] > 0)
+		{
+			// Eased back and forth rather than blinking, starting and ending on the first colour.
+			double pulse = (1 - Math.cos(2 * Math.PI * (now % HOLD_FULL_PULSE_MILLIS) / HOLD_FULL_PULSE_MILLIS)) / 2;
+			text[count] = HOLD_FULL;
+			colour[count] = blend(HOLD_FULL_COLOUR, HOLD_FULL_PULSE_COLOUR, pulse);
+			showing[count] = opacity[HOLD_LINE];
+			width[count] = letters.stringWidth(HOLD_FULL);
 			count++;
 		}
 
@@ -881,6 +911,17 @@ class TrawlingPlusOverlay extends Overlay
 	private static Color withOpacity(Color colour, double opacity)
 	{
 		return new Color(colour.getRed(), colour.getGreen(), colour.getBlue(), (int) Math.round(colour.getAlpha() * opacity));
+	}
+
+	/**
+	 * A colour part way from one to another, by a fraction from 0 to 1.
+	 */
+	private static Color blend(Color from, Color to, double fraction)
+	{
+		return new Color(
+			(int) Math.round(from.getRed() + (to.getRed() - from.getRed()) * fraction),
+			(int) Math.round(from.getGreen() + (to.getGreen() - from.getGreen()) * fraction),
+			(int) Math.round(from.getBlue() + (to.getBlue() - from.getBlue()) * fraction));
 	}
 
 	/**

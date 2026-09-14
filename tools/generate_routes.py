@@ -1,7 +1,7 @@
 """Generates src/main/resources/com/trawlingplus/routes.json from tools/recorded_routes.json and tools/species.json.
 
-Every route the plugin draws was recorded in-game for Trawling Plus; tools/import_recording.py adds
-recordings to tools/recorded_routes.json. What is known about each kind of shoal whatever its route, its fishable
+Every route the plugin draws was recorded in-game for Trawling Plus, one lap each, and is kept in
+tools/recorded_routes.json. What is known about each kind of shoal whatever its route, its fishable
 reach and which bait it takes, is kept by hand in tools/species.json. Re-run this whenever either changes:
 
     python tools/generate_routes.py

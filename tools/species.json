@@ -34,7 +34,7 @@
 		},
 		{
 			"name": "Shimmering",
-			"fishableReach": 0,
+			"fishableReach": 10.5,
 			"bait": "any"
 		},
 		{

@@ -50,6 +50,12 @@ final class ShoalRoute
 	// stray from its route before it stops being matched to it.
 	private static final double B_SPLINE_SPACING = 5.0;
 
+	// Heavy smoothing doesn't pass through the recorded points, which left stops on tight bends most of
+	// a tile off the line. The curve is pulled onto each stop, the pull easing off to nothing this far
+	// either way round the route, in tiles, so the line bends gently onto the stop rather than kinking.
+	// Never further than halfway to the next stop, so no stretch is pulled towards two.
+	private static final double PIN_TILES = 10;
+
 	// A shoal this close to a stop counts as sitting at it, so its next stop is the one after.
 	private static final double AT_STOP_TILES = 3.0;
 
@@ -245,21 +251,21 @@ final class ShoalRoute
 		{
 			for (RouteData.Route route : species.routes)
 			{
-				routes.add(new ShoalRoute(species.name, route.name, route.stopTicks, shape(route.path, smoothing),
-					route.stops));
+				routes.add(new ShoalRoute(species.name, route.name, route.stopTicks,
+					shape(route.path, route.stops, smoothing), route.stops));
 			}
 		}
 		return routes;
 	}
 
-	private static double[][] shape(double[][] path, TrawlingPlusConfig.Smoothing smoothing)
+	private static double[][] shape(double[][] path, double[][] stops, TrawlingPlusConfig.Smoothing smoothing)
 	{
 		switch (smoothing)
 		{
 			case NONE:
 				return path;
 			case HEAVY:
-				return bSpline(path);
+				return bSpline(path, stops);
 			default:
 				return catmullRom(path);
 		}
@@ -300,19 +306,24 @@ final class ShoalRoute
 
 	/**
 	 * Turns a closed loop of points into a smoother curve that doesn't have to pass through them, as a
-	 * denser loop of points. It irons out small wobbles and rounds bends off more; straight stretches
-	 * stay straight.
+	 * denser loop of points, then bends it onto each stop so every stop sits on the line. It irons out
+	 * small wobbles and rounds bends off more; straight stretches stay straight.
 	 */
-	static double[][] bSpline(double[][] points)
+	static double[][] bSpline(double[][] points, double[][] stops)
 	{
 		if (points.length < 3)
 		{
 			return points;
 		}
 
+		double total = loopLength(points);
 		double[][] controls = respace(points, B_SPLINE_SPACING);
 		int count = controls.length;
+		double apart = total / count;
 		List<double[]> curve = new ArrayList<>();
+		// How far round the recorded path each curve point sits, near enough: the respaced points are
+		// evenly spread along it, and the curve passes over them in order.
+		List<Double> along = new ArrayList<>();
 		for (int i = 0; i < count; i++)
 		{
 			double[] p0 = controls[(i + count - 1) % count];
@@ -333,9 +344,128 @@ final class ShoalRoute
 					w0 * p0[0] + w1 * p1[0] + w2 * p2[0] + w3 * p3[0],
 					w0 * p0[1] + w1 * p1[1] + w2 * p2[1] + w3 * p3[1]
 				});
+				along.add((i + t) * apart);
 			}
 		}
-		return trim(curve.toArray(new double[0][]));
+
+		double[][] shaped = curve.toArray(new double[0][]);
+		double[] reached = new double[shaped.length];
+		for (int i = 0; i < reached.length; i++)
+		{
+			reached[i] = along.get(i);
+		}
+		pin(shaped, reached, total, points, stops);
+		return trim(shaped);
+	}
+
+	/**
+	 * Moves a curve so it runs through every stop. Each stop is matched to the stretch of curve over
+	 * where it sits along the recorded path, not simply the nearest point, since a route can come back
+	 * past one of its stops on the way somewhere else. That stretch is moved across by however far the
+	 * stop is off it, the move easing off to nothing either way.
+	 */
+	private static void pin(double[][] curve, double[] along, double total, double[][] path, double[][] stops)
+	{
+		double[] stopAlong = new double[stops.length];
+		for (int stop = 0; stop < stops.length; stop++)
+		{
+			stopAlong[stop] = alongLoop(path, stops[stop]);
+		}
+
+		for (int stop = 0; stop < stops.length; stop++)
+		{
+			double radius = PIN_TILES;
+			for (int other = 0; other < stops.length; other++)
+			{
+				if (other != stop)
+				{
+					radius = Math.min(radius, loopGap(stopAlong[stop], stopAlong[other], total) / 2);
+				}
+			}
+
+			int nearest = -1;
+			double nearestOffset = Double.MAX_VALUE;
+			for (int i = 0; i < curve.length; i++)
+			{
+				if (loopGap(along[i], stopAlong[stop], total) > radius)
+				{
+					continue;
+				}
+				double offset = Math.hypot(stops[stop][0] - curve[i][0], stops[stop][1] - curve[i][1]);
+				if (offset < nearestOffset)
+				{
+					nearest = i;
+					nearestOffset = offset;
+				}
+			}
+			if (nearest < 0)
+			{
+				continue;
+			}
+
+			double dx = stops[stop][0] - curve[nearest][0];
+			double dy = stops[stop][1] - curve[nearest][1];
+			double centre = along[nearest];
+			for (int i = 0; i < curve.length; i++)
+			{
+				double gap = loopGap(along[i], centre, total);
+				if (gap < radius)
+				{
+					double weight = (1 + Math.cos(Math.PI * gap / radius)) / 2;
+					curve[i][0] += dx * weight;
+					curve[i][1] += dy * weight;
+				}
+			}
+		}
+	}
+
+	/**
+	 * How far round a closed loop of points the point on it nearest the given position is.
+	 */
+	private static double alongLoop(double[][] points, double[] position)
+	{
+		double bestOffset = Double.MAX_VALUE;
+		double bestAlong = 0;
+		double reached = 0;
+		for (int i = 0; i < points.length; i++)
+		{
+			double[] from = points[i];
+			double[] to = points[(i + 1) % points.length];
+			double dx = to[0] - from[0];
+			double dy = to[1] - from[1];
+			double lengthSquared = dx * dx + dy * dy;
+			double segmentLength = Math.sqrt(lengthSquared);
+			double t = lengthSquared == 0 ? 0
+				: Math.max(0, Math.min(1, ((position[0] - from[0]) * dx + (position[1] - from[1]) * dy) / lengthSquared));
+			double offset = Math.hypot(position[0] - (from[0] + t * dx), position[1] - (from[1] + t * dy));
+			if (offset < bestOffset)
+			{
+				bestOffset = offset;
+				bestAlong = reached + t * segmentLength;
+			}
+			reached += segmentLength;
+		}
+		return bestAlong;
+	}
+
+	/**
+	 * How far apart two distances round a loop are, whichever way round is shorter.
+	 */
+	private static double loopGap(double a, double b, double total)
+	{
+		double gap = Math.abs(a - b) % total;
+		return Math.min(gap, total - gap);
+	}
+
+	private static double loopLength(double[][] points)
+	{
+		double total = 0;
+		for (int i = 0; i < points.length; i++)
+		{
+			double[] next = points[(i + 1) % points.length];
+			total += Math.hypot(next[0] - points[i][0], next[1] - points[i][1]);
+		}
+		return total;
 	}
 
 	/**

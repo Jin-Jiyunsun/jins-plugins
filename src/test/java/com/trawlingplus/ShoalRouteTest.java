@@ -123,11 +123,24 @@ public class ShoalRouteTest
 	}
 
 	@Test
+	public void heavySmoothingRunsThroughEveryStop()
+	{
+		// Heavy smoothing would cut these corners by over a tile, so stops on two of them have to be pulled onto.
+		double[][] points = {{0, 0}, {20, 0}, {20, 20}, {0, 20}};
+		double[][] stops = {{20, 0}, {0, 20}};
+		ShoalRoute route = new ShoalRoute("Test", "Corners", 0, ShoalRoute.bSpline(points, stops), stops);
+		for (int stop = 0; stop < route.stopCount(); stop++)
+		{
+			assertEquals(0, route.project(route.stopX(stop), route.stopY(stop)).offset, 0.01);
+		}
+	}
+
+	@Test
 	public void smoothingKeepsStraightStretchesStraight()
 	{
 		// Between (10, 0) and (20, 0) the neighbouring points are in line too, so neither curve can bend.
 		double[][] points = {{0, 0}, {10, 0}, {20, 0}, {30, 0}, {30, 10}, {0, 10}};
-		for (double[][] curve : new double[][][]{ShoalRoute.catmullRom(points), ShoalRoute.bSpline(points)})
+		for (double[][] curve : new double[][][]{ShoalRoute.catmullRom(points), ShoalRoute.bSpline(points, new double[0][])})
 		{
 			for (double[] c : curve)
 			{
@@ -150,7 +163,7 @@ public class ShoalRouteTest
 			{
 				ShoalRoute original = new ShoalRoute(species.name, route.name, route.stopTicks,
 					route.path, route.stops);
-				for (double[][] curve : new double[][][]{ShoalRoute.catmullRom(route.path), ShoalRoute.bSpline(route.path)})
+				for (double[][] curve : new double[][][]{ShoalRoute.catmullRom(route.path), ShoalRoute.bSpline(route.path, route.stops)})
 				{
 					for (double[] point : curve)
 					{

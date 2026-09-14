@@ -139,6 +139,8 @@ class TrawlingPlusOverlay extends Overlay
 		Object antialiasing = graphics.getRenderingHint(RenderingHints.KEY_ANTIALIASING);
 		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 		debugDots = config.debugRoutePoints() ? new ArrayList<>() : null;
+		debugNumberAt = config.debugStopNumbers() ? new ArrayList<>() : null;
+		debugNumberText = debugNumberAt == null ? null : new ArrayList<>();
 
 		// With the route line, stops and direction arrows all off, only the shoals' heading arrows are drawn.
 		boolean routes = config.showRouteLine() || config.showStops() || config.showDirectionArrows();
@@ -168,9 +170,12 @@ class TrawlingPlusOverlay extends Overlay
 		}
 		drawDepth(graphics);
 
-		// DEBUG: remove before release. Last of all, so the dots sit on top of everything else drawn.
+		// DEBUG: remove before release. Last of all, so the dots and numbers sit on top of everything else.
 		drawDots(graphics, debugDots);
 		debugDots = null;
+		drawNumbers(graphics, debugNumberAt, debugNumberText);
+		debugNumberAt = null;
+		debugNumberText = null;
 
 		if (antialiasing != null)
 		{
@@ -350,7 +355,7 @@ class TrawlingPlusOverlay extends Overlay
 			Math.min(TrawlingPlusConfig.MAX_ANIMATION_SECONDS, config.animationDuration()));
 	}
 
-	// DEBUG: remove before release, with the Show points (debug) setting. Marks the points a route
+	// DEBUG: remove before release, with the Debug section's Show line points setting. Marks the points a route
 	// line is drawn through, to see how many there are and where they sit.
 	private static final Color DEBUG_POINT = new Color(255, 140, 0);
 	private static final int DEBUG_POINT_SIZE = 4;
@@ -382,6 +387,26 @@ class TrawlingPlusOverlay extends Overlay
 		{
 			graphics.fillOval(dot.getX() - DEBUG_POINT_SIZE / 2, dot.getY() - DEBUG_POINT_SIZE / 2,
 				DEBUG_POINT_SIZE, DEBUG_POINT_SIZE);
+		}
+	}
+
+	// DEBUG: remove before release, with the Debug section's Show stop numbers setting. Numbers each stop, from 1, in
+	// the order the route lists them, so a stop can be named when talking about a route.
+	private static final Color DEBUG_NUMBER = Color.WHITE;
+
+	// Collected while the stops are drawn, then drawn once everything else has been.
+	private List<Point> debugNumberAt;
+	private List<String> debugNumberText;
+
+	private static void drawNumbers(Graphics2D graphics, List<Point> at, List<String> text)
+	{
+		if (at == null)
+		{
+			return;
+		}
+		for (int i = 0; i < at.size(); i++)
+		{
+			line(graphics, text.get(i), at.get(i).getX(), at.get(i).getY(), DEBUG_NUMBER, 1);
 		}
 	}
 
@@ -556,19 +581,19 @@ class TrawlingPlusOverlay extends Overlay
 				+ (ticked ? TICK_GAP + TrawlingPlusNetOverlay.TICK_WIDTH : 0);
 			count++;
 		}
-		if (opacity[TIME_LINE] > 0)
-		{
-			text[count] = Math.max(0, Math.round(seconds)) + "s";
-			colour[count] = TIME_COLOUR;
-			showing[count] = opacity[TIME_LINE];
-			width[count] = letters.stringWidth(text[count]);
-			count++;
-		}
 		if (opacity[BAITED_LINE] > 0)
 		{
 			text[count] = plugin.getBaitedLabel();
 			colour[count] = BAITED_COLOUR;
 			showing[count] = opacity[BAITED_LINE];
+			width[count] = letters.stringWidth(text[count]);
+			count++;
+		}
+		if (opacity[TIME_LINE] > 0)
+		{
+			text[count] = Math.max(0, Math.round(seconds)) + "s";
+			colour[count] = TIME_COLOUR;
+			showing[count] = opacity[TIME_LINE];
 			width[count] = letters.stringWidth(text[count]);
 			count++;
 		}
@@ -835,6 +860,18 @@ class TrawlingPlusOverlay extends Overlay
 		{
 			OverlayUtil.renderPolygon(graphics, area, withOpacity(colour, opacity), withOpacity(STOP_FILL, opacity),
 				new BasicStroke(config.stopThickness().pixels()));
+		}
+
+		// DEBUG: remove before release.
+		if (debugNumberAt != null && local != null)
+		{
+			String number = Integer.toString(stop + 1);
+			Point at = Perspective.getCanvasTextLocation(client, graphics, local, number, 0);
+			if (at != null)
+			{
+				debugNumberAt.add(at);
+				debugNumberText.add(number);
+			}
 		}
 	}
 

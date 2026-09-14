@@ -461,8 +461,8 @@ public class TrawlingPlusPlugin extends Plugin
 		// and someone stood on land is not fishing. So none of it is worked out off one, and everything
 		// drawn on the water, the minimap and the side panel rests on the same answer. The world map is
 		// the exception, and needs none of this: it draws every route wherever the player happens to be.
-		WorldEntity own = ownBoat();
-		if (!aboard(own))
+		WorldEntity own = boardedBoat();
+		if (own == null)
 		{
 			stopTracking();
 			showGuides = false;
@@ -1098,36 +1098,25 @@ public class TrawlingPlusPlugin extends Plugin
 	}
 
 	/**
-	 * Whether the player is stood on their own boat. Everyone aboard stands in the boat's own world
-	 * view rather than the one the sea is in.
+	 * The player's own boat while they are stood on it, or null. Everyone aboard stands in the boat's own
+	 * world view rather than the one the sea is in, and the boat is looked up straight from that view's id
+	 * rather than searched for among every world entity in the scene. What comes back is checked to be
+	 * that same view and the player's own boat, so standing on someone else's counts as not aboard.
 	 */
-	private boolean aboard(WorldEntity boat)
+	private WorldEntity boardedBoat()
 	{
-		WorldView deck = boat == null ? null : boat.getWorldView();
 		Player player = client.getLocalPlayer();
 		WorldView standing = player == null ? null : player.getWorldView();
-		return deck != null && standing != null && deck.getId() == standing.getId();
-	}
-
-	/**
-	 * The player's own boat if it is in the scene, whether or not they are aboard, or null.
-	 */
-	private WorldEntity ownBoat()
-	{
 		WorldView top = client.getTopLevelWorldView();
-		if (top == null)
+		if (standing == null || top == null || standing.isTopLevel() || standing.getId() < 0)
 		{
 			return null;
 		}
 
-		for (WorldEntity boat : top.worldEntities())
-		{
-			if (boat.getOwnerType() == WorldEntity.OWNER_TYPE_SELF_PLAYER)
-			{
-				return boat;
-			}
-		}
-		return null;
+		WorldEntity boat = top.worldEntities().byIndex(standing.getId());
+		WorldView deck = boat == null ? null : boat.getWorldView();
+		return deck != null && deck.getId() == standing.getId()
+			&& boat.getOwnerType() == WorldEntity.OWNER_TYPE_SELF_PLAYER ? boat : null;
 	}
 
 	/**

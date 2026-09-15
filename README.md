@@ -1,6 +1,6 @@
 # Trawling Plus
 
-<img width="1632" height="1200" alt="splash" src="https://github.com/user-attachments/assets/3cae185a-351a-4eb1-8dc7-4e4414276aea" />
+<img width="1614" height="1120" alt="splash" src="https://github.com/user-attachments/assets/e925e034-e2e1-4ac8-88a8-b09a4f61b4b2" />
 
 Shows the routes that deep sea trawling shoals swim, so you can find and follow one without
 guessing where it's headed next. Marks stops, fishing range and dangerous water along the way,

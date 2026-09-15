@@ -1,6 +1,6 @@
 # Trawling Plus
 
-<!-- screenshot: add a picture of the routes and helm HUD here, same as Tab Keybind Display's README -->
+<img width="1632" height="1200" alt="splash" src="https://github.com/user-attachments/assets/3cae185a-351a-4eb1-8dc7-4e4414276aea" />
 
 Shows the routes that deep sea trawling shoals swim, so you can find and follow one without
 guessing where it's headed next. Marks stops, fishing range and dangerous water along the way,
@@ -22,6 +22,8 @@ and keeps track of your nets, bait and cargo hold from a HUD on the boat.
   it once it's set correctly.
 - **Notifications**: optional alerts for full nets, a full cargo hold, or a shoal about to leave
   its stop.
+
+<img width="800" height="669" alt="nextstop" src="https://github.com/user-attachments/assets/0bc124e7-0984-4843-bc2c-130bedfb8747" />
 
 ## Route data
 

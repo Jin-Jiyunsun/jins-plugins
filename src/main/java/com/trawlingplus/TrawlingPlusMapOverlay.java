@@ -32,14 +32,11 @@ class TrawlingPlusMapOverlay extends Overlay
 	private static final int ARROW = 8;
 	private static final int SHOAL = 4;
 
-	// DEBUG: remove before release. The dot marking where a sea creature that attacks boats spawns.
-	private static final int SEA_MONSTER = 4;
-	private static final Color SEA_MONSTER_COLOUR = Color.RED;
-
 	// Stretches of route that pass close to where sea creatures that attack boats spawn, and the skull and
 	// crossbones marking each place they spawn close enough to a route to threaten it, placed among the spawns
 	// that are that close. The plugin puts the skulls on the map as RuneLite world map points, which gives them
-	// the game's style of tooltip. Behind a debug setting while being tried out.
+	// the game's style of tooltip. Drawn whenever routes are, on the world map only. Where each creature spawns is
+	// never drawn itself.
 	private static final Color DANGER_COLOUR = new Color(230, 40, 40);
 	static final BufferedImage DANGER_ICON = dangerIcon();
 
@@ -89,6 +86,7 @@ class TrawlingPlusMapOverlay extends Overlay
 	TrawlingPlusMapOverlay(Client client, TrawlingPlusPlugin plugin, TrawlingPlusConfig config,
 		WorldMapOverlay worldMapOverlay)
 	{
+		super(plugin);
 		this.client = client;
 		this.plugin = plugin;
 		this.config = config;
@@ -251,27 +249,10 @@ class TrawlingPlusMapOverlay extends Overlay
 
 			MapRoutes.route(graphics, config, route, onto, THICKNESS, pixelsPerTile,
 				leftX, bottomY, rightX, topY);
-			if (config.debugDangerAreas())
-			{
-				MapRoutes.dangerStretches(graphics, route, onto, DANGER_COLOUR, THICKNESS, pixelsPerTile,
-					leftX, bottomY, rightX, topY);
-			}
+			MapRoutes.dangerStretches(graphics, route, onto, DANGER_COLOUR, THICKNESS, pixelsPerTile,
+				leftX, bottomY, rightX, topY);
 			MapRoutes.arrows(graphics, config, route, onto, ARROW, pixelsPerTile,
-				leftX, bottomY, rightX, topY, config.debugDangerAreas() ? DANGER_COLOUR : null);
-		}
-
-		// DEBUG: remove before release. Every spawn point of the sea creatures that attack boats.
-		if (config.debugSeaMonsters())
-		{
-			graphics.setColor(SEA_MONSTER_COLOUR);
-			for (int[] spawn : plugin.getSeaMonsters().spawns())
-			{
-				Point at = onto.at(spawn[0], spawn[1]);
-				if (at != null)
-				{
-					graphics.fillOval(at.getX() - SEA_MONSTER / 2, at.getY() - SEA_MONSTER / 2, SEA_MONSTER, SEA_MONSTER);
-				}
-			}
+				leftX, bottomY, rightX, topY, DANGER_COLOUR);
 		}
 
 		// Only a shoal the client is drawing in the world may be marked on the map. Shoals are dropped

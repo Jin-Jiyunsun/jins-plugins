@@ -12,6 +12,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.WeakHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import javax.inject.Inject;
@@ -113,8 +114,7 @@ public class TrawlingPlusPlugin extends Plugin
 	// routes are accurate to a fraction of a tile, so a shoal this far off one isn't swimming it.
 	private static final double MAX_ROUTE_OFFSET = 3;
 
-	// A stretch of route this close to where a sea creature that attacks boats spawns counts as dangerous, in
-	// tiles. A placeholder until how close a boat can get before one attacks has been measured.
+	// A stretch of route this close to where a sea creature that attacks boats spawns counts as dangerous, in tiles.
 	private static final double DANGER_TILES = 20;
 
 	// A safe stretch no longer than this between two dangerous ones counts as dangerous too, in tiles. On the
@@ -341,6 +341,7 @@ public class TrawlingPlusPlugin extends Plugin
 			clearShoals();
 			shoalMarkers.clear();
 			shoalIconsSeen.clear();
+			mapRegionsSeen.clear();
 		});
 		log.debug("Trawling Plus stopped");
 	}
@@ -358,15 +359,10 @@ public class TrawlingPlusPlugin extends Plugin
 	// Where the sea creatures that attack boats spawn.
 	private SeaMonsters seaMonsters = SeaMonsters.NONE;
 
-	SeaMonsters getSeaMonsters()
-	{
-		return seaMonsters;
-	}
-
 	// The skull and crossbones on the world map for each place sea creatures that attack boats spawn close
 	// enough to a route to threaten it, placed among the spawns that are that close so it sits by the
-	// dangerous stretch, with the creature's name and level as its tooltip. On the map only while Show
-	// danger areas is on and the world map is one of the maps routes show on.
+	// dangerous stretch, with the creature's name and level as its tooltip. On the map whenever the world map is
+	// one of the maps routes show on.
 	private List<DangerMarker> dangerMarkers = Collections.emptyList();
 
 	/**
@@ -394,6 +390,9 @@ public class TrawlingPlusPlugin extends Plugin
 	// and the icons already looked at, so each is matched to a route only once.
 	private final List<ShoalMarker> shoalMarkers = new ArrayList<>();
 	private final Set<WorldPoint> shoalIconsSeen = new HashSet<>();
+	// The map's loaded areas whose icons have been looked through, so each is only looked through once rather than
+	// every tick the map is open. Held weakly, so areas the map lets go of aren't kept alive here.
+	private final Set<WorldMapRegion> mapRegionsSeen = Collections.newSetFromMap(new WeakHashMap<>());
 
 	/**
 	 * An invisible point over one of the game's trawling shoal icons, there for its tooltip.
@@ -415,11 +414,12 @@ public class TrawlingPlusPlugin extends Plugin
 	/**
 	 * Lays a tooltip over each trawling shoal icon the world map has loaded, once each, naming the species of the
 	 * recorded route it sits beside. It only looks while the world map is open, and stops once every recorded
-	 * route has one. Icons beside routes not yet recorded get none.
+	 * route has one, and only while routes are shown on the world map, since the tooltips are only put on it
+	 * then. Each area of the map is looked through once. Icons beside routes not yet recorded get none.
 	 */
 	private void findShoalIcons()
 	{
-		if (shoalMarkers.size() >= routes.size())
+		if (shoalMarkers.size() >= routes.size() || !worldMapShown())
 		{
 			return;
 		}
@@ -437,12 +437,20 @@ public class TrawlingPlusPlugin extends Plugin
 		{
 			for (WorldMapRegion region : column == null ? new WorldMapRegion[0] : column)
 			{
-				if (region == null)
+				if (region == null || mapRegionsSeen.contains(region))
 				{
 					continue;
 				}
 
-				for (WorldMapIcon icon : region.getMapIcons())
+				Collection<WorldMapIcon> icons = region.getMapIcons();
+				if (icons == null || icons.isEmpty())
+				{
+					// Possibly not filled in yet, so looked at again next tick.
+					continue;
+				}
+				mapRegionsSeen.add(region);
+
+				for (WorldMapIcon icon : icons)
 				{
 					WorldPoint at = icon.getCoordinate();
 					if (icon.getType() != TRAWLING_SHOAL_ICON || at == null || !shoalIconsSeen.add(at))
@@ -526,7 +534,7 @@ public class TrawlingPlusPlugin extends Plugin
 	private void showDangerMarkers()
 	{
 		worldMapPointManager.removeIf(DangerMarker.class::isInstance);
-		if (config.debugDangerAreas() && worldMapShown())
+		if (worldMapShown())
 		{
 			dangerMarkers.forEach(worldMapPointManager::add);
 		}
@@ -662,7 +670,7 @@ public class TrawlingPlusPlugin extends Plugin
 	public void onConfigChanged(ConfigChanged event)
 	{
 		if (TrawlingPlusConfig.GROUP.equals(event.getGroup())
-			&& ("debugDangerAreas".equals(event.getKey()) || "showOnMaps".equals(event.getKey())))
+			&& "showOnMaps".equals(event.getKey()))
 		{
 			clientThread.invoke(() ->
 			{

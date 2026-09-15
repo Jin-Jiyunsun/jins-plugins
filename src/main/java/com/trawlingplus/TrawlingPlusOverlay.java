@@ -180,9 +180,6 @@ class TrawlingPlusOverlay extends Overlay
 
 		Object antialiasing = graphics.getRenderingHint(RenderingHints.KEY_ANTIALIASING);
 		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-		debugDots = config.debugRoutePoints() ? new ArrayList<>() : null;
-		debugNumberAt = config.debugStopNumbers() ? new ArrayList<>() : null;
-		debugNumberText = debugNumberAt == null ? null : new ArrayList<>();
 
 		// With the route line, stops and direction arrows all off, only the shoals' heading arrows are drawn.
 		boolean routes = config.showRouteLine() || config.showStops() || config.showDirectionArrows();
@@ -218,13 +215,6 @@ class TrawlingPlusOverlay extends Overlay
 			lastFishingPointMillis = -1;
 		}
 		drawHelm(graphics);
-
-		// DEBUG: remove before release. Last of all, so the dots and numbers sit on top of everything else.
-		drawDots(graphics, debugDots);
-		debugDots = null;
-		drawNumbers(graphics, debugNumberAt, debugNumberText);
-		debugNumberAt = null;
-		debugNumberText = null;
 
 		if (antialiasing != null)
 		{
@@ -295,7 +285,6 @@ class TrawlingPlusOverlay extends Overlay
 			double toY = view.getBaseY() + view.getSizeY() + beyond;
 
 			Line line = new Line();
-			List<Point> dots = debugDots();
 			for (int block = 0; block < route.blockCount(); block++)
 			{
 				if (!route.blockWithin(block, fromX, fromY, toX, toY))
@@ -307,9 +296,7 @@ class TrawlingPlusOverlay extends Overlay
 
 				for (int sample = route.blockFrom(block); sample < route.blockTo(block); sample++)
 				{
-					Point at = toCanvas(view, route.sampleX(sample), route.sampleY(sample));
-					line.add(at);
-					mark(dots, at);
+					line.add(toCanvas(view, route.sampleX(sample), route.sampleY(sample)));
 				}
 			}
 
@@ -440,61 +427,6 @@ class TrawlingPlusOverlay extends Overlay
 			Math.min(TrawlingPlusConfig.MAX_ANIMATION_SECONDS, config.animationDuration()));
 	}
 
-	// DEBUG: remove before release, with the Debug section's Show line points setting. Marks the points a route
-	// line is drawn through, to see how many there are and where they sit.
-	private static final Color DEBUG_POINT = new Color(255, 140, 0);
-	private static final int DEBUG_POINT_SIZE = 4;
-
-	// Collected while the lines are drawn, then drawn once everything else has been.
-	private List<Point> debugDots;
-
-	private List<Point> debugDots()
-	{
-		return debugDots;
-	}
-
-	private static void mark(List<Point> dots, Point at)
-	{
-		if (dots != null && at != null)
-		{
-			dots.add(at);
-		}
-	}
-
-	private static void drawDots(Graphics2D graphics, List<Point> dots)
-	{
-		if (dots == null)
-		{
-			return;
-		}
-		graphics.setColor(DEBUG_POINT);
-		for (Point dot : dots)
-		{
-			graphics.fillOval(dot.getX() - DEBUG_POINT_SIZE / 2, dot.getY() - DEBUG_POINT_SIZE / 2,
-				DEBUG_POINT_SIZE, DEBUG_POINT_SIZE);
-		}
-	}
-
-	// DEBUG: remove before release, with the Debug section's Show stop numbers setting. Numbers each stop, from 1, in
-	// the order the route lists them, so a stop can be named when talking about a route.
-	private static final Color DEBUG_NUMBER = Color.WHITE;
-
-	// Collected while the stops are drawn, then drawn once everything else has been.
-	private List<Point> debugNumberAt;
-	private List<String> debugNumberText;
-
-	private static void drawNumbers(Graphics2D graphics, List<Point> at, List<String> text)
-	{
-		if (at == null)
-		{
-			return;
-		}
-		for (int i = 0; i < at.size(); i++)
-		{
-			line(graphics, text.get(i), at.get(i).getX(), at.get(i).getY(), DEBUG_NUMBER, 1);
-		}
-	}
-
 	private void drawToNextStop(Graphics2D graphics, PlacedShoal placed, long now)
 	{
 		ShoalRoute route = placed.route;
@@ -546,7 +478,6 @@ class TrawlingPlusOverlay extends Overlay
 			// only ever gets shorter as the shoal swims along it. Joining it to the shoal instead leaves a
 			// first piece that swings about, since a smoothed route never runs exactly through the shoal.
 			Line line = new Line();
-			List<Point> dots = debugDots();
 			double[] start = route.pointAt(distance);
 			line.add(toCanvas(view, start[0], start[1]));
 			for (int step = 0; step < steps; step++)
@@ -556,9 +487,7 @@ class TrawlingPlusOverlay extends Overlay
 				{
 					break;
 				}
-				Point at = toCanvas(view, route.sampleX(sample), route.sampleY(sample));
-				line.add(at);
-				mark(dots, at);
+				line.add(toCanvas(view, route.sampleX(sample), route.sampleY(sample)));
 			}
 
 			// Ends along the route too, level with the stop once it has drawn all the way there, rather than
@@ -962,18 +891,6 @@ class TrawlingPlusOverlay extends Overlay
 		{
 			OverlayUtil.renderPolygon(graphics, area, withOpacity(colour, opacity), withOpacity(STOP_FILL, opacity),
 				new BasicStroke(config.stopThickness().pixels()));
-		}
-
-		// DEBUG: remove before release.
-		if (debugNumberAt != null && local != null)
-		{
-			String number = Integer.toString(stop + 1);
-			Point at = Perspective.getCanvasTextLocation(client, graphics, local, number, 0);
-			if (at != null)
-			{
-				debugNumberAt.add(at);
-				debugNumberText.add(number);
-			}
 		}
 	}
 

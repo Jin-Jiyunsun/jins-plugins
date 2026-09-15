@@ -1,5 +1,5 @@
 {
-	"about": "Spawn points of the sea creatures that attack boats, from the OSRS wiki (Boat combat, each creature page), for a debug map layer.",
+	"about": "Spawn points of the sea creatures that attack boats, from the OSRS wiki (Boat combat, each creature page), used to mark the stretches of route they threaten on the world map.",
 	"creatures": [
 		{
 			"name": "Hammerhead shark",

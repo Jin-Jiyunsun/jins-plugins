@@ -77,16 +77,6 @@ public interface TrawlingPlusConfig extends Config
 	)
 	String depthSection = "shoalDepth";
 
-	// DEBUG: remove before release, with the settings in it and what they draw in TrawlingPlusOverlay and
-	// TrawlingPlusMapOverlay. Show danger areas is being tried out here and may move to a section of its own.
-	@ConfigSection(
-		name = "Debug",
-		description = "Aids for working on the plugin, to be removed before release",
-		position = 54,
-		closedByDefault = true
-	)
-	String debugSection = "debug";
-
 	@ConfigSection(
 		name = "Side panel",
 		description = "Marks on the trawling nets in the sailing side panel",
@@ -243,7 +233,7 @@ public interface TrawlingPlusConfig extends Config
 	@ConfigItem(
 		keyName = "showOnMaps",
 		name = "Show on maps",
-		description = "Which maps to show routes and shoals on.",
+		description = "Which maps to show routes and shoals on.<br>The world map also marks dangerous water<br>near sea creatures that attack boats.",
 		position = 1
 	)
 	default ShowOnMaps showOnMaps()
@@ -794,53 +784,5 @@ public interface TrawlingPlusConfig extends Config
 	default LineThickness fishableAreaThickness()
 	{
 		return LineThickness.MEDIUM;
-	}
-
-	@ConfigItem(
-		keyName = "debugRoutePoints",
-		name = "Show line points",
-		description = "Mark each point the route line is drawn through.",
-		position = 55,
-		section = debugSection
-	)
-	default boolean debugRoutePoints()
-	{
-		return false;
-	}
-
-	@ConfigItem(
-		keyName = "debugStopNumbers",
-		name = "Show stop numbers",
-		description = "Number each stop, from 1, in the order<br>the shoal swims to them.",
-		position = 56,
-		section = debugSection
-	)
-	default boolean debugStopNumbers()
-	{
-		return false;
-	}
-
-	@ConfigItem(
-		keyName = "debugSeaMonsters",
-		name = "Show sea monsters",
-		description = "Mark on the world map where the sea<br>creatures that attack boats spawn.",
-		position = 57,
-		section = debugSection
-	)
-	default boolean debugSeaMonsters()
-	{
-		return false;
-	}
-
-	@ConfigItem(
-		keyName = "debugDangerAreas",
-		name = "Show danger areas",
-		description = "Mark stretches of route within 20 tiles<br>of where sea creatures that attack boats<br>spawn, and a skull on each place they<br>spawn that threatens a route.",
-		position = 58,
-		section = debugSection
-	)
-	default boolean debugDangerAreas()
-	{
-		return false;
 	}
 }

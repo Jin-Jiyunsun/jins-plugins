@@ -23,7 +23,9 @@ and keeps track of your nets, bait and cargo hold from a HUD on the boat.
 - **Notifications**: optional alerts for full nets, a full cargo hold, or a shoal about to leave
   its stop.
 
-<img width="800" height="669" alt="nextstop" src="https://github.com/user-attachments/assets/0bc124e7-0984-4843-bc2c-130bedfb8747" />
+<p align="center">
+  <img width="800" height="669" alt="nextstop" src="https://github.com/user-attachments/assets/0bc124e7-0984-4843-bc2c-130bedfb8747" />
+</p>
 
 ## Route data
 

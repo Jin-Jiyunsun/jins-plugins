@@ -93,8 +93,16 @@ final class ShoalRoute
 	private final double maxY;
 	// Which of the drawn points pass close to where sea creatures that attack boats spawn, set by markDanger.
 	private boolean[] danger = new boolean[0];
+	// Circles of tiles, as {x, y, tiles}, marked safe by hand regardless of danger; never null.
+	private final double[][] safe;
+	// Where sea creatures that attack boats spawn close enough to threaten this route, place by place; never null.
+	private final List<RouteData.Threat> threats;
+	// Which of these threaten this route once safe circles and the danger distance are taken into account, with
+	// where to place a skull and crossbones for each, set by markDanger.
+	private List<DangerousThreat> dangerousThreats = new ArrayList<>();
 
-	ShoalRoute(String species, String name, int stopTicks, double[][] path, double[][] stops)
+	ShoalRoute(String species, String name, int stopTicks, double[][] path, double[][] stops, double[][] safe,
+		List<RouteData.Threat> threats)
 	{
 		if (path.length < 2 || stops.length == 0)
 		{
@@ -104,6 +112,8 @@ final class ShoalRoute
 		this.species = species;
 		this.stopTicks = stopTicks;
 		this.stops = stops;
+		this.safe = safe == null ? new double[0][] : safe;
+		this.threats = threats == null ? new ArrayList<>() : threats;
 
 		int points = path.length;
 		pathX = new double[points];
@@ -254,7 +264,7 @@ final class ShoalRoute
 			for (RouteData.Route route : species.routes)
 			{
 				routes.add(new ShoalRoute(species.name, route.name, route.stopTicks,
-					shape(route.path, route.stops, smoothing), route.stops));
+					shape(route.path, route.stops, smoothing), route.stops, route.safe, route.threats));
 			}
 		}
 		return routes;
@@ -781,31 +791,62 @@ final class ShoalRoute
 	}
 
 	/**
-	 * Marks each drawn point within the given distance of any of these spawn points, in tiles, then marks any
+	 * Marks each drawn point within the given distance of any of this route's threats, in tiles, then marks any
 	 * gap no longer than gapTiles between two marked stretches, so a brief dip out of range doesn't break a
-	 * dangerous stretch in two.
+	 * dangerous stretch in two, then clears every point inside a hand-marked safe circle, whatever threats are
+	 * near it. Also works out which threats actually come close enough to threaten the route this way, and
+	 * where to place a skull and crossbones for each: the average of only its spawn points that do.
 	 */
-	void markDanger(int[][] spawns, double tiles, double gapTiles)
+	void markDanger(double tiles, double gapTiles)
 	{
 		boolean[] marked = new boolean[sampleX.length];
-		for (int[] spawn : spawns)
+		List<DangerousThreat> found = new ArrayList<>();
+		for (RouteData.Threat threat : threats)
 		{
-			// Most spawns are nowhere near a given route, and are passed over on the box it fits inside.
-			if (spawn[0] < minX - tiles || spawn[0] > maxX + tiles || spawn[1] < minY - tiles || spawn[1] > maxY + tiles)
+			double x = 0;
+			double y = 0;
+			int near = 0;
+			for (int[] spawn : threat.points)
 			{
-				continue;
-			}
-
-			for (int i = 0; i < sampleX.length; i++)
-			{
-				if (!marked[i] && Math.hypot(sampleX[i] - spawn[0], sampleY[i] - spawn[1]) <= tiles)
+				boolean spawnNear = false;
+				for (int i = 0; i < sampleX.length; i++)
 				{
-					marked[i] = true;
+					if (Math.hypot(sampleX[i] - spawn[0], sampleY[i] - spawn[1]) <= tiles)
+					{
+						marked[i] = true;
+						spawnNear = true;
+					}
 				}
+				if (spawnNear)
+				{
+					x += spawn[0];
+					y += spawn[1];
+					near++;
+				}
+			}
+			if (near > 0)
+			{
+				found.add(new DangerousThreat(x / near, y / near, threat.creature + " (level-" + threat.combat + ")"));
 			}
 		}
 		closeGaps(marked, gapTiles);
+		clearSafe(marked);
 		danger = marked;
+		dangerousThreats = found;
+	}
+
+	private void clearSafe(boolean[] marked)
+	{
+		for (double[] circle : safe)
+		{
+			for (int i = 0; i < sampleX.length; i++)
+			{
+				if (marked[i] && Math.hypot(sampleX[i] - circle[0], sampleY[i] - circle[1]) <= circle[2])
+				{
+					marked[i] = false;
+				}
+			}
+		}
 	}
 
 	/**
@@ -875,26 +916,43 @@ final class ShoalRoute
 	}
 
 	/**
-	 * Whether any drawn point of this route comes within the given distance of any of these points, in tiles.
+	 * How many of this route's threats actually come close enough to threaten it.
 	 */
-	boolean passesNear(int[][] points, double tiles)
+	int dangerousThreatCount()
 	{
-		for (int[] point : points)
-		{
-			if (point[0] < minX - tiles || point[0] > maxX + tiles || point[1] < minY - tiles || point[1] > maxY + tiles)
-			{
-				continue;
-			}
+		return dangerousThreats.size();
+	}
 
-			for (int i = 0; i < sampleX.length; i++)
-			{
-				if (Math.hypot(sampleX[i] - point[0], sampleY[i] - point[1]) <= tiles)
-				{
-					return true;
-				}
-			}
+	double dangerousThreatX(int threat)
+	{
+		return dangerousThreats.get(threat).x;
+	}
+
+	double dangerousThreatY(int threat)
+	{
+		return dangerousThreats.get(threat).y;
+	}
+
+	/**
+	 * The creature at a dangerous threat with its level, as the game names it, such as "Tiger shark (level-125)".
+	 */
+	String dangerousThreatName(int threat)
+	{
+		return dangerousThreats.get(threat).name;
+	}
+
+	private static final class DangerousThreat
+	{
+		final double x;
+		final double y;
+		final String name;
+
+		DangerousThreat(double x, double y, String name)
+		{
+			this.x = x;
+			this.y = y;
+			this.name = name;
 		}
-		return false;
 	}
 
 	/**

@@ -27,5 +27,19 @@ class RouteData
 		int stopTicks;
 		double[][] stops;
 		double[][] path;
+		// Stretches marked safe by hand in routes.json despite sitting close to where a sea creature that
+		// attacks boats spawns, as [x, y, tiles] circles, or null where none apply.
+		double[][] safe;
+		// Where sea creatures that attack boats spawn close enough to threaten this route, place by place, or
+		// null where none do. From the OSRS wiki (Boat combat, each creature page), folded in by hand once
+		// under the route each place is close enough to threaten; a place is never split between routes.
+		List<Threat> threats;
+	}
+
+	static class Threat
+	{
+		String creature;
+		int combat;
+		int[][] points;
 	}
 }

@@ -291,7 +291,6 @@ public class TrawlingPlusPlugin extends Plugin
 	protected void startUp() throws IOException
 	{
 		routeData = ShoalRoute.read(gson);
-		seaMonsters = SeaMonsters.read(gson);
 		routes = ShoalRoute.build(routeData, config.routeSmoothing());
 		markDanger(routes);
 		Map<String, RouteData.Species> byName = new HashMap<>();
@@ -355,9 +354,6 @@ public class TrawlingPlusPlugin extends Plugin
 	{
 		return routes;
 	}
-
-	// Where the sea creatures that attack boats spawn.
-	private SeaMonsters seaMonsters = SeaMonsters.NONE;
 
 	// The skull and crossbones on the world map for each place sea creatures that attack boats spawn close
 	// enough to a route to threaten it, placed among the spawns that are that close so it sits by the
@@ -546,37 +542,14 @@ public class TrawlingPlusPlugin extends Plugin
 	 */
 	private void markDanger(List<ShoalRoute> marking)
 	{
+		List<DangerMarker> markers = new ArrayList<>();
 		for (ShoalRoute route : marking)
 		{
-			route.markDanger(seaMonsters.spawns(), DANGER_TILES, DANGER_GAP_TILES);
-		}
-
-		List<DangerMarker> markers = new ArrayList<>();
-		int[][][] areas = seaMonsters.areaSpawns();
-		for (int index = 0; index < areas.length; index++)
-		{
-			int[][] area = areas[index];
-			// The middle of only the spawns close enough to a route, rather than of the whole place, which can
-			// run a long way off from the stretch it threatens.
-			double x = 0;
-			double y = 0;
-			int near = 0;
-			for (int[] spawn : area)
+			route.markDanger(DANGER_TILES, DANGER_GAP_TILES);
+			for (int threat = 0; threat < route.dangerousThreatCount(); threat++)
 			{
-				for (ShoalRoute route : marking)
-				{
-					if (route.passesNear(new int[][]{spawn}, DANGER_TILES))
-					{
-						x += spawn[0];
-						y += spawn[1];
-						near++;
-						break;
-					}
-				}
-			}
-			if (near > 0)
-			{
-				markers.add(new DangerMarker(x / near, y / near, seaMonsters.areaNames()[index]));
+				markers.add(new DangerMarker(route.dangerousThreatX(threat), route.dangerousThreatY(threat),
+					route.dangerousThreatName(threat)));
 			}
 		}
 		dangerMarkers = markers;

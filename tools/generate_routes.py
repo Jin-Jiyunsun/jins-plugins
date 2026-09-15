@@ -5,6 +5,10 @@ tools/recorded_routes.json. Which bait each kind of shoal takes, whatever its ro
 tools/species.json. Re-run this whenever either changes:
 
     python tools/generate_routes.py
+
+A route's "safe" field (stretches marked safe by hand despite sitting close to a spawn point) and "threats"
+field (where sea creatures that attack boats spawn close enough to threaten it) are not generated: add them to
+routes.json by hand, and a later run carries each forward for any route whose name still matches.
 """
 
 import json
@@ -22,6 +26,9 @@ SPECIES = ["Giant krill", "Haddock", "Yellowfin", "Halibut", "Bluefin", "Marlin"
 # A recorded stop further than this from its route's path is flagged, in tiles.
 STOP_TOLERANCE = 1.0
 
+# Fields hand-added to a route in routes.json rather than generated, carried forward as-is on every run.
+HAND_KEPT_ROUTE_FIELDS = ["safe", "threats"]
+
 
 def distance_to_segment(p, a, b):
     (px, py), (ax, ay), (bx, by) = p, a, b
@@ -37,8 +44,11 @@ def distance_to_loop(point, path):
 
 def dump(data):
     text = json.dumps(data, indent="\t", ensure_ascii=False)
-    # Keep each [x, y] pair on one line so the file stays readable and diffs stay small.
-    return re.sub(r"\[\s+(-?\d+(?:\.\d+)?),\s+(-?\d+(?:\.\d+)?)\s+\]", r"[\1, \2]", text)
+    # Keep each [x, y] pair, or [x, y, tiles] safe circle, on one line so the file stays readable and diffs
+    # stay small.
+    number = r"-?\d+(?:\.\d+)?"
+    text = re.sub(rf"\[\s+({number}),\s+({number}),\s+({number})\s+\]", r"[\1, \2, \3]", text)
+    return re.sub(rf"\[\s+({number}),\s+({number})\s+\]", r"[\1, \2]", text)
 
 
 def main():
@@ -52,6 +62,16 @@ def main():
     if missing:
         raise SystemExit(f"no entry in {SPECIES_DATA.name} for: {', '.join(missing)}")
 
+    # Hand-added fields aren't generated, so carry each forward from whatever is there already rather than
+    # losing it every time this runs.
+    hand_kept_by_route = {}
+    if OUTPUT.exists():
+        for entry in json.loads(OUTPUT.read_text(encoding="utf-8"))["species"]:
+            for route in entry["routes"]:
+                kept = {field: route[field] for field in HAND_KEPT_ROUTE_FIELDS if field in route}
+                if kept:
+                    hand_kept_by_route[route["name"]] = kept
+
     species = []
     for entry in known:
         name = entry["name"]
@@ -61,7 +81,7 @@ def main():
                 off = distance_to_loop(stop, recording["path"])
                 if off > STOP_TOLERANCE:
                     print(f"  warning: {name} / {recording['route']}: stop {stop} is {off:.1f} tiles from the path")
-            routes.append({
+            route = {
                 "name": recording["route"],
                 "recorded": recording["recorded"],
                 "world": recording["world"],
@@ -69,7 +89,9 @@ def main():
                 "stopTicks": recording.get("stopTicks", 0),
                 "stops": recording["stops"],
                 "path": recording["path"],
-            })
+            }
+            route.update(hand_kept_by_route.get(recording["route"], {}))
+            routes.append(route)
         # Every kind of shoal is written out, recorded routes or not, so what is known about it can be used
         # on any shoal of that kind.
         species.append({
@@ -82,7 +104,10 @@ def main():
         "about": "Shoal routes recorded in-game for Trawling Plus.",
         "format": "Each kind of shoal has the bait it takes (\"any\" for both kinds of offcuts, \"fine\" for fine fish "
                   "offcuts only) and its recorded routes. Each route is a loop. Stops and path points are [x, y] world tiles on plane 0, "
-                  "to a quarter of a tile, listed in the order shoals swim them; the last point connects back to the first.",
+                  "to a quarter of a tile, listed in the order shoals swim them; the last point connects back to the first. A route may "
+                  "also have \"safe\": stretches marked safe by hand as [x, y, tiles] circles, regardless of how close a spawn point "
+                  "sits; and \"threats\": where sea creatures that attack boats spawn close enough to threaten it, from the OSRS wiki, "
+                  "as its name, combat level and spawn points. Neither is generated; both are kept as-is by tools/generate_routes.py.",
         "species": species,
     }
 

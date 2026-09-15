@@ -13,7 +13,7 @@ public class ShoalRouteTest
 	// A 10 by 10 square swum from the origin, 40 tiles round, with stops at 10 and 30 tiles.
 	private static final ShoalRoute SQUARE = new ShoalRoute("Test", "Square", 0,
 		new double[][]{{0, 0}, {10, 0}, {10, 10}, {0, 10}},
-		new double[][]{{10, 0}, {0, 10}});
+		new double[][]{{10, 0}, {0, 10}}, null, null);
 
 	@Test
 	public void projectsOntoTheNearestPointOfTheLoop()
@@ -36,7 +36,7 @@ public class ShoalRouteTest
 		// Sides far longer than the stretch of route a shoal is followed within.
 		ShoalRoute big = new ShoalRoute("Test", "Big", 0,
 			new double[][]{{0, 0}, {40, 0}, {40, 40}, {0, 40}},
-			new double[][]{{40, 0}});
+			new double[][]{{40, 0}}, null, null);
 		double distance = big.project(0, 0).distance;
 		for (double x = 0.5; x < 40; x += 0.5)
 		{
@@ -71,7 +71,7 @@ public class ShoalRouteTest
 	{
 		ShoalRoute small = new ShoalRoute("Test", "Small", 0,
 			new double[][]{{0, 0}, {2, 0}, {2, 2}, {0, 2}},
-			new double[][]{{2, 0}});
+			new double[][]{{2, 0}}, null, null);
 		assertEquals(4, small.sampleCount());
 	}
 
@@ -128,7 +128,7 @@ public class ShoalRouteTest
 		// Heavy smoothing would cut these corners by over a tile, so stops on two of them have to be pulled onto.
 		double[][] points = {{0, 0}, {20, 0}, {20, 20}, {0, 20}};
 		double[][] stops = {{20, 0}, {0, 20}};
-		ShoalRoute route = new ShoalRoute("Test", "Corners", 0, ShoalRoute.bSpline(points, stops), stops);
+		ShoalRoute route = new ShoalRoute("Test", "Corners", 0, ShoalRoute.bSpline(points, stops), stops, null, null);
 		for (int stop = 0; stop < route.stopCount(); stop++)
 		{
 			assertEquals(0, route.project(route.stopX(stop), route.stopY(stop)).offset, 0.01);
@@ -162,7 +162,7 @@ public class ShoalRouteTest
 			for (RouteData.Route route : species.routes)
 			{
 				ShoalRoute original = new ShoalRoute(species.name, route.name, route.stopTicks,
-					route.path, route.stops);
+					route.path, route.stops, route.safe, route.threats);
 				for (double[][] curve : new double[][][]{ShoalRoute.catmullRom(route.path), ShoalRoute.bSpline(route.path, route.stops)})
 				{
 					for (double[] point : curve)

@@ -2,12 +2,16 @@ package com.trawlingplus;
 
 import com.google.gson.Gson;
 import com.google.inject.Provides;
+import java.awt.image.BufferedImage;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import javax.inject.Inject;
@@ -22,9 +26,12 @@ import net.runelite.api.ItemContainer;
 import net.runelite.api.Perspective;
 import net.runelite.api.NPC;
 import net.runelite.api.Player;
+import net.runelite.api.Point;
+import net.runelite.api.SpritePixels;
 import net.runelite.api.Tile;
 import net.runelite.api.WorldEntity;
 import net.runelite.api.coords.LocalPoint;
+import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.WorldView;
 import net.runelite.api.events.ChatMessage;
 import net.runelite.api.events.GameObjectDespawned;
@@ -42,6 +49,11 @@ import net.runelite.api.gameval.ItemID;
 import net.runelite.api.gameval.ObjectID;
 import net.runelite.api.gameval.VarbitID;
 import net.runelite.api.widgets.Widget;
+import net.runelite.api.worldmap.MapElementConfig;
+import net.runelite.api.worldmap.WorldMap;
+import net.runelite.api.worldmap.WorldMapIcon;
+import net.runelite.api.worldmap.WorldMapRegion;
+import net.runelite.api.worldmap.WorldMapRenderer;
 import net.runelite.client.Notifier;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
@@ -50,6 +62,8 @@ import net.runelite.client.events.ConfigChanged;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.ui.overlay.OverlayManager;
+import net.runelite.client.ui.overlay.worldmap.WorldMapPoint;
+import net.runelite.client.ui.overlay.worldmap.WorldMapPointManager;
 import net.runelite.client.util.Text;
 
 @Slf4j
@@ -98,6 +112,26 @@ public class TrawlingPlusPlugin extends Plugin
 	// A shoal further than this from every candidate route isn't matched to one, in tiles. Recorded
 	// routes are accurate to a fraction of a tile, so a shoal this far off one isn't swimming it.
 	private static final double MAX_ROUTE_OFFSET = 3;
+
+	// A stretch of route this close to where a sea creature that attacks boats spawns counts as dangerous, in
+	// tiles. A placeholder until how close a boat can get before one attacks has been measured.
+	private static final double DANGER_TILES = 20;
+
+	// A safe stretch no longer than this between two dangerous ones counts as dangerous too, in tiles. On the
+	// routes recorded so far the short gaps run up to 24.5 tiles and the next shortest is 53.
+	private static final double DANGER_GAP_TILES = 30;
+
+	// The type of the icon the game puts on the world map beside each trawling shoal route, "Trawling shoal" in the
+	// map key. It isn't among the named gamevals, so it was found by logging the icons near every recorded route.
+	private static final int TRAWLING_SHOAL_ICON = 1048;
+
+	// How far a trawling shoal icon can sit from the route it belongs to, in tiles. Those seen sit within 7.
+	private static final double SHOAL_ICON_TILES = 15;
+
+	// How far the invisible point over a trawling shoal icon reaches past the icon, in pixels, so the game's own
+	// hover label can't show at its edges; further on the left, where it showed most.
+	private static final int SHOAL_ICON_PAD = 1;
+	private static final int SHOAL_ICON_PAD_LEFT = 2;
 
 	// How long another route has to be the nearer one before it takes over, in ticks: about five
 	// seconds, long enough to cross the water between two routes without the drawn one changing
@@ -155,6 +189,9 @@ public class TrawlingPlusPlugin extends Plugin
 	private OverlayManager overlayManager;
 
 	@Inject
+	private WorldMapPointManager worldMapPointManager;
+
+	@Inject
 	private TrawlingPlusOverlay overlay;
 
 	@Inject
@@ -202,6 +239,9 @@ public class TrawlingPlusPlugin extends Plugin
 	// shoal does not read as a bait having just been laid.
 	private Integer baitedStep;
 	private boolean baited;
+	// The tick a crewmate last found no offcuts to bait with, so a change in the baited step that comes with it
+	// isn't taken for a bait laid.
+	private int baitFailedTick = -1;
 
 	// How much of each bait the hold had when it was last opened, less what has been used since, or -1
 	// before the hold has been opened this session. The game only sends the hold when it is opened, so
@@ -251,7 +291,9 @@ public class TrawlingPlusPlugin extends Plugin
 	protected void startUp() throws IOException
 	{
 		routeData = ShoalRoute.read(gson);
+		seaMonsters = SeaMonsters.read(gson);
 		routes = ShoalRoute.build(routeData, config.routeSmoothing());
+		markDanger(routes);
 		Map<String, RouteData.Species> byName = new HashMap<>();
 		for (RouteData.Species species : routeData.species)
 		{
@@ -291,8 +333,15 @@ public class TrawlingPlusPlugin extends Plugin
 		overlayManager.remove(netOverlay);
 		overlayManager.remove(mapOverlay);
 		overlayManager.remove(minimapOverlay);
+		worldMapPointManager.removeIf(DangerMarker.class::isInstance);
+		worldMapPointManager.removeIf(ShoalMarker.class::isInstance);
 		// shutDown runs on the Swing thread; clear on the client thread so it can't race a game tick.
-		clientThread.invoke(this::clearShoals);
+		clientThread.invoke(() ->
+		{
+			clearShoals();
+			shoalMarkers.clear();
+			shoalIconsSeen.clear();
+		});
 		log.debug("Trawling Plus stopped");
 	}
 
@@ -304,6 +353,226 @@ public class TrawlingPlusPlugin extends Plugin
 	List<ShoalRoute> getRoutes()
 	{
 		return routes;
+	}
+
+	// Where the sea creatures that attack boats spawn.
+	private SeaMonsters seaMonsters = SeaMonsters.NONE;
+
+	SeaMonsters getSeaMonsters()
+	{
+		return seaMonsters;
+	}
+
+	// The skull and crossbones on the world map for each place sea creatures that attack boats spawn close
+	// enough to a route to threaten it, placed among the spawns that are that close so it sits by the
+	// dangerous stretch, with the creature's name and level as its tooltip. On the map only while Show
+	// danger areas is on and the world map is one of the maps routes show on.
+	private List<DangerMarker> dangerMarkers = Collections.emptyList();
+
+	/**
+	 * A skull on the world map, told apart from every other plugin's points so only these are ever taken off.
+	 */
+	private static final class DangerMarker extends WorldMapPoint
+	{
+		DangerMarker(double x, double y, String name)
+		{
+			super(new WorldPoint((int) Math.round(x), (int) Math.round(y), 0), TrawlingPlusMapOverlay.DANGER_ICON);
+			setTooltip(name);
+		}
+	}
+
+	/**
+	 * Whether routes are shown on the world map.
+	 */
+	private boolean worldMapShown()
+	{
+		TrawlingPlusConfig.ShowOnMaps where = config.showOnMaps();
+		return where == TrawlingPlusConfig.ShowOnMaps.WORLD_MAP || where == TrawlingPlusConfig.ShowOnMaps.BOTH;
+	}
+
+	// A tooltip over each of the game's trawling shoal icons whose route has been recorded, naming its species,
+	// and the icons already looked at, so each is matched to a route only once.
+	private final List<ShoalMarker> shoalMarkers = new ArrayList<>();
+	private final Set<WorldPoint> shoalIconsSeen = new HashSet<>();
+
+	/**
+	 * An invisible point over one of the game's trawling shoal icons, there for its tooltip.
+	 */
+	private static final class ShoalMarker extends WorldMapPoint
+	{
+		ShoalMarker(WorldPoint icon, BufferedImage blank, String name)
+		{
+			// A tile to the west of the icon's own coordinate, as RuneLite's World Map plugin places its quest icons over
+			// the game's: at the coordinate itself a point sits a tile east of the icon it covers.
+			super(icon.dx(-1), blank);
+			// The padding sits round the icon rather than moving it: the icon's middle goes on the point.
+			setImagePoint(new Point(SHOAL_ICON_PAD_LEFT + (blank.getWidth() - SHOAL_ICON_PAD_LEFT - SHOAL_ICON_PAD) / 2,
+				blank.getHeight() / 2));
+			setTooltip(name);
+		}
+	}
+
+	/**
+	 * Lays a tooltip over each trawling shoal icon the world map has loaded, once each, naming the species of the
+	 * recorded route it sits beside. It only looks while the world map is open, and stops once every recorded
+	 * route has one. Icons beside routes not yet recorded get none.
+	 */
+	private void findShoalIcons()
+	{
+		if (shoalMarkers.size() >= routes.size())
+		{
+			return;
+		}
+
+		Widget map = client.getWidget(InterfaceID.Worldmap.MAP_CONTAINER);
+		WorldMap worldMap = map == null || map.isHidden() ? null : client.getWorldMap();
+		WorldMapRenderer renderer = worldMap == null ? null : worldMap.getWorldMapRenderer();
+		WorldMapRegion[][] regions = renderer == null || !renderer.isLoaded() ? null : renderer.getMapRegions();
+		if (regions == null)
+		{
+			return;
+		}
+
+		for (WorldMapRegion[] column : regions)
+		{
+			for (WorldMapRegion region : column == null ? new WorldMapRegion[0] : column)
+			{
+				if (region == null)
+				{
+					continue;
+				}
+
+				for (WorldMapIcon icon : region.getMapIcons())
+				{
+					WorldPoint at = icon.getCoordinate();
+					if (icon.getType() != TRAWLING_SHOAL_ICON || at == null || !shoalIconsSeen.add(at))
+					{
+						continue;
+					}
+
+					ShoalRoute route = routeBeside(at.getX(), at.getY());
+					if (route != null)
+					{
+						ShoalMarker marker = new ShoalMarker(at, blankLike(icon.getType()), route.getSpecies() + " shoal");
+						shoalMarkers.add(marker);
+						if (worldMapShown())
+						{
+							worldMapPointManager.add(marker);
+						}
+					}
+				}
+			}
+		}
+	}
+
+	/**
+	 * The recorded route a map icon at this place sits beside, or null when none is close enough.
+	 */
+	private ShoalRoute routeBeside(int x, int y)
+	{
+		ShoalRoute beside = null;
+		double closest = SHOAL_ICON_TILES;
+		for (ShoalRoute route : routes)
+		{
+			double[][] box = route.corners();
+			if (x < box[0][0] - SHOAL_ICON_TILES || x > box[2][0] + SHOAL_ICON_TILES
+				|| y < box[0][1] - SHOAL_ICON_TILES || y > box[2][1] + SHOAL_ICON_TILES)
+			{
+				continue;
+			}
+
+			for (int i = 0; i < route.sampleCount(); i++)
+			{
+				double distance = Math.hypot(route.sampleX(i) - x, route.sampleY(i) - y);
+				if (distance <= closest)
+				{
+					closest = distance;
+					beside = route;
+				}
+			}
+		}
+		return beside;
+	}
+
+	/**
+	 * A see-through image the size of the game's own icon of this type and a little more all round, so hovering
+	 * anywhere over that icon, edges included, shows the tooltip laid over it rather than the game's own label.
+	 */
+	private BufferedImage blankLike(int type)
+	{
+		MapElementConfig element = client.getMapElementConfig(type);
+		SpritePixels sprite = element == null ? null : element.getMapIcon(false);
+		int width = sprite == null ? 15 : Math.max(1, sprite.getWidth());
+		int height = sprite == null ? 15 : Math.max(1, sprite.getHeight());
+		return new BufferedImage(width + SHOAL_ICON_PAD_LEFT + SHOAL_ICON_PAD, height + SHOAL_ICON_PAD * 2,
+			BufferedImage.TYPE_INT_ARGB);
+	}
+
+	/**
+	 * Puts the shoal icon tooltips on the world map, or takes them off, to match the settings.
+	 */
+	private void showShoalMarkers()
+	{
+		worldMapPointManager.removeIf(ShoalMarker.class::isInstance);
+		if (worldMapShown())
+		{
+			shoalMarkers.forEach(worldMapPointManager::add);
+		}
+	}
+
+	/**
+	 * Puts the skulls on the world map, or takes them off, to match the settings.
+	 */
+	private void showDangerMarkers()
+	{
+		worldMapPointManager.removeIf(DangerMarker.class::isInstance);
+		if (config.debugDangerAreas() && worldMapShown())
+		{
+			dangerMarkers.forEach(worldMapPointManager::add);
+		}
+	}
+
+	/**
+	 * Marks the stretches of each route that pass close to where sea creatures that attack boats spawn, and
+	 * works out where to mark each place they spawn that comes close enough to any route to threaten it.
+	 */
+	private void markDanger(List<ShoalRoute> marking)
+	{
+		for (ShoalRoute route : marking)
+		{
+			route.markDanger(seaMonsters.spawns(), DANGER_TILES, DANGER_GAP_TILES);
+		}
+
+		List<DangerMarker> markers = new ArrayList<>();
+		int[][][] areas = seaMonsters.areaSpawns();
+		for (int index = 0; index < areas.length; index++)
+		{
+			int[][] area = areas[index];
+			// The middle of only the spawns close enough to a route, rather than of the whole place, which can
+			// run a long way off from the stretch it threatens.
+			double x = 0;
+			double y = 0;
+			int near = 0;
+			for (int[] spawn : area)
+			{
+				for (ShoalRoute route : marking)
+				{
+					if (route.passesNear(new int[][]{spawn}, DANGER_TILES))
+					{
+						x += spawn[0];
+						y += spawn[1];
+						near++;
+						break;
+					}
+				}
+			}
+			if (near > 0)
+			{
+				markers.add(new DangerMarker(x / near, y / near, seaMonsters.areaNames()[index]));
+			}
+		}
+		dangerMarkers = markers;
+		showDangerMarkers();
 	}
 
 	@Subscribe
@@ -392,6 +661,16 @@ public class TrawlingPlusPlugin extends Plugin
 	@Subscribe
 	public void onConfigChanged(ConfigChanged event)
 	{
+		if (TrawlingPlusConfig.GROUP.equals(event.getGroup())
+			&& ("debugDangerAreas".equals(event.getKey()) || "showOnMaps".equals(event.getKey())))
+		{
+			clientThread.invoke(() ->
+			{
+				showDangerMarkers();
+				showShoalMarkers();
+			});
+		}
+
 		if (TrawlingPlusConfig.GROUP.equals(event.getGroup()) && TrawlingPlusConfig.SMOOTHING_KEY.equals(event.getKey()))
 		{
 			// Config changes arrive on the Swing thread; reshape the routes on the client thread, where
@@ -403,6 +682,7 @@ public class TrawlingPlusPlugin extends Plugin
 	private void reshapeRoutes()
 	{
 		List<ShoalRoute> reshaped = ShoalRoute.build(routeData, config.routeSmoothing());
+		markDanger(reshaped);
 		for (Shoal shoal : shoals.values())
 		{
 			ShoalRoute route = counterpart(shoal.getRoute(), reshaped);
@@ -481,6 +761,9 @@ public class TrawlingPlusPlugin extends Plugin
 		// and someone stood on land is not fishing. So none of it is worked out off one, and everything
 		// drawn on the water, the minimap and the side panel rests on the same answer. The world map is
 		// the exception, and needs none of this: it draws every route wherever the player happens to be.
+		// The world map is looked at from anywhere, so its trawling shoal icons are found whether or not aboard.
+		findShoalIcons();
+
 		WorldEntity own = boardedBoat();
 		if (own == null)
 		{
@@ -891,6 +1174,14 @@ public class TrawlingPlusPlugin extends Plugin
 			return;
 		}
 
+		if (message.startsWith("Your crewmate on the chum station can"))
+		{
+			// "...can't find any offcuts in the cargo hold." Nothing was laid, and the hold has none of what the
+			// nearest shoal takes.
+			noBait();
+			return;
+		}
+
 		if (message.startsWith("There are no fish in"))
 		{
 			// What opening an empty net says, in a box of its own rather than the menu a net with fish opens.
@@ -1131,9 +1422,31 @@ public class TrawlingPlusPlugin extends Plugin
 	}
 
 	/**
-	 * Takes one offcut off the count for a bait just laid on the nearest shoal. On a shoal that takes
-	 * either kind there is no telling which went, so the plain ones are assumed used first; that only
-	 * shows once a shoal that takes fine alone is baited before the hold is opened again.
+	 * A crewmate on the chum station found no offcuts in the hold, so the nearest shoal isn't baited and the
+	 * hold has none of the offcuts it takes. On a shoal that takes plain offcuts that is both kinds; on one
+	 * that takes only fine, the fine count is known to be empty, but the plain count is left alone while it
+	 * isn't known, since the two are only ever known together.
+	 */
+	private void noBait()
+	{
+		baitFailedTick = client.getTickCount();
+		baitedShoal = null;
+		baited = false;
+		if (nearestShoal != null && takesPlainOffcuts(nearestShoal))
+		{
+			plainBait = 0;
+			fineBait = 0;
+		}
+		else if (plainBait >= 0)
+		{
+			fineBait = 0;
+		}
+		baitedLabel = label(baitLeft());
+	}
+
+	/**
+	 * Takes one offcut off the count for a bait just laid on the nearest shoal. A shoal that takes plain
+	 * offcuts takes fine ones too, but uses the plain first, so fine ones only go once the plain have run out.
 	 */
 	private void useBait()
 	{
@@ -1162,16 +1475,6 @@ public class TrawlingPlusPlugin extends Plugin
 	}
 
 	/**
-	 * How far from a shoal it can be fished from, in tiles along each axis, or 0 where that has not been
-	 * measured for its kind.
-	 */
-	double fishableReach(Shoal shoal)
-	{
-		RouteData.Species species = speciesOf(shoal);
-		return species == null ? 0 : species.fishableReach;
-	}
-
-	/**
 	 * Whether plain fish offcuts bait this shoal as well as fine ones. A kind with no entry is taken to
 	 * need fine ones, which every kind of shoal accepts.
 	 */
@@ -1197,7 +1500,8 @@ public class TrawlingPlusPlugin extends Plugin
 	private boolean stillBaited()
 	{
 		int step = client.getVarbitValue(VarbitID.SAILING_PLAYER_TRAWLING_SHOAL_BAITED_STEP);
-		boolean laid = baitedStep != null && baitedStep != step;
+		// A change on the tick a crewmate found nothing to bait with, or the one after, is that failed attempt.
+		boolean laid = baitedStep != null && baitedStep != step && client.getTickCount() - baitFailedTick > 1;
 		baitedStep = step;
 
 		if (laid && nearestShoal != null)

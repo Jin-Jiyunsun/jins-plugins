@@ -13,10 +13,6 @@ class RouteData
 	static class Species
 	{
 		String name;
-		// How far from the shoal it can be fished from, in tiles along each axis, or 0 where that has not
-		// been measured. It differs by species: bluefin reach 10.5 tiles, halibut only 6.5. It cannot be
-		// worked out from a recording, so it is measured by hand in game and kept in tools/species.json.
-		double fishableReach;
 		// "any" where both fish offcuts and fine fish offcuts bait this kind of shoal, "fine" where only
 		// fine fish offcuts do.
 		String bait;

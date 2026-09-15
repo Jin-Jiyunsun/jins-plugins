@@ -1,8 +1,8 @@
 """Generates src/main/resources/com/trawlingplus/routes.json from tools/recorded_routes.json and tools/species.json.
 
 Every route the plugin draws was recorded in-game for Trawling Plus, one lap each, and is kept in
-tools/recorded_routes.json. What is known about each kind of shoal whatever its route, its fishable
-reach and which bait it takes, is kept by hand in tools/species.json. Re-run this whenever either changes:
+tools/recorded_routes.json. Which bait each kind of shoal takes, whatever its route, is kept by hand in
+tools/species.json. Re-run this whenever either changes:
 
     python tools/generate_routes.py
 """
@@ -74,16 +74,14 @@ def main():
         # on any shoal of that kind.
         species.append({
             "name": name,
-            "fishableReach": entry.get("fishableReach", 0),
             "bait": entry["bait"],
             "routes": routes,
         })
 
     data = {
         "about": "Shoal routes recorded in-game for Trawling Plus.",
-        "format": "Each kind of shoal has its fishable reach in tiles along each axis (0 where not yet measured), "
-                  "the bait it takes (\"any\" for both kinds of offcuts, \"fine\" for fine fish offcuts only) and "
-                  "its recorded routes. Each route is a loop. Stops and path points are [x, y] world tiles on plane 0, "
+        "format": "Each kind of shoal has the bait it takes (\"any\" for both kinds of offcuts, \"fine\" for fine fish "
+                  "offcuts only) and its recorded routes. Each route is a loop. Stops and path points are [x, y] world tiles on plane 0, "
                   "to a quarter of a tile, listed in the order shoals swim them; the last point connects back to the first.",
         "species": species,
     }

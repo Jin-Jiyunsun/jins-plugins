@@ -23,7 +23,7 @@ final class MapRoutes
 	// without this they would pile into each other as a map is zoomed out. How many to leave out is
 	// worked out from how far the map is zoomed, never from which of them happen to be on screen: a
 	// thinning that depends on what is visible rearranges itself every time the map is panned.
-	private static final int ARROW_GAP = 14;
+	private static final int ARROW_GAP = 24;
 
 	// How far along the route to look to see which way an arrow points, in tiles.
 	private static final double ARROW_AIM = 2;
@@ -104,11 +104,65 @@ final class MapRoutes
 	}
 
 	/**
+	 * The stretches of a route that pass close to where sea creatures that attack boats spawn, drawn over its
+	 * line in the given colour and broken wherever the route is safe or leaves the map.
+	 */
+	static void dangerStretches(Graphics2D graphics, ShoalRoute route, Projection onto, Color colour, int thickness,
+		double pixelsPerTile, double fromX, double fromY, double toX, double toY)
+	{
+		// The same thinning of points as the route line itself, so the two lie on top of each other.
+		int stride = 1;
+		if (pixelsPerTile > 0 && route.sampleCount() > 0)
+		{
+			double apart = route.length() / route.sampleCount();
+			stride = Math.max(1, (int) (LINE_STEP / (pixelsPerTile * apart)));
+		}
+
+		Path2D line = new Path2D.Double();
+		boolean drawing = false;
+		for (int block = 0; block < route.blockCount(); block++)
+		{
+			if (!route.blockWithin(block, fromX, fromY, toX, toY))
+			{
+				drawing = false;
+				continue;
+			}
+
+			int start = route.blockFrom(block);
+			for (int sample = start + (stride - start % stride) % stride; sample < route.blockTo(block);
+				sample += stride)
+			{
+				Point at = route.dangerAt(sample) ? onto.at(route.sampleX(sample), route.sampleY(sample)) : null;
+				if (at == null)
+				{
+					drawing = false;
+					continue;
+				}
+
+				if (drawing)
+				{
+					line.lineTo(at.getX(), at.getY());
+				}
+				else
+				{
+					line.moveTo(at.getX(), at.getY());
+					drawing = true;
+				}
+			}
+		}
+
+		graphics.setColor(colour);
+		graphics.setStroke(new BasicStroke(thickness));
+		graphics.draw(line);
+	}
+
+	/**
 	 * The arrows showing which way round a route is swum, at the spacing set for the ones on the water
-	 * but thinned out so they never crowd each other on a map drawn small.
+	 * but thinned out so they never crowd each other on a map drawn small. Those on a stretch marked
+	 * dangerous take the danger colour instead, when one is given.
 	 */
 	static void arrows(Graphics2D graphics, TrawlingPlusConfig config, ShoalRoute route, Projection onto,
-		int size, double pixelsPerTile, double fromX, double fromY, double toX, double toY)
+		int size, double pixelsPerTile, double fromX, double fromY, double toX, double toY, Color dangerColour)
 	{
 		if (!config.showDirectionArrows())
 		{
@@ -127,7 +181,7 @@ final class MapRoutes
 		}
 
 		double apart = (double) every * spacing;
-		graphics.setColor(config.directionArrowColour());
+		Color arrowColour = config.directionArrowColour();
 		for (int block = 0; block < route.blockCount(); block++)
 		{
 			// The same skipping the line is drawn with. A run of the route covers one stretch of the way
@@ -172,6 +226,8 @@ final class MapRoutes
 					continue;
 				}
 
+				// An arrow on a stretch drawn red is red too, so it doesn't break the stretch up.
+				graphics.setColor(dangerColour != null && route.dangerAtDistance(arrow * apart) ? dangerColour : arrowColour);
 				graphics.fill(
 					arrowhead(at, Math.atan2(to.getY() - from.getY(), to.getX() - from.getX()), size));
 			}

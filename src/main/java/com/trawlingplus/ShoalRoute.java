@@ -57,7 +57,7 @@ final class ShoalRoute
 	private static final double PIN_TILES = 10;
 
 	// A shoal this close to a stop counts as sitting at it, so its next stop is the one after.
-	private static final double AT_STOP_TILES = 3.0;
+	static final double AT_STOP_TILES = 3.0;
 
 	// How far either way along the route a shoal is looked for, once it is known roughly where it was,
 	// in tiles. A shoal covers well under a tile a tick, so this is far more than it can have moved,
@@ -91,6 +91,8 @@ final class ShoalRoute
 	private final double minY;
 	private final double maxX;
 	private final double maxY;
+	// Which of the drawn points pass close to where sea creatures that attack boats spawn, set by markDanger.
+	private boolean[] danger = new boolean[0];
 
 	ShoalRoute(String species, String name, int stopTicks, double[][] path, double[][] stops)
 	{
@@ -776,6 +778,123 @@ final class ShoalRoute
 	double sampleDistance(int sample)
 	{
 		return sampleDistance[sample];
+	}
+
+	/**
+	 * Marks each drawn point within the given distance of any of these spawn points, in tiles, then marks any
+	 * gap no longer than gapTiles between two marked stretches, so a brief dip out of range doesn't break a
+	 * dangerous stretch in two.
+	 */
+	void markDanger(int[][] spawns, double tiles, double gapTiles)
+	{
+		boolean[] marked = new boolean[sampleX.length];
+		for (int[] spawn : spawns)
+		{
+			// Most spawns are nowhere near a given route, and are passed over on the box it fits inside.
+			if (spawn[0] < minX - tiles || spawn[0] > maxX + tiles || spawn[1] < minY - tiles || spawn[1] > maxY + tiles)
+			{
+				continue;
+			}
+
+			for (int i = 0; i < sampleX.length; i++)
+			{
+				if (!marked[i] && Math.hypot(sampleX[i] - spawn[0], sampleY[i] - spawn[1]) <= tiles)
+				{
+					marked[i] = true;
+				}
+			}
+		}
+		closeGaps(marked, gapTiles);
+		danger = marked;
+	}
+
+	/**
+	 * Marks every unmarked run of points round the loop that sits between two marked ones no more than
+	 * gapTiles apart along the route.
+	 */
+	private void closeGaps(boolean[] marked, double gapTiles)
+	{
+		int count = marked.length;
+		int start = -1;
+		for (int i = 0; i < count && start < 0; i++)
+		{
+			if (marked[i])
+			{
+				start = i;
+			}
+		}
+		if (start < 0)
+		{
+			return;
+		}
+
+		// Walked once round the loop from a marked point, so every gap has a marked point at each end.
+		int step = 1;
+		while (step < count)
+		{
+			if (marked[(start + step) % count])
+			{
+				step++;
+				continue;
+			}
+
+			int end = step;
+			while (!marked[(start + end) % count])
+			{
+				end++;
+			}
+
+			int before = (start + step - 1) % count;
+			int after = (start + end) % count;
+			if (forward(sampleDistance[before], sampleDistance[after]) <= gapTiles)
+			{
+				for (int fill = step; fill < end; fill++)
+				{
+					marked[(start + fill) % count] = true;
+				}
+			}
+			step = end;
+		}
+	}
+
+	/**
+	 * Whether this drawn point passes close to where sea creatures that attack boats spawn.
+	 */
+	boolean dangerAt(int sample)
+	{
+		return sample < danger.length && danger[sample];
+	}
+
+	/**
+	 * Whether the drawn point at this distance round the route passes close to where sea creatures that
+	 * attack boats spawn.
+	 */
+	boolean dangerAtDistance(double distance)
+	{
+		return sampleX.length > 0 && dangerAt(sampleAt(forward(0, distance)));
+	}
+
+	/**
+	 * Whether any drawn point of this route comes within the given distance of any of these points, in tiles.
+	 */
+	boolean passesNear(int[][] points, double tiles)
+	{
+		for (int[] point : points)
+		{
+			if (point[0] < minX - tiles || point[0] > maxX + tiles || point[1] < minY - tiles || point[1] > maxY + tiles)
+			{
+				continue;
+			}
+
+			for (int i = 0; i < sampleX.length; i++)
+			{
+				if (Math.hypot(sampleX[i] - point[0], sampleY[i] - point[1]) <= tiles)
+				{
+					return true;
+				}
+			}
+		}
+		return false;
 	}
 
 	/**

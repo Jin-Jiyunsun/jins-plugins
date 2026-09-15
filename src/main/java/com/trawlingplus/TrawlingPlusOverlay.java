@@ -32,28 +32,63 @@ class TrawlingPlusOverlay extends Overlay
 	// Stops are drawn as a square this many tiles across, roughly the size of a shoal.
 	private static final int STOP_SIZE = 3;
 
-	// The area the game itself uses is not round: it caps each axis at the species' reach and the
-	// distance somewhat further, so it is a square with its corners cut off. A circle of the axis reach
-	// sits just inside all of that, so water inside the ring can always be fished from, and the corners
-	// it leaves out are water that can be. How far the reach is differs by species, so it comes from each
-	// species' entry in routes.json rather than being fixed here.
+	// How far a shoal can be fished from, in tiles along each axis. It is the same for every kind of
+	// shoal, but it is not measured from the middle of the boat: it is measured from a point towards the
+	// bow, so a boat pointing its bow at a shoal can fish it from further away than one pointing its
+	// stern. Measured on a sloop against bluefin, halibut and glistening shoals, parked still. The edge
+	// shifts by about half a tile with the way the boat faces, so this sits between where fishing always
+	// works and where it sometimes still does.
+	private static final double FISHABLE_REACH = 8.7;
+
+	// That point on the boat, in local units ahead of its middle towards the bow: two and a quarter
+	// tiles. The bow is the low end of the boat's own view, the helm the high end.
+	private static final int FISHING_POINT_AHEAD = Perspective.LOCAL_TILE_SIZE * 9 / 4;
+
+	// The dot marking that point on the boat, in pixels across.
+	private static final int FISHING_POINT_SIZE = 5;
+
+	// How long the dot takes to fade fully in or out as the fishable area comes and goes, in milliseconds.
+	private static final double FISHING_POINT_FADE_MILLIS = 500;
+
+	// The area the game itself uses is a square lined up with the map: a shoal can be fished while that
+	// point on the boat is within the reach of it along both the x and the y axis. A circle of the same
+	// reach sits just inside it, for anyone who would rather have the rounder guide.
 	//
-	// How many points the ring is drawn from, spread evenly around it. Each one is a projection, done
-	// every frame, so it is only as many as it takes to read as a circle rather than a polygon. Where
-	// each sits around the ring never changes, so the angles are worked out once here rather than as
-	// sixty-four sines and cosines a frame.
-	private static final int AREA_POINTS = 64;
-	private static final int AREA_FILL_ALPHA = 30;
-	private static final double[] AREA_COS = new double[AREA_POINTS];
-	private static final double[] AREA_SIN = new double[AREA_POINTS];
+	// Either shape is drawn through points spaced around it rather than only a few corners, so one
+	// running off the loaded map still draws the part that is on it, and it follows the height of the
+	// water it crosses. Where each sits never changes, so both are worked out once here, as fractions of
+	// the reach: the square's south side west to east, then east, north and west the same way round, and
+	// the circle anticlockwise from the east.
+	private static final int AREA_POINTS_PER_SIDE = 16;
+	private static final int AREA_POINTS = AREA_POINTS_PER_SIDE * 4;
+	private static final double[] SQUARE_X = new double[AREA_POINTS];
+	private static final double[] SQUARE_Y = new double[AREA_POINTS];
+	private static final double[] CIRCLE_X = new double[AREA_POINTS];
+	private static final double[] CIRCLE_Y = new double[AREA_POINTS];
 
 	static
 	{
+		for (int step = 0; step < AREA_POINTS_PER_SIDE; step++)
+		{
+			double along = -1 + 2.0 * step / AREA_POINTS_PER_SIDE;
+			int south = step;
+			int east = south + AREA_POINTS_PER_SIDE;
+			int north = east + AREA_POINTS_PER_SIDE;
+			int west = north + AREA_POINTS_PER_SIDE;
+			SQUARE_X[south] = along;
+			SQUARE_Y[south] = -1;
+			SQUARE_X[east] = 1;
+			SQUARE_Y[east] = along;
+			SQUARE_X[north] = -along;
+			SQUARE_Y[north] = 1;
+			SQUARE_X[west] = -1;
+			SQUARE_Y[west] = -along;
+		}
 		for (int step = 0; step < AREA_POINTS; step++)
 		{
 			double angle = 2 * Math.PI * step / AREA_POINTS;
-			AREA_COS[step] = Math.cos(angle);
-			AREA_SIN[step] = Math.sin(angle);
+			CIRCLE_X[step] = Math.cos(angle);
+			CIRCLE_Y[step] = Math.sin(angle);
 		}
 	}
 
@@ -103,13 +138,15 @@ class TrawlingPlusOverlay extends Overlay
 	private static final double SHOAL_ARROW_HALF_WIDTH = 1.0 / 2.4;
 	private static final double SHOAL_ARROW_NOTCH = 0.45 / 2.4;
 
-	// The ring, and the colour and stroke it is drawn with, kept between frames: the shape is redrawn
-	// every frame but never changes size, and the colour and thickness only change when a setting does.
-	private final Polygon ring = new Polygon();
-	private Color areaColour;
-	private Color areaFill;
+	// The fishable area, and the stroke it is drawn with, kept between frames: the shape is redrawn every
+	// frame but never changes size, and the thickness only changes when a setting does.
+	private final Polygon area = new Polygon();
 	private Stroke areaStroke;
 	private int areaThickness;
+
+	// How far faded in the fishing point dot is, and when that was last worked out.
+	private double fishingPointFade;
+	private long lastFishingPointMillis = -1;
 
 	private final Client client;
 	private final TrawlingPlusPlugin plugin;
@@ -169,9 +206,16 @@ class TrawlingPlusOverlay extends Overlay
 			}
 		}
 		drawShoalArrows(graphics, shoals, now);
-		if (config.showFishableArea())
+		boolean areaDrawn = config.showFishableArea() && drawFishableArea(graphics);
+		// Switched off, the dot goes at once like anything else; it only fades as the area comes and goes.
+		if (config.showFishableArea() && config.showFishingPoint())
 		{
-			drawFishableArea(graphics);
+			drawFishingPoint(graphics, areaDrawn, now);
+		}
+		else
+		{
+			fishingPointFade = 0;
+			lastFishingPointMillis = -1;
 		}
 		drawHelm(graphics);
 
@@ -282,9 +326,14 @@ class TrawlingPlusOverlay extends Overlay
 		if (config.showStops())
 		{
 			boolean[] next = nextStops(route, shoals);
+			double[] shown = stopsShown(route, shoals);
 			for (int stop = 0; stop < route.stopCount(); stop++)
 			{
-				drawStop(graphics, view, route, stop, next[stop] ? config.nextStopColour() : config.stopColour(), 1);
+				if (shown[stop] > 0)
+				{
+					drawStop(graphics, view, route, stop, next[stop] ? config.nextStopColour() : config.stopColour(),
+						shown[stop]);
+				}
 			}
 		}
 
@@ -306,6 +355,37 @@ class TrawlingPlusOverlay extends Overlay
 			}
 		}
 		return next;
+	}
+
+	/**
+	 * How much of each of a route's stops to show in Whole route, from 0 to 1. The stop a shoal is sitting
+	 * at is hidden, fading out with its heading arrow as it settles in; every other stop shows in full.
+	 */
+	private static double[] stopsShown(ShoalRoute route, List<PlacedShoal> shoals)
+	{
+		double[] shown = new double[route.stopCount()];
+		for (int stop = 0; stop < shown.length; stop++)
+		{
+			shown[stop] = 1;
+		}
+
+		for (PlacedShoal placed : shoals)
+		{
+			if (placed.route != route || !placed.shoal.stopped())
+			{
+				continue;
+			}
+
+			// Sitting at a stop moves a shoal's next stop on to the one after, so the one it is at comes just
+			// before that. Only when it really is there, rather than stopped short of it.
+			int at = (placed.next + shown.length - 1) % shown.length;
+			double apart = Math.abs(placed.distance - route.stopDistance(at)) % route.length();
+			if (Math.min(apart, route.length() - apart) <= ShoalRoute.AT_STOP_TILES)
+			{
+				shown[at] = Math.min(shown[at], placed.headingOpacity);
+			}
+		}
+		return shown;
 	}
 
 	/**
@@ -925,57 +1005,101 @@ class TrawlingPlusOverlay extends Overlay
 	}
 
 	/**
-	 * Outlines the water the nearest shoal can be fished from, as a ring around the shoal. It is
-	 * centred on the shoal itself, so it travels with the shoal and only sits still because the shoal
-	 * does.
+	 * Outlines the water the nearest shoal can be fished from, as a square or circle around the shoal,
+	 * and says whether it drew it. The shape is centred on the shoal itself, so it travels with the shoal
+	 * and only sits still because the shoal does.
 	 */
-	private void drawFishableArea(Graphics2D graphics)
+	private boolean drawFishableArea(Graphics2D graphics)
 	{
 		Shoal shoal = plugin.getNearestShoal();
 		WorldView view = shoal == null ? null : shoal.parentView(client);
 		double[] at = shoal == null ? null : shoal.position(client);
-		double reach = shoal == null ? 0 : plugin.fishableReach(shoal);
-		if (view == null || at == null || reach <= 0)
+		if (view == null || at == null)
 		{
-			// Nothing to draw around a kind of shoal whose reach has not been measured: a guess would be
-			// half as big again as the truth on some species. A recorded route is not needed.
-			return;
+			return false;
 		}
 
-		// Walked around the ring a point at a time, so one running off the loaded map still draws the
+		// Walked around the shape a point at a time, so one running off the loaded map still draws the
 		// part that is on it. The same shape every frame, so it is drawn into the same polygon rather
-		// than a new one, off a ring of angles worked out once.
-		ring.reset();
+		// than a new one, off points worked out once.
+		boolean circle = config.fishableAreaShape() == TrawlingPlusConfig.FishableShape.CIRCLE;
+		double[] shapeX = circle ? CIRCLE_X : SQUARE_X;
+		double[] shapeY = circle ? CIRCLE_Y : SQUARE_Y;
+		area.reset();
 		for (int step = 0; step < AREA_POINTS; step++)
 		{
-			Point edge = toCanvas(view, at[0] + AREA_COS[step] * reach, at[1] + AREA_SIN[step] * reach);
+			Point edge = toCanvas(view, at[0] + shapeX[step] * FISHABLE_REACH, at[1] + shapeY[step] * FISHABLE_REACH);
 			if (edge != null)
 			{
-				ring.addPoint(edge.getX(), edge.getY());
+				area.addPoint(edge.getX(), edge.getY());
 			}
 		}
 
-		if (ring.npoints < AREA_POINTS / 4)
+		if (area.npoints < AREA_POINTS / 4)
 		{
 			// Too little of it is on screen to make a shape out of.
-			return;
+			return false;
 		}
 
-		OverlayUtil.renderPolygon(graphics, ring, config.fishableAreaColour(),
-			areaFill(config.fishableAreaColour()), areaOutline(config.fishableAreaThickness().pixels()));
+		OverlayUtil.renderPolygon(graphics, area, config.fishableAreaColour(),
+			config.fishableAreaFillColour(), areaOutline(config.fishableAreaThickness().pixels()));
+		return true;
 	}
 
 	/**
-	 * The wash inside the ring, kept between frames rather than mixed again for every one of them.
+	 * A dot on the boat at the point the fishable area is measured to, so the boat can fish the shoal
+	 * whenever the dot is inside it. It fades in as the area appears and out as it goes.
 	 */
-	private Color areaFill(Color colour)
+	private void drawFishingPoint(Graphics2D graphics, boolean wanted, long now)
 	{
-		if (!colour.equals(areaColour))
+		// Not drawn for a while, as when off the boat, so it starts from nothing rather than jumping in.
+		if (lastFishingPointMillis < 0 || now - lastFishingPointMillis > FISHING_POINT_FADE_MILLIS * 2)
 		{
-			areaColour = colour;
-			areaFill = new Color(colour.getRed(), colour.getGreen(), colour.getBlue(), AREA_FILL_ALPHA);
+			fishingPointFade = 0;
+			lastFishingPointMillis = now;
 		}
-		return areaFill;
+		double step = (now - lastFishingPointMillis) / FISHING_POINT_FADE_MILLIS;
+		lastFishingPointMillis = now;
+		fishingPointFade = wanted ? Math.min(1, fishingPointFade + step) : Math.max(0, fishingPointFade - step);
+		if (fishingPointFade <= 0)
+		{
+			return;
+		}
+
+		WorldEntity boat = plugin.getBoat();
+		WorldView deck = boat == null ? null : boat.getWorldView();
+		WorldEntityConfig hull = boat == null ? null : boat.getConfig();
+		if (deck == null || hull == null)
+		{
+			return;
+		}
+
+		// Down the middle of the boat, which on a hull an odd number of tiles wide is half a tile off the
+		// middle of its view, as at the helm.
+		int across = deck.getSizeX() * Perspective.LOCAL_TILE_SIZE / 2;
+		if ((hull.getBoundsWidth() / Perspective.LOCAL_TILE_SIZE) % 2 != 0)
+		{
+			across -= Perspective.LOCAL_HALF_TILE_SIZE;
+		}
+		LocalPoint afloat = boat.transformToMainWorld(new LocalPoint(across,
+			deck.getSizeY() * Perspective.LOCAL_TILE_SIZE / 2 - FISHING_POINT_AHEAD, deck));
+		WorldView sea = afloat == null ? null : client.getWorldView(afloat.getWorldView());
+		if (sea == null)
+		{
+			return;
+		}
+
+		// At the water's height, the same as the area it is read against.
+		int height = sea.getTileHeight(afloat.getX(), afloat.getY(), sea.getPlane());
+		Point point = Perspective.localToCanvas(client, afloat.getWorldView(), afloat.getX(), afloat.getY(), height);
+		if (point == null)
+		{
+			return;
+		}
+
+		graphics.setColor(withOpacity(TrawlingPlusNetOverlay.opaque(config.fishableAreaColour()), fishingPointFade));
+		graphics.fillOval(point.getX() - FISHING_POINT_SIZE / 2, point.getY() - FISHING_POINT_SIZE / 2,
+			FISHING_POINT_SIZE, FISHING_POINT_SIZE);
 	}
 
 	private Stroke areaOutline(int pixels)

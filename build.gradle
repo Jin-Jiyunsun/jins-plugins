@@ -16,6 +16,17 @@ repositories {
 def runeLiteVersion = 'latest.release'
 def pluginMainClass = 'com.trawlingplus.TrawlingPlusPluginTest'
 
+// The dev-only shoal recorder lives outside src/test/java so it never leaks into another
+// branch's build: git leaves untracked, excluded files in place across checkouts, and a branch
+// whose build.gradle doesn't reference this directory never compiles it.
+sourceSets {
+	test {
+		java {
+			srcDir 'recorder'
+		}
+	}
+}
+
 dependencies {
 	compileOnly group: 'net.runelite', name:'client', version: runeLiteVersion
 

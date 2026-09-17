@@ -1,12 +1,37 @@
 # Skill Bubbles
 
+<!-- TODO: screenshot -->
+
 Shows a RuneScape Classic-style bubble above your head with the skill or tool you're
-currently using while skilling - woodcutting, mining, fishing, firemaking, cooking,
-smithing, crafting, fletching, herblore, hunter, farming and construction.
+currently using while skilling. Supported skills are: 
+Woodcutting, mining, fishing, firemaking, cooking,
+smithing, crafting, fletching, herblore, hunter, farming,
+construction and thieving.
 
-The bubble can show either the skill's own icon, or the specific tool in your hand
-(pickaxe, axe, rod, etc.) - toggle this in the plugin's config. Actions with no single
-hand-tool (like Runecraft) always show the skill icon.
+## Features
 
-The bubble only appears while you're on your own character and disappears a few ticks
-after you stop the action.
+- **Skill or tool icon**: the bubble can show either the skill's own icon, or the
+  specific tool in your hand (axe, pickaxe, rod, hammer, etc.) - toggle this in the
+  plugin's config. Actions with no single hand-tool (like Runecraft, Thieving, or most
+  of Farming/Construction) show the skill icon instead.
+- **Cooking** shows the raw ingredient you're actually cooking - fish, meat, dough,
+  pizza, any pie filling, stew, curry, and more - detected from your inventory as you
+  cook it.
+- **Smithing** shows the ore being smelted at a furnace, or the bar being worked at an
+  anvil, in place of the generic hammer icon.
+- **RuneScape Classic sprites**: swap the icons for RuneScape Classic-style art where a
+  matching classic sprite exists, for a classic look.
+
+## Settings
+
+- **Icon**: skill icon or tool icon.
+- **Scale**: size of the bubble and icon.
+- **Hide after**: how many seconds of inactivity before the bubble disappears.
+- **Fade in/out**: fade the bubble in and out instead of an instant appear/disappear.
+- **RuneScape Classic sprites**: on or off.
+
+### License
+
+BSD-2-Clause. See [LICENSE](LICENSE).
+
+This plugin was entirely generated using AI.

@@ -1,6 +1,6 @@
 # Skill Bubbles
 
-<!-- TODO: screenshot -->
+<img width="800" height="421" alt="woodcutfletchmodern-ezgif com-video-to-webp-converter" src="https://github.com/user-attachments/assets/1701b8de-c491-4197-b8af-f1b1355892eb" />
 
 Shows a RuneScape Classic-style bubble above your head with the skill or tool you're
 currently using while skilling. Supported skills are: 
@@ -21,6 +21,8 @@ construction and thieving.
   anvil, in place of the generic hammer icon.
 - **RuneScape Classic sprites**: swap the icons for RuneScape Classic-style art where a
   matching classic sprite exists, for a classic look.
+
+<img width="800" height="421" alt="cookclassic-ezgif com-video-to-webp-converter" src="https://github.com/user-attachments/assets/63f46cf3-59a9-43e9-a057-f3a814f6d6b3" />
 
 ## Settings
 

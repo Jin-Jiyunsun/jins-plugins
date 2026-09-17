@@ -33,6 +33,7 @@ import net.runelite.client.config.Range;
 public interface SkillBubblesConfig extends Config
 {
 	@ConfigItem(
+		position = 0,
 		keyName = "iconMode",
 		name = "Icon",
 		description = "Generic skill icon, or the specific tool being used<br>"
@@ -43,10 +44,11 @@ public interface SkillBubblesConfig extends Config
 		return IconMode.SKILL;
 	}
 
-	@Range(min = 50, max = 200)
+	@Range(min = 75, max = 125)
 	@ConfigItem(
+		position = 1,
 		keyName = "scale",
-		name = "Scale",
+		name = "Scale (%)",
 		description = "Size of the bubble and icon, as a percentage of<br>"
 			+ "the default (100)"
 	)
@@ -55,18 +57,21 @@ public interface SkillBubblesConfig extends Config
 		return 100;
 	}
 
+	@Range(min = 0, max = 999)
 	@ConfigItem(
-		keyName = "idleTicks",
-		name = "Hide after",
-		description = "How many game ticks of no matching action before<br>"
+		position = 2,
+		keyName = "idleSeconds",
+		name = "Hide after (s)",
+		description = "How many seconds of no matching action before<br>"
 			+ "the bubble disappears"
 	)
-	default int idleTicks()
+	default int idleSeconds()
 	{
-		return 3;
+		return 2;
 	}
 
 	@ConfigItem(
+		position = 3,
 		keyName = "fadeAnimation",
 		name = "Fade in/out",
 		description = "Fade the bubble in and out when it appears<br>"

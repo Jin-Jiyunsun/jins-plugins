@@ -30,6 +30,7 @@ import java.util.Map;
 import javax.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
+import net.runelite.api.Constants;
 import net.runelite.api.EquipmentInventorySlot;
 import net.runelite.api.GameState;
 import net.runelite.api.Item;
@@ -54,6 +55,11 @@ import net.runelite.client.ui.overlay.OverlayManager;
 )
 public class SkillBubblesPlugin extends Plugin
 {
+	// How long the fade-in/fade-out animation takes, shared with SkillBubblesOverlay - lives here
+	// since the ingredient-forgetting logic below needs to know when a fade-out has actually
+	// finished, not just when the underlying action stopped.
+	static final long FADE_DURATION_MILLIS = 250;
+
 	@Inject
 	private Client client;
 
@@ -189,29 +195,37 @@ public class SkillBubblesPlugin extends Plugin
 	@Subscribe
 	public void onGameTick(GameTick event)
 	{
-		if (currentAction == null)
+		if (currentAction != null)
 		{
+			// Still mid-animation - the idle countdown only starts once it actually stops
+			// matching, not merely from when AnimationChanged last fired (a held animation may
+			// not re-fire it).
+			Player player = client.getLocalPlayer();
+			if (player != null && player.getAnimation() == matchedAnimationId)
+			{
+				lastActionTick = client.getTickCount();
+				return;
+			}
+
+			if (client.getTickCount() - lastActionTick >= idleTicksThreshold())
+			{
+				currentAction = null;
+				actionStateChangedMillis = System.currentTimeMillis();
+			}
+
 			return;
 		}
 
-		// Still mid-animation - the idle countdown only starts once it actually stops matching,
-		// not merely from when AnimationChanged last fired (a held animation may not re-fire it).
-		Player player = client.getLocalPlayer();
-		if (player != null && player.getAnimation() == matchedAnimationId)
+		// Forget which ore/bar/fish was last detected, so a new bubble for a different item
+		// doesn't briefly show the previous one before the next consumption is detected - it
+		// falls back to the generic skill/tool icon in the meantime instead. The underlying count
+		// baselines are left alone - only what's currently displayed resets, not the tracking
+		// that makes the very next consumption detectable immediately. Held off until the
+		// fade-out (if enabled) has actually finished, so the fading bubble keeps showing the
+		// resource that was in use instead of dropping to the generic icon partway through.
+		long fadeMillis = config.fadeAnimation() ? FADE_DURATION_MILLIS : 0;
+		if (System.currentTimeMillis() - actionStateChangedMillis >= fadeMillis)
 		{
-			lastActionTick = client.getTickCount();
-			return;
-		}
-
-		if (client.getTickCount() - lastActionTick > config.idleTicks())
-		{
-			currentAction = null;
-			actionStateChangedMillis = System.currentTimeMillis();
-			// Forget which ore/bar/fish was last detected, so a new bubble for a different item
-			// doesn't briefly show the previous one before the next consumption is detected -
-			// it falls back to the generic skill/tool icon in the meantime instead. The
-			// underlying count baselines are left alone - only what's currently displayed resets,
-			// not the tracking that makes the very next consumption detectable immediately.
 			forgetDetectedIngredients();
 		}
 	}
@@ -242,6 +256,13 @@ public class SkillBubblesPlugin extends Plugin
 		{
 			currentSmithingBarId = bar;
 		}
+	}
+
+	private int idleTicksThreshold()
+	{
+		// Rounded to the nearest tick, not truncated - the countdown only advances once per
+		// GAME_TICK_LENGTH (600ms), so this is as close to the configured seconds as it can get.
+		return Math.round(config.idleSeconds() * 1000f / Constants.GAME_TICK_LENGTH);
 	}
 
 	private void forgetDetectedIngredients()

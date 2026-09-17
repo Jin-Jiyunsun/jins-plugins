@@ -65,7 +65,6 @@ class SkillBubblesOverlay extends Overlay
 	// hybridResize() smooths - 0.5 is the textbook Hybrid algorithm's own value; tried smaller
 	// values for a sharper look, but 0.5 won a side-by-side comparison in-game.
 	private static final float BLEND_RADIUS = 0.5f;
-	private static final long FADE_DURATION_MILLIS = 250;
 
 	// Only used to give getCanvasImageLocation() the bubble's footprint for positioning -
 	// never drawn itself, so it's fine to share one instance across frames. Rebuilt only when
@@ -125,7 +124,7 @@ class SkillBubblesOverlay extends Overlay
 		if (config.fadeAnimation())
 		{
 			long elapsed = System.currentTimeMillis() - plugin.getActionStateChangedMillis();
-			float t = Math.min(1f, elapsed / (float) FADE_DURATION_MILLIS);
+			float t = Math.min(1f, elapsed / (float) SkillBubblesPlugin.FADE_DURATION_MILLIS);
 			fadeAlpha = plugin.isActionActive() ? t : 1f - t;
 			if (fadeAlpha <= 0f)
 			{

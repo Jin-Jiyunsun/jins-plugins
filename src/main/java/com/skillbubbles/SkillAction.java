@@ -30,9 +30,10 @@ import net.runelite.api.Skill;
  * One recognised skilling animation: which skill it belongs to, and which item (if any)
  * represents the tool used. {@link #NO_TOOL} means the action has no single hand-tool
  * (e.g. Runecraft, most of Cooking) - tool icon mode falls back to the skill icon for these.
- * {@link #EQUIPPED_WEAPON} means the tool varies by animation alone (e.g. Fishing, where the
- * same cast animation is used for a net, rod or harpoon) and must be read from the weapon
- * slot at the moment the animation plays.
+ * {@link #EQUIPPED_WEAPON} means the tool's tier varies by an equipped item rather than the
+ * animation alone - currently only Forestry's felling axe (the animation is generic across every
+ * tier, unlike the plain axe/pickaxe animations, but felling axes genuinely are wielded in the
+ * weapon slot to use them, unlike fishing rods which don't need to be equipped at all).
  */
 class SkillAction
 {

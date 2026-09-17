@@ -29,7 +29,7 @@ import net.runelite.api.gameval.ItemID;
 
 /**
  * Bar item IDs used to detect which bar is being worked at an anvil, by watching for a one-item
- * drop in the inventory - the same technique as CookingFish. Unlike smelting, no tie-break is
+ * drop in the inventory - the same technique as CookingIngredients. Unlike smelting, no tie-break is
  * needed here: every smithable item consumes only one bar type (just possibly more than one of
  * it), never two different bars at once.
  */

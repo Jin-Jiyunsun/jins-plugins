@@ -82,6 +82,18 @@ public interface SkillBubblesConfig extends Config
 		return false;
 	}
 
+	@ConfigItem(
+		position = 4,
+		keyName = "classicSprites",
+		name = "RuneScape Classic sprites",
+		description = "Use RuneScape Classic-style icons instead of the<br>"
+			+ "current game's, where a classic sprite exists"
+	)
+	default boolean classicSprites()
+	{
+		return false;
+	}
+
 	enum IconMode
 	{
 		SKILL,

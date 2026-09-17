@@ -69,6 +69,7 @@ final class SkillActions
 		add(AnimationID.HUMAN_WOODCUTTING_CRYSTAL_AXE, Skill.WOODCUTTING, ItemID.CRYSTAL_AXE);
 		add(AnimationID.HUMAN_WOODCUTTING_TRAILBLAZER_AXE, Skill.WOODCUTTING, ItemID.TRAILBLAZER_AXE);
 		add(AnimationID.HUMAN_WOODCUTTING_TRAILBLAZER_RELOADED_AXE, Skill.WOODCUTTING, ItemID.TRAILBLAZER_RELOADED_AXE);
+		add(AnimationID.HUMAN_WOODCUTTING_3A_AXE, Skill.WOODCUTTING, ItemID._3A_AXE);
 
 		// Woodcutting - carving a canoe (same skill, same axes)
 		add(AnimationID.HUMAN_WOODCRAFTING_AXE_BRONZE, Skill.WOODCUTTING, ItemID.BRONZE_AXE);
@@ -83,6 +84,17 @@ final class SkillActions
 		add(AnimationID.HUMAN_WOODCRAFTING_AXE_CRYSTAL, Skill.WOODCUTTING, ItemID.CRYSTAL_AXE);
 		add(AnimationID.HUMAN_WOODCRAFTING_AXE_TRAILBLAZER, Skill.WOODCUTTING, ItemID.TRAILBLAZER_AXE);
 		add(AnimationID.HUMAN_WOODCRAFTING_AXE_TRAILBLAZER_RELOADED, Skill.WOODCUTTING, ItemID.TRAILBLAZER_RELOADED_AXE);
+		add(AnimationID.HUMAN_WOODCRAFTING_AXE_3A, Skill.WOODCUTTING, ItemID._3A_AXE);
+
+		// Woodcutting - Forestry's felling axe (2h). All tiers share these same animations, but
+		// unlike a plain axe a felling axe genuinely has to be wielded to use it, so the tier is
+		// read from the equipped weapon slot instead - see resolveToolItemId() in the plugin.
+		add(AnimationID.HUMAN_FELLING_CHARGE_SLOW01, Skill.WOODCUTTING, SkillAction.EQUIPPED_WEAPON);
+		add(AnimationID.HUMAN_FELLING_CHARGE_SLOW02, Skill.WOODCUTTING, SkillAction.EQUIPPED_WEAPON);
+		add(AnimationID.HUMAN_FELLING_CHARGE_FAST01, Skill.WOODCUTTING, SkillAction.EQUIPPED_WEAPON);
+		add(AnimationID.HUMAN_FELLING_SWING01, Skill.WOODCUTTING, SkillAction.EQUIPPED_WEAPON);
+		add(AnimationID.HUMAN_FELLING_BOTCH01, Skill.WOODCUTTING, SkillAction.EQUIPPED_WEAPON);
+		add(AnimationID.HUMAN_FELLING_TAP01, Skill.WOODCUTTING, SkillAction.EQUIPPED_WEAPON);
 
 		// Mining
 		add(AnimationID.HUMAN_MINING_BRONZE_PICKAXE, Skill.MINING, ItemID.BRONZE_PICKAXE);
@@ -98,21 +110,34 @@ final class SkillActions
 		add(AnimationID.HUMAN_MINING_CRYSTAL_PICKAXE, Skill.MINING, ItemID.CRYSTAL_PICKAXE);
 		add(AnimationID.HUMAN_MINING_TRAILBLAZER_PICKAXE, Skill.MINING, ItemID.TRAILBLAZER_PICKAXE);
 		add(AnimationID.HUMAN_MINING_TRAILBLAZER_RELOADED_PICKAXE, Skill.MINING, ItemID.TRAILBLAZER_RELOADED_PICKAXE);
+		add(AnimationID.HUMAN_MINING_3A_PICKAXE, Skill.MINING, ItemID._3A_PICKAXE);
 
-		// Fishing - the same cast/fish animations are shared by every rod/net/harpoon/cage,
-		// so the tool has to be read off the equipped weapon slot instead of the animation.
-		add(AnimationID.HUMAN_FISHING_CASTING, Skill.FISHING, SkillAction.EQUIPPED_WEAPON);
-		add(AnimationID.HUMAN_FISH_ONSPOT, Skill.FISHING, SkillAction.EQUIPPED_WEAPON);
-		add(AnimationID.HUMAN_FISHING_CASTING_BRUT, Skill.FISHING, SkillAction.EQUIPPED_WEAPON);
-		add(AnimationID.HUMAN_FISHING_ONSPOT_BRUT, Skill.FISHING, SkillAction.EQUIPPED_WEAPON);
-		add(AnimationID.HUMAN_FISHING_CASTING_PEARL, Skill.FISHING, SkillAction.EQUIPPED_WEAPON);
-		add(AnimationID.HUMAN_FISHING_CASTING_PEARL_FLY, Skill.FISHING, SkillAction.EQUIPPED_WEAPON);
-		add(AnimationID.HUMAN_FISHING_CASTING_PEARL_BRUT, Skill.FISHING, SkillAction.EQUIPPED_WEAPON);
-		add(AnimationID.HUMAN_FISHING_CASTING_PEARL_OILY, Skill.FISHING, SkillAction.EQUIPPED_WEAPON);
-		add(AnimationID.HUMAN_FISH_ONSPOT_PEARL, Skill.FISHING, SkillAction.EQUIPPED_WEAPON);
-		add(AnimationID.HUMAN_FISH_ONSPOT_PEARL_FLY, Skill.FISHING, SkillAction.EQUIPPED_WEAPON);
-		add(AnimationID.HUMAN_FISH_ONSPOT_PEARL_BRUT, Skill.FISHING, SkillAction.EQUIPPED_WEAPON);
-		add(AnimationID.HUMAN_FISH_ONSPOT_PEARL_OILY, Skill.FISHING, SkillAction.EQUIPPED_WEAPON);
+		// Fishing - net, harpoon and lobster pot each have their own dedicated animation, so
+		// they're mapped directly to their one tool, the same as axes/pickaxes.
+		add(AnimationID.HUMAN_SMALLNET, Skill.FISHING, ItemID.NET);
+		add(AnimationID.HUMAN_LARGENET, Skill.FISHING, ItemID.BIG_NET);
+		add(AnimationID.HUMAN_LOBSTER, Skill.FISHING, ItemID.LOBSTER_POT);
+		add(AnimationID.HUMAN_HARPOON, Skill.FISHING, ItemID.HARPOON);
+		add(AnimationID.HUMAN_HARPOON_DRAGON, Skill.FISHING, ItemID.DRAGON_HARPOON);
+		add(AnimationID.HUMAN_HARPOON_INFERNAL, Skill.FISHING, ItemID.INFERNAL_HARPOON);
+		add(AnimationID.HUMAN_HARPOON_CRYSTAL, Skill.FISHING, ItemID.CRYSTAL_HARPOON);
+
+		// Fishing - rod casting/reeling shares one animation regardless of which rod (or its
+		// tier) is actually equipped/held, and the rod isn't equipped gear (it just needs to be
+		// in the inventory) so there's no clean signal to read it from - Jin's call: always show
+		// the plain Fishing rod rather than trying to detect which rod is being used.
+		add(AnimationID.HUMAN_FISHING_CASTING, Skill.FISHING, ItemID.FISHING_ROD);
+		add(AnimationID.HUMAN_FISH_ONSPOT, Skill.FISHING, ItemID.FISHING_ROD);
+		add(AnimationID.HUMAN_FISHING_CASTING_BRUT, Skill.FISHING, ItemID.FISHING_ROD);
+		add(AnimationID.HUMAN_FISHING_ONSPOT_BRUT, Skill.FISHING, ItemID.FISHING_ROD);
+		add(AnimationID.HUMAN_FISHING_CASTING_PEARL, Skill.FISHING, ItemID.FISHING_ROD);
+		add(AnimationID.HUMAN_FISHING_CASTING_PEARL_FLY, Skill.FISHING, ItemID.FISHING_ROD);
+		add(AnimationID.HUMAN_FISHING_CASTING_PEARL_BRUT, Skill.FISHING, ItemID.FISHING_ROD);
+		add(AnimationID.HUMAN_FISHING_CASTING_PEARL_OILY, Skill.FISHING, ItemID.FISHING_ROD);
+		add(AnimationID.HUMAN_FISH_ONSPOT_PEARL, Skill.FISHING, ItemID.FISHING_ROD);
+		add(AnimationID.HUMAN_FISH_ONSPOT_PEARL_FLY, Skill.FISHING, ItemID.FISHING_ROD);
+		add(AnimationID.HUMAN_FISH_ONSPOT_PEARL_BRUT, Skill.FISHING, ItemID.FISHING_ROD);
+		add(AnimationID.HUMAN_FISH_ONSPOT_PEARL_OILY, Skill.FISHING, ItemID.FISHING_ROD);
 
 		// Firemaking
 		add(AnimationID.HUMAN_CREATEFIRE, Skill.FIREMAKING, ItemID.TINDERBOX);
@@ -194,10 +219,11 @@ final class SkillActions
 		add(AnimationID.HUMAN_HERBING_GRIND, Skill.HERBLORE, ItemID.PESTLE_AND_MORTAR);
 		add(AnimationID.HUMAN_HERBING_VIAL, Skill.HERBLORE, SkillAction.NO_TOOL);
 
-		// Hunter - most trap types share one generic "lay trap" animation with no visible
-		// tool; butterfly netting is the one clean exception.
+		// Hunter - no tool shown for any trap type, butterfly net included (Jin's call,
+		// 2026-09-18 - dropped the one tool-specific case since it had no RSC sprite to fall
+		// back on cleanly).
 		add(AnimationID.HUMAN_LAYTRAP, Skill.HUNTER, SkillAction.NO_TOOL);
-		add(AnimationID.HUMAN_BUTTERFLYNET_SWING, Skill.HUNTER, ItemID.HUNTING_BUTTERFLY_NET);
+		add(AnimationID.HUMAN_BUTTERFLYNET_SWING, Skill.HUNTER, SkillAction.NO_TOOL);
 
 		// Farming - one generic animation covers raking, planting, composting and harvesting
 		add(AnimationID.HUMAN_FARMING, Skill.FARMING, SkillAction.NO_TOOL);

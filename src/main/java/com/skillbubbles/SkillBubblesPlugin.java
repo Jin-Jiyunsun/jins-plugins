@@ -37,6 +37,7 @@ import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
 import net.runelite.api.Player;
 import net.runelite.api.gameval.InventoryID;
+import net.runelite.api.gameval.ItemID;
 import net.runelite.api.events.AnimationChanged;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
@@ -87,10 +88,10 @@ public class SkillBubblesPlugin extends Plugin
 	// Cooking, and Smithing's furnace/anvil actions, share the same animation regardless of the
 	// specific food/ore/bar involved, so which one is being used is inferred separately by
 	// watching for a one-item drop in a known set of items' inventory counts - ground truth from
-	// the actual inventory, not text-scraping chat messages. See CookingFish, SmithingOre and
-	// SmithingBar for what's tracked (and deliberately not).
-	private final Map<Integer, Integer> lastFishCounts = new HashMap<>();
-	private int currentCookingFishId = SkillAction.NO_TOOL;
+	// the actual inventory, not text-scraping chat messages. See CookingIngredients, SmithingOre
+	// and SmithingBar for what's tracked (and deliberately not).
+	private final Map<Integer, Integer> lastCookingCounts = new HashMap<>();
+	private int currentCookingItemId = SkillAction.NO_TOOL;
 	private final Map<Integer, Integer> lastOreCounts = new HashMap<>();
 	private int currentSmithingOreId = SkillAction.NO_TOOL;
 	private final Map<Integer, Integer> lastBarCounts = new HashMap<>();
@@ -109,11 +110,6 @@ public class SkillBubblesPlugin extends Plugin
 		log.debug("Skill Bubbles stopped");
 		overlayManager.remove(overlay);
 		currentAction = null;
-	}
-
-	SkillAction getCurrentAction()
-	{
-		return currentAction;
 	}
 
 	SkillAction getLastAction()
@@ -141,9 +137,9 @@ public class SkillBubblesPlugin extends Plugin
 		return bubbleLogicalHeight;
 	}
 
-	int getCurrentCookingFishId()
+	int getCurrentCookingItemId()
 	{
-		return currentCookingFishId;
+		return currentCookingItemId;
 	}
 
 	int getCurrentSmithingOreId()
@@ -190,6 +186,28 @@ public class SkillBubblesPlugin extends Plugin
 		matchedAnimationId = event.getActor().getAnimation();
 		resolvedToolItemId = resolveToolItemId(action);
 		lastActionTick = client.getTickCount();
+	}
+
+	private int resolveToolItemId(SkillAction action)
+	{
+		if (action.toolItemId != SkillAction.EQUIPPED_WEAPON)
+		{
+			return action.toolItemId;
+		}
+
+		// Only the felling axe uses this - unlike a fishing rod, it genuinely has to be wielded
+		// to swing it, so the weapon slot should always hold the real tier. Checked against
+		// FellingAxes rather than trusted outright, so an unrelated weapon that happens to be
+		// equipped (a stale read, or some other edge case) can't get shown by mistake - falls
+		// back to the plain Steel felling axe instead.
+		ItemContainer equipment = client.getItemContainer(InventoryID.WORN);
+		Item weapon = equipment == null ? null : equipment.getItem(EquipmentInventorySlot.WEAPON.getSlotIdx());
+		if (weapon != null && FellingAxes.ITEM_IDS.contains(weapon.getId()))
+		{
+			return weapon.getId();
+		}
+
+		return ItemID.STEEL_AXE_2H;
 	}
 
 	@Subscribe
@@ -239,10 +257,10 @@ public class SkillBubblesPlugin extends Plugin
 		}
 
 		ItemContainer inventory = event.getItemContainer();
-		Integer fish = detectConsumed(inventory, CookingFish.RAW_FISH_IDS, lastFishCounts);
-		if (fish != null)
+		Integer food = detectConsumed(inventory, CookingIngredients.ITEM_IDS, lastCookingCounts);
+		if (food != null)
 		{
-			currentCookingFishId = fish;
+			currentCookingItemId = food;
 		}
 
 		Integer ore = detectConsumed(inventory, SmithingOre.ORE_IDS, lastOreCounts);
@@ -267,7 +285,7 @@ public class SkillBubblesPlugin extends Plugin
 
 	private void forgetDetectedIngredients()
 	{
-		currentCookingFishId = SkillAction.NO_TOOL;
+		currentCookingItemId = SkillAction.NO_TOOL;
 		currentSmithingOreId = SkillAction.NO_TOOL;
 		currentSmithingBarId = SkillAction.NO_TOOL;
 	}
@@ -304,7 +322,7 @@ public class SkillBubblesPlugin extends Plugin
 			currentAction = null;
 			matchedAnimationId = -1;
 			forgetDetectedIngredients();
-			lastFishCounts.clear();
+			lastCookingCounts.clear();
 			lastOreCounts.clear();
 			lastBarCounts.clear();
 		}
@@ -326,7 +344,7 @@ public class SkillBubblesPlugin extends Plugin
 			return;
 		}
 
-		seedCounts(inventory, CookingFish.RAW_FISH_IDS, lastFishCounts);
+		seedCounts(inventory, CookingIngredients.ITEM_IDS, lastCookingCounts);
 		seedCounts(inventory, SmithingOre.ORE_IDS, lastOreCounts);
 		seedCounts(inventory, SmithingBar.BAR_IDS, lastBarCounts);
 	}
@@ -337,23 +355,6 @@ public class SkillBubblesPlugin extends Plugin
 		{
 			counts.put(itemId, inventory.count(itemId));
 		}
-	}
-
-	private int resolveToolItemId(SkillAction action)
-	{
-		if (action.toolItemId != SkillAction.EQUIPPED_WEAPON)
-		{
-			return action.toolItemId;
-		}
-
-		ItemContainer equipment = client.getItemContainer(InventoryID.WORN);
-		if (equipment == null)
-		{
-			return SkillAction.NO_TOOL;
-		}
-
-		Item weapon = equipment.getItem(EquipmentInventorySlot.WEAPON.getSlotIdx());
-		return weapon == null ? SkillAction.NO_TOOL : weapon.getId();
 	}
 
 	@Provides

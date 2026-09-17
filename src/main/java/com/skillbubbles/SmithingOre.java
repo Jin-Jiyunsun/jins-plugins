@@ -29,7 +29,7 @@ import net.runelite.api.gameval.ItemID;
 
 /**
  * Ore item IDs used to detect which ore is being smelted, by watching for a one-item drop in
- * the inventory - the same technique as CookingFish. Deliberately excludes:
+ * the inventory - the same technique as CookingIngredients. Deliberately excludes:
  * <ul>
  *     <li>Coal - every bar above iron uses it alongside the metal ore, but it's never the ore
  *     that should be shown (Jin, 2026-09-17: "not coal, the actual metal ore").</li>

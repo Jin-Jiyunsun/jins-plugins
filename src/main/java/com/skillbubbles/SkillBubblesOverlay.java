@@ -33,9 +33,12 @@ import java.awt.RadialGradientPaint;
 import java.awt.RenderingHints;
 import java.awt.geom.Point2D;
 import java.awt.image.BufferedImage;
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.Map;
+import javax.imageio.ImageIO;
 import javax.inject.Inject;
 import net.runelite.api.Client;
 import net.runelite.api.Player;
@@ -61,6 +64,11 @@ class SkillBubblesOverlay extends Overlay
 	private static final Color GLOW_EDGE = new Color(0xE5, 0xC6, 0x7E);
 	private static final float GLOW_OUTER_EDGE_FRACTION = 0.95f;
 	private static final Color GLOW_OUTER_EDGE = new Color(0xFF, 0xE8, 0xAA);
+	// RSC's overhead icon backdrop - flat gray, semi-transparent (unlike the fully opaque
+	// gradient bubble). Tuned live in-game via a temporary debug config item, then hard-coded.
+	// Tints classicBubbleMask() below - that image is plain white-on-transparent, not this
+	// colour, since it's just a shape mask.
+	private static final Color CLASSIC_BUBBLE_COLOR = new Color(0x9E, 0x9E, 0x9E, 0x6E);
 	// The half-width (in destination pixels) of the zone around a source pixel boundary that
 	// hybridResize() smooths - 0.5 is the textbook Hybrid algorithm's own value; tried smaller
 	// values for a sharper look, but 0.5 won a side-by-side comparison in-game.
@@ -91,6 +99,13 @@ class SkillBubblesOverlay extends Overlay
 	// surrogate id for skill icons (item ids are always non-negative) so both share one key
 	// space without colliding.
 	private final Map<Long, BufferedImage> resizedIconCache = new HashMap<>();
+	// The classic bubble backdrop mask, loaded once and reused - null once read() has been tried
+	// means "no image available", not "not loaded yet" (see classicBubbleMask()).
+	private BufferedImage classicBubbleMask;
+	private boolean classicBubbleMaskLoaded;
+	// Recoloured + resized per bubble height, so the (cheap, but not free) recolour pass doesn't
+	// run every frame.
+	private final Map<Integer, BufferedImage> classicBubbleCache = new HashMap<>();
 
 	@Inject
 	private SkillBubblesOverlay(Client client, SkillBubblesPlugin plugin, SkillBubblesConfig config,
@@ -146,11 +161,11 @@ class SkillBubblesOverlay extends Overlay
 		if (action.skill == Skill.COOKING)
 		{
 			// No single tool (the animation is the same regardless of food) - the plugin
-			// separately tracks the fish being cooked by watching inventory counts, standing in
+			// separately tracks what's being cooked by watching inventory counts, standing in
 			// for a tool item here when known.
 			if (toolItemId == SkillAction.NO_TOOL)
 			{
-				toolItemId = plugin.getCurrentCookingFishId();
+				toolItemId = plugin.getCurrentCookingItemId();
 			}
 		}
 		else if (action.skill == Skill.SMITHING)
@@ -175,7 +190,52 @@ class SkillBubblesOverlay extends Overlay
 		}
 
 		boolean toolMode = config.iconMode() == SkillBubblesConfig.IconMode.TOOL && toolItemId != SkillAction.NO_TOOL;
-		BufferedImage icon = toolMode ? itemManager.getImage(toolItemId) : skillIcon(action.skill);
+		boolean classicSprites = config.classicSprites();
+
+		// Distinct negative surrogate ranges (well clear of real item ids, and of the plain
+		// skill-ordinal surrogates below) so a classic sprite never shares a resize/centering
+		// cache entry with its modern counterpart - the two are different images at the same
+		// item id/skill.
+		BufferedImage icon;
+		long identity;
+		// True for any icon drawn from item-style art sitting on a padded canvas (an OSRS item
+		// icon, or any RSC sprite - both classic skill stand-ins and classic tool icons use the
+		// same kind of art as the dump's item sprites) - these need the opaque-bounds centering
+		// below. False only for the plain OSRS skill-tab icon, which is already a tidy, evenly
+		// filled square.
+		boolean itemStyleIcon;
+		if (toolMode)
+		{
+			BufferedImage classicIcon = classicSprites ? RscSprites.forItem(toolItemId) : null;
+			if (classicIcon != null)
+			{
+				icon = classicIcon;
+				identity = -(2_000_000_000L + toolItemId);
+			}
+			else
+			{
+				icon = itemManager.getImage(toolItemId);
+				identity = toolItemId;
+			}
+			itemStyleIcon = true;
+		}
+		else
+		{
+			BufferedImage classicIcon = classicSprites ? RscSprites.forSkill(action.skill) : null;
+			if (classicIcon != null)
+			{
+				icon = classicIcon;
+				identity = -(1000L + action.skill.ordinal());
+				itemStyleIcon = true;
+			}
+			else
+			{
+				icon = skillIcon(action.skill);
+				identity = -(action.skill.ordinal() + 1);
+				itemStyleIcon = false;
+			}
+		}
+
 		if (icon == null)
 		{
 			return null;
@@ -198,25 +258,39 @@ class SkillBubblesOverlay extends Overlay
 		int bubbleX = loc.getX();
 		int bubbleY = loc.getY() - bubbleSize / 2;
 
-		// The gradient is computed at render resolution, so scaling it never loses quality.
-		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 		Composite originalComposite = graphics.getComposite();
 		if (fadeAlpha < 1f)
 		{
 			graphics.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, fadeAlpha));
 		}
-		Point2D.Float center = new Point2D.Float(bubbleX + bubbleSize / 2f, bubbleY + bubbleSize / 2f);
-		graphics.setPaint(new RadialGradientPaint(center, bubbleSize / 2f,
-			new float[] {0f, GLOW_CENTER_FRACTION, GLOW_OUTER_EDGE_FRACTION, 1f},
-			new Color[] {GLOW_CENTER, GLOW_CENTER, GLOW_EDGE, GLOW_OUTER_EDGE}));
-		graphics.fillOval(bubbleX, bubbleY, bubbleSize, bubbleSize);
+
+		if (classicSprites)
+		{
+			// RSC's own overhead icon backdrop, from a real sprite (a plain white-on-transparent
+			// shape mask Jin supplied) rather than hand-drawn geometry - recoloured to
+			// CLASSIC_BUBBLE_COLOR and scaled with nearest-neighbour, so it stays crisp and
+			// blocky instead of picking up soft antialiased edges.
+			BufferedImage classicBubble = classicBubbleImage(bubbleSize);
+			if (classicBubble != null)
+			{
+				int bubbleDrawX = bubbleX - (classicBubble.getWidth() - bubbleSize) / 2;
+				graphics.drawImage(classicBubble, bubbleDrawX, bubbleY, null);
+			}
+		}
+		else
+		{
+			// The gradient is computed at render resolution, so scaling it never loses quality.
+			graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+			Point2D.Float center = new Point2D.Float(bubbleX + bubbleSize / 2f, bubbleY + bubbleSize / 2f);
+			graphics.setPaint(new RadialGradientPaint(center, bubbleSize / 2f,
+				new float[] {0f, GLOW_CENTER_FRACTION, GLOW_OUTER_EDGE_FRACTION, 1f},
+				new Color[] {GLOW_CENTER, GLOW_CENTER, GLOW_EDGE, GLOW_OUTER_EDGE}));
+			graphics.fillOval(bubbleX, bubbleY, bubbleSize, bubbleSize);
+		}
 
 		int cx = bubbleX + bubbleSize / 2;
 		int cy = bubbleY + bubbleSize / 2;
 
-		// A skill/item id, encoded so skill icons (negative surrogate) and item icons
-		// (always non-negative) share one cache key space with no collision risk.
-		long identity = toolMode ? toolItemId : -(action.skill.ordinal() + 1);
 		long cacheKey = (identity << 32) | (scalePercent & 0xFFFFFFFFL);
 
 		BufferedImage drawIcon = icon;
@@ -229,7 +303,7 @@ class SkillBubblesOverlay extends Overlay
 
 		int offsetX = drawIcon.getWidth() / 2;
 		int offsetY = drawIcon.getHeight() / 2;
-		if (toolMode)
+		if (itemStyleIcon)
 		{
 			BufferedImage finalDrawIcon = drawIcon;
 			int[] opaqueCenter = toolIconCenterCache.computeIfAbsent(cacheKey, k -> computeOpaqueCenter(finalDrawIcon));
@@ -350,6 +424,64 @@ class SkillBubblesOverlay extends Overlay
 	private static float clamp01(float v)
 	{
 		return Math.max(0f, Math.min(1f, v));
+	}
+
+	/**
+	 * Loads the classic bubble backdrop's shape mask (a plain white-on-transparent PNG Jin
+	 * supplied) once, recolours it to {@link #CLASSIC_BUBBLE_COLOR} and scales it to the given
+	 * bubble height with nearest-neighbour interpolation - blocky/crisp rather than blurred,
+	 * matching the rest of the classic look. Cached per height so this only runs once per
+	 * distinct size, not every frame.
+	 */
+	private BufferedImage classicBubbleImage(int height)
+	{
+		return classicBubbleCache.computeIfAbsent(height, this::buildClassicBubbleImage);
+	}
+
+	private BufferedImage buildClassicBubbleImage(int height)
+	{
+		BufferedImage mask = classicBubbleMask();
+		if (mask == null)
+		{
+			return null;
+		}
+
+		int width = Math.round(height * mask.getWidth() / (float) mask.getHeight());
+		BufferedImage resized = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+		Graphics2D g = resized.createGraphics();
+		g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
+		g.drawImage(mask, 0, 0, width, height, null);
+		g.dispose();
+
+		int tint = CLASSIC_BUBBLE_COLOR.getRGB();
+		int[] pixels = resized.getRGB(0, 0, width, height, null, 0, width);
+		for (int i = 0; i < pixels.length; i++)
+		{
+			if ((pixels[i] >>> 24) != 0)
+			{
+				pixels[i] = tint;
+			}
+		}
+		resized.setRGB(0, 0, width, height, pixels, 0, width);
+		return resized;
+	}
+
+	private BufferedImage classicBubbleMask()
+	{
+		if (!classicBubbleMaskLoaded)
+		{
+			classicBubbleMaskLoaded = true;
+			try (InputStream in = SkillBubblesOverlay.class.getResourceAsStream("rsc/bubble.png"))
+			{
+				classicBubbleMask = in == null ? null : ImageIO.read(in);
+			}
+			catch (IOException e)
+			{
+				classicBubbleMask = null;
+			}
+		}
+
+		return classicBubbleMask;
 	}
 
 	private BufferedImage sizingImage(int size)

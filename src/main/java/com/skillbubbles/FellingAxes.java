@@ -28,39 +28,27 @@ import java.util.Set;
 import net.runelite.api.gameval.ItemID;
 
 /**
- * Raw fish item IDs, used to detect which fish is currently being cooked by watching for a
- * one-item drop in the inventory. Deliberately excludes a few raw fish whose only gameval name
- * is prefixed by the quest/activity that introduced them (raw karambwan, raw slimy eel, raw
- * rainbow fish) - kept out to avoid guessing whether that's really the same item used in normal
- * cooking, not because they're unsupported in principle.
+ * Felling axe (Forestry's 2h axe) item IDs, used to validate that whatever's actually in the
+ * weapon slot when a felling animation plays is really a felling axe - not some unrelated weapon
+ * the player happens to have equipped, which {@link SkillBubblesPlugin#resolveToolItemId} would
+ * otherwise show by mistake.
  */
-final class CookingFish
+final class FellingAxes
 {
-	static final Set<Integer> RAW_FISH_IDS = Set.of(
-		ItemID.RAW_SHRIMP,
-		ItemID.RAW_ANCHOVIES,
-		ItemID.RAW_SARDINE,
-		ItemID.RAW_SALMON,
-		ItemID.RAW_TROUT,
-		ItemID.RAW_COD,
-		ItemID.RAW_HERRING,
-		ItemID.RAW_PIKE,
-		ItemID.RAW_MACKEREL,
-		ItemID.RAW_BASS,
-		ItemID.RAW_TUNA,
-		ItemID.RAW_SWORDFISH,
-		ItemID.RAW_LOBSTER,
-		ItemID.RAW_SHARK,
-		ItemID.RAW_MANTARAY,
-		ItemID.RAW_SEATURTLE,
-		ItemID.RAW_MONKFISH,
-		ItemID.RAW_CAVE_EEL,
-		ItemID.RAW_LAVA_EEL,
-		ItemID.RAW_DARK_CRAB,
-		ItemID.RAW_ANGLERFISH
+	static final Set<Integer> ITEM_IDS = Set.of(
+		ItemID.BRONZE_AXE_2H,
+		ItemID.IRON_AXE_2H,
+		ItemID.STEEL_AXE_2H,
+		ItemID.BLACK_AXE_2H,
+		ItemID.MITHRIL_AXE_2H,
+		ItemID.ADAMANT_AXE_2H,
+		ItemID.RUNE_AXE_2H,
+		ItemID.DRAGON_AXE_2H,
+		ItemID.CRYSTAL_AXE_2H,
+		ItemID._3A_AXE_2H
 	);
 
-	private CookingFish()
+	private FellingAxes()
 	{
 	}
 }

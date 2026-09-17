@@ -27,6 +27,7 @@ package com.skillbubbles;
 import net.runelite.client.config.Config;
 import net.runelite.client.config.ConfigGroup;
 import net.runelite.client.config.ConfigItem;
+import net.runelite.client.config.Range;
 
 @ConfigGroup("skill-bubbles")
 public interface SkillBubblesConfig extends Config
@@ -40,6 +41,18 @@ public interface SkillBubblesConfig extends Config
 	default IconMode iconMode()
 	{
 		return IconMode.SKILL;
+	}
+
+	@Range(min = 50, max = 200)
+	@ConfigItem(
+		keyName = "scale",
+		name = "Scale",
+		description = "Size of the bubble and icon, as a percentage of<br>"
+			+ "the default (100)"
+	)
+	default int scale()
+	{
+		return 100;
 	}
 
 	@ConfigItem(

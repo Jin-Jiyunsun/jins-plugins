@@ -121,9 +121,14 @@ final class SkillActions
 		add(AnimationID.HUMAN_COOKING, Skill.COOKING, SkillAction.NO_TOOL);
 		add(AnimationID.HUMAN_COOKING_LOOP, Skill.COOKING, SkillAction.NO_TOOL);
 
-		// Smithing
+		// Smithing - working a bar at the anvil (hammer, overridden with the bar being used
+		// where SkillBubblesOverlay detects one - see SmithingBar)
 		add(AnimationID.HUMAN_SMITHING, Skill.SMITHING, ItemID.HAMMER);
 		add(AnimationID.HUMAN_SMITHING_IMCANDO_HAMMER, Skill.SMITHING, ItemID.IMCANDO_HAMMER);
+		// Smithing - smelting ore into a bar at a furnace. No tool at all (no hammer involved),
+		// filled in with the detected ore where known - see SmithingOre.
+		add(AnimationID.HUMAN_FURNACE, Skill.SMITHING, SkillAction.NO_TOOL);
+		add(AnimationID.HUMAN_FURNACE_NOSTALL, Skill.SMITHING, SkillAction.NO_TOOL);
 
 		// Runecraft - no hand tool, runs off talismans/tiaras at an altar
 		add(AnimationID.HUMAN_RUNECRAFT, Skill.RUNECRAFT, SkillAction.NO_TOOL);

@@ -24,62 +24,36 @@
  */
 package com.skillbubbles;
 
-import net.runelite.client.config.Config;
-import net.runelite.client.config.ConfigGroup;
-import net.runelite.client.config.ConfigItem;
-import net.runelite.client.config.Range;
+import java.util.Set;
+import net.runelite.api.gameval.ItemID;
 
-@ConfigGroup("skill-bubbles")
-public interface SkillBubblesConfig extends Config
+/**
+ * Ore item IDs used to detect which ore is being smelted, by watching for a one-item drop in
+ * the inventory - the same technique as CookingFish. Deliberately excludes:
+ * <ul>
+ *     <li>Coal - every bar above iron uses it alongside the metal ore, but it's never the ore
+ *     that should be shown (Jin, 2026-09-17: "not coal, the actual metal ore").</li>
+ *     <li>Tin ore - bronze bar is the one recipe using two non-coal ores at once (copper + tin),
+ *     so both would show a count drop on the same tick. Rather than a tie-break at detection
+ *     time, tin is just never tracked - copper alone still fires correctly for bronze (Jin's
+ *     call: copper is bronze's "primary" ingredient, tin the additive), and tin is never used
+ *     in any other recipe.</li>
+ * </ul>
+ */
+final class SmithingOre
 {
-	@ConfigItem(
-		keyName = "iconMode",
-		name = "Icon",
-		description = "Generic skill icon, or the specific tool being used<br>"
-			+ "(falls back to the skill icon for actions with no single tool)"
-	)
-	default IconMode iconMode()
-	{
-		return IconMode.SKILL;
-	}
+	static final Set<Integer> ORE_IDS = Set.of(
+		ItemID.COPPER_ORE,
+		ItemID.IRON_ORE,
+		ItemID.SILVER_ORE,
+		ItemID.GOLD_ORE,
+		ItemID.MITHRIL_ORE,
+		ItemID.ADAMANTITE_ORE,
+		ItemID.RUNITE_ORE,
+		ItemID.BLURITE_ORE
+	);
 
-	@Range(min = 50, max = 200)
-	@ConfigItem(
-		keyName = "scale",
-		name = "Scale",
-		description = "Size of the bubble and icon, as a percentage of<br>"
-			+ "the default (100)"
-	)
-	default int scale()
+	private SmithingOre()
 	{
-		return 100;
-	}
-
-	@ConfigItem(
-		keyName = "idleTicks",
-		name = "Hide after",
-		description = "How many game ticks of no matching action before<br>"
-			+ "the bubble disappears"
-	)
-	default int idleTicks()
-	{
-		return 3;
-	}
-
-	@ConfigItem(
-		keyName = "fadeAnimation",
-		name = "Fade in/out",
-		description = "Fade the bubble in and out when it appears<br>"
-			+ "and disappears"
-	)
-	default boolean fadeAnimation()
-	{
-		return false;
-	}
-
-	enum IconMode
-	{
-		SKILL,
-		TOOL
 	}
 }

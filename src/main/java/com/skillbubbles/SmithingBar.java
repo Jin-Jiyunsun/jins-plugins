@@ -24,62 +24,30 @@
  */
 package com.skillbubbles;
 
-import net.runelite.client.config.Config;
-import net.runelite.client.config.ConfigGroup;
-import net.runelite.client.config.ConfigItem;
-import net.runelite.client.config.Range;
+import java.util.Set;
+import net.runelite.api.gameval.ItemID;
 
-@ConfigGroup("skill-bubbles")
-public interface SkillBubblesConfig extends Config
+/**
+ * Bar item IDs used to detect which bar is being worked at an anvil, by watching for a one-item
+ * drop in the inventory - the same technique as CookingFish. Unlike smelting, no tie-break is
+ * needed here: every smithable item consumes only one bar type (just possibly more than one of
+ * it), never two different bars at once.
+ */
+final class SmithingBar
 {
-	@ConfigItem(
-		keyName = "iconMode",
-		name = "Icon",
-		description = "Generic skill icon, or the specific tool being used<br>"
-			+ "(falls back to the skill icon for actions with no single tool)"
-	)
-	default IconMode iconMode()
-	{
-		return IconMode.SKILL;
-	}
+	static final Set<Integer> BAR_IDS = Set.of(
+		ItemID.BRONZE_BAR,
+		ItemID.IRON_BAR,
+		ItemID.STEEL_BAR,
+		ItemID.SILVER_BAR,
+		ItemID.GOLD_BAR,
+		ItemID.MITHRIL_BAR,
+		ItemID.ADAMANTITE_BAR,
+		ItemID.RUNITE_BAR,
+		ItemID.BLURITE_BAR
+	);
 
-	@Range(min = 50, max = 200)
-	@ConfigItem(
-		keyName = "scale",
-		name = "Scale",
-		description = "Size of the bubble and icon, as a percentage of<br>"
-			+ "the default (100)"
-	)
-	default int scale()
+	private SmithingBar()
 	{
-		return 100;
-	}
-
-	@ConfigItem(
-		keyName = "idleTicks",
-		name = "Hide after",
-		description = "How many game ticks of no matching action before<br>"
-			+ "the bubble disappears"
-	)
-	default int idleTicks()
-	{
-		return 3;
-	}
-
-	@ConfigItem(
-		keyName = "fadeAnimation",
-		name = "Fade in/out",
-		description = "Fade the bubble in and out when it appears<br>"
-			+ "and disappears"
-	)
-	default boolean fadeAnimation()
-	{
-		return false;
-	}
-
-	enum IconMode
-	{
-		SKILL,
-		TOOL
 	}
 }

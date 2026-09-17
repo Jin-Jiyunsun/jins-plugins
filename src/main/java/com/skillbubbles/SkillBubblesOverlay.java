@@ -24,7 +24,9 @@
  */
 package com.skillbubbles;
 
+import java.awt.AlphaComposite;
 import java.awt.Color;
+import java.awt.Composite;
 import java.awt.Dimension;
 import java.awt.Graphics2D;
 import java.awt.RadialGradientPaint;
@@ -39,6 +41,7 @@ import net.runelite.api.Client;
 import net.runelite.api.Player;
 import net.runelite.api.Point;
 import net.runelite.api.Skill;
+import net.runelite.api.gameval.AnimationID;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.game.SpriteManager;
 import net.runelite.client.ui.overlay.Overlay;
@@ -62,6 +65,7 @@ class SkillBubblesOverlay extends Overlay
 	// hybridResize() smooths - 0.5 is the textbook Hybrid algorithm's own value; tried smaller
 	// values for a sharper look, but 0.5 won a side-by-side comparison in-game.
 	private static final float BLEND_RADIUS = 0.5f;
+	private static final long FADE_DURATION_MILLIS = 250;
 
 	// Only used to give getCanvasImageLocation() the bubble's footprint for positioning -
 	// never drawn itself, so it's fine to share one instance across frames. Rebuilt only when
@@ -106,8 +110,29 @@ class SkillBubblesOverlay extends Overlay
 	@Override
 	public Dimension render(Graphics2D graphics)
 	{
-		SkillAction action = plugin.getCurrentAction();
+		SkillAction action = plugin.getLastAction();
 		if (action == null)
+		{
+			return null;
+		}
+
+		// Without the fade toggle, this behaves exactly as before - disappears the instant the
+		// action stops. With it, the bubble keeps rendering (using the last known action/icon,
+		// since currentAction has already gone null by then) for up to a second while its alpha
+		// ramps down, computed from wall-clock time so it's smooth across frames rather than
+		// stepped at tick granularity.
+		float fadeAlpha = 1f;
+		if (config.fadeAnimation())
+		{
+			long elapsed = System.currentTimeMillis() - plugin.getActionStateChangedMillis();
+			float t = Math.min(1f, elapsed / (float) FADE_DURATION_MILLIS);
+			fadeAlpha = plugin.isActionActive() ? t : 1f - t;
+			if (fadeAlpha <= 0f)
+			{
+				return null;
+			}
+		}
+		else if (!plugin.isActionActive())
 		{
 			return null;
 		}
@@ -118,9 +143,40 @@ class SkillBubblesOverlay extends Overlay
 			return null;
 		}
 
-		boolean toolMode = config.iconMode() == SkillBubblesConfig.IconMode.TOOL
-			&& plugin.getResolvedToolItemId() != SkillAction.NO_TOOL;
-		BufferedImage icon = toolMode ? itemManager.getImage(plugin.getResolvedToolItemId()) : skillIcon(action.skill);
+		int toolItemId = plugin.getResolvedToolItemId();
+		if (action.skill == Skill.COOKING)
+		{
+			// No single tool (the animation is the same regardless of food) - the plugin
+			// separately tracks the fish being cooked by watching inventory counts, standing in
+			// for a tool item here when known.
+			if (toolItemId == SkillAction.NO_TOOL)
+			{
+				toolItemId = plugin.getCurrentCookingFishId();
+			}
+		}
+		else if (action.skill == Skill.SMITHING)
+		{
+			int matchedAnimationId = plugin.getMatchedAnimationId();
+			if (matchedAnimationId == AnimationID.HUMAN_FURNACE || matchedAnimationId == AnimationID.HUMAN_FURNACE_NOSTALL)
+			{
+				// Smelting - no tool at all, filled in with the detected ore where known.
+				toolItemId = plugin.getCurrentSmithingOreId();
+			}
+			else
+			{
+				// Working at the anvil - the hammer is the table's default, but the bar being
+				// worked is more informative, so it replaces the hammer where known rather than
+				// only filling a gap.
+				int bar = plugin.getCurrentSmithingBarId();
+				if (bar != SkillAction.NO_TOOL)
+				{
+					toolItemId = bar;
+				}
+			}
+		}
+
+		boolean toolMode = config.iconMode() == SkillBubblesConfig.IconMode.TOOL && toolItemId != SkillAction.NO_TOOL;
+		BufferedImage icon = toolMode ? itemManager.getImage(toolItemId) : skillIcon(action.skill);
 		if (icon == null)
 		{
 			return null;
@@ -145,6 +201,11 @@ class SkillBubblesOverlay extends Overlay
 
 		// The gradient is computed at render resolution, so scaling it never loses quality.
 		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+		Composite originalComposite = graphics.getComposite();
+		if (fadeAlpha < 1f)
+		{
+			graphics.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, fadeAlpha));
+		}
 		Point2D.Float center = new Point2D.Float(bubbleX + bubbleSize / 2f, bubbleY + bubbleSize / 2f);
 		graphics.setPaint(new RadialGradientPaint(center, bubbleSize / 2f,
 			new float[] {0f, GLOW_CENTER_FRACTION, GLOW_OUTER_EDGE_FRACTION, 1f},
@@ -156,7 +217,7 @@ class SkillBubblesOverlay extends Overlay
 
 		// A skill/item id, encoded so skill icons (negative surrogate) and item icons
 		// (always non-negative) share one cache key space with no collision risk.
-		long identity = toolMode ? plugin.getResolvedToolItemId() : -(action.skill.ordinal() + 1);
+		long identity = toolMode ? toolItemId : -(action.skill.ordinal() + 1);
 		long cacheKey = (identity << 32) | (scalePercent & 0xFFFFFFFFL);
 
 		BufferedImage drawIcon = icon;
@@ -182,6 +243,7 @@ class SkillBubblesOverlay extends Overlay
 		// drawn here at its own (already-correct) size with no further resampling.
 		graphics.drawImage(drawIcon, cx - offsetX, cy - offsetY, null);
 
+		graphics.setComposite(originalComposite);
 		return null;
 	}
 

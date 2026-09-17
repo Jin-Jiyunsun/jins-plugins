@@ -24,62 +24,43 @@
  */
 package com.skillbubbles;
 
-import net.runelite.client.config.Config;
-import net.runelite.client.config.ConfigGroup;
-import net.runelite.client.config.ConfigItem;
-import net.runelite.client.config.Range;
+import java.util.Set;
+import net.runelite.api.gameval.ItemID;
 
-@ConfigGroup("skill-bubbles")
-public interface SkillBubblesConfig extends Config
+/**
+ * Raw fish item IDs, used to detect which fish is currently being cooked by watching for a
+ * one-item drop in the inventory. Deliberately excludes a few raw fish whose only gameval name
+ * is prefixed by the quest/activity that introduced them (raw karambwan, raw slimy eel, raw
+ * rainbow fish) - kept out to avoid guessing whether that's really the same item used in normal
+ * cooking, not because they're unsupported in principle.
+ */
+final class CookingFish
 {
-	@ConfigItem(
-		keyName = "iconMode",
-		name = "Icon",
-		description = "Generic skill icon, or the specific tool being used<br>"
-			+ "(falls back to the skill icon for actions with no single tool)"
-	)
-	default IconMode iconMode()
-	{
-		return IconMode.SKILL;
-	}
+	static final Set<Integer> RAW_FISH_IDS = Set.of(
+		ItemID.RAW_SHRIMP,
+		ItemID.RAW_ANCHOVIES,
+		ItemID.RAW_SARDINE,
+		ItemID.RAW_SALMON,
+		ItemID.RAW_TROUT,
+		ItemID.RAW_COD,
+		ItemID.RAW_HERRING,
+		ItemID.RAW_PIKE,
+		ItemID.RAW_MACKEREL,
+		ItemID.RAW_BASS,
+		ItemID.RAW_TUNA,
+		ItemID.RAW_SWORDFISH,
+		ItemID.RAW_LOBSTER,
+		ItemID.RAW_SHARK,
+		ItemID.RAW_MANTARAY,
+		ItemID.RAW_SEATURTLE,
+		ItemID.RAW_MONKFISH,
+		ItemID.RAW_CAVE_EEL,
+		ItemID.RAW_LAVA_EEL,
+		ItemID.RAW_DARK_CRAB,
+		ItemID.RAW_ANGLERFISH
+	);
 
-	@Range(min = 50, max = 200)
-	@ConfigItem(
-		keyName = "scale",
-		name = "Scale",
-		description = "Size of the bubble and icon, as a percentage of<br>"
-			+ "the default (100)"
-	)
-	default int scale()
+	private CookingFish()
 	{
-		return 100;
-	}
-
-	@ConfigItem(
-		keyName = "idleTicks",
-		name = "Hide after",
-		description = "How many game ticks of no matching action before<br>"
-			+ "the bubble disappears"
-	)
-	default int idleTicks()
-	{
-		return 3;
-	}
-
-	@ConfigItem(
-		keyName = "fadeAnimation",
-		name = "Fade in/out",
-		description = "Fade the bubble in and out when it appears<br>"
-			+ "and disappears"
-	)
-	default boolean fadeAnimation()
-	{
-		return false;
-	}
-
-	enum IconMode
-	{
-		SKILL,
-		TOOL
 	}
 }

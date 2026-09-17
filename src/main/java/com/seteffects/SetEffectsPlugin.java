@@ -66,6 +66,7 @@ public class SetEffectsPlugin extends Plugin
 		log.debug("Set Effects started!");
 		overlayManager.add(overlay);
 		mouseManager.registerMouseListener(overlay);
+		mouseManager.registerMouseWheelListener(overlay);
 	}
 
 	@Override
@@ -74,6 +75,7 @@ public class SetEffectsPlugin extends Plugin
 		log.debug("Set Effects stopped!");
 		overlayManager.remove(overlay);
 		mouseManager.unregisterMouseListener(overlay);
+		mouseManager.unregisterMouseWheelListener(overlay);
 	}
 
 	@Subscribe

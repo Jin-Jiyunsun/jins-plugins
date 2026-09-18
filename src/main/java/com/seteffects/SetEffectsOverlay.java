@@ -12,10 +12,13 @@ import java.awt.event.MouseWheelEvent;
 import java.awt.image.BufferedImage;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import javax.inject.Inject;
 import net.runelite.api.Client;
 import net.runelite.api.ItemContainer;
+import net.runelite.api.SpritePixels;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.gameval.SpriteID;
@@ -91,6 +94,9 @@ class SetEffectsOverlay extends Overlay implements MouseListener, MouseWheelList
 	// the cached geometry above - the mouse callbacks ignore it once it's this old
 	private volatile long lastDrawNanos;
 	// The last built rows and what they were built from - only touched by render()
+	// Converted override sprites (a resource pack's), reused while the override is the same object
+	private final Map<Integer, SpritePixels> overrideSources = new HashMap<>();
+	private final Map<Integer, BufferedImage> overrideImages = new HashMap<>();
 	private RenderKey cachedKey;
 	private List<List<EffectLineFormat.Word>> cachedRows = Collections.emptyList();
 
@@ -163,12 +169,12 @@ class SetEffectsOverlay extends Overlay implements MouseListener, MouseWheelList
 		int leftEdge = bounds.x - EXTRA_LEFT;
 		Rectangle drawBounds = new Rectangle(leftEdge, bounds.y, rightEdge - leftEdge, bounds.height);
 
-		BufferedImage arrowUp = spriteManager.getSprite(SpriteID.ScrollbarV2.ARROW_UP, 0);
-		BufferedImage arrowDown = spriteManager.getSprite(SpriteID.ScrollbarV2.ARROW_DOWN, 0);
-		BufferedImage thumbTop = spriteManager.getSprite(SpriteID.ScrollbarDraggerV2.TOP, 0);
-		BufferedImage thumbMiddle = spriteManager.getSprite(SpriteID.ScrollbarDraggerV2.MIDDLE, 0);
-		BufferedImage thumbBottom = spriteManager.getSprite(SpriteID.ScrollbarDraggerV2.BOTTOM, 0);
-		BufferedImage track = spriteManager.getSprite(SpriteID.ScrollbarDraggerV2.TRACK, 0);
+		BufferedImage arrowUp = sprite(SpriteID.ScrollbarV2.ARROW_UP);
+		BufferedImage arrowDown = sprite(SpriteID.ScrollbarV2.ARROW_DOWN);
+		BufferedImage thumbTop = sprite(SpriteID.ScrollbarDraggerV2.TOP);
+		BufferedImage thumbMiddle = sprite(SpriteID.ScrollbarDraggerV2.MIDDLE);
+		BufferedImage thumbBottom = sprite(SpriteID.ScrollbarDraggerV2.BOTTOM);
+		BufferedImage track = sprite(SpriteID.ScrollbarDraggerV2.TRACK);
 
 		int scrollbarWidth = arrowUp != null ? arrowUp.getWidth() : FALLBACK_SCROLLBAR_WIDTH;
 		Rectangle scrollbarArea = nativeBar != null
@@ -215,7 +221,7 @@ class SetEffectsOverlay extends Overlay implements MouseListener, MouseWheelList
 				int x = drawBounds.x;
 				for (EffectLineFormat.Word word : row)
 				{
-					OverlayUtil.renderTextLocation(graphics, new net.runelite.api.Point(x, y), word.text, word.color);
+					drawWord(graphics, metrics, word, x, y);
 					x += metrics.stringWidth(word.text + " ");
 				}
 			}
@@ -421,6 +427,54 @@ class SetEffectsOverlay extends Overlay implements MouseListener, MouseWheelList
 		return container != null && !container.isHidden() ? container : null;
 	}
 
+
+	/**
+	 * A resource pack replaces sprites through the client's in-memory override map, which the sprite
+	 * manager's own lookup skips - so check it first and only fall back to the game's own sprite.
+	 * Client thread only (called from render).
+	 */
+	private BufferedImage sprite(int spriteId)
+	{
+		SpritePixels override = client.getSpriteOverrides().get(spriteId);
+		if (override == null)
+		{
+			overrideSources.remove(spriteId);
+			overrideImages.remove(spriteId);
+			return spriteManager.getSprite(spriteId, 0);
+		}
+
+		if (overrideSources.get(spriteId) != override)
+		{
+			overrideImages.put(spriteId, override.toBufferedImage());
+			overrideSources.put(spriteId, override);
+		}
+		return overrideImages.get(spriteId);
+	}
+
+	private static void drawWord(Graphics2D graphics, FontMetrics metrics, EffectLineFormat.Word word, int x, int y)
+	{
+		if (word.numberStart < 0)
+		{
+			OverlayUtil.renderTextLocation(graphics, new net.runelite.api.Point(x, y), word.text, word.color);
+			return;
+		}
+
+		// Only the number itself is drawn in the highlight colour, not a bracket or comma beside it
+		String before = word.text.substring(0, word.numberStart);
+		String number = word.text.substring(word.numberStart, word.numberEnd);
+		String after = word.text.substring(word.numberEnd);
+		int numberX = x + metrics.stringWidth(before);
+		int afterX = numberX + metrics.stringWidth(number);
+		if (!before.isEmpty())
+		{
+			OverlayUtil.renderTextLocation(graphics, new net.runelite.api.Point(x, y), before, word.color);
+		}
+		OverlayUtil.renderTextLocation(graphics, new net.runelite.api.Point(numberX, y), number, EffectLineFormat.NUMBER_COLOR);
+		if (!after.isEmpty())
+		{
+			OverlayUtil.renderTextLocation(graphics, new net.runelite.api.Point(afterX, y), after, word.color);
+		}
+	}
 
 	private boolean isShowing()
 	{

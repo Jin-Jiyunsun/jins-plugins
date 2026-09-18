@@ -23,8 +23,10 @@ final class EffectLineFormat
 	static final Color NUMBER_COLOR = Color.YELLOW;
 
 	private static final Pattern COLOR_TAG = Pattern.compile("</?col(=[0-9a-fA-F]+)?>");
-	// A whitespace-delimited word containing at least one digit is treated as a number/percentage
-	private static final Pattern NUMBER_WORD = Pattern.compile("\\S*\\d\\S*");
+	// A whitespace-delimited word containing a digit holds a number/percentage; only that part is
+	// coloured - from the first digit (or a sign right before it) to the last non-punctuation
+	// character, so a bracket or the comma/period ending a clause stays the text colour
+	private static final Pattern NUMBER_PARTS = Pattern.compile("^([^\\d+\\-]*)([+\\-]?\\d.*?)([.,;:)\\]!?]*)$");
 
 	private EffectLineFormat()
 	{
@@ -96,9 +98,12 @@ final class EffectLineFormat
 	static List<Word> effectWords(EffectLine line, Color defaultColor)
 	{
 		List<Word> words = new ArrayList<>();
+		String previous = null;
 		for (String word : line.effect.split(" "))
 		{
-			words.add(new Word(word, NUMBER_WORD.matcher(word).matches() ? NUMBER_COLOR : defaultColor));
+			int[] range = numberRange(word, previous);
+			words.add(range == null ? new Word(word, defaultColor) : new Word(word, defaultColor, range[0], range[1]));
+			previous = word;
 		}
 		return words;
 	}
@@ -130,18 +135,45 @@ final class EffectLineFormat
 		return whole + "." + (fraction < 10 ? "0" + fraction : String.valueOf(fraction));
 	}
 
+	/**
+	 * The {start, end} of the part of a word to colour as a number, or null if it has none. A number
+	 * right after the word "tier" is a tier, not a value, so it isn't coloured.
+	 */
+	private static int[] numberRange(String word, String previousWord)
+	{
+		if (previousWord != null && previousWord.equalsIgnoreCase("tier"))
+		{
+			return null;
+		}
+
+		Matcher matcher = NUMBER_PARTS.matcher(word);
+		return matcher.matches() ? new int[]{matcher.start(2), matcher.end(2)} : null;
+	}
+
 	private static String highlightNumbers(String text)
 	{
 		StringBuilder result = new StringBuilder();
-		Matcher matcher = NUMBER_WORD.matcher(text);
-		int last = 0;
-		while (matcher.find())
+		String previous = null;
+		for (String word : text.split(" ", -1))
 		{
-			result.append(text, last, matcher.start());
-			result.append(ColorUtil.wrapWithColorTag(matcher.group(), NUMBER_COLOR));
-			last = matcher.end();
+			if (previous != null)
+			{
+				result.append(' ');
+			}
+
+			int[] range = numberRange(word, previous);
+			if (range == null)
+			{
+				result.append(word);
+			}
+			else
+			{
+				result.append(word, 0, range[0])
+					.append(ColorUtil.wrapWithColorTag(word.substring(range[0], range[1]), NUMBER_COLOR))
+					.append(word.substring(range[1]));
+			}
+			previous = word;
 		}
-		result.append(text.substring(last));
 		return result.toString();
 	}
 
@@ -149,11 +181,21 @@ final class EffectLineFormat
 	{
 		final String text;
 		final Color color;
+		// The part of the text to draw in NUMBER_COLOR instead ({@code -1} for none)
+		final int numberStart;
+		final int numberEnd;
 
 		Word(String text, Color color)
 		{
+			this(text, color, -1, -1);
+		}
+
+		Word(String text, Color color, int numberStart, int numberEnd)
+		{
 			this.text = text;
 			this.color = color;
+			this.numberStart = numberStart;
+			this.numberEnd = numberEnd;
 		}
 	}
 }

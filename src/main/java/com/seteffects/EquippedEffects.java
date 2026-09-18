@@ -1,6 +1,7 @@
 package com.seteffects;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -42,6 +43,41 @@ final class EquippedEffects
 			lines.add(SalveAmulet.describe(rawItemId));
 		}
 
+		if (BlackMask.isBlackMask(rawItemId))
+		{
+			lines.add(BlackMask.describe(rawItemId));
+		}
+
+		if (SlayerHelm.isSlayerHelm(rawItemId))
+		{
+			lines.add(SlayerHelm.describe(rawItemId));
+		}
+
+		if (RadasBlessing.isRadasBlessing(rawItemId))
+		{
+			lines.add(RadasBlessing.describe(rawItemId));
+		}
+
+		if (PerPieceSets.InquisitorArmour.isInquisitorItem(mappedItemId))
+		{
+			lines.addAll(PerPieceSets.InquisitorArmour.describe(equipment));
+		}
+
+		if (PerPieceSets.VirtusRobes.isVirtusItem(mappedItemId))
+		{
+			lines.addAll(PerPieceSets.VirtusRobes.describe(equipment));
+		}
+
+		if (PerPieceSets.CrystalArmour.isCrystalItem(mappedItemId))
+		{
+			lines.add(PerPieceSets.CrystalArmour.describe(equipment));
+		}
+
+		if (mappedItemId == ItemID.DAMNED_AMULET)
+		{
+			lines.add(amuletOfTheDamnedEffect(equipment));
+		}
+
 		return lines;
 	}
 
@@ -58,6 +94,14 @@ final class EquippedEffects
 		Set<ItemSet> seenSets = new HashSet<>();
 		boolean hasVoidItem = false;
 		int salveAmuletRawId = -1;
+		int blackMaskRawId = -1;
+		int slayerHelmRawId = -1;
+		int radasBlessingRawId = -1;
+		boolean hasInquisitorItem = false;
+		boolean hasVirtusItem = false;
+		boolean hasCrystalItem = false;
+		boolean hasDamnedAmulet = false;
+		int fullBarrowsLineIndex = -1;
 
 		for (EquipmentInventorySlot slot : EquipmentInventorySlot.values())
 		{
@@ -66,12 +110,66 @@ final class EquippedEffects
 			{
 				int rawItemId = item.getId();
 				int mappedItemId = ItemVariationMapping.map(rawItemId);
-				appendItemEffects(lines, equipment, mappedItemId, seenSets);
+
+				List<ItemSet> sets = SetEffectsData.SETS_BY_ITEM.get(mappedItemId);
+				if (sets != null)
+				{
+					for (ItemSet set : sets)
+					{
+						if (seenSets.add(set))
+						{
+							lines.add(set.describe(equipment));
+							if (set.getAmuletOfTheDamnedSynergy() != null && set.isFullyWorn(equipment))
+							{
+								fullBarrowsLineIndex = lines.size() - 1;
+							}
+						}
+					}
+				}
+
+				SingleItemEffect single = SetEffectsData.SINGLE_ITEM_EFFECTS.get(mappedItemId);
+				if (single != null)
+				{
+					lines.add(single.describe());
+				}
+
+				hasDamnedAmulet |= mappedItemId == ItemID.DAMNED_AMULET;
+				hasInquisitorItem |= PerPieceSets.InquisitorArmour.isInquisitorItem(mappedItemId);
+				hasVirtusItem |= PerPieceSets.VirtusRobes.isVirtusItem(mappedItemId);
+				hasCrystalItem |= PerPieceSets.CrystalArmour.isCrystalItem(mappedItemId);
 				hasVoidItem |= VoidKnight.isVoidItem(mappedItemId);
 				if (SalveAmulet.isSalveAmulet(rawItemId))
 				{
 					salveAmuletRawId = rawItemId;
 				}
+				if (BlackMask.isBlackMask(rawItemId))
+				{
+					blackMaskRawId = rawItemId;
+				}
+				if (SlayerHelm.isSlayerHelm(rawItemId))
+				{
+					slayerHelmRawId = rawItemId;
+				}
+				if (RadasBlessing.isRadasBlessing(rawItemId))
+				{
+					radasBlessingRawId = rawItemId;
+				}
+			}
+		}
+
+		if (hasDamnedAmulet)
+		{
+			EffectLine amuletLine = amuletOfTheDamnedEffect(equipment);
+			if (fullBarrowsLineIndex >= 0)
+			{
+				// Attach directly under its Barrows set's own line rather than wherever the
+				// amulet slot happens to fall in EquipmentInventorySlot's iteration order relative
+				// to other equipped items - continuesPrevious skips the usual blank-line gap
+				lines.add(fullBarrowsLineIndex + 1, new EffectLine(amuletLine.name, amuletLine.effect, true));
+			}
+			else
+			{
+				lines.add(amuletLine);
 			}
 		}
 
@@ -85,7 +183,71 @@ final class EquippedEffects
 			lines.add(SalveAmulet.describe(salveAmuletRawId));
 		}
 
-		return lines;
+		if (blackMaskRawId != -1)
+		{
+			lines.add(BlackMask.describe(blackMaskRawId));
+		}
+
+		if (slayerHelmRawId != -1)
+		{
+			lines.add(SlayerHelm.describe(slayerHelmRawId));
+		}
+
+		if (radasBlessingRawId != -1)
+		{
+			lines.add(RadasBlessing.describe(radasBlessingRawId));
+		}
+
+		if (hasInquisitorItem)
+		{
+			lines.addAll(PerPieceSets.InquisitorArmour.describe(equipment));
+		}
+
+		if (hasVirtusItem)
+		{
+			lines.addAll(PerPieceSets.VirtusRobes.describe(equipment));
+		}
+
+		if (hasCrystalItem)
+		{
+			lines.add(PerPieceSets.CrystalArmour.describe(equipment));
+		}
+
+		return sortedByName(lines);
+	}
+
+	/**
+	 * Alphabetical by name, so the box reads as a stable, scannable list rather than whatever
+	 * order {@code EquipmentInventorySlot} happens to enumerate slots in. A line with {@code
+	 * continuesPrevious} set (the Amulet of the Damned's synergy line - see the amulet handling
+	 * above) is kept glued to whichever line precedes it rather than sorted independently, since
+	 * it isn't a standalone effect on its own.
+	 */
+	private static List<EffectLine> sortedByName(List<EffectLine> lines)
+	{
+		List<List<EffectLine>> clusters = new ArrayList<>();
+		for (EffectLine line : lines)
+		{
+			if (line.continuesPrevious && !clusters.isEmpty())
+			{
+				clusters.get(clusters.size() - 1).add(line);
+			}
+			else
+			{
+				List<EffectLine> cluster = new ArrayList<>();
+				cluster.add(line);
+				clusters.add(cluster);
+			}
+		}
+
+		clusters.sort(Comparator.comparing(cluster -> cluster.get(0).name, String.CASE_INSENSITIVE_ORDER));
+
+		List<EffectLine> sorted = new ArrayList<>();
+		for (List<EffectLine> cluster : clusters)
+		{
+			sorted.addAll(cluster);
+		}
+		return sorted;
 	}
 
 	private static void appendItemEffects(List<EffectLine> lines, ItemContainer equipment, int itemId, Set<ItemSet> seenSets)
@@ -106,11 +268,6 @@ final class EquippedEffects
 		if (single != null)
 		{
 			lines.add(single.describe());
-		}
-
-		if (itemId == ItemID.DAMNED_AMULET)
-		{
-			lines.add(amuletOfTheDamnedEffect(equipment));
 		}
 	}
 

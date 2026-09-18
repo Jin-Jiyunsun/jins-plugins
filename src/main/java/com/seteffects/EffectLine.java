@@ -16,17 +16,33 @@ final class EffectLine
 	final Integer total;
 	final String effect;
 
+	// True for a line that must render immediately under the line before it, with no blank-line
+	// gap - e.g. the Amulet of the Damned's synergy line under its Barrows set's own line, which
+	// otherwise get the same blank-line separation as any two unrelated effects
+	final boolean continuesPrevious;
+
 	EffectLine(String name, String effect)
 	{
-		this(name, null, null, effect);
+		this(name, null, null, effect, false);
 	}
 
 	EffectLine(String name, @Nullable Integer worn, @Nullable Integer total, String effect)
+	{
+		this(name, worn, total, effect, false);
+	}
+
+	EffectLine(String name, String effect, boolean continuesPrevious)
+	{
+		this(name, null, null, effect, continuesPrevious);
+	}
+
+	private EffectLine(String name, @Nullable Integer worn, @Nullable Integer total, String effect, boolean continuesPrevious)
 	{
 		this.name = name;
 		this.worn = worn;
 		this.total = total;
 		this.effect = effect;
+		this.continuesPrevious = continuesPrevious;
 	}
 
 	boolean isFullSet()

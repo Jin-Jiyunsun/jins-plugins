@@ -56,21 +56,21 @@ final class VoidKnight
 		{
 			name = elite ? "Elite Void Knight (Melee)" : "Void Knight (Melee)";
 			effect = elite
-				? "+10% melee accuracy and damage. Elite pieces give no extra melee bonus."
-				: "+10% melee accuracy and damage.";
+				? "+10% melee damage and accuracy. Elite pieces give no extra melee bonus."
+				: "+10% melee damage and accuracy.";
 		}
 		else if (helm == ItemID.GAME_PEST_ARCHER_HELM)
 		{
 			name = elite ? "Elite Void Knight (Ranged)" : "Void Knight (Ranged)";
 			effect = elite
-				? "+10% ranged accuracy and damage, plus +2.5% extra ranged damage (12.5% total)."
-				: "+10% ranged accuracy and damage.";
+				? "+12.5% ranged damage and 10% increased range accuracy."
+				: "+10% ranged damage and accuracy.";
 		}
 		else
 		{
 			name = elite ? "Elite Void Knight (Magic)" : "Void Knight (Magic)";
 			effect = elite
-				? "+45% magic accuracy and +5% magic damage."
+				? "+5% magic damage and +45% magic accuracy."
 				: "+45% magic accuracy.";
 		}
 

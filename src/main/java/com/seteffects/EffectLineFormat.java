@@ -89,6 +89,17 @@ final class EffectLineFormat
 		return words;
 	}
 
+	/**
+	 * Formats a percentage stored as tenths (e.g. `5` -> "0.5", `25` -> "2.5", `50` -> "5") -
+	 * shared by the dynamic per-piece resolvers in {@link PerPieceSets} so their percentages are
+	 * computed as integers rather than accumulating floating-point rounding artifacts like
+	 * `2.5000000000000004` from repeated `double` addition.
+	 */
+	static String formatTenths(int tenths)
+	{
+		return tenths % 10 == 0 ? String.valueOf(tenths / 10) : (tenths / 10) + "." + (tenths % 10);
+	}
+
 	private static String highlightNumbers(String text)
 	{
 		StringBuilder result = new StringBuilder();

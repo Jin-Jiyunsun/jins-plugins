@@ -141,13 +141,23 @@ class SetEffectsOverlay extends Overlay implements MouseListener, MouseWheelList
 		List<List<EffectLineFormat.Word>> rows = new ArrayList<>();
 		if (effectLines.isEmpty())
 		{
-			rows.addAll(wrapWords(plainWords(plugin.getFallbackText()), metrics, textWidth));
+			// The native widget's own raw text uses literal <br> tags for its line breaks (its own
+			// rendering convention, not ours) - split on them rather than drawing "<br>" as if it
+			// were a word, which plainWords()/wordWrap() would otherwise do with no interpretation
+			for (String line : plugin.getFallbackText().split("<br>"))
+			{
+				String trimmed = line.trim();
+				if (!trimmed.isEmpty())
+				{
+					rows.addAll(wrapWords(plainWords(trimmed), metrics, textWidth));
+				}
+			}
 		}
 		else
 		{
 			for (int i = 0; i < effectLines.size(); i++)
 			{
-				if (i > 0)
+				if (i > 0 && !effectLines.get(i).continuesPrevious)
 				{
 					rows.add(Collections.emptyList());
 				}
@@ -155,7 +165,10 @@ class SetEffectsOverlay extends Overlay implements MouseListener, MouseWheelList
 			}
 		}
 
-		int contentHeight = rows.size() * LINE_HEIGHT;
+		// LINE_HEIGHT is baseline-to-baseline spacing - the very last row's descenders extend past
+		// that sum with nothing below them, so without adding descent back in, maxScroll fell just
+		// short of enough to ever fully scroll them into view
+		int contentHeight = rows.size() * LINE_HEIGHT + metrics.getDescent();
 		int maxScroll = Math.max(0, contentHeight - drawBounds.height);
 		// Snapshotted once and threaded through explicitly rather than re-reading the mutable
 		// scrollY field later in this method - mouseDragged() runs on a different thread and can
@@ -200,7 +213,7 @@ class SetEffectsOverlay extends Overlay implements MouseListener, MouseWheelList
 		int scrollY, BufferedImage arrowUp, BufferedImage arrowDown, BufferedImage thumbTop, BufferedImage thumbMiddle,
 		BufferedImage thumbBottom, BufferedImage track)
 	{
-		int scrollbarX = drawBounds.x + drawBounds.width - scrollbarWidth;
+		int scrollbarX = drawBounds.x + drawBounds.width - scrollbarWidth - 1;
 		int arrowUpHeight = arrowUp != null ? arrowUp.getHeight() : scrollbarWidth;
 		int arrowDownHeight = arrowDown != null ? arrowDown.getHeight() : scrollbarWidth;
 

@@ -11,22 +11,29 @@ import net.runelite.client.game.ItemVariationMapping;
 
 class ItemSet
 {
+	private final EffectFamily family;
 	private final String name;
 	private final String effect;
 	private final Map<EquipmentInventorySlot, int[]> slots;
 	private final String amuletOfTheDamnedSynergy;
 
-	ItemSet(String name, String effect, Map<EquipmentInventorySlot, int[]> slots)
+	ItemSet(EffectFamily family, String name, String effect, Map<EquipmentInventorySlot, int[]> slots)
 	{
-		this(name, effect, slots, null);
+		this(family, name, effect, slots, null);
 	}
 
-	ItemSet(String name, String effect, Map<EquipmentInventorySlot, int[]> slots, @Nullable String amuletOfTheDamnedSynergy)
+	ItemSet(EffectFamily family, String name, String effect, Map<EquipmentInventorySlot, int[]> slots, @Nullable String amuletOfTheDamnedSynergy)
 	{
+		this.family = family;
 		this.name = name;
 		this.effect = effect;
 		this.slots = slots;
 		this.amuletOfTheDamnedSynergy = amuletOfTheDamnedSynergy;
+	}
+
+	EffectFamily getFamily()
+	{
+		return family;
 	}
 
 	@Nullable

@@ -1,6 +1,10 @@
 package com.seteffects;
 
+import com.google.inject.Provides;
+import java.util.Collections;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 import javax.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
@@ -9,9 +13,12 @@ import net.runelite.api.MenuEntry;
 import net.runelite.api.events.BeforeRender;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.InventoryID;
+import net.runelite.api.gameval.VarbitID;
 import net.runelite.api.widgets.Widget;
 import net.runelite.api.widgets.WidgetUtil;
+import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
+import net.runelite.client.events.ConfigChanged;
 import net.runelite.client.input.MouseManager;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
@@ -48,6 +55,20 @@ public class SetEffectsPlugin extends Plugin
 	@Inject
 	private SetEffectsOverlay overlay;
 
+	@Inject
+	private ConfigManager configManager;
+
+	@Inject
+	private SetEffectDisplayConfig config;
+
+	// Cached from config (rebuilt on startUp and whenever our config group changes) so the
+	// per-frame paths never touch ConfigManager; volatile because ConfigChanged isn't guaranteed
+	// to arrive on the client thread that reads these every frame
+	private volatile Set<EffectFamily> disabledFamilies = Collections.emptySet();
+	private volatile boolean showSetEffectList = true;
+	private volatile boolean showTooltips = true;
+	private volatile boolean verbose = true;
+
 	/**
 	 * The vanilla "Set Effect Bonus" box's own text, rewritten by the game's own script whenever
 	 * equipment changes (it already natively describes some sets, e.g. full Barrows brothers).
@@ -59,11 +80,13 @@ public class SetEffectsPlugin extends Plugin
 	 */
 	private String lastNativeBaseText = "";
 	private String lastWrittenText;
+	private final DiaryChecks diaryChecks = new DiaryChecks(this::isHardKandarinDiaryComplete, this::isHardKourendDiaryComplete);
 
 	@Override
 	protected void startUp()
 	{
 		log.debug("Set Effects started!");
+		refreshConfig();
 		overlayManager.add(overlay);
 		mouseManager.registerMouseListener(overlay);
 		mouseManager.registerMouseWheelListener(overlay);
@@ -78,6 +101,55 @@ public class SetEffectsPlugin extends Plugin
 		mouseManager.unregisterMouseWheelListener(overlay);
 	}
 
+	@Provides
+	SetEffectDisplayConfig provideConfig(ConfigManager configManager)
+	{
+		return configManager.getConfig(SetEffectDisplayConfig.class);
+	}
+
+	@Subscribe
+	public void onConfigChanged(ConfigChanged event)
+	{
+		if (SetEffectDisplayConfig.GROUP.equals(event.getGroup()))
+		{
+			refreshConfig();
+		}
+	}
+
+	private void refreshConfig()
+	{
+		showSetEffectList = config.showSetEffectList();
+		showTooltips = config.showTooltips();
+		verbose = config.verbose();
+
+		Set<EffectFamily> disabled = EnumSet.noneOf(EffectFamily.class);
+		for (EffectFamily family : EffectFamily.values())
+		{
+			// An unset key means the default (enabled) - ConfigManager drops keys set back to default
+			Boolean value = configManager.getConfiguration(SetEffectDisplayConfig.GROUP, family.configKey, Boolean.class);
+			if (value != null && !value)
+			{
+				disabled.add(family);
+			}
+		}
+		disabledFamilies = disabled;
+	}
+
+	boolean isFamilyEnabled(EffectFamily family)
+	{
+		return !disabledFamilies.contains(family);
+	}
+
+	boolean isVerbose()
+	{
+		return verbose;
+	}
+
+	boolean isSetEffectListEnabled()
+	{
+		return showSetEffectList;
+	}
+
 	@Subscribe
 	public void onBeforeRender(BeforeRender event)
 	{
@@ -86,7 +158,7 @@ public class SetEffectsPlugin extends Plugin
 		// our overlay as small as possible
 		blankSetEffectWidget();
 
-		if (client.isMenuOpen())
+		if (!showTooltips || client.isMenuOpen())
 		{
 			return;
 		}
@@ -138,6 +210,18 @@ public class SetEffectsPlugin extends Plugin
 			lastNativeBaseText = currentText;
 		}
 
+		if (!showSetEffectList)
+		{
+			// List turned off: stop blanking, and put the game's own text back if our blank is
+			// still what's showing (the game only rewrites it on equipment changes)
+			if (currentText.equals(lastWrittenText))
+			{
+				setEffectText.setText(lastNativeBaseText);
+				lastWrittenText = null;
+			}
+			return;
+		}
+
 		setEffectText.setText(BLANK_TEXT);
 		lastWrittenText = BLANK_TEXT;
 	}
@@ -168,6 +252,25 @@ public class SetEffectsPlugin extends Plugin
 		return child != null ? child.getItemId() : -1;
 	}
 
+	/**
+	 * Read on the client thread (overlay render / BeforeRender), and only when an enchanted bolt is
+	 * actually being described - see {@link EquippedEffects}.
+	 */
+	private boolean isHardKandarinDiaryComplete()
+	{
+		return client.getVarbitValue(VarbitID.KANDARIN_DIARY_HARD_COMPLETE) == 1;
+	}
+
+	private boolean isHardKourendDiaryComplete()
+	{
+		return client.getVarbitValue(VarbitID.KOUREND_DIARY_HARD_COMPLETE) == 1;
+	}
+
+	DiaryChecks getDiaryChecks()
+	{
+		return diaryChecks;
+	}
+
 	private String buildTooltip(int rawItemId)
 	{
 		ItemContainer equipment = client.getItemContainer(InventoryID.WORN);
@@ -176,7 +279,7 @@ public class SetEffectsPlugin extends Plugin
 			return null;
 		}
 
-		List<EffectLine> lines = EquippedEffects.describeItem(equipment, rawItemId);
+		List<EffectLine> lines = EquippedEffects.describeItem(equipment, rawItemId, this::isFamilyEnabled, verbose, diaryChecks);
 		if (lines.isEmpty())
 		{
 			return null;

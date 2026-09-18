@@ -66,6 +66,14 @@ final class EffectLineFormat
 	 */
 	static List<Word> words(EffectLine line, Color defaultColor)
 	{
+		List<Word> words = titleWords(line);
+		words.addAll(effectWords(line, defaultColor));
+		return words;
+	}
+
+	/** Just the "Name (x/y):" part of {@link #words}, so the overlay can put it on its own row. */
+	static List<Word> titleWords(EffectLine line)
+	{
 		List<Word> words = new ArrayList<>();
 		String[] nameWords = line.name.split(" ");
 		for (int i = 0; i < nameWords.length; i++)
@@ -81,11 +89,17 @@ final class EffectLineFormat
 			words.add(new Word("(" + line.worn + "/" + line.total + "):", tallyColor));
 		}
 
+		return words;
+	}
+
+	/** Just the effect text of {@link #words}. */
+	static List<Word> effectWords(EffectLine line, Color defaultColor)
+	{
+		List<Word> words = new ArrayList<>();
 		for (String word : line.effect.split(" "))
 		{
 			words.add(new Word(word, NUMBER_WORD.matcher(word).matches() ? NUMBER_COLOR : defaultColor));
 		}
-
 		return words;
 	}
 
@@ -98,6 +112,22 @@ final class EffectLineFormat
 	static String formatTenths(int tenths)
 	{
 		return tenths % 10 == 0 ? String.valueOf(tenths / 10) : (tenths / 10) + "." + (tenths % 10);
+	}
+
+	/** Like {@link #formatTenths} but for hundredths (e.g. `125` -> "1.25", `40` -> "0.4", `500` -> "5"). */
+	static String formatHundredths(int hundredths)
+	{
+		int whole = hundredths / 100;
+		int fraction = hundredths % 100;
+		if (fraction == 0)
+		{
+			return String.valueOf(whole);
+		}
+		if (fraction % 10 == 0)
+		{
+			return whole + "." + (fraction / 10);
+		}
+		return whole + "." + (fraction < 10 ? "0" + fraction : String.valueOf(fraction));
 	}
 
 	private static String highlightNumbers(String text)

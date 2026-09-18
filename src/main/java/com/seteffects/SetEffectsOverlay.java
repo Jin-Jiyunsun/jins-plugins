@@ -57,6 +57,14 @@ class SetEffectsOverlay extends Overlay implements MouseListener, MouseWheelList
 	// we're drawing our own content, not the native widget's, so nothing stops us using it
 	private static final int EXTRA_WIDTH = 5;
 
+	// Likewise on the left: the left edge moves out by this much (right edge and scrollbar stay
+	// put), giving the text area that much more room
+	private static final int EXTRA_LEFT = 25;
+
+	// Breathing room below the last row - the font's reported descent alone still clipped the tails
+	// of g/q/y (and the drop shadow) when scrolled fully down
+	private static final int BOTTOM_PADDING = 3;
+
 	private final Client client;
 	private final SetEffectsPlugin plugin;
 	private final SpriteManager spriteManager;
@@ -92,6 +100,11 @@ class SetEffectsOverlay extends Overlay implements MouseListener, MouseWheelList
 	@Override
 	public Dimension render(Graphics2D graphics)
 	{
+		if (!plugin.isSetEffectListEnabled())
+		{
+			return clearInputState();
+		}
+
 		Widget setEffectWidget = getSetEffectWidget();
 		if (setEffectWidget == null)
 		{
@@ -121,7 +134,24 @@ class SetEffectsOverlay extends Overlay implements MouseListener, MouseWheelList
 
 		// We're drawing our own content over this widget, not the widget's own text, so we're not
 		// bound by its reported width - widen the area we draw/wrap/hit-test against a little
-		Rectangle drawBounds = new Rectangle(bounds.x, bounds.y, bounds.width + EXTRA_WIDTH, bounds.height);
+		// The game builds its own scrollbar for this box (sized to the vanilla text, not ours) and
+		// shrinks this widget to make room for it. We don't hide it - hidden widgets report unreliable
+		// geometry - we draw ours exactly over it instead, and size from its far edge so the layout
+		// is the same whether or not it exists.
+		Rectangle nativeBar = null;
+		Widget nativeScrollbar = client.getWidget(InterfaceID.Equipment.SCROLLBAR);
+		if (nativeScrollbar != null && !nativeScrollbar.isHidden() && nativeScrollbar.getWidth() > 0)
+		{
+			nativeBar = nativeScrollbar.getBounds();
+		}
+		int rightEdge = bounds.x + bounds.width + EXTRA_WIDTH;
+		if (nativeBar != null)
+		{
+			rightEdge = Math.max(rightEdge, nativeBar.x + nativeBar.width);
+		}
+		rightEdge = Math.min(rightEdge, popup.getBounds().x + popup.getBounds().width);
+		int leftEdge = bounds.x - EXTRA_LEFT;
+		Rectangle drawBounds = new Rectangle(leftEdge, bounds.y, rightEdge - leftEdge, bounds.height);
 
 		BufferedImage arrowUp = spriteManager.getSprite(SpriteID.ScrollbarV2.ARROW_UP, 0);
 		BufferedImage arrowDown = spriteManager.getSprite(SpriteID.ScrollbarV2.ARROW_DOWN, 0);
@@ -131,13 +161,16 @@ class SetEffectsOverlay extends Overlay implements MouseListener, MouseWheelList
 		BufferedImage track = spriteManager.getSprite(SpriteID.ScrollbarDraggerV2.TRACK, 0);
 
 		int scrollbarWidth = arrowUp != null ? arrowUp.getWidth() : FALLBACK_SCROLLBAR_WIDTH;
+		Rectangle scrollbarArea = nativeBar != null
+			? nativeBar
+			: new Rectangle(drawBounds.x + drawBounds.width - scrollbarWidth - 1, drawBounds.y, scrollbarWidth, drawBounds.height);
 
-		List<EffectLine> effectLines = EquippedEffects.describeEquipment(equipment);
+		List<EffectLine> effectLines = EquippedEffects.describeEquipment(equipment, plugin::isFamilyEnabled, plugin.isVerbose(), plugin.getDiaryChecks());
 
 		graphics.setFont(FontManager.getRunescapeFont());
 		FontMetrics metrics = graphics.getFontMetrics();
 
-		int textWidth = drawBounds.width - scrollbarWidth - 2;
+		int textWidth = drawBounds.width - Math.max(scrollbarWidth, scrollbarArea.width) - 2;
 		List<List<EffectLineFormat.Word>> rows = new ArrayList<>();
 		if (effectLines.isEmpty())
 		{
@@ -161,14 +194,25 @@ class SetEffectsOverlay extends Overlay implements MouseListener, MouseWheelList
 				{
 					rows.add(Collections.emptyList());
 				}
-				rows.addAll(wrapWords(EffectLineFormat.words(effectLines.get(i), TEXT_COLOR), metrics, textWidth));
+				EffectLine effectLine = effectLines.get(i);
+				if (effectLine.continuesPrevious)
+				{
+					// Short lines glued under their parent (per-piece bonuses, Current Bonus) stay inline
+					rows.addAll(wrapWords(EffectLineFormat.words(effectLine, TEXT_COLOR), metrics, textWidth));
+				}
+				else
+				{
+					// A main effect's title ("Name (x/y):") gets its own row, its text starts on the next
+					rows.addAll(wrapWords(EffectLineFormat.titleWords(effectLine), metrics, textWidth));
+					rows.addAll(wrapWords(EffectLineFormat.effectWords(effectLine, TEXT_COLOR), metrics, textWidth));
+				}
 			}
 		}
 
 		// LINE_HEIGHT is baseline-to-baseline spacing - the very last row's descenders extend past
 		// that sum with nothing below them, so without adding descent back in, maxScroll fell just
 		// short of enough to ever fully scroll them into view
-		int contentHeight = rows.size() * LINE_HEIGHT + metrics.getDescent();
+		int contentHeight = rows.size() * LINE_HEIGHT + metrics.getDescent() + BOTTOM_PADDING;
 		int maxScroll = Math.max(0, contentHeight - drawBounds.height);
 		// Snapshotted once and threaded through explicitly rather than re-reading the mutable
 		// scrollY field later in this method - mouseDragged() runs on a different thread and can
@@ -203,35 +247,35 @@ class SetEffectsOverlay extends Overlay implements MouseListener, MouseWheelList
 		}
 
 		scrollableBounds = drawBounds;
-		drawScrollbar(graphics, drawBounds, scrollbarWidth, maxScroll, contentHeight, clampedScrollY,
+		drawScrollbar(graphics, drawBounds, scrollbarArea, scrollbarWidth, maxScroll, contentHeight, clampedScrollY,
 			arrowUp, arrowDown, thumbTop, thumbMiddle, thumbBottom, track);
 
 		return null;
 	}
 
-	private void drawScrollbar(Graphics2D graphics, Rectangle drawBounds, int scrollbarWidth, int maxScroll, int contentHeight,
+	private void drawScrollbar(Graphics2D graphics, Rectangle drawBounds, Rectangle scrollbarArea, int scrollbarWidth, int maxScroll, int contentHeight,
 		int scrollY, BufferedImage arrowUp, BufferedImage arrowDown, BufferedImage thumbTop, BufferedImage thumbMiddle,
 		BufferedImage thumbBottom, BufferedImage track)
 	{
-		int scrollbarX = drawBounds.x + drawBounds.width - scrollbarWidth - 1;
+		int scrollbarX = scrollbarArea.x;
 		int arrowUpHeight = arrowUp != null ? arrowUp.getHeight() : scrollbarWidth;
 		int arrowDownHeight = arrowDown != null ? arrowDown.getHeight() : scrollbarWidth;
 
-		upArrowHitbox = new Rectangle(scrollbarX, drawBounds.y, scrollbarWidth, arrowUpHeight);
+		upArrowHitbox = new Rectangle(scrollbarX, scrollbarArea.y, scrollbarWidth, arrowUpHeight);
 		if (arrowUp != null)
 		{
-			graphics.drawImage(arrowUp, scrollbarX, drawBounds.y, null);
+			graphics.drawImage(arrowUp, scrollbarX, scrollbarArea.y, null);
 		}
 
-		int arrowDownY = drawBounds.y + drawBounds.height - arrowDownHeight;
+		int arrowDownY = scrollbarArea.y + scrollbarArea.height - arrowDownHeight;
 		downArrowHitbox = new Rectangle(scrollbarX, arrowDownY, scrollbarWidth, arrowDownHeight);
 		if (arrowDown != null)
 		{
 			graphics.drawImage(arrowDown, scrollbarX, arrowDownY, null);
 		}
 
-		int trackY = drawBounds.y + arrowUpHeight;
-		int trackHeight = Math.max(0, drawBounds.height - arrowUpHeight - arrowDownHeight);
+		int trackY = scrollbarArea.y + arrowUpHeight;
+		int trackHeight = Math.max(0, scrollbarArea.height - arrowUpHeight - arrowDownHeight);
 		drawTiled(graphics, track, scrollbarX, trackY, scrollbarWidth, trackHeight);
 
 		int minThumbHeight = thumbTop != null && thumbBottom != null
@@ -342,6 +386,7 @@ class SetEffectsOverlay extends Overlay implements MouseListener, MouseWheelList
 		Widget container = client.getWidget(InterfaceID.Equipment.SET_EFFECT);
 		return container != null && !container.isHidden() ? container : null;
 	}
+
 
 	private Dimension clearInputState()
 	{

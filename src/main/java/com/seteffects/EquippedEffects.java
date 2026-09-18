@@ -5,6 +5,7 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Predicate;
 import net.runelite.api.EquipmentInventorySlot;
 import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
@@ -22,58 +23,98 @@ final class EquippedEffects
 	}
 
 	/**
+	 * @param diaries diary state, read only when something being described depends on it (enchanted
+	 *                bolts, a Slayer helmet standing in for a Shayzien helm)
 	 * @param rawItemId the item id as-is, not yet run through {@link ItemVariationMapping} - some
 	 *                  items (Salve amulet's tiers) need to distinguish variants that
 	 *                  {@code ItemVariationMapping} itself collapses into one, so the mapping is
 	 *                  done internally here rather than by the caller.
 	 */
-	static List<EffectLine> describeItem(ItemContainer equipment, int rawItemId)
+	static List<EffectLine> describeItem(ItemContainer equipment, int rawItemId, Predicate<EffectFamily> enabled, boolean verbose, DiaryChecks diaries)
 	{
 		List<EffectLine> lines = new ArrayList<>();
 		int mappedItemId = ItemVariationMapping.map(rawItemId);
-		appendItemEffects(lines, equipment, mappedItemId, new HashSet<>());
+		appendItemEffects(lines, equipment, mappedItemId, new HashSet<>(), enabled);
 
-		if (VoidKnight.isVoidItem(mappedItemId))
+		if (VoidKnight.isVoidItem(mappedItemId) && enabled.test(EffectFamily.VOID_KNIGHT))
 		{
 			lines.add(VoidKnight.describe(equipment));
 		}
 
-		if (SalveAmulet.isSalveAmulet(rawItemId))
+		if (SalveAmulet.isSalveAmulet(rawItemId) && enabled.test(EffectFamily.SALVE_AMULET))
 		{
 			lines.add(SalveAmulet.describe(rawItemId));
 		}
 
-		if (BlackMask.isBlackMask(rawItemId))
+		if (BlackMask.isBlackMask(rawItemId) && enabled.test(EffectFamily.BLACK_MASK))
 		{
 			lines.add(BlackMask.describe(rawItemId));
 		}
 
-		if (SlayerHelm.isSlayerHelm(rawItemId))
+		if (SlayerHelm.isSlayerHelm(rawItemId) && enabled.test(EffectFamily.SLAYER_HELMET))
 		{
 			lines.add(SlayerHelm.describe(rawItemId));
 		}
 
-		if (RadasBlessing.isRadasBlessing(rawItemId))
+		if (RadasBlessing.isRadasBlessing(rawItemId) && enabled.test(EffectFamily.RADAS_BLESSING))
 		{
 			lines.add(RadasBlessing.describe(rawItemId));
 		}
 
-		if (PerPieceSets.InquisitorArmour.isInquisitorItem(mappedItemId))
+		if (RingOfTheGods.isImbuedRing(rawItemId) && enabled.test(EffectFamily.RING_OF_THE_GODS))
 		{
-			lines.addAll(PerPieceSets.InquisitorArmour.describe(equipment));
+			lines.add(RingOfTheGods.describe());
 		}
 
-		if (PerPieceSets.VirtusRobes.isVirtusItem(mappedItemId))
+		if (PerPieceSets.InquisitorArmour.isInquisitorItem(mappedItemId) && enabled.test(EffectFamily.INQUISITORS))
 		{
-			lines.addAll(PerPieceSets.VirtusRobes.describe(equipment));
+			lines.addAll(PerPieceSets.InquisitorArmour.describe(equipment, verbose));
 		}
 
-		if (PerPieceSets.CrystalArmour.isCrystalItem(mappedItemId))
+		if (PerPieceSets.VirtusRobes.isVirtusItem(mappedItemId) && enabled.test(EffectFamily.VIRTUS))
+		{
+			lines.addAll(PerPieceSets.VirtusRobes.describe(equipment, verbose));
+		}
+
+		if (PerPieceSets.CrystalArmour.isCrystalItem(mappedItemId) && enabled.test(EffectFamily.CRYSTAL_ARMOUR))
 		{
 			lines.add(PerPieceSets.CrystalArmour.describe(equipment));
 		}
 
-		if (mappedItemId == ItemID.DAMNED_AMULET)
+		if (PerPieceSets.ShayzienArmour.isShayzienItem(mappedItemId) && enabled.test(EffectFamily.SHAYZIEN))
+		{
+			lines.addAll(PerPieceSets.ShayzienArmour.describe(equipment, verbose, diaries::hardKourend));
+		}
+
+		if (PerPieceSets.SwampbarkArmour.isSwampbarkItem(mappedItemId) && enabled.test(EffectFamily.SWAMPBARK))
+		{
+			lines.addAll(PerPieceSets.SwampbarkArmour.describe(equipment, verbose));
+		}
+
+		if (PerPieceSets.BloodbarkArmour.isBloodbarkItem(mappedItemId) && enabled.test(EffectFamily.BLOODBARK))
+		{
+			lines.addAll(PerPieceSets.BloodbarkArmour.describe(equipment, verbose));
+		}
+
+		if (PerPieceSets.GracefulOutfit.isGracefulItem(mappedItemId) && enabled.test(EffectFamily.GRACEFUL))
+		{
+			lines.addAll(PerPieceSets.GracefulOutfit.describe(equipment, verbose));
+		}
+
+		for (PerPieceSets.SkillingOutfit outfit : PerPieceSets.SkillingOutfit.ALL)
+		{
+			if (outfit.isItem(mappedItemId) && enabled.test(outfit.family))
+			{
+				lines.addAll(outfit.describe(equipment, verbose));
+			}
+		}
+
+		if (EnchantedBolts.isEnchantedBolt(mappedItemId) && enabled.test(EffectFamily.ENCHANTED_BOLTS))
+		{
+			lines.add(EnchantedBolts.describe(mappedItemId, diaries::hardKandarin));
+		}
+
+		if (mappedItemId == ItemID.DAMNED_AMULET && enabled.test(EffectFamily.AMULET_OF_THE_DAMNED))
 		{
 			lines.add(amuletOfTheDamnedEffect(equipment));
 		}
@@ -88,7 +129,7 @@ final class EquippedEffects
 	 * Void's pieces span up to four equipped slots and would otherwise repeat, and the Salve
 	 * amulet's tiers only differ by raw id, which the generic per-item pass doesn't see.
 	 */
-	static List<EffectLine> describeEquipment(ItemContainer equipment)
+	static List<EffectLine> describeEquipment(ItemContainer equipment, Predicate<EffectFamily> enabled, boolean verbose, DiaryChecks diaries)
 	{
 		List<EffectLine> lines = new ArrayList<>();
 		Set<ItemSet> seenSets = new HashSet<>();
@@ -97,9 +138,16 @@ final class EquippedEffects
 		int blackMaskRawId = -1;
 		int slayerHelmRawId = -1;
 		int radasBlessingRawId = -1;
+		boolean hasImbuedRingOfTheGods = false;
 		boolean hasInquisitorItem = false;
 		boolean hasVirtusItem = false;
 		boolean hasCrystalItem = false;
+		boolean hasSwampbarkItem = false;
+		boolean hasShayzienItem = false;
+		int enchantedBoltId = -1;
+		boolean hasBloodbarkItem = false;
+		boolean hasGracefulItem = false;
+		Set<PerPieceSets.SkillingOutfit> xpOutfits = new HashSet<>();
 		boolean hasDamnedAmulet = false;
 		int fullBarrowsLineIndex = -1;
 
@@ -116,7 +164,7 @@ final class EquippedEffects
 				{
 					for (ItemSet set : sets)
 					{
-						if (seenSets.add(set))
+						if (enabled.test(set.getFamily()) && seenSets.add(set))
 						{
 							lines.add(set.describe(equipment));
 							if (set.getAmuletOfTheDamnedSynergy() != null && set.isFullyWorn(equipment))
@@ -128,7 +176,7 @@ final class EquippedEffects
 				}
 
 				SingleItemEffect single = SetEffectsData.SINGLE_ITEM_EFFECTS.get(mappedItemId);
-				if (single != null)
+				if (single != null && enabled.test(single.getFamily()))
 				{
 					lines.add(single.describe());
 				}
@@ -137,6 +185,21 @@ final class EquippedEffects
 				hasInquisitorItem |= PerPieceSets.InquisitorArmour.isInquisitorItem(mappedItemId);
 				hasVirtusItem |= PerPieceSets.VirtusRobes.isVirtusItem(mappedItemId);
 				hasCrystalItem |= PerPieceSets.CrystalArmour.isCrystalItem(mappedItemId);
+				hasSwampbarkItem |= PerPieceSets.SwampbarkArmour.isSwampbarkItem(mappedItemId);
+				hasShayzienItem |= PerPieceSets.ShayzienArmour.isShayzienItem(mappedItemId);
+				if (EnchantedBolts.isEnchantedBolt(mappedItemId))
+				{
+					enchantedBoltId = mappedItemId;
+				}
+				hasBloodbarkItem |= PerPieceSets.BloodbarkArmour.isBloodbarkItem(mappedItemId);
+				hasGracefulItem |= PerPieceSets.GracefulOutfit.isGracefulItem(mappedItemId);
+				for (PerPieceSets.SkillingOutfit outfit : PerPieceSets.SkillingOutfit.ALL)
+				{
+					if (outfit.isItem(mappedItemId))
+					{
+						xpOutfits.add(outfit);
+					}
+				}
 				hasVoidItem |= VoidKnight.isVoidItem(mappedItemId);
 				if (SalveAmulet.isSalveAmulet(rawItemId))
 				{
@@ -154,10 +217,11 @@ final class EquippedEffects
 				{
 					radasBlessingRawId = rawItemId;
 				}
+				hasImbuedRingOfTheGods |= RingOfTheGods.isImbuedRing(rawItemId);
 			}
 		}
 
-		if (hasDamnedAmulet)
+		if (hasDamnedAmulet && enabled.test(EffectFamily.AMULET_OF_THE_DAMNED))
 		{
 			EffectLine amuletLine = amuletOfTheDamnedEffect(equipment);
 			if (fullBarrowsLineIndex >= 0)
@@ -173,44 +237,82 @@ final class EquippedEffects
 			}
 		}
 
-		if (hasVoidItem)
+		if (hasVoidItem && enabled.test(EffectFamily.VOID_KNIGHT))
 		{
 			lines.add(VoidKnight.describe(equipment));
 		}
 
-		if (salveAmuletRawId != -1)
+		if (salveAmuletRawId != -1 && enabled.test(EffectFamily.SALVE_AMULET))
 		{
 			lines.add(SalveAmulet.describe(salveAmuletRawId));
 		}
 
-		if (blackMaskRawId != -1)
+		if (blackMaskRawId != -1 && enabled.test(EffectFamily.BLACK_MASK))
 		{
 			lines.add(BlackMask.describe(blackMaskRawId));
 		}
 
-		if (slayerHelmRawId != -1)
+		if (slayerHelmRawId != -1 && enabled.test(EffectFamily.SLAYER_HELMET))
 		{
 			lines.add(SlayerHelm.describe(slayerHelmRawId));
 		}
 
-		if (radasBlessingRawId != -1)
+		if (radasBlessingRawId != -1 && enabled.test(EffectFamily.RADAS_BLESSING))
 		{
 			lines.add(RadasBlessing.describe(radasBlessingRawId));
 		}
 
-		if (hasInquisitorItem)
+		if (hasImbuedRingOfTheGods && enabled.test(EffectFamily.RING_OF_THE_GODS))
 		{
-			lines.addAll(PerPieceSets.InquisitorArmour.describe(equipment));
+			lines.add(RingOfTheGods.describe());
 		}
 
-		if (hasVirtusItem)
+		if (hasInquisitorItem && enabled.test(EffectFamily.INQUISITORS))
 		{
-			lines.addAll(PerPieceSets.VirtusRobes.describe(equipment));
+			lines.addAll(PerPieceSets.InquisitorArmour.describe(equipment, verbose));
 		}
 
-		if (hasCrystalItem)
+		if (hasVirtusItem && enabled.test(EffectFamily.VIRTUS))
+		{
+			lines.addAll(PerPieceSets.VirtusRobes.describe(equipment, verbose));
+		}
+
+		if (hasCrystalItem && enabled.test(EffectFamily.CRYSTAL_ARMOUR))
 		{
 			lines.add(PerPieceSets.CrystalArmour.describe(equipment));
+		}
+
+		if (hasShayzienItem && enabled.test(EffectFamily.SHAYZIEN))
+		{
+			lines.addAll(PerPieceSets.ShayzienArmour.describe(equipment, verbose, diaries::hardKourend));
+		}
+
+		if (enchantedBoltId != -1 && enabled.test(EffectFamily.ENCHANTED_BOLTS))
+		{
+			lines.add(EnchantedBolts.describe(enchantedBoltId, diaries::hardKandarin));
+		}
+
+		if (hasSwampbarkItem && enabled.test(EffectFamily.SWAMPBARK))
+		{
+			lines.addAll(PerPieceSets.SwampbarkArmour.describe(equipment, verbose));
+		}
+
+		if (hasBloodbarkItem && enabled.test(EffectFamily.BLOODBARK))
+		{
+			lines.addAll(PerPieceSets.BloodbarkArmour.describe(equipment, verbose));
+		}
+
+		if (hasGracefulItem && enabled.test(EffectFamily.GRACEFUL))
+		{
+			lines.addAll(PerPieceSets.GracefulOutfit.describe(equipment, verbose));
+		}
+
+		for (PerPieceSets.SkillingOutfit outfit : xpOutfits)
+		{
+			if (enabled.test(outfit.family))
+			{
+				lines.addAll(outfit.describe(equipment, verbose));
+			}
 		}
 
 		return sortedByName(lines);
@@ -250,14 +352,14 @@ final class EquippedEffects
 		return sorted;
 	}
 
-	private static void appendItemEffects(List<EffectLine> lines, ItemContainer equipment, int itemId, Set<ItemSet> seenSets)
+	private static void appendItemEffects(List<EffectLine> lines, ItemContainer equipment, int itemId, Set<ItemSet> seenSets, Predicate<EffectFamily> enabled)
 	{
 		List<ItemSet> sets = SetEffectsData.SETS_BY_ITEM.get(itemId);
 		if (sets != null)
 		{
 			for (ItemSet set : sets)
 			{
-				if (seenSets.add(set))
+				if (enabled.test(set.getFamily()) && seenSets.add(set))
 				{
 					lines.add(set.describe(equipment));
 				}
@@ -265,7 +367,7 @@ final class EquippedEffects
 		}
 
 		SingleItemEffect single = SetEffectsData.SINGLE_ITEM_EFFECTS.get(itemId);
-		if (single != null)
+		if (single != null && enabled.test(single.getFamily()))
 		{
 			lines.add(single.describe());
 		}

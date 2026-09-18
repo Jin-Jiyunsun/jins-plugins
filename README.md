@@ -16,10 +16,21 @@ have to look it up. Hover an item for a tooltip, or check the "Set Effect Bonus"
   a draggable thumb, styled to match a native OSRS scrollbar.
 - **Colour-coded**: effect names are white, a set's worn/total tally is green when complete or red
   when incomplete, and damage/accuracy numbers are yellow.
-- **~90 sets and items tracked**, every number sourced and verified against the OSRS Wiki:
+- **~100 sets and items tracked**, every number sourced and verified against the OSRS Wiki:
   all six Barrows sets, Justiciar, Inquisitor's, Obsidian, the three Moons of Peril sets, Virtus,
-  Crystal armour, Shayzien, Void Knight (including Elite), the Salve amulet, Black mask and Slayer helmet, and dozens of individual
-  weapons, shields, amulets and rings.
+  Crystal armour, Shayzien, Void Knight (including Elite), the skilling outfits (Graceful, Angler, Prospector and more),
+  the Salve amulet, Black mask and Slayer helmet, and dozens of individual weapons, shields, amulets and rings.
+
+## Settings
+
+- **Show set effect list**: turn off to leave the vanilla "Set Effect Bonus" box alone.
+- **Show tooltips**: turn off to hide the hover tooltips.
+- **Verbose**: on by default. Turn off to skip the per-piece breakdown lines for Inquisitor's
+  armour and Virtus robes and show only the header and current bonus.
+- **Per-item toggles**: every tracked set or item (or family of near-identical variants, like all
+  four Salve amulet tiers) has its own checkbox, grouped into collapsible sections (Barrows,
+  Armour sets, Weapons, Shields, Head and hands, Jewellery, Skilling outfits, Miscellaneous). An item you turn off
+  is hidden from both the tooltip and the list.
 
 ### License
 

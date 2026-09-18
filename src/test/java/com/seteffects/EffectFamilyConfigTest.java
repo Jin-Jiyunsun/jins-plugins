@@ -10,12 +10,12 @@ import static org.junit.Assert.assertTrue;
 
 /**
  * Every {@link EffectFamily} needs a matching per-family toggle in the config (and vice versa,
- * apart from the two master toggles) - a mismatched key wouldn't fail at runtime, the toggle would
+ * apart from the master toggles and the warm clothing dropdown) - a mismatched key wouldn't fail at runtime, the toggle would
  * just silently do nothing. Reflection is fine here: this is test code, not shipped plugin code.
  */
 public class EffectFamilyConfigTest
 {
-	private static final Set<String> MASTER_TOGGLES = Set.of("showSetEffectList", "showTooltips", "verbose");
+	private static final Set<String> MASTER_TOGGLES = Set.of("showSetEffectList", "showTooltips", "verbose", "warmClothing");
 
 	@Test
 	public void everyFamilyHasAMatchingConfigItemAndViceVersa()

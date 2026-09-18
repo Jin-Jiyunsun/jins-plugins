@@ -5,6 +5,7 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.function.BooleanSupplier;
 import java.util.function.Predicate;
 import net.runelite.api.EquipmentInventorySlot;
 import net.runelite.api.Item;
@@ -141,7 +142,7 @@ final class EquippedEffects
 	 * amulet's tiers only differ by raw id, which the generic per-item pass doesn't see.
 	 */
 	static List<EffectLine> describeEquipment(ItemContainer equipment, Predicate<EffectFamily> enabled, boolean verbose, DiaryChecks diaries,
-		List<EffectLine> vanillaOnlyLines)
+		List<EffectLine> vanillaOnlyLines, BooleanSupplier showWarmClothing)
 	{
 		List<EffectLine> lines = new ArrayList<>();
 		Set<ItemSet> seenSets = new HashSet<>();
@@ -340,6 +341,11 @@ final class EquippedEffects
 			{
 				lines.addAll(outfit.describe(equipment, verbose));
 			}
+		}
+
+		if (showWarmClothing.getAsBoolean())
+		{
+			lines.add(WarmClothing.describe(equipment));
 		}
 
 		List<EffectLine> sorted = sortedByName(lines);

@@ -9,6 +9,7 @@ import javax.inject.Inject;
 import net.runelite.api.Client;
 import net.runelite.api.ItemContainer;
 import net.runelite.api.MenuEntry;
+import net.runelite.api.Player;
 import net.runelite.api.events.BeforeRender;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.InventoryID;
@@ -34,6 +35,9 @@ import net.runelite.client.ui.overlay.tooltip.TooltipManager;
 public class SetEffectsPlugin extends Plugin
 {
 	private static final int WRAP_WIDTH = 50;
+	// Wintertodt's bank camp and its arena (no gameval for region ids)
+	private static final int WINTERTODT_CAMP_REGION = 6461;
+	private static final int WINTERTODT_ARENA_REGION = 6462;
 	private static final String TOOLTIP_LINE_BREAK = "</br>";
 
 	// A single space, not empty - keeps the native text widget's own layout/sizing stable
@@ -70,6 +74,7 @@ public class SetEffectsPlugin extends Plugin
 	private volatile boolean showSetEffectList = true;
 	private volatile boolean showTooltips = true;
 	private volatile boolean verbose = false;
+	private volatile WarmClothingDisplay warmClothingDisplay = WarmClothingDisplay.AT_WINTERTODT;
 
 	/**
 	 * The vanilla "Set Effect Bonus" box's own text, rewritten by the game's own script whenever
@@ -127,6 +132,7 @@ public class SetEffectsPlugin extends Plugin
 		showSetEffectList = config.showSetEffectList();
 		showTooltips = config.showTooltips();
 		verbose = config.verbose();
+		warmClothingDisplay = config.warmClothing();
 
 		Set<EffectFamily> disabled = EnumSet.noneOf(EffectFamily.class);
 		for (EffectFamily family : EffectFamily.values())
@@ -144,6 +150,32 @@ public class SetEffectsPlugin extends Plugin
 	boolean isFamilyEnabled(EffectFamily family)
 	{
 		return !disabledFamilies.contains(family);
+	}
+
+	/** Read on the client thread, and only when the list is actually being built. */
+	boolean isWarmClothingShown()
+	{
+		switch (warmClothingDisplay)
+		{
+			case ALWAYS:
+				return true;
+			case AT_WINTERTODT:
+				return isAtWintertodt();
+			default:
+				return false;
+		}
+	}
+
+	private boolean isAtWintertodt()
+	{
+		Player player = client.getLocalPlayer();
+		if (player == null)
+		{
+			return false;
+		}
+
+		int region = player.getWorldLocation().getRegionID();
+		return region == WINTERTODT_CAMP_REGION || region == WINTERTODT_ARENA_REGION;
 	}
 
 	boolean isVerbose()

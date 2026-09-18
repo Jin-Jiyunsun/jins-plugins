@@ -1032,6 +1032,18 @@ public interface SetEffectDisplayConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "warmClothing",
+		name = "Show warm clothing",
+		description = "Show how many pieces of warm clothing you are wearing (four give the maximum Wintertodt damage reduction). At Wintertodt: only in the camp and the arena",
+		section = miscSection,
+		position = 1
+	)
+	default WarmClothingDisplay warmClothing()
+	{
+		return WarmClothingDisplay.AT_WINTERTODT;
+	}
+
+	@ConfigItem(
 		keyName = "circletOfWater",
 		name = "Circlet of water",
 		description = "Show the Circlet of water effect",

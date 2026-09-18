@@ -93,7 +93,10 @@ class SetEffectsOverlay extends Overlay implements MouseListener, MouseWheelList
 		this.client = client;
 		this.plugin = plugin;
 		this.spriteManager = spriteManager;
-		setLayer(OverlayLayer.ABOVE_WIDGETS);
+		// Drawn right after the equipment stats interface rather than above every widget, so
+		// anything that opens over it (the world map, for one) covers our text like the rest of it
+		setLayer(OverlayLayer.MANUAL);
+		drawAfterInterface(InterfaceID.EQUIPMENT);
 		setPosition(OverlayPosition.DYNAMIC);
 	}
 
@@ -166,7 +169,7 @@ class SetEffectsOverlay extends Overlay implements MouseListener, MouseWheelList
 			: new Rectangle(drawBounds.x + drawBounds.width - scrollbarWidth - 1, drawBounds.y, scrollbarWidth, drawBounds.height);
 
 		List<EffectLine> effectLines = EquippedEffects.describeEquipment(equipment, plugin::isFamilyEnabled, plugin.isVerbose(), plugin.getDiaryChecks(),
-			plugin.getVanillaOnlyLines());
+			plugin.getVanillaOnlyLines(), plugin::isWarmClothingShown);
 
 		graphics.setFont(FontManager.getRunescapeFont());
 		FontMetrics metrics = graphics.getFontMetrics();

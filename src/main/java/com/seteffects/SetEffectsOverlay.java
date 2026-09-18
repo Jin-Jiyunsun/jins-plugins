@@ -51,7 +51,7 @@ class SetEffectsOverlay extends Overlay implements MouseListener, MouseWheelList
 	// Our scrollbar sits this far below the native one it is drawn over, to keep the same gap to the frame edge and bottom
 	private static final int SCROLLBAR_OFFSET_Y = 1;
 	private static final long STALE_AFTER_NANOS = 1_000_000_000L;
-	private static final Color TEXT_COLOR = new Color(0xff981f);
+	private static final Color TEXT_COLOR = EffectLineFormat.EFFECT_COLOR;
 	private static final int LINE_HEIGHT = 13;
 	private static final int SCROLL_STEP = LINE_HEIGHT * 3;
 

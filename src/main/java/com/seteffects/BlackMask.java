@@ -53,11 +53,11 @@ final class BlackMask
 		if (IMBUED_IDS.contains(rawItemId))
 		{
 			return new EffectLine("Black mask (i)",
-				"+16.67% increased melee accuracy and damage, +15% for ranged and magic, against your assigned "
+				"+16.67% melee accuracy and damage, +15% for ranged and magic, against your assigned "
 					+ "Slayer task. Does not stack with the salve amulet.");
 		}
 
-		return new EffectLine("Black mask", "+16.67% increased melee accuracy and damage against your assigned Slayer task.");
+		return new EffectLine("Black mask", "+16.67% melee accuracy and damage against your assigned Slayer task.");
 	}
 
 	private static Set<Integer> idSet(Integer... ids)

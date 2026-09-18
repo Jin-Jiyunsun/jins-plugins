@@ -30,13 +30,13 @@ final class SetEffectsData
 			ItemID.BARROWS_AHRIM_HEAD, ItemID.BARROWS_AHRIM_BODY, ItemID.BARROWS_AHRIM_LEGS, ItemID.BARROWS_AHRIM_WEAPON,
 			"Autocasts Ancient Magicks, 25% chance of 30% increased damage."));
 		sets.add(fourPiece(EffectFamily.DHAROKS, "Dharok's set",
-			"Damage increases as Hitpoints decrease, up to +98% extra damage at 1 HP (with 99 Hitpoints).",
+			"Damage increases as HP decrease, up to +98% extra damage at 1 HP (with 99 HP).",
 			ItemID.BARROWS_DHAROK_HEAD, ItemID.BARROWS_DHAROK_BODY, ItemID.BARROWS_DHAROK_LEGS, ItemID.BARROWS_DHAROK_WEAPON,
 			"25% chance to recoil 15% of damage taken back at the attacker."));
 		sets.add(fourPiece(EffectFamily.GUTHANS, "Guthan's set",
-			"Successful melee attacks have a 25% chance to heal Hitpoints equal to the damage dealt.",
+			"Successful melee attacks have a 25% chance to heal HP equal to the damage dealt.",
 			ItemID.BARROWS_GUTHAN_HEAD, ItemID.BARROWS_GUTHAN_BODY, ItemID.BARROWS_GUTHAN_LEGS, ItemID.BARROWS_GUTHAN_WEAPON,
-			"Allows healing up to 10 Hitpoints above your base level."));
+			"Allows healing up to 10 HP above your base level."));
 		sets.add(fourPiece(EffectFamily.KARILS, "Karil's set",
 			"Successful ranged attacks have a 25% chance to lower the target's Agility level by 20%.",
 			ItemID.BARROWS_KARIL_HEAD, ItemID.BARROWS_KARIL_BODY, ItemID.BARROWS_KARIL_LEGS, ItemID.BARROWS_KARIL_WEAPON,
@@ -44,7 +44,7 @@ final class SetEffectsData
 		sets.add(fourPiece(EffectFamily.TORAGS, "Torag's set",
 			"Successful melee attacks have a 25% chance to lower the target's run energy by 20%.",
 			ItemID.BARROWS_TORAG_HEAD, ItemID.BARROWS_TORAG_BODY, ItemID.BARROWS_TORAG_LEGS, ItemID.BARROWS_TORAG_WEAPON,
-			"Defence level increases by 1% per Hitpoint missing."));
+			"Defence level increases by 1% per HP missing."));
 		sets.add(fourPiece(EffectFamily.VERACS, "Verac's set",
 			"Attacks have a 25% chance to be a guaranteed hit, ignoring accuracy. This can bypass prayer.",
 			ItemID.BARROWS_VERAC_HEAD, ItemID.BARROWS_VERAC_BODY, ItemID.BARROWS_VERAC_LEGS, ItemID.BARROWS_VERAC_WEAPON,
@@ -73,9 +73,6 @@ final class SetEffectsData
 			"The eclipse atlatl has a 20% chance to burn the target for 10 damage over time (stacks up to 5 times).",
 			ItemID.ECLIPSE_MOON_HELM, ItemID.ECLIPSE_MOON_CHESTPLATE, ItemID.ECLIPSE_MOON_TASSETS, ItemID.ECLIPSE_ATLATL, null));
 
-		sets.add(new ItemSet(EffectFamily.HUNTER_GEAR, "Kyatt hunter gear",
-			"Damage taken from hunter creatures is reduced by 60%.",
-			threePiece(ItemID.HUNTING_HAT_TIGER, ItemID.HUNTING_TORSO_TIGER, ItemID.HUNTING_TROUSERS_TIGER)));
 		sets.add(new ItemSet(EffectFamily.HUNTER_GEAR, "Graahk hunter gear",
 			"Damage taken from hunter creatures is reduced by 40%.",
 			threePiece(ItemID.HUNTING_HAT_LEOPARD, ItemID.HUNTING_TORSO_LEOPARD, ItemID.HUNTING_TROUSERS_LEOPARD)));
@@ -111,9 +108,9 @@ final class SetEffectsData
 		singles.put(ItemID.WILD_CAVE_ACCURSED_CHARGED, new SingleItemEffect(EffectFamily.REVENANT_WEAPONS, "Accursed sceptre", "While charged with at least 1000 revenant ether: +50% magic damage and accuracy against any NPC in the Wilderness (consumes ether per attack)."));
 		singles.put(ItemID.WILD_CAVE_CHAINMACE_CHARGED, new SingleItemEffect(EffectFamily.REVENANT_WEAPONS, "Viggora's chainmace", "While charged with at least 1000 revenant ether: +50% melee damage and accuracy against any NPC in the Wilderness (consumes ether per attack)."));
 		singles.put(ItemID.WILD_CAVE_URSINE_CHARGED, new SingleItemEffect(EffectFamily.REVENANT_WEAPONS, "Ursine chainmace", "While charged with at least 1000 revenant ether: +50% melee damage and accuracy against any NPC in the Wilderness (consumes ether per attack)."));
-		singles.put(ItemID.SOTD, new SingleItemEffect(EffectFamily.STAVES_OF_THE_DEAD, "Staff of the dead", "12.5% chance to negate the rune cost of a combat spell cast with it."));
-		singles.put(ItemID.TOXIC_SOTD_CHARGED, new SingleItemEffect(EffectFamily.STAVES_OF_THE_DEAD, "Toxic staff of the dead", "12.5% chance to negate the rune cost of a combat spell cast with it. In addition, combat spells have a 25% chance to venom the target, increased to 100% when the serpentine helm is worn (vs NPCs)."));
-		singles.put(ItemID.STAFF_OF_LIGHT, new SingleItemEffect(EffectFamily.STAVES_OF_THE_DEAD, "Staff of light", "12.5% chance to negate the rune cost of a combat spell cast with it."));
+		singles.put(ItemID.SOTD, new SingleItemEffect(EffectFamily.STAVES_OF_THE_DEAD, "Staff of the dead", "14.2% chance to negate the rune cost of a combat spell cast with it."));
+		singles.put(ItemID.TOXIC_SOTD_CHARGED, new SingleItemEffect(EffectFamily.STAVES_OF_THE_DEAD, "Toxic staff of the dead", "14.2% chance to negate the rune cost of a combat spell cast with it. In addition, combat spells have a 25% chance to venom the target, increased to 100% when the serpentine helm is worn (vs NPCs)."));
+		singles.put(ItemID.STAFF_OF_LIGHT, new SingleItemEffect(EffectFamily.STAVES_OF_THE_DEAD, "Staff of light", "14.2% chance to negate the rune cost of a combat spell cast with it."));
 		singles.put(ItemID.KODAI_WAND, new SingleItemEffect(EffectFamily.KODAI_WAND, "Kodai wand", "15% chance to negate the rune cost of an offensive spell cast with it."));
 		singles.put(ItemID.SANGUINESTI_STAFF, new SingleItemEffect(EffectFamily.SANGUINESTI_STAFF, "Sanguinesti staff", "20% chance to deal 8 extra damage and heal the wielder for half the total hit."));
 		singles.put(ItemID.SILVERLIGHT, new SingleItemEffect(EffectFamily.SILVERLIGHT, "Silverlight", "+60% damage and accuracy against demons."));
@@ -124,7 +121,7 @@ final class SetEffectsData
 		singles.put(ItemID.CONTACT_KERIS, new SingleItemEffect(EffectFamily.KERIS_PARTISANS, "Keris", "+33% damage against kalphites and scarab creatures. 1.96% chance to deal triple damage."));
 		singles.put(ItemID.KERIS_PARTISAN, new SingleItemEffect(EffectFamily.KERIS_PARTISANS, "Keris partisan", "+33% damage against kalphites and scarab creatures. 1.96% chance to deal triple damage."));
 		singles.put(ItemID.KERIS_PARTISAN_BREACH, new SingleItemEffect(EffectFamily.KERIS_PARTISANS, "Keris partisan of breaching", "+33% accuracy and damage against kalphites and scarab creatures. 1.96% chance to deal triple damage."));
-		singles.put(ItemID.KERIS_PARTISAN_SUN, new SingleItemEffect(EffectFamily.KERIS_PARTISANS, "Keris partisan of the sun", "+33% damage against kalphites and scarab creatures. In the Tombs of Amascut, +25% accuracy against targets below 25% health, and kills heal 12 HP at the cost of 5 Prayer, overhealing up to 20% above your Hitpoints."));
+		singles.put(ItemID.KERIS_PARTISAN_SUN, new SingleItemEffect(EffectFamily.KERIS_PARTISANS, "Keris partisan of the sun", "+33% damage against kalphites and scarab creatures. In the Tombs of Amascut, +25% accuracy against targets below 25% health, and kills heal 12 HP at the cost of 5 Prayer, overhealing up to 20% above your HP."));
 		singles.put(ItemID.DAGGER_WOLFBANE, new SingleItemEffect(EffectFamily.WOLFBANE, "Wolfbane", "Prevents Canifis residents from transforming into werewolves."));
 		singles.put(ItemID.GIANTS_FOUNDRY_COLOSSAL_BLADE, new SingleItemEffect(EffectFamily.COLOSSAL_BLADE, "Colossal blade", "Increases max hit against larger enemies, scaling with the target's size."));
 		singles.put(ItemID.LEAFBLADED_BATTLEAXE, new SingleItemEffect(EffectFamily.LEAF_BLADED_BATTLEAXE, "Leaf-bladed battleaxe", "+17.5% damage against turoths and kurasks. Stacks with the Slayer helmet."));
@@ -170,17 +167,17 @@ final class SetEffectsData
 
 		// handwear
 		singles.put(ItemID.GAUNTLETS_OF_CHAOS, new SingleItemEffect(EffectFamily.CHAOS_GAUNTLETS, "Chaos gauntlets", "Increases the max hit of your bolt spells by 3, before magic damage and weakness bonuses are applied."));
-		singles.put(ItemID.JEWL_BRACELET_REGEN, new SingleItemEffect(EffectFamily.REGEN_BRACELET, "Regen bracelet", "Doubles the rate of natural Hitpoints regeneration. Stacks with Rapid Heal or the Hitpoints cape, not both."));
+		singles.put(ItemID.JEWL_BRACELET_REGEN, new SingleItemEffect(EffectFamily.REGEN_BRACELET, "Regen bracelet", "Doubles the rate of natural HP regeneration. Stacks with Rapid Heal or the Hitpoints cape, not both."));
 
 		// amulets
-		singles.put(ItemID.NECKLACE_OF_FAITH, new SingleItemEffect(EffectFamily.NECKLACE_OF_FAITH, "Necklace of faith", "When hit below 20% Hitpoints, restores Prayer points equal to 25% of your Prayer level, then breaks."));
-		singles.put(ItemID.JEWL_NECKLACE_OF_PHOENIX, new SingleItemEffect(EffectFamily.PHOENIX_NECKLACE, "Phoenix necklace", "When hit below 20% Hitpoints, heals 30% of max Hitpoints, then breaks."));
+		singles.put(ItemID.NECKLACE_OF_FAITH, new SingleItemEffect(EffectFamily.NECKLACE_OF_FAITH, "Necklace of faith", "When hit below 20% HP, restores Prayer points equal to 25% of your Prayer level, then breaks."));
+		singles.put(ItemID.JEWL_NECKLACE_OF_PHOENIX, new SingleItemEffect(EffectFamily.PHOENIX_NECKLACE, "Phoenix necklace", "When hit below 20% HP, heals 30% of max HP, then breaks."));
 		singles.put(ItemID.AMULET_OF_GLORY, new SingleItemEffect(EffectFamily.AMULET_OF_GLORY, "Amulet of glory", "While charged, increases gem-finding chance while mining and increases mining speed on gem rocks."));
-		singles.put(ItemID.WILD_CAVE_AMULET, new SingleItemEffect(EffectFamily.AMULET_OF_AVARICE, "Amulet of avarice", "Revenant, Wilderness Slayer Cave, and Chaos Temple drops will be noted. Revenant unique drop rates double, and you gain +20% increased damage and accuracy against revenants. Skulls the player while worn."));
+		singles.put(ItemID.WILD_CAVE_AMULET, new SingleItemEffect(EffectFamily.AMULET_OF_AVARICE, "Amulet of avarice", "Most Revenant, Wilderness Slayer Cave, and Chaos Temple drops will be noted. Revenant unique drop rates double, and you gain +20% damage and accuracy against revenants. Skulls the player while worn."));
 		singles.put(ItemID.BLOOD_AMULET, new SingleItemEffect(EffectFamily.AMULET_OF_BLOOD_FURY, "Amulet of blood fury", "20% chance to heal for 30% of melee damage dealt."));
 
 		// rings
-		singles.put(ItemID.RING_OF_LIFE, new SingleItemEffect(EffectFamily.RING_OF_LIFE, "Ring of life", "When hit below 10% Hitpoints, teleports you to your respawn point, then breaks."));
+		singles.put(ItemID.RING_OF_LIFE, new SingleItemEffect(EffectFamily.RING_OF_LIFE, "Ring of life", "When hit below 10% HP, teleports you to your respawn point, then breaks."));
 		singles.put(ItemID.RING_OF_WEALTH, new SingleItemEffect(EffectFamily.RING_OF_WEALTH, "Ring of wealth", "Removes empty Rare Drop Table slots and can collect currency drops for you."));
 		singles.put(ItemID.RING_OF_RECOIL, new SingleItemEffect(EffectFamily.RING_OF_RECOIL, "Ring of recoil", "Returns 1+10% of damage taken back at the attacker."));
 		singles.put(ItemID.ZENYTE_RING_ENCHANTED, new SingleItemEffect(EffectFamily.RING_OF_SUFFERING, "Ring of suffering", "When charged with rings of recoil, returns 1+10% of damage taken back at the attacker."));
@@ -197,10 +194,10 @@ final class SetEffectsData
 		singles.put(ItemID.WATER_CIRCLET, new SingleItemEffect(EffectFamily.CIRCLET_OF_WATER, "Circlet of water", "While charged with water runes, protects against desert heat."));
 		// Capes of accomplishment (keyed by the untrimmed cape - the trimmed one maps to it)
 		singles.put(ItemID.SKILLCAPE_COOKING, new SingleItemEffect(EffectFamily.CAPES_OF_ACCOMPLISHMENT, "Cooking cape", "Food never burns while cooking."));
-		singles.put(ItemID.SKILLCAPE_DEFENCE, new SingleItemEffect(EffectFamily.CAPES_OF_ACCOMPLISHMENT, "Defence cape", "Acts as a ring of life, teleporting you to your respawn point when hit below 10% Hitpoints."));
+		singles.put(ItemID.SKILLCAPE_DEFENCE, new SingleItemEffect(EffectFamily.CAPES_OF_ACCOMPLISHMENT, "Defence cape", "Acts as a ring of life, teleporting you to your respawn point when hit below 10% HP."));
 		singles.put(ItemID.SKILLCAPE_FARMING, new SingleItemEffect(EffectFamily.CAPES_OF_ACCOMPLISHMENT, "Farming cape", "+5% to the base chance to save harvest lives and gain extra herbs from herb patches. Stacks with magic secateurs."));
 		singles.put(ItemID.SKILLCAPE_HERBLORE, new SingleItemEffect(EffectFamily.CAPES_OF_ACCOMPLISHMENT, "Herblore cape", "Grimy herbs can be used to make unfinished potions, giving the experience of cleaning the herb."));
-		singles.put(ItemID.SKILLCAPE_HITPOINTS, new SingleItemEffect(EffectFamily.CAPES_OF_ACCOMPLISHMENT, "Hitpoints cape", "Doubles your natural Hitpoint restoration rate. Does not stack with Rapid Heal, but stacks with the regen bracelet."));
+		singles.put(ItemID.SKILLCAPE_HITPOINTS, new SingleItemEffect(EffectFamily.CAPES_OF_ACCOMPLISHMENT, "Hitpoints cape", "Doubles your natural HP restoration rate. Does not stack with Rapid Heal, but stacks with the regen bracelet."));
 		singles.put(ItemID.SKILLCAPE_MINING, new SingleItemEffect(EffectFamily.CAPES_OF_ACCOMPLISHMENT, "Mining cape", "5% chance of an extra ore from rocks up to adamantite. Stacks with Varrock armour."));
 		singles.put(ItemID.SKILLCAPE_PRAYER, new SingleItemEffect(EffectFamily.CAPES_OF_ACCOMPLISHMENT, "Prayer cape", "Increases the Prayer points restored by prayer potions, like the holy wrench. Works worn or in your inventory. Does not stack with the wrench or ring of the gods (i)."));
 		singles.put(ItemID.SKILLCAPE_RANGING, new SingleItemEffect(EffectFamily.CAPES_OF_ACCOMPLISHMENT, "Ranging cape", "Acts as Ava's accumulator, recovering 72% of your fired ammunition (80% once upgraded with Vorkath's head)."));
@@ -217,7 +214,7 @@ final class SetEffectsData
 		singles.put(ItemID.TORTUGAN_SHIELD, new SingleItemEffect(EffectFamily.TORTUGAN_SHIELD, "Tortugan shield", "Negates the devastating attacks of dire and shellbane gryphons, letting Protect from Melee fully block their melee attacks."));
 		singles.put(ItemID.MEDALLION_OF_THE_DEEP, new SingleItemEffect(EffectFamily.MEDALLION_OF_THE_DEEP, "Medallion of the Deep", "Lets you breathe underwater without diving apparatus or a fishbowl helmet, and reduces oxygen depletion by 80% in the underwater Agility and Thieving area."));
 		singles.put(ItemID.DODGY_NECKLACE, new SingleItemEffect(EffectFamily.DODGY_NECKLACE, "Dodgy necklace", "25% chance to prevent being stunned and damaged when pickpocketing. Stacks with Shadow Veil."));
-		singles.put(ItemID.VAMPYRE_RING, new SingleItemEffect(EffectFamily.EFARITAYS_AID, "Efaritay's aid", "+10% damage and +15% accuracy against vampyres. Stacks with the black mask or slayer helmet."));
+		singles.put(ItemID.VAMPYRE_RING, new SingleItemEffect(EffectFamily.EFARITAYS_AID, "Efaritay's aid", "+10% damage and +15% accuracy against vampyres. Stacks with the black mask or Slayer helmet."));
 		singles.put(ItemID.LIGHTBEARER, new SingleItemEffect(EffectFamily.LIGHTBEARER, "Lightbearer", "Regenerates special attack energy twice as fast."));
 		singles.put(ItemID.CELESTIAL_RING, new SingleItemEffect(EffectFamily.CELESTIAL_RING, "Celestial ring", "Grants an invisible +4 Mining boost. While charged, 10% chance of an extra ore from rocks up to adamantite."));
 		singles.put(ItemID.CELESTIAL_SIGNET, new SingleItemEffect(EffectFamily.CELESTIAL_RING, "Celestial signet", "Grants an invisible +4 Mining boost. While charged, 10% chance of an extra ore from rocks up to adamantite, granting experience for both. 10% chance to not use a charge on crystal equipment, except the blade of Saeldor and bow of Faerdhinen."));
@@ -225,7 +222,7 @@ final class SetEffectsData
 		singles.put(ItemID.SKILLCAPE_RUNECRAFTING, new SingleItemEffect(EffectFamily.CAPES_OF_ACCOMPLISHMENT, "Runecrafting cape", "Allows access to any runic altar without a talisman or tiara. Essence pouches do not degrade when filled."));
 		singles.put(ItemID.SKILLCAPE_SLAYER, new SingleItemEffect(EffectFamily.CAPES_OF_ACCOMPLISHMENT, "Slayer cape", "10% chance to be offered your previous task when getting a new one from a Slayer master. Bypasses combat level requirements when receiving tasks."));
 		singles.put(ItemID.SKILLCAPE_SMITHING, new SingleItemEffect(EffectFamily.CAPES_OF_ACCOMPLISHMENT, "Smithing cape", "Increases the coal bag's capacity to 36 coal. Acts as goldsmith gauntlets."));
-		singles.put(ItemID.SKILLCAPE_THIEVING, new SingleItemEffect(EffectFamily.CAPES_OF_ACCOMPLISHMENT, "Thieving cape", "+10% chance of success when pickpocketing. Stacks with the Ardougne Diary bonuses."));
+		singles.put(ItemID.SKILLCAPE_THIEVING, new SingleItemEffect(EffectFamily.CAPES_OF_ACCOMPLISHMENT, "Thieving cape", "+10% chance of success when pickpocketing. Stacks with the Ardougne diary bonuses."));
 		singles.put(ItemID.SKILLCAPE_WOODCUTTING, new SingleItemEffect(EffectFamily.CAPES_OF_ACCOMPLISHMENT, "Woodcutting cape", "+10% chance of a bird nest falling while chopping trees."));
 		singles.put(ItemID.ANMA_30_REWARD, new SingleItemEffect(EffectFamily.AVAS_DEVICES, "Ava's attractor", "Recovers 60% of your fired ammunition."));
 		singles.put(ItemID.ANMA_50_REWARD, new SingleItemEffect(EffectFamily.AVAS_DEVICES, "Ava's accumulator", "Recovers 72% of your fired ammunition."));

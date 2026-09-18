@@ -15,7 +15,7 @@ import static org.junit.Assert.assertTrue;
  */
 public class EffectFamilyConfigTest
 {
-	private static final Set<String> MASTER_TOGGLES = Set.of("showSetEffectList", "showTooltips", "verbose", "warmClothing");
+	private static final Set<String> MASTER_TOGGLES = Set.of("showSetEffectList", "tooltips", "verbose", "warmClothing");
 
 	@Test
 	public void everyFamilyHasAMatchingConfigItemAndViceVersa()

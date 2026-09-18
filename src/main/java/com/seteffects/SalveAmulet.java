@@ -35,20 +35,20 @@ final class SalveAmulet
 	{
 		if (contains(ENCHANTED_IMBUED, rawItemId))
 		{
-			return new EffectLine("Salve amulet (ei)", "+20% accuracy and damage in every combat style against the undead. Does not stack with the black mask or slayer helmet.");
+			return new EffectLine("Salve amulet (ei)", "+20% accuracy and damage in every combat style against the undead. Does not stack with the black mask or Slayer helmet.");
 		}
 
 		if (contains(IMBUED, rawItemId))
 		{
-			return new EffectLine("Salve amulet (i)", "+16.67% melee/ranged accuracy and damage, +15% magic accuracy and damage against the undead. Does not stack with the black mask or slayer helmet.");
+			return new EffectLine("Salve amulet (i)", "+16.67% melee/ranged accuracy and damage, +15% magic accuracy and damage against the undead. Does not stack with the black mask or Slayer helmet.");
 		}
 
 		if (rawItemId == ENCHANTED)
 		{
-			return new EffectLine("Salve amulet (e)", "+20% melee accuracy and damage against the undead. Does not stack with the black mask or slayer helmet.");
+			return new EffectLine("Salve amulet (e)", "+20% melee accuracy and damage against the undead. Does not stack with the black mask or Slayer helmet.");
 		}
 
-		return new EffectLine("Salve amulet", "+16.67% melee accuracy and damage against the undead. Does not stack with the black mask or slayer helmet.");
+		return new EffectLine("Salve amulet", "+16.67% melee accuracy and damage against the undead. Does not stack with the black mask or Slayer helmet.");
 	}
 
 	private static boolean contains(int[] ids, int itemId)

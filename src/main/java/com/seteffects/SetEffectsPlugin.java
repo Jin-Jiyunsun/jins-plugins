@@ -20,6 +20,7 @@ import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.events.ConfigChanged;
+import net.runelite.client.game.ItemManager;
 import net.runelite.client.input.MouseManager;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
@@ -35,6 +36,7 @@ import net.runelite.client.ui.overlay.tooltip.TooltipManager;
 public class SetEffectsPlugin extends Plugin
 {
 	private static final int WRAP_WIDTH = 50;
+	private static final String LEGACY_TOOLTIPS_KEY = "showTooltips";
 	// Wintertodt's bank camp and its arena (no gameval for region ids)
 	private static final int WINTERTODT_CAMP_REGION = 6461;
 	private static final int WINTERTODT_ARENA_REGION = 6462;
@@ -65,6 +67,9 @@ public class SetEffectsPlugin extends Plugin
 	private ConfigManager configManager;
 
 	@Inject
+	private ItemManager itemManager;
+
+	@Inject
 	private SetEffectDisplayConfig config;
 
 	// Cached from config (rebuilt on startUp and whenever our config group changes) so the
@@ -72,7 +77,7 @@ public class SetEffectsPlugin extends Plugin
 	// to arrive on the client thread that reads these every frame
 	private volatile Set<EffectFamily> disabledFamilies = Collections.emptySet();
 	private volatile boolean showSetEffectList = true;
-	private volatile boolean showTooltips = true;
+	private volatile TooltipDisplay tooltipDisplay = TooltipDisplay.EQUIPMENT_WINDOW;
 	private volatile boolean verbose = false;
 	// Bumped whenever the config is re-read, so cached results built from it can tell they are stale
 	private volatile int configVersion;
@@ -100,6 +105,7 @@ public class SetEffectsPlugin extends Plugin
 	@Override
 	protected void startUp()
 	{
+		migrateLegacyTooltipSetting();
 		refreshConfig();
 		overlayManager.add(overlay);
 		mouseManager.registerMouseListener(overlay);
@@ -115,6 +121,23 @@ public class SetEffectsPlugin extends Plugin
 		// Put the game's own text back - it only rewrites it on equipment changes, so our blank would
 		// otherwise stay until then
 		clientThread.invoke(this::restoreNativeText);
+	}
+
+	/**
+	 * "Show tooltips" used to be an on/off setting ("showTooltips"): off becomes Off and on becomes
+	 * Equipment window, written explicitly so it stays that way if the default ever changes.
+	 */
+	private void migrateLegacyTooltipSetting()
+	{
+		String legacy = configManager.getConfiguration(SetEffectDisplayConfig.GROUP, LEGACY_TOOLTIPS_KEY);
+		if (legacy == null)
+		{
+			return;
+		}
+
+		configManager.setConfiguration(SetEffectDisplayConfig.GROUP, "tooltips",
+			"false".equals(legacy) ? TooltipDisplay.OFF : TooltipDisplay.EQUIPMENT_WINDOW);
+		configManager.unsetConfiguration(SetEffectDisplayConfig.GROUP, LEGACY_TOOLTIPS_KEY);
 	}
 
 	@Provides
@@ -135,7 +158,7 @@ public class SetEffectsPlugin extends Plugin
 	private void refreshConfig()
 	{
 		showSetEffectList = config.showSetEffectList();
-		showTooltips = config.showTooltips();
+		tooltipDisplay = config.tooltips();
 		verbose = config.verbose();
 		warmClothingDisplay = config.warmClothing();
 
@@ -202,20 +225,24 @@ public class SetEffectsPlugin extends Plugin
 	@Subscribe
 	public void onBeforeRender(BeforeRender event)
 	{
-		// Everything here is for the equipment stats popup, so do nothing at all while it's closed
 		Widget popup = client.getWidget(InterfaceID.Equipment.UNIVERSE);
-		if (popup == null || popup.isHidden())
+		boolean popupOpen = popup != null && !popup.isHidden();
+		if (popupOpen)
+		{
+			// Runs every frame, right before it's drawn - blanking here (rather than once per game
+			// tick) keeps the window where the native script's own text could flash through under
+			// our overlay as small as possible
+			blankSetEffectWidget();
+		}
+		else
 		{
 			overlay.popupClosed();
-			return;
 		}
 
-		// Runs every frame, right before it's drawn - blanking here (rather than once per game
-		// tick) keeps the window where the native script's own text could flash through under
-		// our overlay as small as possible
-		blankSetEffectWidget();
-
-		if (!showTooltips || client.isMenuOpen())
+		// Nothing else to do unless a tooltip is wanted here: while the popup is closed that is only
+		// the "Everywhere" mode
+		TooltipDisplay display = tooltipDisplay;
+		if (display == TooltipDisplay.OFF || (display == TooltipDisplay.EQUIPMENT_WINDOW && !popupOpen) || client.isMenuOpen())
 		{
 			return;
 		}
@@ -233,15 +260,21 @@ public class SetEffectsPlugin extends Plugin
 			return;
 		}
 
-		if (WidgetUtil.componentToInterface(widget.getId()) != InterfaceID.EQUIPMENT)
+		int group = WidgetUtil.componentToInterface(widget.getId());
+		if (display == TooltipDisplay.EQUIPMENT_WINDOW ? group != InterfaceID.EQUIPMENT : isBankInterface(group))
 		{
 			return;
 		}
 
-		int itemId = resolveItemId(widget);
+		int itemId = resolveItemId(widget, group);
 		if (itemId <= 0)
 		{
 			return;
+		}
+		if (display == TooltipDisplay.EVERYWHERE)
+		{
+			// A noted item in the inventory is the same item
+			itemId = itemManager.canonicalize(itemId);
 		}
 
 		String text = buildTooltip(itemId);
@@ -314,12 +347,37 @@ public class SetEffectsPlugin extends Plugin
 	 * sometimes carry it on a child (the same generic item-slot widget is reused in multiple
 	 * interfaces, and only some of those instances have the item as a direct child) - try both.
 	 */
-	private static int resolveItemId(Widget widget)
+	// Item interfaces the tooltip stays out of, even in "Everywhere" mode (a switch, not a set of
+	// boxed ints, since this runs every frame)
+	private static boolean isBankInterface(int group)
+	{
+		switch (group)
+		{
+			case InterfaceID.BANKMAIN:
+			case InterfaceID.BANKSIDE:
+			case InterfaceID.BANK_DEPOSITBOX:
+			case InterfaceID.SHARED_BANK:
+			case InterfaceID.SHARED_BANK_SIDE:
+			case InterfaceID.SEED_VAULT:
+			case InterfaceID.SEED_VAULT_DEPOSIT:
+				return true;
+			default:
+				return false;
+		}
+	}
+
+	private static int resolveItemId(Widget widget, int group)
 	{
 		int itemId = widget.getItemId();
 		if (itemId > 0)
 		{
 			return itemId;
+		}
+
+		// Only these slot widgets hold the item on a child instead of on the widget itself
+		if (group != InterfaceID.EQUIPMENT && group != InterfaceID.WORNITEMS)
+		{
+			return -1;
 		}
 
 		Widget child = widget.getChild(1);

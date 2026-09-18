@@ -92,9 +92,14 @@ final class EquippedEffects
 			lines.addAll(PerPieceSets.VirtusRobes.describe(equipment, verbose));
 		}
 
-		if (PerPieceSets.CrystalArmour.isCrystalItem(mappedItemId) && enabled.test(EffectFamily.CRYSTAL_ARMOUR))
+		if (PerPieceSets.CrystalArmour.isCrystalItem(rawItemId) && enabled.test(EffectFamily.CRYSTAL_ARMOUR))
 		{
-			lines.add(PerPieceSets.CrystalArmour.describe(equipment));
+			lines.addAll(PerPieceSets.CrystalArmour.describe(equipment, verbose));
+		}
+
+		if (PerPieceSets.KyattHunterGear.isKyattItem(mappedItemId) && enabled.test(EffectFamily.HUNTER_GEAR))
+		{
+			lines.addAll(PerPieceSets.KyattHunterGear.describe(equipment, verbose));
 		}
 
 		if (PerPieceSets.ShayzienArmour.isShayzienItem(mappedItemId) && enabled.test(EffectFamily.SHAYZIEN))
@@ -174,6 +179,7 @@ final class EquippedEffects
 		boolean hasInquisitorItem = false;
 		boolean hasVirtusItem = false;
 		boolean hasCrystalItem = false;
+		boolean hasKyattItem = false;
 		boolean hasSwampbarkItem = false;
 		boolean hasShayzienItem = false;
 		boolean hasAgilityCape = false;
@@ -218,7 +224,8 @@ final class EquippedEffects
 				hasDamnedAmulet |= mappedItemId == ItemID.DAMNED_AMULET;
 				hasInquisitorItem |= PerPieceSets.InquisitorArmour.isInquisitorItem(mappedItemId);
 				hasVirtusItem |= PerPieceSets.VirtusRobes.isVirtusItem(mappedItemId);
-				hasCrystalItem |= PerPieceSets.CrystalArmour.isCrystalItem(mappedItemId);
+				hasCrystalItem |= PerPieceSets.CrystalArmour.isCrystalItem(rawItemId);
+				hasKyattItem |= PerPieceSets.KyattHunterGear.isKyattItem(mappedItemId);
 				hasSwampbarkItem |= PerPieceSets.SwampbarkArmour.isSwampbarkItem(mappedItemId);
 				hasShayzienItem |= PerPieceSets.ShayzienArmour.isShayzienItem(mappedItemId);
 				hasAgilityCape |= mappedItemId == ItemID.SKILLCAPE_AGILITY;
@@ -345,7 +352,12 @@ final class EquippedEffects
 
 		if (hasCrystalItem && enabled.test(EffectFamily.CRYSTAL_ARMOUR))
 		{
-			lines.add(PerPieceSets.CrystalArmour.describe(equipment));
+			lines.addAll(PerPieceSets.CrystalArmour.describe(equipment, verbose));
+		}
+
+		if (hasKyattItem && enabled.test(EffectFamily.HUNTER_GEAR))
+		{
+			lines.addAll(PerPieceSets.KyattHunterGear.describe(equipment, verbose));
 		}
 
 		// Only a hint: once a graceful piece is worn the Graceful entry already counts the cape

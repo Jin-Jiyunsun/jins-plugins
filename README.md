@@ -24,7 +24,8 @@ have to look it up. Hover an item for a tooltip, or check the "Set Effect Bonus"
 ## Settings
 
 - **Show set effect list**: turn off to leave the vanilla "Set Effect Bonus" box alone.
-- **Show tooltips**: turn off to hide the hover tooltips.
+- **Show tooltips**: a dropdown (Off, Equipment window, Everywhere; default Equipment window). Everywhere also shows the tooltip
+  when hovering items in your inventory and worn equipment tab (not the bank).
 - **Verbose**: off by default. Turn on to also list each worn piece's own bonus for sets with per-piece
   bonuses (Inquisitor's armour, Virtus robes, Graceful, the skilling outfits and more). Off shows only the
   header and the current bonus.

@@ -41,11 +41,11 @@ final class SlayerHelm
 	{
 		if (REGULAR_IDS.contains(rawItemId))
 		{
-			return new EffectLine("Slayer helmet", "+16.67% increased melee accuracy and damage against your assigned Slayer task.");
+			return new EffectLine("Slayer helmet", "+16.67% melee accuracy and damage against your assigned Slayer task.");
 		}
 
 		return new EffectLine("Slayer helmet (i)",
-			"+16.67% increased melee accuracy and damage, +15% for ranged and magic, against your assigned "
+			"+16.67% melee accuracy and damage, +15% for ranged and magic, against your assigned "
 				+ "Slayer task. Does not stack with the salve amulet.");
 	}
 

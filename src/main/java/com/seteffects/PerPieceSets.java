@@ -159,9 +159,21 @@ final class PerPieceSets
 	 */
 	static final class CrystalArmour
 	{
-		private static final int HELM_ID = ItemID.GAUNTLET_HELMET_T1;
-		private static final int BODY_ID = ItemID.GAUNTLET_CHESTPLATE_T1;
-		private static final int LEGS_ID = ItemID.GAUNTLET_PLATELEGS_T1;
+		// Raw ids of the active pieces only (and their clan colours): they share a variation chain with
+		// the inactive ones - which have no bonus until recharged - and with the Gauntlet minigame's own
+		// armour, none of which should count, so the mapped id can't be used
+		private static final int[] HELM_IDS = {
+			ItemID.CRYSTAL_HELMET, ItemID.CRYSTAL_HELMET_HEFIN, ItemID.CRYSTAL_HELMET_ITHELL, ItemID.CRYSTAL_HELMET_IORWERTH,
+			ItemID.CRYSTAL_HELMET_TRAHAEARN, ItemID.CRYSTAL_HELMET_CADARN, ItemID.CRYSTAL_HELMET_CRWYS,
+			ItemID.CRYSTAL_HELMET_AMLODD, ItemID.CRYSTAL_HELMET_DEADMAN};
+		private static final int[] BODY_IDS = {
+			ItemID.CRYSTAL_CHESTPLATE, ItemID.CRYSTAL_CHESTPLATE_HEFIN, ItemID.CRYSTAL_CHESTPLATE_ITHELL, ItemID.CRYSTAL_CHESTPLATE_IORWERTH,
+			ItemID.CRYSTAL_CHESTPLATE_TRAHAEARN, ItemID.CRYSTAL_CHESTPLATE_CADARN, ItemID.CRYSTAL_CHESTPLATE_CRWYS,
+			ItemID.CRYSTAL_CHESTPLATE_AMLODD, ItemID.CRYSTAL_CHESTPLATE_DEADMAN};
+		private static final int[] LEGS_IDS = {
+			ItemID.CRYSTAL_PLATELEGS, ItemID.CRYSTAL_PLATELEGS_HEFIN, ItemID.CRYSTAL_PLATELEGS_ITHELL, ItemID.CRYSTAL_PLATELEGS_IORWERTH,
+			ItemID.CRYSTAL_PLATELEGS_TRAHAEARN, ItemID.CRYSTAL_PLATELEGS_CADARN, ItemID.CRYSTAL_PLATELEGS_CRWYS,
+			ItemID.CRYSTAL_PLATELEGS_AMLODD, ItemID.CRYSTAL_PLATELEGS_DEADMAN};
 
 		private static final int HELM_ACCURACY_TENTHS = 50;
 		private static final int HELM_DAMAGE_TENTHS = 25;
@@ -174,29 +186,76 @@ final class PerPieceSets
 		{
 		}
 
-		static boolean isCrystalItem(int mappedItemId)
+		/** @param rawItemId the item's own id, not the variation-mapped one */
+		static boolean isCrystalItem(int rawItemId)
 		{
-			return mappedItemId == HELM_ID
-				|| mappedItemId == BODY_ID
-				|| mappedItemId == LEGS_ID;
+			return contains(HELM_IDS, rawItemId) || contains(BODY_IDS, rawItemId) || contains(LEGS_IDS, rawItemId);
 		}
 
-		static EffectLine describe(ItemContainer equipment)
+		private static boolean contains(int[] ids, int id)
 		{
-			boolean helm = isWorn(equipment, EquipmentInventorySlot.HEAD, HELM_ID);
-			boolean body = isWorn(equipment, EquipmentInventorySlot.BODY, BODY_ID);
-			boolean legs = isWorn(equipment, EquipmentInventorySlot.LEGS, LEGS_ID);
+			for (int candidate : ids)
+			{
+				if (candidate == id)
+				{
+					return true;
+				}
+			}
+			return false;
+		}
+
+		private static boolean isWornAmong(ItemContainer equipment, EquipmentInventorySlot slot, int[] ids)
+		{
+			Item item = equipment.getItem(slot.getSlotIdx());
+			return item != null && contains(ids, item.getId());
+		}
+
+		/**
+		 * One line with the current totals inline, or (Verbose) the header, one line per worn piece and a
+		 * "Current Bonus" line like the other per-piece sets.
+		 */
+		static List<EffectLine> describe(ItemContainer equipment, boolean verbose)
+		{
+			boolean helm = isWornAmong(equipment, EquipmentInventorySlot.HEAD, HELM_IDS);
+			boolean body = isWornAmong(equipment, EquipmentInventorySlot.BODY, BODY_IDS);
+			boolean legs = isWornAmong(equipment, EquipmentInventorySlot.LEGS, LEGS_IDS);
 			int worn = (helm ? 1 : 0) + (body ? 1 : 0) + (legs ? 1 : 0);
 
 			int accuracyTenths = (helm ? HELM_ACCURACY_TENTHS : 0) + (body ? BODY_ACCURACY_TENTHS : 0) + (legs ? LEGS_ACCURACY_TENTHS : 0);
 			int damageTenths = (helm ? HELM_DAMAGE_TENTHS : 0) + (body ? BODY_DAMAGE_TENTHS : 0) + (legs ? LEGS_DAMAGE_TENTHS : 0);
 
-			String effect = "Increases the damage (+" + EffectLineFormat.formatTenths(damageTenths)
-				+ "%) and accuracy (+" + EffectLineFormat.formatTenths(accuracyTenths)
-				+ "%) of the crystal bow or bow of Faerdhinen.";
+			List<EffectLine> lines = new ArrayList<>();
+			if (!verbose)
+			{
+				lines.add(new EffectLine("Crystal armour", worn, 3, "Increases the damage (+" + EffectLineFormat.formatTenths(damageTenths)
+					+ "%) and accuracy (+" + EffectLineFormat.formatTenths(accuracyTenths)
+					+ "%) of the crystal bow or bow of Faerdhinen."));
+				return lines;
+			}
 
-			return new EffectLine("Crystal armour", worn, 3, effect);
+			lines.add(new EffectLine("Crystal armour", worn, 3, "Increases the damage and accuracy of the crystal bow or bow of Faerdhinen."));
+			if (helm)
+			{
+				lines.add(pieceLine("Crystal helmet", HELM_DAMAGE_TENTHS, HELM_ACCURACY_TENTHS));
+			}
+			if (body)
+			{
+				lines.add(pieceLine("Crystal body", BODY_DAMAGE_TENTHS, BODY_ACCURACY_TENTHS));
+			}
+			if (legs)
+			{
+				lines.add(pieceLine("Crystal legs", LEGS_DAMAGE_TENTHS, LEGS_ACCURACY_TENTHS));
+			}
+			lines.add(pieceLine("Current Bonus", damageTenths, accuracyTenths));
+			return lines;
 		}
+
+		private static EffectLine pieceLine(String name, int damageTenths, int accuracyTenths)
+		{
+			return new EffectLine(name, "+" + EffectLineFormat.formatTenths(damageTenths) + "% damage, +"
+				+ EffectLineFormat.formatTenths(accuracyTenths) + "% accuracy.", true);
+		}
+
 	}
 
 	/**
@@ -776,6 +835,53 @@ final class PerPieceSets
 				}
 			}
 			lines.add(new EffectLine("Current Bonus", total + "%.", true));
+			return lines;
+		}
+	}
+
+	/**
+	 * Kyatt hunter gear: each piece reduces damage taken from hunter creatures by 20% (60% for the
+	 * set), per the wiki. Graahk and Larupia gear only give a full-set figure, so they stay plain
+	 * {@code ItemSet}s. The header keeps Jagex's own sentence for the full set.
+	 */
+	static final class KyattHunterGear
+	{
+		private static final int HAT_ID = ItemID.HUNTING_HAT_TIGER;
+		private static final int TOP_ID = ItemID.HUNTING_TORSO_TIGER;
+		private static final int LEGS_ID = ItemID.HUNTING_TROUSERS_TIGER;
+		private static final int PERCENT_PER_PIECE = 20;
+
+		private KyattHunterGear()
+		{
+		}
+
+		static boolean isKyattItem(int mappedItemId)
+		{
+			return mappedItemId == HAT_ID || mappedItemId == TOP_ID || mappedItemId == LEGS_ID;
+		}
+
+		static List<EffectLine> describe(ItemContainer equipment, boolean verbose)
+		{
+			boolean hat = isWorn(equipment, EquipmentInventorySlot.HEAD, HAT_ID);
+			boolean top = isWorn(equipment, EquipmentInventorySlot.BODY, TOP_ID);
+			boolean legs = isWorn(equipment, EquipmentInventorySlot.LEGS, LEGS_ID);
+			int worn = (hat ? 1 : 0) + (top ? 1 : 0) + (legs ? 1 : 0);
+
+			List<EffectLine> lines = new ArrayList<>();
+			lines.add(new EffectLine("Kyatt hunter gear", worn, 3, "Damage taken from hunter creatures is reduced by 60%."));
+			if (verbose && hat)
+			{
+				lines.add(new EffectLine("Kyatt hat", PERCENT_PER_PIECE + "%.", true));
+			}
+			if (verbose && top)
+			{
+				lines.add(new EffectLine("Kyatt top", PERCENT_PER_PIECE + "%.", true));
+			}
+			if (verbose && legs)
+			{
+				lines.add(new EffectLine("Kyatt legs", PERCENT_PER_PIECE + "%.", true));
+			}
+			lines.add(new EffectLine("Current Bonus", worn * PERCENT_PER_PIECE + "%.", true));
 			return lines;
 		}
 	}

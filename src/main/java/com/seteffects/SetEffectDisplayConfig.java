@@ -22,14 +22,14 @@ public interface SetEffectDisplayConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = "showTooltips",
+		keyName = "tooltips",
 		name = "Show tooltips",
-		description = "Show an item's effect when hovering it in the equipment stats screen",
+		description = "Show an item's effect when hovering it. Everywhere also covers the inventory and worn equipment tab (not the bank)",
 		position = 1
 	)
-	default boolean showTooltips()
+	default TooltipDisplay tooltips()
 	{
-		return true;
+		return TooltipDisplay.EQUIPMENT_WINDOW;
 	}
 
 	@ConfigItem(
@@ -156,7 +156,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Dharok's set",
 		description = "Show the Dharok's set effect",
 		section = barrowsSection,
-		position = 1
+		position = 2
 	)
 	default boolean dharoks()
 	{
@@ -168,7 +168,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Guthan's set",
 		description = "Show the Guthan's set effect",
 		section = barrowsSection,
-		position = 2
+		position = 3
 	)
 	default boolean guthans()
 	{
@@ -180,7 +180,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Karil's set",
 		description = "Show the Karil's set effect",
 		section = barrowsSection,
-		position = 3
+		position = 4
 	)
 	default boolean karils()
 	{
@@ -192,7 +192,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Torag's set",
 		description = "Show the Torag's set effect",
 		section = barrowsSection,
-		position = 4
+		position = 5
 	)
 	default boolean torags()
 	{
@@ -204,7 +204,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Verac's set",
 		description = "Show the Verac's set effect",
 		section = barrowsSection,
-		position = 5
+		position = 6
 	)
 	default boolean veracs()
 	{
@@ -216,7 +216,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Amulet of the Damned",
 		description = "Show the Amulet of the Damned effect",
 		section = barrowsSection,
-		position = 6
+		position = 1
 	)
 	default boolean amuletOfTheDamned()
 	{
@@ -228,7 +228,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Justiciar armour",
 		description = "Show the Justiciar armour effect",
 		section = armourSetsSection,
-		position = 0
+		position = 6
 	)
 	default boolean justiciar()
 	{
@@ -240,7 +240,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Obsidian armour",
 		description = "Show the Obsidian armour effect",
 		section = armourSetsSection,
-		position = 1
+		position = 7
 	)
 	default boolean obsidian()
 	{
@@ -252,7 +252,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Inquisitor's armour",
 		description = "Show the Inquisitor's armour effect",
 		section = armourSetsSection,
-		position = 2
+		position = 5
 	)
 	default boolean inquisitors()
 	{
@@ -264,7 +264,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Virtus robes",
 		description = "Show the Virtus robes effect",
 		section = armourSetsSection,
-		position = 3
+		position = 11
 	)
 	default boolean virtus()
 	{
@@ -276,7 +276,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Crystal armour",
 		description = "Show the Crystal armour effect",
 		section = armourSetsSection,
-		position = 4
+		position = 3
 	)
 	default boolean crystalArmour()
 	{
@@ -288,7 +288,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Void Knight",
 		description = "Show the Void Knight effect",
 		section = armourSetsSection,
-		position = 5
+		position = 12
 	)
 	default boolean voidKnight()
 	{
@@ -300,7 +300,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Shayzien armour",
 		description = "Show the Shayzien armour effect",
 		section = armourSetsSection,
-		position = 6
+		position = 8
 	)
 	default boolean shayzien()
 	{
@@ -312,7 +312,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Blood moon armour",
 		description = "Show the Blood moon armour effect",
 		section = armourSetsSection,
-		position = 7
+		position = 0
 	)
 	default boolean bloodMoon()
 	{
@@ -324,7 +324,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Blue moon armour",
 		description = "Show the Blue moon armour effect",
 		section = armourSetsSection,
-		position = 8
+		position = 2
 	)
 	default boolean blueMoon()
 	{
@@ -336,7 +336,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Eclipse moon armour",
 		description = "Show the Eclipse moon armour effect",
 		section = armourSetsSection,
-		position = 9
+		position = 4
 	)
 	default boolean eclipseMoon()
 	{
@@ -360,7 +360,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Bloodbark armour",
 		description = "Show the Bloodbark armour effect",
 		section = armourSetsSection,
-		position = 11
+		position = 1
 	)
 	default boolean bloodbark()
 	{
@@ -370,9 +370,9 @@ public interface SetEffectDisplayConfig extends Config
 	@ConfigItem(
 		keyName = "vanillaOnlySets",
 		name = "Statius, Vesta, Morrigan, Zuriel",
-		description = "Show the game's own text for the Statius's, Vesta's, Morrigan's and Zuriel's sets, which this plugin doesn't track itself",
+		description = "Show the Statius, Vesta, Morrigan and Zuriel set effects",
 		section = armourSetsSection,
-		position = 12
+		position = 9
 	)
 	default boolean vanillaOnlySets()
 	{
@@ -384,7 +384,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Emberlight",
 		description = "Show the Emberlight effect",
 		section = weaponsSection,
-		position = 0
+		position = 8
 	)
 	default boolean emberlight()
 	{
@@ -396,7 +396,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Silverlight",
 		description = "Show the Silverlight effect",
 		section = weaponsSection,
-		position = 1
+		position = 22
 	)
 	default boolean silverlight()
 	{
@@ -408,7 +408,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Darklight",
 		description = "Show the Darklight effect",
 		section = weaponsSection,
-		position = 2
+		position = 6
 	)
 	default boolean darklight()
 	{
@@ -420,7 +420,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Arclight",
 		description = "Show the Arclight effect",
 		section = weaponsSection,
-		position = 3
+		position = 1
 	)
 	default boolean arclight()
 	{
@@ -432,7 +432,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Scorching bow",
 		description = "Show the Scorching bow effect",
 		section = weaponsSection,
-		position = 4
+		position = 20
 	)
 	default boolean scorchingBow()
 	{
@@ -444,7 +444,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Twisted bow",
 		description = "Show the Twisted bow effect",
 		section = weaponsSection,
-		position = 5
+		position = 26
 	)
 	default boolean twistedBow()
 	{
@@ -456,7 +456,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Zaryte crossbow",
 		description = "Show the Zaryte crossbow effect",
 		section = weaponsSection,
-		position = 6
+		position = 29
 	)
 	default boolean zaryteCrossbow()
 	{
@@ -480,7 +480,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Revenant weapons",
 		description = "Show the Revenant weapons effect",
 		section = weaponsSection,
-		position = 8
+		position = 18
 	)
 	default boolean revenantWeapons()
 	{
@@ -492,7 +492,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Staves of the dead",
 		description = "Show the Staves of the dead effect",
 		section = weaponsSection,
-		position = 9
+		position = 23
 	)
 	default boolean stavesOfTheDead()
 	{
@@ -504,7 +504,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Kodai wand",
 		description = "Show the Kodai wand effect",
 		section = weaponsSection,
-		position = 10
+		position = 14
 	)
 	default boolean kodaiWand()
 	{
@@ -516,7 +516,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Sanguinesti staff",
 		description = "Show the Sanguinesti staff effect",
 		section = weaponsSection,
-		position = 11
+		position = 19
 	)
 	default boolean sanguinestiStaff()
 	{
@@ -528,7 +528,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Purging staff",
 		description = "Show the Purging staff effect",
 		section = weaponsSection,
-		position = 12
+		position = 17
 	)
 	default boolean purgingStaff()
 	{
@@ -552,7 +552,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Wolfbane",
 		description = "Show the Wolfbane effect",
 		section = weaponsSection,
-		position = 14
+		position = 28
 	)
 	default boolean wolfbane()
 	{
@@ -564,7 +564,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Colossal blade",
 		description = "Show the Colossal blade effect",
 		section = weaponsSection,
-		position = 15
+		position = 5
 	)
 	default boolean colossalBlade()
 	{
@@ -576,7 +576,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Leaf-bladed battleaxe",
 		description = "Show the Leaf-bladed battleaxe effect",
 		section = weaponsSection,
-		position = 16
+		position = 15
 	)
 	default boolean leafBladedBattleaxe()
 	{
@@ -588,7 +588,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Osmumten's fang",
 		description = "Show the Osmumten's fang effect",
 		section = weaponsSection,
-		position = 17
+		position = 16
 	)
 	default boolean osmumtensFang()
 	{
@@ -600,7 +600,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Tumeken's shadow",
 		description = "Show the Tumeken's shadow effect",
 		section = weaponsSection,
-		position = 18
+		position = 24
 	)
 	default boolean tumekensShadow()
 	{
@@ -612,7 +612,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Hallowfell",
 		description = "Show the Hallowfell effect",
 		section = weaponsSection,
-		position = 19
+		position = 10
 	)
 	default boolean hallowfell()
 	{
@@ -624,7 +624,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Ancient sceptres",
 		description = "Show the Ancient sceptres effect",
 		section = weaponsSection,
-		position = 20
+		position = 0
 	)
 	default boolean ancientSceptres()
 	{
@@ -636,7 +636,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Bone weapons",
 		description = "Show the Bone weapons effect",
 		section = weaponsSection,
-		position = 21
+		position = 3
 	)
 	default boolean boneWeapons()
 	{
@@ -648,7 +648,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Barronite mace",
 		description = "Show the Barronite mace effect",
 		section = weaponsSection,
-		position = 22
+		position = 2
 	)
 	default boolean barroniteMace()
 	{
@@ -660,7 +660,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Granite hammer",
 		description = "Show the Granite hammer effect",
 		section = weaponsSection,
-		position = 23
+		position = 9
 	)
 	default boolean graniteHammer()
 	{
@@ -672,7 +672,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Brine sabre",
 		description = "Show the Brine sabre effect",
 		section = weaponsSection,
-		position = 24
+		position = 4
 	)
 	default boolean brineSabre()
 	{
@@ -684,7 +684,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Scythe of Vitur",
 		description = "Show the Scythe of Vitur effect",
 		section = weaponsSection,
-		position = 25
+		position = 21
 	)
 	default boolean scytheOfVitur()
 	{
@@ -696,7 +696,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Vampyre weapons",
 		description = "Show the Sunspear, Ivandis flail, Blisterwood flail, Blisterwood stake and Hallowed flail effects",
 		section = weaponsSection,
-		position = 26
+		position = 27
 	)
 	default boolean vampyreWeapons()
 	{
@@ -708,7 +708,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Harpoons",
 		description = "Show the Dragon harpoon and Crystal harpoon effects",
 		section = weaponsSection,
-		position = 27
+		position = 11
 	)
 	default boolean harpoons()
 	{
@@ -720,7 +720,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Infernal tools",
 		description = "Show the Infernal axe, Infernal harpoon and Infernal pickaxe effects",
 		section = weaponsSection,
-		position = 28
+		position = 12
 	)
 	default boolean infernalTools()
 	{
@@ -732,7 +732,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Twinflame staff",
 		description = "Show the Twinflame staff effect",
 		section = weaponsSection,
-		position = 29
+		position = 25
 	)
 	default boolean twinflameStaff()
 	{
@@ -756,7 +756,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Elysian spirit shield",
 		description = "Show the Elysian spirit shield effect",
 		section = shieldsSection,
-		position = 0
+		position = 9
 	)
 	default boolean elysianSpiritShield()
 	{
@@ -768,7 +768,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Spectral spirit shield",
 		description = "Show the Spectral spirit shield effect",
 		section = shieldsSection,
-		position = 1
+		position = 12
 	)
 	default boolean spectralSpiritShield()
 	{
@@ -780,7 +780,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Dinh's bulwark",
 		description = "Show the Dinh's bulwark effect",
 		section = shieldsSection,
-		position = 2
+		position = 4
 	)
 	default boolean dinhsBulwark()
 	{
@@ -792,7 +792,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Anti-dragon shield",
 		description = "Show the Anti-dragon shield effect",
 		section = shieldsSection,
-		position = 3
+		position = 2
 	)
 	default boolean antiDragonShield()
 	{
@@ -804,7 +804,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Elemental shield",
 		description = "Show the Elemental shield effect",
 		section = shieldsSection,
-		position = 4
+		position = 7
 	)
 	default boolean elementalShield()
 	{
@@ -816,7 +816,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Mind shield",
 		description = "Show the Mind shield effect",
 		section = shieldsSection,
-		position = 5
+		position = 10
 	)
 	default boolean mindShield()
 	{
@@ -828,7 +828,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Dragonfire shield",
 		description = "Show the Dragonfire shield effect",
 		section = shieldsSection,
-		position = 6
+		position = 5
 	)
 	default boolean dragonfireShield()
 	{
@@ -840,7 +840,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Ancient wyvern shield",
 		description = "Show the Ancient wyvern shield effect",
 		section = shieldsSection,
-		position = 7
+		position = 1
 	)
 	default boolean ancientWyvernShield()
 	{
@@ -852,7 +852,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Dragonfire ward",
 		description = "Show the Dragonfire ward effect",
 		section = shieldsSection,
-		position = 8
+		position = 6
 	)
 	default boolean dragonfireWard()
 	{
@@ -864,7 +864,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Abyssal lantern",
 		description = "Show the Abyssal lantern effect",
 		section = shieldsSection,
-		position = 9
+		position = 0
 	)
 	default boolean abyssalLantern()
 	{
@@ -876,7 +876,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Elemental tomes",
 		description = "Show the Tome of fire, Tome of water and Tome of earth effects",
 		section = shieldsSection,
-		position = 10
+		position = 8
 	)
 	default boolean elementalTomes()
 	{
@@ -900,7 +900,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Aquanite hopper",
 		description = "Show the Aquanite hopper effect",
 		section = shieldsSection,
-		position = 12
+		position = 3
 	)
 	default boolean aquaniteHopper()
 	{
@@ -912,7 +912,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Slayer helmet",
 		description = "Show the Slayer helmet effect",
 		section = headSection,
-		position = 0
+		position = 3
 	)
 	default boolean slayerHelmet()
 	{
@@ -924,7 +924,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Black mask",
 		description = "Show the Black mask effect",
 		section = headSection,
-		position = 1
+		position = 0
 	)
 	default boolean blackMask()
 	{
@@ -948,7 +948,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Chaos gauntlets",
 		description = "Show the Chaos gauntlets effect",
 		section = handsSection,
-		position = 0
+		position = 1
 	)
 	default boolean chaosGauntlets()
 	{
@@ -960,7 +960,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Regen bracelet",
 		description = "Show the Regen bracelet effect",
 		section = handsSection,
-		position = 1
+		position = 5
 	)
 	default boolean regenBracelet()
 	{
@@ -972,7 +972,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Salve amulet",
 		description = "Show the Salve amulet effect",
 		section = jewellerySection,
-		position = 0
+		position = 20
 	)
 	default boolean salveAmulet()
 	{
@@ -984,7 +984,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Necklace of faith",
 		description = "Show the Necklace of faith effect",
 		section = jewellerySection,
-		position = 1
+		position = 13
 	)
 	default boolean necklaceOfFaith()
 	{
@@ -996,7 +996,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Phoenix necklace",
 		description = "Show the Phoenix necklace effect",
 		section = jewellerySection,
-		position = 2
+		position = 14
 	)
 	default boolean phoenixNecklace()
 	{
@@ -1008,7 +1008,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Amulet of glory",
 		description = "Show the Amulet of glory effect",
 		section = jewellerySection,
-		position = 3
+		position = 2
 	)
 	default boolean amuletOfGlory()
 	{
@@ -1020,7 +1020,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Amulet of avarice",
 		description = "Show the Amulet of avarice effect",
 		section = jewellerySection,
-		position = 4
+		position = 0
 	)
 	default boolean amuletOfAvarice()
 	{
@@ -1032,7 +1032,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Amulet of blood fury",
 		description = "Show the Amulet of blood fury effect",
 		section = jewellerySection,
-		position = 5
+		position = 1
 	)
 	default boolean amuletOfBloodFury()
 	{
@@ -1044,7 +1044,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Berserker necklace",
 		description = "Show the Berserker necklace effect",
 		section = jewellerySection,
-		position = 6
+		position = 3
 	)
 	default boolean berserkerNecklace()
 	{
@@ -1056,7 +1056,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Ring of life",
 		description = "Show the Ring of life effect",
 		section = jewellerySection,
-		position = 7
+		position = 15
 	)
 	default boolean ringOfLife()
 	{
@@ -1068,7 +1068,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Ring of wealth",
 		description = "Show the Ring of wealth effect",
 		section = jewellerySection,
-		position = 8
+		position = 19
 	)
 	default boolean ringOfWealth()
 	{
@@ -1080,7 +1080,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Ring of recoil",
 		description = "Show the Ring of recoil effect",
 		section = jewellerySection,
-		position = 9
+		position = 16
 	)
 	default boolean ringOfRecoil()
 	{
@@ -1092,7 +1092,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Ring of suffering",
 		description = "Show the Ring of suffering effect",
 		section = jewellerySection,
-		position = 10
+		position = 17
 	)
 	default boolean ringOfSuffering()
 	{
@@ -1104,7 +1104,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Brimstone ring",
 		description = "Show the Brimstone ring effect",
 		section = jewellerySection,
-		position = 11
+		position = 5
 	)
 	default boolean brimstoneRing()
 	{
@@ -1116,7 +1116,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Elemental amulets",
 		description = "Show the amulets of air, water, earth and fire, and the Elemental amulet",
 		section = jewellerySection,
-		position = 12
+		position = 9
 	)
 	default boolean elementalAmulets()
 	{
@@ -1128,7 +1128,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Bone necklaces",
 		description = "Show the Dragonbone necklace and Bonecrusher necklace effects",
 		section = jewellerySection,
-		position = 13
+		position = 4
 	)
 	default boolean boneNecklaces()
 	{
@@ -1140,7 +1140,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Ring of the gods",
 		description = "Show the imbued Ring of the gods effect",
 		section = jewellerySection,
-		position = 14
+		position = 18
 	)
 	default boolean ringOfTheGods()
 	{
@@ -1152,7 +1152,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Celestial ring and signet",
 		description = "Show the Celestial ring and Celestial signet effects",
 		section = jewellerySection,
-		position = 15
+		position = 6
 	)
 	default boolean celestialRing()
 	{
@@ -1164,7 +1164,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Elven signet",
 		description = "Show the Elven signet effect",
 		section = jewellerySection,
-		position = 16
+		position = 10
 	)
 	default boolean elvenSignet()
 	{
@@ -1176,7 +1176,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Lightbearer",
 		description = "Show the Lightbearer effect",
 		section = jewellerySection,
-		position = 17
+		position = 11
 	)
 	default boolean lightbearer()
 	{
@@ -1188,7 +1188,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Efaritay's aid",
 		description = "Show the Efaritay's aid effect",
 		section = jewellerySection,
-		position = 18
+		position = 8
 	)
 	default boolean efaritaysAid()
 	{
@@ -1200,7 +1200,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Dodgy necklace",
 		description = "Show the Dodgy necklace effect",
 		section = jewellerySection,
-		position = 19
+		position = 7
 	)
 	default boolean dodgyNecklace()
 	{
@@ -1212,7 +1212,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Medallion of the Deep",
 		description = "Show the Medallion of the Deep effect",
 		section = jewellerySection,
-		position = 20
+		position = 12
 	)
 	default boolean medallionOfTheDeep()
 	{
@@ -1248,7 +1248,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Bracelet of ethereum",
 		description = "Show the Bracelet of ethereum effect",
 		section = handsSection,
-		position = 2
+		position = 0
 	)
 	default boolean braceletOfEthereum()
 	{
@@ -1260,7 +1260,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Cooking gauntlets",
 		description = "Show the Cooking gauntlets effect",
 		section = handsSection,
-		position = 3
+		position = 2
 	)
 	default boolean cookingGauntlets()
 	{
@@ -1272,7 +1272,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Gloves of silence",
 		description = "Show the Gloves of silence effect",
 		section = handsSection,
-		position = 4
+		position = 3
 	)
 	default boolean glovesOfSilence()
 	{
@@ -1284,7 +1284,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Goldsmith gauntlets",
 		description = "Show the Goldsmith gauntlets effect",
 		section = handsSection,
-		position = 5
+		position = 4
 	)
 	default boolean goldsmithGauntlets()
 	{
@@ -1296,7 +1296,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Rada's blessing",
 		description = "Show the Rada's blessing effect",
 		section = miscSection,
-		position = 0
+		position = 1
 	)
 	default boolean radasBlessing()
 	{
@@ -1308,7 +1308,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Show warm clothing",
 		description = "Show how many pieces of warm clothing you are wearing (four give the maximum Wintertodt damage reduction). At Wintertodt: only in the camp and the arena",
 		section = miscSection,
-		position = 1
+		position = 2
 	)
 	default WarmClothingDisplay warmClothing()
 	{
@@ -1320,7 +1320,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Ghostspeak items",
 		description = "Show the Ghostspeak amulet and Morytania legs effect",
 		section = miscSection,
-		position = 2
+		position = 0
 	)
 	default boolean ghostspeak()
 	{
@@ -1332,7 +1332,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Circlet of water",
 		description = "Show the Circlet of water effect",
 		section = headSection,
-		position = 3
+		position = 1
 	)
 	default boolean circletOfWater()
 	{
@@ -1344,7 +1344,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Dizana's quiver",
 		description = "Show the Dizana's quiver, blessed quiver and max cape effect",
 		section = capeSection,
-		position = 1
+		position = 2
 	)
 	default boolean dizanasQuiver()
 	{
@@ -1368,7 +1368,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Capes of accomplishment",
 		description = "Show the effects of skill capes and the max cape",
 		section = capeSection,
-		position = 2
+		position = 1
 	)
 	default boolean capesOfAccomplishment()
 	{
@@ -1380,7 +1380,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Graceful outfit",
 		description = "Show the Graceful outfit effect",
 		section = skillingSection,
-		position = 0
+		position = 3
 	)
 	default boolean graceful()
 	{
@@ -1392,7 +1392,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Angler outfit",
 		description = "Show the Angler outfit effect",
 		section = skillingSection,
-		position = 1
+		position = 0
 	)
 	default boolean anglerOutfit()
 	{
@@ -1404,7 +1404,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Lumberjack outfit",
 		description = "Show the Lumberjack outfit effect",
 		section = skillingSection,
-		position = 3
+		position = 6
 	)
 	default boolean lumberjackOutfit()
 	{
@@ -1416,7 +1416,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Prospector outfit",
 		description = "Show the Prospector outfit effect",
 		section = skillingSection,
-		position = 4
+		position = 7
 	)
 	default boolean prospectorOutfit()
 	{
@@ -1428,7 +1428,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Farmer's outfit",
 		description = "Show the Farmer's outfit effect",
 		section = skillingSection,
-		position = 5
+		position = 2
 	)
 	default boolean farmersOutfit()
 	{
@@ -1440,7 +1440,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Pyromancer outfit",
 		description = "Show the Pyromancer outfit effect",
 		section = skillingSection,
-		position = 6
+		position = 8
 	)
 	default boolean pyromancerOutfit()
 	{
@@ -1452,7 +1452,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Carpenter's outfit",
 		description = "Show the Carpenter's outfit effect",
 		section = skillingSection,
-		position = 7
+		position = 1
 	)
 	default boolean carpentersOutfit()
 	{
@@ -1464,7 +1464,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Smith's uniform",
 		description = "Show the Smith's uniform effect",
 		section = skillingSection,
-		position = 8
+		position = 11
 	)
 	default boolean smithsUniform()
 	{
@@ -1476,7 +1476,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Guild hunter outfit",
 		description = "Show the Guild hunter outfit effect",
 		section = skillingSection,
-		position = 9
+		position = 4
 	)
 	default boolean guildHunterOutfit()
 	{
@@ -1500,7 +1500,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Zealot's robes",
 		description = "Show the Zealot's robes effect",
 		section = skillingSection,
-		position = 11
+		position = 12
 	)
 	default boolean zealotsRobes()
 	{
@@ -1512,7 +1512,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Raiments of the Eye",
 		description = "Show the Raiments of the Eye effect",
 		section = skillingSection,
-		position = 12
+		position = 9
 	)
 	default boolean raimentsOfTheEye()
 	{
@@ -1524,7 +1524,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Hunter gear",
 		description = "Show the Larupia, Graahk and Kyatt hunter gear effects",
 		section = skillingSection,
-		position = 13
+		position = 5
 	)
 	default boolean hunterGear()
 	{

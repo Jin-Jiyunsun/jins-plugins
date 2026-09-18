@@ -21,6 +21,8 @@ final class EffectLineFormat
 	static final Color COMPLETE_COLOR = Color.GREEN;
 	static final Color INCOMPLETE_COLOR = Color.RED;
 	static final Color NUMBER_COLOR = Color.YELLOW;
+	// The colour of the game's own text in the equipment stats popup
+	static final Color EFFECT_COLOR = new Color(0xff981f);
 
 	private static final Pattern COLOR_TAG = Pattern.compile("</?col(=[0-9a-fA-F]+)?>");
 	// A whitespace-delimited word containing a digit holds a number/percentage; only that part is
@@ -49,7 +51,7 @@ final class EffectLineFormat
 			sb.append(' ').append(ColorUtil.wrapWithColorTag("(" + line.worn + "/" + line.total + ")", tallyColor));
 		}
 
-		sb.append(": ").append(highlightNumbers(line.effect));
+		sb.append(": ").append(colourEffect(line.effect));
 		return sb.toString();
 	}
 
@@ -150,7 +152,13 @@ final class EffectLineFormat
 		return matcher.matches() ? new int[]{matcher.start(2), matcher.end(2)} : null;
 	}
 
-	private static String highlightNumbers(String text)
+	/**
+	 * The effect text for the tooltip: the same orange as the equipment popup's own text with just the
+	 * numbers highlighted. Every piece is tagged on its own (never across a space) because the game's
+	 * closing tag resets to the default colour rather than back to the enclosing one, and because
+	 * word-wrapping splits on spaces.
+	 */
+	private static String colourEffect(String text)
 	{
 		StringBuilder result = new StringBuilder();
 		String previous = null;
@@ -164,17 +172,22 @@ final class EffectLineFormat
 			int[] range = numberRange(word, previous);
 			if (range == null)
 			{
-				result.append(word);
+				result.append(orange(word));
 			}
 			else
 			{
-				result.append(word, 0, range[0])
+				result.append(orange(word.substring(0, range[0])))
 					.append(ColorUtil.wrapWithColorTag(word.substring(range[0], range[1]), NUMBER_COLOR))
-					.append(word.substring(range[1]));
+					.append(orange(word.substring(range[1])));
 			}
 			previous = word;
 		}
 		return result.toString();
+	}
+
+	private static String orange(String text)
+	{
+		return text.isEmpty() ? "" : ColorUtil.wrapWithColorTag(text, EFFECT_COLOR);
 	}
 
 	static final class Word

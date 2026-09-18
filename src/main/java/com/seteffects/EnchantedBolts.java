@@ -32,7 +32,7 @@ final class EnchantedBolts
 		add("Emerald", ItemID.XBOWS_CROSSBOW_BOLTS_MITHRIL_TIPPED_EMERALD_ENCHANTED, ItemID.DRAGON_BOLTS_ENCHANTED_EMERALD,
 			540, 550, "poison the target for 5 damage.");
 		add("Ruby", ItemID.XBOWS_CROSSBOW_BOLTS_ADAMANTITE_TIPPED_RUBY_ENCHANTED, ItemID.DRAGON_BOLTS_ENCHANTED_RUBY,
-			110, 60, "lose 10% of your current Hitpoints and deal 20% of the target's current Hitpoints, up to 100.");
+			110, 60, "lose 10% of your current HP and deal 20% of the target's current HP, up to 100.");
 		add("Diamond", ItemID.XBOWS_CROSSBOW_BOLTS_ADAMANTITE_TIPPED_DIAMOND_ENCHANTED, ItemID.DRAGON_BOLTS_ENCHANTED_DIAMOND,
 			50, 100, "ignore the target's Defence and raise max hit by 15%.");
 		add("Dragonstone", ItemID.XBOWS_CROSSBOW_BOLTS_RUNITE_TIPPED_DRAGONSTONE_ENCHANTED, ItemID.DRAGON_BOLTS_ENCHANTED_DRAGONSTONE,

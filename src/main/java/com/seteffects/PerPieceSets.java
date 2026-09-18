@@ -471,7 +471,9 @@ final class PerPieceSets
 				new int[]{ItemID.MOTHERLODE_REWARD_BOOTS, ItemID.MOTHERLODE_REWARD_BOOTS_GOLD}),
 			slotNames(new String[]{"Prospector helmet", "Golden prospector helmet"}, new String[]{"Prospector jacket", "Golden prospector jacket"},
 				new String[]{"Prospector legs", "Golden prospector legs"}, null, new String[]{"Prospector boots", "Golden prospector boots"}),
-			XP_PIECES, XP_SET_BONUS, null, null);
+			XP_PIECES, XP_SET_BONUS, null, null)
+			// Acts as a prospector jacket for the bonus (raw id: it shares a variation chain with Varrock armour 1-3)
+			.withSubstitute(1, ItemID.VARROCK_ARMOUR_ELITE, "Varrock armour 4");
 		static final SkillingOutfit FARMERS = new SkillingOutfit(EffectFamily.FARMERS_OUTFIT, "Farmer's outfit",
 			xpHeader("Farmer's outfit", "Farming"),
 			slotIds(new int[]{ItemID.TITHE_REWARD_HAT_MALE, ItemID.TITHE_REWARD_HAT_FEMALE}, new int[]{ItemID.TITHE_REWARD_TORSO_MALE, ItemID.TITHE_REWARD_TORSO_FEMALE},
@@ -536,6 +538,12 @@ final class PerPieceSets
 		private final int[] setBonus;
 		private final String[] valueLabels;
 		private final int[][] totalsByCount;
+		// One item that stands in for a piece in one slot (matched on the raw id), like the Agility cape
+		// for the graceful cape: it only counts once a real piece of the outfit is worn, since the outfit
+		// isn't described at all otherwise
+		private int substituteSlot = -1;
+		private int substituteRawId;
+		private String substituteName;
 
 		private SkillingOutfit(EffectFamily family, String setName, String header, int[][] ids, String[][] names,
 			int[][] pieceValues, int[] setBonus, String[] valueLabels, int[][] totalsByCount)
@@ -549,6 +557,14 @@ final class PerPieceSets
 			this.setBonus = setBonus;
 			this.valueLabels = valueLabels;
 			this.totalsByCount = totalsByCount;
+		}
+
+		private SkillingOutfit withSubstitute(int slotIndex, int rawItemId, String name)
+		{
+			this.substituteSlot = slotIndex;
+			this.substituteRawId = rawItemId;
+			this.substituteName = name;
+			return this;
 		}
 
 		private static String xpHeader(String setName, String skill)
@@ -610,6 +626,19 @@ final class PerPieceSets
 							totals[k] += pieceValues[i][k];
 						}
 						break;
+					}
+				}
+				if (wornNames[i] == null && i == substituteSlot)
+				{
+					Item item = equipment.getItem(SLOTS[i].getSlotIdx());
+					if (item != null && item.getId() == substituteRawId)
+					{
+						wornNames[i] = substituteName;
+						worn++;
+						for (int k = 0; k < valueCount; k++)
+						{
+							totals[k] += pieceValues[i][k];
+						}
 					}
 				}
 			}

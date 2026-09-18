@@ -28,6 +28,7 @@ enum EffectFamily
 	BLOOD_MOON("bloodMoon"),
 	BLUE_MOON("blueMoon"),
 	ECLIPSE_MOON("eclipseMoon"),
+	VANILLA_ONLY_SETS("vanillaOnlySets"),
 	SWAMPBARK("swampbark"),
 	BLOODBARK("bloodbark"),
 
@@ -111,6 +112,8 @@ enum EffectFamily
 	// Misc
 	CIRCLET_OF_WATER("circletOfWater"),
 	DIZANAS_QUIVER("dizanasQuiver"),
+	AVAS_DEVICES("avasDevices"),
+	CAPES_OF_ACCOMPLISHMENT("capesOfAccomplishment"),
 	RADAS_BLESSING("radasBlessing");
 
 	final String configKey;

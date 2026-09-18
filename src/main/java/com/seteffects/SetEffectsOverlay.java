@@ -165,7 +165,8 @@ class SetEffectsOverlay extends Overlay implements MouseListener, MouseWheelList
 			? nativeBar
 			: new Rectangle(drawBounds.x + drawBounds.width - scrollbarWidth - 1, drawBounds.y, scrollbarWidth, drawBounds.height);
 
-		List<EffectLine> effectLines = EquippedEffects.describeEquipment(equipment, plugin::isFamilyEnabled, plugin.isVerbose(), plugin.getDiaryChecks());
+		List<EffectLine> effectLines = EquippedEffects.describeEquipment(equipment, plugin::isFamilyEnabled, plugin.isVerbose(), plugin.getDiaryChecks(),
+			plugin.getVanillaOnlyLines());
 
 		graphics.setFont(FontManager.getRunescapeFont());
 		FontMetrics metrics = graphics.getFontMetrics();

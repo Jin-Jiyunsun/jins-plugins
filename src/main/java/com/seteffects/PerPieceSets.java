@@ -327,14 +327,15 @@ final class PerPieceSets
 	/**
 	 * Graceful outfit: each piece adds to natural run energy restoration (hood/gloves/boots/cape
 	 * +3%, top/legs +4%, 20% total) and wearing all six adds a further +10%, for 30%. An Agility
-	 * cape (trimmed or not) counts in place of the graceful cape; it only shows up here once a
-	 * graceful piece is worn, never on its own.
+	 * cape (trimmed or not) or a plain Max cape counts in place of the graceful cape; it only shows up here
+	 * once a graceful piece is worn, never on its own.
 	 */
 	static final class GracefulOutfit
 	{
 		private static final int HOOD_ID = ItemID.GRACEFUL_HOOD;
 		private static final int CAPE_ID = ItemID.GRACEFUL_CAPE;
 		private static final int AGILITY_CAPE_ID = ItemID.SKILLCAPE_AGILITY;
+		private static final int MAX_CAPE_ID = ItemID.SKILLCAPE_MAX;
 		private static final int TOP_ID = ItemID.GRACEFUL_TOP;
 		private static final int LEGS_ID = ItemID.GRACEFUL_LEGS;
 		private static final int GLOVES_ID = ItemID.GRACEFUL_GLOVES;
@@ -352,6 +353,17 @@ final class PerPieceSets
 		{
 		}
 
+		/** Whether any graceful piece is worn (an Agility cape alone doesn't count - it only stands in for the cape). */
+		static boolean isAnyPieceWorn(ItemContainer equipment)
+		{
+			return isWorn(equipment, EquipmentInventorySlot.HEAD, HOOD_ID)
+				|| isWorn(equipment, EquipmentInventorySlot.CAPE, CAPE_ID)
+				|| isWorn(equipment, EquipmentInventorySlot.BODY, TOP_ID)
+				|| isWorn(equipment, EquipmentInventorySlot.LEGS, LEGS_ID)
+				|| isWorn(equipment, EquipmentInventorySlot.GLOVES, GLOVES_ID)
+				|| isWorn(equipment, EquipmentInventorySlot.BOOTS, BOOTS_ID);
+		}
+
 		static boolean isGracefulItem(int mappedItemId)
 		{
 			return mappedItemId == HOOD_ID
@@ -367,7 +379,8 @@ final class PerPieceSets
 			boolean hood = isWorn(equipment, EquipmentInventorySlot.HEAD, HOOD_ID);
 			boolean gracefulCape = isWorn(equipment, EquipmentInventorySlot.CAPE, CAPE_ID);
 			boolean agilityCape = isWorn(equipment, EquipmentInventorySlot.CAPE, AGILITY_CAPE_ID);
-			boolean cape = gracefulCape || agilityCape;
+			boolean maxCape = isWorn(equipment, EquipmentInventorySlot.CAPE, MAX_CAPE_ID);
+			boolean cape = gracefulCape || agilityCape || maxCape;
 			boolean top = isWorn(equipment, EquipmentInventorySlot.BODY, TOP_ID);
 			boolean legs = isWorn(equipment, EquipmentInventorySlot.LEGS, LEGS_ID);
 			boolean gloves = isWorn(equipment, EquipmentInventorySlot.GLOVES, GLOVES_ID);
@@ -405,7 +418,7 @@ final class PerPieceSets
 			}
 			if (verbose && cape)
 			{
-				lines.add(pieceLine(agilityCape ? "Agility cape" : "Graceful cape", CAPE_TENTHS));
+				lines.add(pieceLine(agilityCape ? "Agility cape" : maxCape ? "Max cape" : "Graceful cape", CAPE_TENTHS));
 			}
 
 			lines.add(new EffectLine("Current Bonus", "+" + EffectLineFormat.formatTenths(totalTenths) + "%.", true));

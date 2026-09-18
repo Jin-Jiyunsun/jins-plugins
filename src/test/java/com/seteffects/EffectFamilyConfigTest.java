@@ -59,6 +59,8 @@ public class EffectFamilyConfigTest
 		used.add(EffectFamily.RING_OF_THE_GODS);
 		used.add(EffectFamily.ENCHANTED_BOLTS);
 		used.add(EffectFamily.SHAYZIEN);
+		used.add(EffectFamily.VANILLA_ONLY_SETS);
+		used.add(EffectFamily.CAPES_OF_ACCOMPLISHMENT);
 		used.add(EffectFamily.INQUISITORS);
 		used.add(EffectFamily.VIRTUS);
 		used.add(EffectFamily.CRYSTAL_ARMOUR);

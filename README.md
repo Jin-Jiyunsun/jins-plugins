@@ -30,7 +30,7 @@ have to look it up. Hover an item for a tooltip, or check the "Set Effect Bonus"
   header and the current bonus.
 - **Per-item toggles**: every tracked set or item (or family of near-identical variants, like all
   four Salve amulet tiers) has its own checkbox, grouped into collapsible sections (Barrows,
-  Armour sets, Weapons, Shields, Head and hands, Jewellery, Skilling outfits, Miscellaneous). An item you turn off
+  Armour sets, Head, Cape, Jewellery, Ammunition, Weapon, Shield, Hands, Skilling outfits, Miscellaneous). An item you turn off
   is hidden from both the tooltip and the list.
 
 ### License

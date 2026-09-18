@@ -60,33 +60,57 @@ public interface SetEffectDisplayConfig extends Config
 	String armourSetsSection = "armourSets";
 
 	@ConfigSection(
-		name = "Weapons",
+		name = "Weapon",
 		description = "Weapon passive effects",
-		position = 5,
+		position = 9,
 		closedByDefault = true
 	)
 	String weaponsSection = "weapons";
 
 	@ConfigSection(
-		name = "Shields",
+		name = "Ammunition",
+		description = "Ammunition passive effects",
+		position = 8,
+		closedByDefault = true
+	)
+	String ammunitionSection = "ammunition";
+
+	@ConfigSection(
+		name = "Shield",
 		description = "Shield passive effects",
-		position = 6,
+		position = 10,
 		closedByDefault = true
 	)
 	String shieldsSection = "shields";
 
 	@ConfigSection(
-		name = "Head and hands",
-		description = "Headwear, gloves and bracelets",
-		position = 7,
+		name = "Head",
+		description = "Helmets, masks and circlets",
+		position = 5,
 		closedByDefault = true
 	)
-	String headAndHandsSection = "headAndHands";
+	String headSection = "head";
+
+	@ConfigSection(
+		name = "Cape",
+		description = "Capes and quivers",
+		position = 6,
+		closedByDefault = true
+	)
+	String capeSection = "cape";
+
+	@ConfigSection(
+		name = "Hands",
+		description = "Gloves and bracelets",
+		position = 11,
+		closedByDefault = true
+	)
+	String handsSection = "hands";
 
 	@ConfigSection(
 		name = "Jewellery",
 		description = "Amulets, necklaces and rings",
-		position = 8,
+		position = 7,
 		closedByDefault = true
 	)
 	String jewellerySection = "jewellery";
@@ -94,7 +118,7 @@ public interface SetEffectDisplayConfig extends Config
 	@ConfigSection(
 		name = "Skilling outfits",
 		description = "Skilling outfit bonuses",
-		position = 9,
+		position = 12,
 		closedByDefault = true
 	)
 	String skillingSection = "skilling";
@@ -102,7 +126,7 @@ public interface SetEffectDisplayConfig extends Config
 	@ConfigSection(
 		name = "Miscellaneous",
 		description = "Other passive effects",
-		position = 10,
+		position = 13,
 		closedByDefault = true
 	)
 	String miscSection = "misc";
@@ -331,6 +355,18 @@ public interface SetEffectDisplayConfig extends Config
 		position = 11
 	)
 	default boolean bloodbark()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "vanillaOnlySets",
+		name = "Statius, Vesta, Morrigan, Zuriel",
+		description = "Show the game's own text for the Statius's, Vesta's, Morrigan's and Zuriel's sets, which this plugin doesn't track itself",
+		section = armourSetsSection,
+		position = 12
+	)
+	default boolean vanillaOnlySets()
 	{
 		return true;
 	}
@@ -627,8 +663,8 @@ public interface SetEffectDisplayConfig extends Config
 		keyName = "enchantedBolts",
 		name = "Enchanted bolts",
 		description = "Show the enchanted bolt effects",
-		section = weaponsSection,
-		position = 24
+		section = ammunitionSection,
+		position = 0
 	)
 	default boolean enchantedBolts()
 	{
@@ -747,7 +783,7 @@ public interface SetEffectDisplayConfig extends Config
 		keyName = "slayerHelmet",
 		name = "Slayer helmet",
 		description = "Show the Slayer helmet effect",
-		section = headAndHandsSection,
+		section = headSection,
 		position = 0
 	)
 	default boolean slayerHelmet()
@@ -759,7 +795,7 @@ public interface SetEffectDisplayConfig extends Config
 		keyName = "blackMask",
 		name = "Black mask",
 		description = "Show the Black mask effect",
-		section = headAndHandsSection,
+		section = headSection,
 		position = 1
 	)
 	default boolean blackMask()
@@ -771,7 +807,7 @@ public interface SetEffectDisplayConfig extends Config
 		keyName = "serpentineHelm",
 		name = "Serpentine helm",
 		description = "Show the Serpentine helm effect",
-		section = headAndHandsSection,
+		section = headSection,
 		position = 2
 	)
 	default boolean serpentineHelm()
@@ -783,8 +819,8 @@ public interface SetEffectDisplayConfig extends Config
 		keyName = "chaosGauntlets",
 		name = "Chaos gauntlets",
 		description = "Show the Chaos gauntlets effect",
-		section = headAndHandsSection,
-		position = 3
+		section = handsSection,
+		position = 0
 	)
 	default boolean chaosGauntlets()
 	{
@@ -795,8 +831,8 @@ public interface SetEffectDisplayConfig extends Config
 		keyName = "regenBracelet",
 		name = "Regen bracelet",
 		description = "Show the Regen bracelet effect",
-		section = headAndHandsSection,
-		position = 4
+		section = handsSection,
+		position = 1
 	)
 	default boolean regenBracelet()
 	{
@@ -988,7 +1024,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Rada's blessing",
 		description = "Show the Rada's blessing effect",
 		section = miscSection,
-		position = 1
+		position = 0
 	)
 	default boolean radasBlessing()
 	{
@@ -999,8 +1035,8 @@ public interface SetEffectDisplayConfig extends Config
 		keyName = "circletOfWater",
 		name = "Circlet of water",
 		description = "Show the Circlet of water effect",
-		section = miscSection,
-		position = 0
+		section = headSection,
+		position = 3
 	)
 	default boolean circletOfWater()
 	{
@@ -1011,10 +1047,34 @@ public interface SetEffectDisplayConfig extends Config
 		keyName = "dizanasQuiver",
 		name = "Dizana's quiver",
 		description = "Show the Dizana's quiver, blessed quiver and max cape effect",
-		section = miscSection,
-		position = 2
+		section = capeSection,
+		position = 1
 	)
 	default boolean dizanasQuiver()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "avasDevices",
+		name = "Ava's devices",
+		description = "Show the ammunition recovery of Ava's attractor, accumulator and assembler, and the matching max capes",
+		section = capeSection,
+		position = 0
+	)
+	default boolean avasDevices()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "capesOfAccomplishment",
+		name = "Capes of accomplishment",
+		description = "Show the effects of skill capes and the max cape",
+		section = capeSection,
+		position = 2
+	)
+	default boolean capesOfAccomplishment()
 	{
 		return true;
 	}

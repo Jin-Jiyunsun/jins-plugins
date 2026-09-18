@@ -156,7 +156,7 @@ final class SetEffectsData
 
 		// handwear
 		singles.put(ItemID.GAUNTLETS_OF_CHAOS, new SingleItemEffect(EffectFamily.CHAOS_GAUNTLETS, "Chaos gauntlets", "+3 max hit on Bolt spells."));
-		singles.put(ItemID.JEWL_BRACELET_REGEN, new SingleItemEffect(EffectFamily.REGEN_BRACELET, "Regen bracelet", "Doubles the rate of natural Hitpoints regeneration."));
+		singles.put(ItemID.JEWL_BRACELET_REGEN, new SingleItemEffect(EffectFamily.REGEN_BRACELET, "Regen bracelet", "Doubles the rate of natural Hitpoints regeneration. Stacks with Rapid Heal or the Hitpoints cape, not both."));
 
 		// amulets
 		singles.put(ItemID.NECKLACE_OF_FAITH, new SingleItemEffect(EffectFamily.NECKLACE_OF_FAITH, "Necklace of faith", "When hit below 20% Hitpoints, restores Prayer points equal to 25% of your Prayer level, then breaks."));
@@ -181,6 +181,27 @@ final class SetEffectsData
 
 		// misc utility
 		singles.put(ItemID.WATER_CIRCLET, new SingleItemEffect(EffectFamily.CIRCLET_OF_WATER, "Circlet of water", "While charged with water runes, protects against desert heat."));
+		// Capes of accomplishment (keyed by the untrimmed cape - the trimmed one maps to it)
+		singles.put(ItemID.SKILLCAPE_COOKING, new SingleItemEffect(EffectFamily.CAPES_OF_ACCOMPLISHMENT, "Cooking cape", "Food never burns while cooking."));
+		singles.put(ItemID.SKILLCAPE_DEFENCE, new SingleItemEffect(EffectFamily.CAPES_OF_ACCOMPLISHMENT, "Defence cape", "Acts as a ring of life, teleporting you to your respawn point when hit below 10% Hitpoints."));
+		singles.put(ItemID.SKILLCAPE_FARMING, new SingleItemEffect(EffectFamily.CAPES_OF_ACCOMPLISHMENT, "Farming cape", "+5% to the base chance to save harvest lives and gain extra herbs from herb patches. Stacks with magic secateurs."));
+		singles.put(ItemID.SKILLCAPE_HERBLORE, new SingleItemEffect(EffectFamily.CAPES_OF_ACCOMPLISHMENT, "Herblore cape", "Grimy herbs can be used to make unfinished potions, giving the experience of cleaning the herb."));
+		singles.put(ItemID.SKILLCAPE_HITPOINTS, new SingleItemEffect(EffectFamily.CAPES_OF_ACCOMPLISHMENT, "Hitpoints cape", "Doubles your natural Hitpoint restoration rate. Does not stack with Rapid Heal, but stacks with the regen bracelet."));
+		singles.put(ItemID.SKILLCAPE_MINING, new SingleItemEffect(EffectFamily.CAPES_OF_ACCOMPLISHMENT, "Mining cape", "5% chance of an extra ore from rocks up to adamantite. Stacks with Varrock armour."));
+		singles.put(ItemID.SKILLCAPE_PRAYER, new SingleItemEffect(EffectFamily.CAPES_OF_ACCOMPLISHMENT, "Prayer cape", "Increases the Prayer points restored by prayer potions, like the holy wrench. Works worn or in your inventory. Does not stack with the wrench or ring of the gods (i)."));
+		singles.put(ItemID.SKILLCAPE_RANGING, new SingleItemEffect(EffectFamily.CAPES_OF_ACCOMPLISHMENT, "Ranging cape", "Acts as Ava's accumulator, recovering 72% of your fired ammunition (80% once upgraded with Vorkath's head)."));
+		singles.put(ItemID.SKILLCAPE_RUNECRAFTING, new SingleItemEffect(EffectFamily.CAPES_OF_ACCOMPLISHMENT, "Runecrafting cape", "Allows access to any runic altar without a talisman or tiara. Essence pouches do not degrade when filled."));
+		singles.put(ItemID.SKILLCAPE_SLAYER, new SingleItemEffect(EffectFamily.CAPES_OF_ACCOMPLISHMENT, "Slayer cape", "10% chance to be offered your previous task when getting a new one from a Slayer master. Bypasses combat level requirements when receiving tasks."));
+		singles.put(ItemID.SKILLCAPE_SMITHING, new SingleItemEffect(EffectFamily.CAPES_OF_ACCOMPLISHMENT, "Smithing cape", "Increases the coal bag's capacity to 36 coal. Acts as goldsmith gauntlets."));
+		singles.put(ItemID.SKILLCAPE_THIEVING, new SingleItemEffect(EffectFamily.CAPES_OF_ACCOMPLISHMENT, "Thieving cape", "+10% chance of success when pickpocketing. Stacks with the Ardougne Diary bonuses."));
+		singles.put(ItemID.SKILLCAPE_WOODCUTTING, new SingleItemEffect(EffectFamily.CAPES_OF_ACCOMPLISHMENT, "Woodcutting cape", "+10% chance of a bird nest falling while chopping trees."));
+		singles.put(ItemID.ANMA_30_REWARD, new SingleItemEffect(EffectFamily.AVAS_DEVICES, "Ava's attractor", "Recovers 60% of your fired ammunition."));
+		singles.put(ItemID.ANMA_50_REWARD, new SingleItemEffect(EffectFamily.AVAS_DEVICES, "Ava's accumulator", "Recovers 72% of your fired ammunition."));
+		singles.put(ItemID.SKILLCAPE_MAX_ANMA, new SingleItemEffect(EffectFamily.AVAS_DEVICES, "Accumulator max cape", "Recovers 72% of your fired ammunition."));
+		singles.put(ItemID.AVAS_ASSEMBLER_BROKEN, new SingleItemEffect(EffectFamily.AVAS_DEVICES, "Ava's assembler", "Recovers 80% of your fired ammunition."));
+		singles.put(ItemID.SKILLCAPE_MAX_ASSEMBLER, new SingleItemEffect(EffectFamily.AVAS_DEVICES, "Assembler max cape", "Recovers 80% of your fired ammunition."));
+		singles.put(ItemID.AVAS_ASSEMBLER_MASORI_BROKEN, new SingleItemEffect(EffectFamily.AVAS_DEVICES, "Masori assembler", "Recovers 80% of your fired ammunition."));
+		singles.put(ItemID.SKILLCAPE_MAX_ASSEMBLER_MASORI_BROKEN, new SingleItemEffect(EffectFamily.AVAS_DEVICES, "Masori assembler max cape", "Recovers 80% of your fired ammunition."));
 		singles.put(ItemID.DIZANAS_QUIVER_BROKEN, new SingleItemEffect(EffectFamily.DIZANAS_QUIVER, "Dizana's quiver", "Increases ranged attack by 10 and ranged strength by 1. Only applies when using arrows and bolts."));
 		singles.put(ItemID.DIZANAS_QUIVER_INFINITE_BROKEN, new SingleItemEffect(EffectFamily.DIZANAS_QUIVER, "Blessed Dizana's quiver", "Increases ranged attack by 10 and ranged strength by 1. Only applies when using arrows and bolts."));
 		singles.put(ItemID.SKILLCAPE_MAX_DIZANAS_BROKEN, new SingleItemEffect(EffectFamily.DIZANAS_QUIVER, "Dizana's max cape", "Increases ranged attack by 10 and ranged strength by 1. Only applies when using arrows and bolts."));

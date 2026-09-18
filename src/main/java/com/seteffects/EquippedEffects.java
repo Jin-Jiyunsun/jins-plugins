@@ -114,6 +114,17 @@ final class EquippedEffects
 			lines.add(EnchantedBolts.describe(mappedItemId, diaries::hardKandarin));
 		}
 
+		if (mappedItemId == ItemID.SKILLCAPE_AGILITY && enabled.test(EffectFamily.CAPES_OF_ACCOMPLISHMENT)
+			&& !PerPieceSets.GracefulOutfit.isAnyPieceWorn(equipment))
+		{
+			lines.add(agilityCapeHint());
+		}
+
+		if (mappedItemId == ItemID.SKILLCAPE_MAX && enabled.test(EffectFamily.CAPES_OF_ACCOMPLISHMENT))
+		{
+			lines.add(maxCapeEffect(equipment));
+		}
+
 		if (mappedItemId == ItemID.DAMNED_AMULET && enabled.test(EffectFamily.AMULET_OF_THE_DAMNED))
 		{
 			lines.add(amuletOfTheDamnedEffect(equipment));
@@ -129,7 +140,8 @@ final class EquippedEffects
 	 * Void's pieces span up to four equipped slots and would otherwise repeat, and the Salve
 	 * amulet's tiers only differ by raw id, which the generic per-item pass doesn't see.
 	 */
-	static List<EffectLine> describeEquipment(ItemContainer equipment, Predicate<EffectFamily> enabled, boolean verbose, DiaryChecks diaries)
+	static List<EffectLine> describeEquipment(ItemContainer equipment, Predicate<EffectFamily> enabled, boolean verbose, DiaryChecks diaries,
+		List<EffectLine> vanillaOnlyLines)
 	{
 		List<EffectLine> lines = new ArrayList<>();
 		Set<ItemSet> seenSets = new HashSet<>();
@@ -144,6 +156,8 @@ final class EquippedEffects
 		boolean hasCrystalItem = false;
 		boolean hasSwampbarkItem = false;
 		boolean hasShayzienItem = false;
+		boolean hasAgilityCape = false;
+		boolean hasMaxCape = false;
 		int enchantedBoltId = -1;
 		boolean hasBloodbarkItem = false;
 		boolean hasGracefulItem = false;
@@ -187,6 +201,8 @@ final class EquippedEffects
 				hasCrystalItem |= PerPieceSets.CrystalArmour.isCrystalItem(mappedItemId);
 				hasSwampbarkItem |= PerPieceSets.SwampbarkArmour.isSwampbarkItem(mappedItemId);
 				hasShayzienItem |= PerPieceSets.ShayzienArmour.isShayzienItem(mappedItemId);
+				hasAgilityCape |= mappedItemId == ItemID.SKILLCAPE_AGILITY;
+				hasMaxCape |= mappedItemId == ItemID.SKILLCAPE_MAX;
 				if (EnchantedBolts.isEnchantedBolt(mappedItemId))
 				{
 					enchantedBoltId = mappedItemId;
@@ -282,6 +298,17 @@ final class EquippedEffects
 			lines.add(PerPieceSets.CrystalArmour.describe(equipment));
 		}
 
+		// Only a hint: once a graceful piece is worn the Graceful entry already counts the cape
+		if (hasAgilityCape && enabled.test(EffectFamily.CAPES_OF_ACCOMPLISHMENT) && !PerPieceSets.GracefulOutfit.isAnyPieceWorn(equipment))
+		{
+			lines.add(agilityCapeHint());
+		}
+
+		if (hasMaxCape && enabled.test(EffectFamily.CAPES_OF_ACCOMPLISHMENT))
+		{
+			lines.add(maxCapeEffect(equipment));
+		}
+
 		if (hasShayzienItem && enabled.test(EffectFamily.SHAYZIEN))
 		{
 			lines.addAll(PerPieceSets.ShayzienArmour.describe(equipment, verbose, diaries::hardKourend));
@@ -315,7 +342,13 @@ final class EquippedEffects
 			}
 		}
 
-		return sortedByName(lines);
+		List<EffectLine> sorted = sortedByName(lines);
+		if (enabled.test(EffectFamily.VANILLA_ONLY_SETS))
+		{
+			// Appended after the alphabetical list rather than sorted into it
+			sorted.addAll(vanillaOnlyLines);
+		}
+		return sorted;
 	}
 
 	/**
@@ -371,6 +404,22 @@ final class EquippedEffects
 		{
 			lines.add(single.describe());
 		}
+	}
+
+	private static EffectLine agilityCapeHint()
+	{
+		return new EffectLine("Agility cape", "Counts as a graceful cape for the Graceful outfit bonus.");
+	}
+
+	/** The graceful sentence is dropped once a graceful piece is worn: the Graceful entry already counts the cape. */
+	private static EffectLine maxCapeEffect(ItemContainer equipment)
+	{
+		String effect = "Has the perks of every skill cape.";
+		if (!PerPieceSets.GracefulOutfit.isAnyPieceWorn(equipment))
+		{
+			effect += " Counts as a graceful cape for the Graceful outfit bonus.";
+		}
+		return new EffectLine("Max cape", effect);
 	}
 
 	private static EffectLine amuletOfTheDamnedEffect(ItemContainer equipment)

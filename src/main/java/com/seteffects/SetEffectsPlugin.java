@@ -82,6 +82,9 @@ public class SetEffectsPlugin extends Plugin
 	 */
 	private String lastNativeBaseText = "";
 	private String lastWrittenText;
+	// Blocks of the game's text for sets we don't track ourselves - see VanillaOnlySets; rebuilt
+	// only when the game rewrites its text, read every frame by the overlay
+	private volatile List<EffectLine> vanillaOnlyLines = Collections.emptyList();
 	private final DiaryChecks diaryChecks = new DiaryChecks(this::isHardKandarinDiaryComplete, this::isHardKourendDiaryComplete);
 
 	@Override
@@ -211,6 +214,7 @@ public class SetEffectsPlugin extends Plugin
 		if (!currentText.equals(lastWrittenText))
 		{
 			lastNativeBaseText = currentText;
+			vanillaOnlyLines = VanillaOnlySets.parse(currentText);
 		}
 
 		if (!showSetEffectList)
@@ -235,6 +239,11 @@ public class SetEffectsPlugin extends Plugin
 			setEffectText.setText(lastNativeBaseText);
 		}
 		lastWrittenText = null;
+	}
+
+	List<EffectLine> getVanillaOnlyLines()
+	{
+		return vanillaOnlyLines;
 	}
 
 	/**

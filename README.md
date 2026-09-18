@@ -1,7 +1,7 @@
 # Set Effect Display
 
 <p align="center">
-<img width="1000" height="648" alt="seteffects" src="https://github.com/user-attachments/assets/69c19ddb-1800-48d8-8558-5b43330a7886" />
+<img width="800" height="518" alt="seteffectanim" src="https://github.com/user-attachments/assets/78673e7a-a4f8-463a-93bf-d5d8959636f9" />
 </p>
 
 Shows the passive set and gear effect for items in the equipment bonuses screen, so you don't

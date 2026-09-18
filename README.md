@@ -41,4 +41,4 @@ have to look it up. Hover an item for a tooltip, or check the "Set Effect Bonus"
 
 BSD-2-Clause. See [LICENSE](LICENSE).
 
-This plugin was entirely generated using AI.
+While tested by myself in game, this plugin was entirely generated using AI.

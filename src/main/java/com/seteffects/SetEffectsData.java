@@ -121,6 +121,7 @@ final class SetEffectsData
 		singles.put(ItemID.ARCLIGHT, new SingleItemEffect(EffectFamily.ARCLIGHT, "Arclight", "+70% damage and accuracy against demons."));
 		singles.put(ItemID.SCORCHING_BOW, new SingleItemEffect(EffectFamily.SCORCHING_BOW, "Scorching bow", "+30% damage and accuracy against demons."));
 		singles.put(ItemID.PURGING_STAFF, new SingleItemEffect(EffectFamily.PURGING_STAFF, "Purging staff", "Doubles demonbane spell bonuses. Mark of Darkness lasts 5x longer when cast with this staff equipped."));
+		singles.put(ItemID.CONTACT_KERIS, new SingleItemEffect(EffectFamily.KERIS_PARTISANS, "Keris", "+33% damage against kalphites and scarab creatures. 1.96% chance to deal triple damage."));
 		singles.put(ItemID.KERIS_PARTISAN, new SingleItemEffect(EffectFamily.KERIS_PARTISANS, "Keris partisan", "+33% damage against kalphites and scarab creatures. 1.96% chance to deal triple damage."));
 		singles.put(ItemID.KERIS_PARTISAN_BREACH, new SingleItemEffect(EffectFamily.KERIS_PARTISANS, "Keris partisan of breaching", "+33% accuracy and damage against kalphites and scarab creatures. 1.96% chance to deal triple damage."));
 		singles.put(ItemID.KERIS_PARTISAN_SUN, new SingleItemEffect(EffectFamily.KERIS_PARTISANS, "Keris partisan of the sun", "+33% damage against kalphites and scarab creatures. In the Tombs of Amascut, +25% accuracy against targets below 25% health, and kills heal 12 HP at the cost of 5 Prayer, overhealing up to 20% above your Hitpoints."));
@@ -138,6 +139,19 @@ final class SetEffectsData
 		singles.put(ItemID.RAT_BONE_MACE, new SingleItemEffect(EffectFamily.BONE_WEAPONS, "Bone mace", "+10 to max hit. Only effective against rats."));
 		singles.put(ItemID.RAT_BONE_BOW, new SingleItemEffect(EffectFamily.BONE_WEAPONS, "Bone shortbow", "+10 to max hit. Only effective against rats."));
 		singles.put(ItemID.BARRONITE_MACE, new SingleItemEffect(EffectFamily.BARRONITE_MACE, "Barronite mace", "+15% damage and accuracy against golems."));
+		singles.put(ItemID.TWINFLAME_STAFF, new SingleItemEffect(EffectFamily.TWINFLAME_STAFF, "Twinflame staff", "Provides infinite fire and water runes and +10% accuracy and damage with standard spells. Elemental spells (except Strike and Surge) fire a second hit for 40% damage."));
+		singles.put(ItemID.INFERNAL_AXE, new SingleItemEffect(EffectFamily.INFERNAL_TOOLS, "Infernal axe", "While charged, 1/3 chance to burn chopped logs for half Firemaking experience."));
+		singles.put(ItemID.INFERNAL_HARPOON, new SingleItemEffect(EffectFamily.INFERNAL_TOOLS, "Infernal harpoon", "While charged, 1/3 chance to cook caught fish instantly for half Cooking experience, destroying them."));
+		singles.put(ItemID.INFERNAL_PICKAXE, new SingleItemEffect(EffectFamily.INFERNAL_TOOLS, "Infernal pickaxe", "While charged, 1/3 chance for mined ore to combust for half Smithing experience, destroying it."));
+		singles.put(ItemID.DRAGON_HARPOON, new SingleItemEffect(EffectFamily.HARPOONS, "Dragon harpoon", "+20% catch rate when harpoon fishing (+5% at Tempoross)."));
+		singles.put(ItemID.CRYSTAL_HARPOON, new SingleItemEffect(EffectFamily.HARPOONS, "Crystal harpoon", "While charged, +35% catch rate when harpoon fishing (+10% at Tempoross). 1/3 of fish at Tempoross become crystallised harpoonfish."));
+		singles.put(ItemID.SUNSPEAR, new SingleItemEffect(EffectFamily.VAMPYRE_WEAPONS, "Sunspear", "+50% damage and +25% accuracy against vampyres."));
+		singles.put(ItemID.IVANDIS_FLAIL, new SingleItemEffect(EffectFamily.VAMPYRE_WEAPONS, "Ivandis flail", "+20% damage against vampyres."));
+		singles.put(ItemID.BLISTERWOOD_FLAIL, new SingleItemEffect(EffectFamily.VAMPYRE_WEAPONS, "Blisterwood flail", "+25% damage and +5% accuracy against vampyres."));
+		singles.put(ItemID.BLISTERWOOD_STAKE, new SingleItemEffect(EffectFamily.VAMPYRE_WEAPONS, "Blisterwood stake", "+25% damage and accuracy against vampyres."));
+		singles.put(ItemID.HALLOWED_FLAIL, new SingleItemEffect(EffectFamily.VAMPYRE_WEAPONS, "Hallowed flail", "+25% damage and accuracy against vampyres."));
+		singles.put(ItemID.SCYTHE_OF_VITUR, new SingleItemEffect(EffectFamily.SCYTHE_OF_VITUR, "Scythe of Vitur", "Hits up to three targets in front of you, or a large monster up to three times. Each hit deals 50% less damage than the last."));
+		singles.put(ItemID.OLAF2_BRINE_SABRE, new SingleItemEffect(EffectFamily.BRINE_SABRE, "Brine sabre", "Finishes off rockslugs without a bag of salt."));
 		singles.put(ItemID.GRANITE_HAMMER, new SingleItemEffect(EffectFamily.GRANITE_HAMMER, "Granite hammer", "+30% damage and accuracy against golems."));
 
 		// shields
@@ -190,6 +204,21 @@ final class SetEffectsData
 		singles.put(ItemID.SKILLCAPE_MINING, new SingleItemEffect(EffectFamily.CAPES_OF_ACCOMPLISHMENT, "Mining cape", "5% chance of an extra ore from rocks up to adamantite. Stacks with Varrock armour."));
 		singles.put(ItemID.SKILLCAPE_PRAYER, new SingleItemEffect(EffectFamily.CAPES_OF_ACCOMPLISHMENT, "Prayer cape", "Increases the Prayer points restored by prayer potions, like the holy wrench. Works worn or in your inventory. Does not stack with the wrench or ring of the gods (i)."));
 		singles.put(ItemID.SKILLCAPE_RANGING, new SingleItemEffect(EffectFamily.CAPES_OF_ACCOMPLISHMENT, "Ranging cape", "Acts as Ava's accumulator, recovering 72% of your fired ammunition (80% once upgraded with Vorkath's head)."));
+		singles.put(ItemID.AQUANITE_HOPPER, new SingleItemEffect(EffectFamily.AQUANITE_HOPPER, "Aquanite hopper", "11% chance for crossbows to fire a second, weaker shot."));
+		singles.put(ItemID.SLAYER_MIRROR_SHIELD, new SingleItemEffect(EffectFamily.MIRROR_SHIELDS, "Mirror shield", "Protects against the stat reduction from cockatrices and basilisks."));
+		singles.put(ItemID.VIKINGEXILE_V_SHIELD, new SingleItemEffect(EffectFamily.MIRROR_SHIELDS, "V's shield", "Acts as a mirror shield against basilisks, basilisk knights and cockatrices."));
+		singles.put(ItemID.TOME_OF_FIRE, new SingleItemEffect(EffectFamily.ELEMENTAL_TOMES, "Tome of fire", "While charged, provides infinite fire runes and +10% fire spell damage (+50% in PvP)."));
+		singles.put(ItemID.TOME_OF_WATER, new SingleItemEffect(EffectFamily.ELEMENTAL_TOMES, "Tome of water", "While charged, provides infinite water runes and +10% water spell accuracy and damage (+20% in PvP)."));
+		singles.put(ItemID.TOME_OF_EARTH, new SingleItemEffect(EffectFamily.ELEMENTAL_TOMES, "Tome of earth", "While charged, provides infinite earth runes and +10% earth spell damage."));
+		singles.put(ItemID.GAUNTLETS_OF_GOLDSMITHING, new SingleItemEffect(EffectFamily.GOLDSMITH_GAUNTLETS, "Goldsmith gauntlets", "Increases the experience from smelting gold bars by 2.5x. Works at the Blast Furnace."));
+		singles.put(ItemID.GAUNTLETS_OF_COOKING, new SingleItemEffect(EffectFamily.COOKING_GAUNTLETS, "Cooking gauntlets", "Reduces the chance of burning lobsters, swordfish, monkfish, sharks, anglerfish and kyatt when cooking."));
+		singles.put(ItemID.WILD_CAVE_BRACELET_CHARGED, new SingleItemEffect(EffectFamily.BRACELET_OF_ETHEREUM, "Bracelet of ethereum", "While charged, reduces damage taken from revenants by 75% and makes them tolerant."));
+		singles.put(ItemID.ECHO_BOOTS, new SingleItemEffect(EffectFamily.ECHO_BOOTS, "Echo boots", "When charged, returns 1 damage back at attackers within a 3x3 square."));
+		singles.put(ItemID.TORTUGAN_SHIELD, new SingleItemEffect(EffectFamily.TORTUGAN_SHIELD, "Tortugan shield", "Negates the devastating attacks of dire and shellbane gryphons, letting Protect from Melee fully block their melee attacks."));
+		singles.put(ItemID.MEDALLION_OF_THE_DEEP, new SingleItemEffect(EffectFamily.MEDALLION_OF_THE_DEEP, "Medallion of the Deep", "Lets you breathe underwater without diving apparatus or a fishbowl helmet, and reduces oxygen depletion by 80% in the underwater Agility and Thieving area."));
+		singles.put(ItemID.DODGY_NECKLACE, new SingleItemEffect(EffectFamily.DODGY_NECKLACE, "Dodgy necklace", "25% chance to prevent being stunned and damaged when pickpocketing. Stacks with Shadow Veil."));
+		singles.put(ItemID.VAMPYRE_RING, new SingleItemEffect(EffectFamily.EFARITAYS_AID, "Efaritay's aid", "+10% damage and +15% accuracy against vampyres. Stacks with the black mask or slayer helmet."));
+		singles.put(ItemID.LIGHTBEARER, new SingleItemEffect(EffectFamily.LIGHTBEARER, "Lightbearer", "Regenerates special attack energy twice as fast."));
 		singles.put(ItemID.CELESTIAL_RING, new SingleItemEffect(EffectFamily.CELESTIAL_RING, "Celestial ring", "Grants an invisible +4 Mining boost. While charged, 10% chance of an extra ore from rocks up to adamantite."));
 		singles.put(ItemID.CELESTIAL_SIGNET, new SingleItemEffect(EffectFamily.CELESTIAL_RING, "Celestial signet", "Grants an invisible +4 Mining boost. While charged, 10% chance of an extra ore from rocks up to adamantite, granting experience for both. 10% chance to not use a charge on crystal equipment, except the blade of Saeldor and bow of Faerdhinen."));
 		singles.put(ItemID.ELVEN_SIGNET, new SingleItemEffect(EffectFamily.ELVEN_SIGNET, "Elven signet", "10% chance to not use a charge on crystal equipment, except the blade of Saeldor and bow of Faerdhinen."));

@@ -6,6 +6,7 @@ import java.util.Objects;
 import net.runelite.api.EquipmentInventorySlot;
 import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
+import net.runelite.api.gameval.ItemID;
 import net.runelite.client.game.ItemVariationMapping;
 
 /**
@@ -20,6 +21,7 @@ final class RenderKey
 	private final int configVersion;
 	private final boolean diaryKandarin;
 	private final boolean diaryKourend;
+	private final boolean diaryArdougne;
 	private final boolean warmShown;
 	private final int textWidth;
 	private final List<EffectLine> vanillaOnly;
@@ -27,13 +29,14 @@ final class RenderKey
 	private final Object font;
 	private final int hoveredItemId;
 
-	private RenderKey(int[] itemIds, int configVersion, boolean diaryKandarin, boolean diaryKourend, boolean warmShown,
-		int textWidth, List<EffectLine> vanillaOnly, String fallback, Object font, int hoveredItemId)
+	private RenderKey(int[] itemIds, int configVersion, boolean diaryKandarin, boolean diaryKourend, boolean diaryArdougne,
+		boolean warmShown, int textWidth, List<EffectLine> vanillaOnly, String fallback, Object font, int hoveredItemId)
 	{
 		this.itemIds = itemIds;
 		this.configVersion = configVersion;
 		this.diaryKandarin = diaryKandarin;
 		this.diaryKourend = diaryKourend;
+		this.diaryArdougne = diaryArdougne;
 		this.warmShown = warmShown;
 		this.textWidth = textWidth;
 		this.vanillaOnly = vanillaOnly;
@@ -52,22 +55,35 @@ final class RenderKey
 			ids[i] = items[i] != null ? items[i].getId() : -1;
 		}
 
-		// Only bolts (ammo slot) and a Slayer helmet (head slot) depend on the diaries
-		boolean diaryRelevant = isDiaryItem(ids, EquipmentInventorySlot.AMMO.getSlotIdx(), true)
-			|| isDiaryItem(ids, EquipmentInventorySlot.HEAD.getSlotIdx(), false);
+		// Only bolts (ammo slot), a Slayer helmet (head slot) and the gloves of silence (hands slot)
+		// depend on the diaries, and only the diary that item needs is read
+		int ammo = idAt(ids, EquipmentInventorySlot.AMMO.getSlotIdx());
+		int head = idAt(ids, EquipmentInventorySlot.HEAD.getSlotIdx());
+		int gloves = idAt(ids, EquipmentInventorySlot.GLOVES.getSlotIdx());
+		boolean bolts = ammo > 0 && EnchantedBolts.isEnchantedBolt(ItemVariationMapping.map(ammo));
+		boolean slayerHelm = head > 0 && SlayerHelm.isSlayerHelm(head);
+		boolean silence = gloves > 0 && ItemVariationMapping.map(gloves) == ItemID.HUNTING_SILENT_GLOVES;
 
 		return new RenderKey(ids, configVersion,
-			diaryRelevant && diaries.hardKandarin(), diaryRelevant && diaries.hardKourend(),
+			(bolts || hoveredIsBolt(hoveredItemId)) && diaries.hardKandarin(), slayerHelm && diaries.hardKourend(),
+			(silence || hoveredIsSilence(hoveredItemId)) && diaries.hardArdougne(),
 			warmShown, textWidth, vanillaOnly, fallback, font, hoveredItemId);
 	}
 
-	private static boolean isDiaryItem(int[] ids, int slot, boolean bolt)
+	private static int idAt(int[] ids, int slot)
 	{
-		if (slot >= ids.length || ids[slot] <= 0)
-		{
-			return false;
-		}
-		return bolt ? EnchantedBolts.isEnchantedBolt(ItemVariationMapping.map(ids[slot])) : SlayerHelm.isSlayerHelm(ids[slot]);
+		return slot < ids.length ? ids[slot] : -1;
+	}
+
+	// A hovered item is described even when it isn't the one worn in that slot's usual place
+	private static boolean hoveredIsBolt(int hoveredItemId)
+	{
+		return hoveredItemId > 0 && EnchantedBolts.isEnchantedBolt(ItemVariationMapping.map(hoveredItemId));
+	}
+
+	private static boolean hoveredIsSilence(int hoveredItemId)
+	{
+		return hoveredItemId > 0 && ItemVariationMapping.map(hoveredItemId) == ItemID.HUNTING_SILENT_GLOVES;
 	}
 
 	@Override
@@ -85,6 +101,7 @@ final class RenderKey
 		return configVersion == other.configVersion
 			&& diaryKandarin == other.diaryKandarin
 			&& diaryKourend == other.diaryKourend
+			&& diaryArdougne == other.diaryArdougne
 			&& warmShown == other.warmShown
 			&& textWidth == other.textWidth
 			&& hoveredItemId == other.hoveredItemId
@@ -97,7 +114,7 @@ final class RenderKey
 	@Override
 	public int hashCode()
 	{
-		return Objects.hash(Arrays.hashCode(itemIds), configVersion, diaryKandarin, diaryKourend, warmShown, textWidth,
+		return Objects.hash(Arrays.hashCode(itemIds), configVersion, diaryKandarin, diaryKourend, diaryArdougne, warmShown, textWidth,
 			vanillaOnly, fallback, font, hoveredItemId);
 	}
 }

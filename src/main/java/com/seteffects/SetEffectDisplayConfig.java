@@ -108,6 +108,14 @@ public interface SetEffectDisplayConfig extends Config
 	String handsSection = "hands";
 
 	@ConfigSection(
+		name = "Feet",
+		description = "Boots",
+		position = 12,
+		closedByDefault = true
+	)
+	String feetSection = "feet";
+
+	@ConfigSection(
 		name = "Jewellery",
 		description = "Amulets, necklaces and rings",
 		position = 7,
@@ -118,7 +126,7 @@ public interface SetEffectDisplayConfig extends Config
 	@ConfigSection(
 		name = "Skilling outfits",
 		description = "Skilling outfit bonuses",
-		position = 12,
+		position = 13,
 		closedByDefault = true
 	)
 	String skillingSection = "skilling";
@@ -126,7 +134,7 @@ public interface SetEffectDisplayConfig extends Config
 	@ConfigSection(
 		name = "Miscellaneous",
 		description = "Other passive effects",
-		position = 13,
+		position = 14,
 		closedByDefault = true
 	)
 	String miscSection = "misc";
@@ -660,6 +668,78 @@ public interface SetEffectDisplayConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "brineSabre",
+		name = "Brine sabre",
+		description = "Show the Brine sabre effect",
+		section = weaponsSection,
+		position = 24
+	)
+	default boolean brineSabre()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "scytheOfVitur",
+		name = "Scythe of Vitur",
+		description = "Show the Scythe of Vitur effect",
+		section = weaponsSection,
+		position = 25
+	)
+	default boolean scytheOfVitur()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "vampyreWeapons",
+		name = "Vampyre weapons",
+		description = "Show the Sunspear, Ivandis flail, Blisterwood flail, Blisterwood stake and Hallowed flail effects",
+		section = weaponsSection,
+		position = 26
+	)
+	default boolean vampyreWeapons()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "harpoons",
+		name = "Harpoons",
+		description = "Show the Dragon harpoon and Crystal harpoon effects",
+		section = weaponsSection,
+		position = 27
+	)
+	default boolean harpoons()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "infernalTools",
+		name = "Infernal tools",
+		description = "Show the Infernal axe, Infernal harpoon and Infernal pickaxe effects",
+		section = weaponsSection,
+		position = 28
+	)
+	default boolean infernalTools()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "twinflameStaff",
+		name = "Twinflame staff",
+		description = "Show the Twinflame staff effect",
+		section = weaponsSection,
+		position = 29
+	)
+	default boolean twinflameStaff()
+	{
+		return true;
+	}
+
+	@ConfigItem(
 		keyName = "enchantedBolts",
 		name = "Enchanted bolts",
 		description = "Show the enchanted bolt effects",
@@ -787,6 +867,42 @@ public interface SetEffectDisplayConfig extends Config
 		position = 9
 	)
 	default boolean abyssalLantern()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "elementalTomes",
+		name = "Elemental tomes",
+		description = "Show the Tome of fire, Tome of water and Tome of earth effects",
+		section = shieldsSection,
+		position = 10
+	)
+	default boolean elementalTomes()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "mirrorShields",
+		name = "Mirror shields",
+		description = "Show the Mirror shield and V's shield effects",
+		section = shieldsSection,
+		position = 11
+	)
+	default boolean mirrorShields()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "aquaniteHopper",
+		name = "Aquanite hopper",
+		description = "Show the Aquanite hopper effect",
+		section = shieldsSection,
+		position = 12
+	)
+	default boolean aquaniteHopper()
 	{
 		return true;
 	}
@@ -1056,6 +1172,126 @@ public interface SetEffectDisplayConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "lightbearer",
+		name = "Lightbearer",
+		description = "Show the Lightbearer effect",
+		section = jewellerySection,
+		position = 17
+	)
+	default boolean lightbearer()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "efaritaysAid",
+		name = "Efaritay's aid",
+		description = "Show the Efaritay's aid effect",
+		section = jewellerySection,
+		position = 18
+	)
+	default boolean efaritaysAid()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "dodgyNecklace",
+		name = "Dodgy necklace",
+		description = "Show the Dodgy necklace effect",
+		section = jewellerySection,
+		position = 19
+	)
+	default boolean dodgyNecklace()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "medallionOfTheDeep",
+		name = "Medallion of the Deep",
+		description = "Show the Medallion of the Deep effect",
+		section = jewellerySection,
+		position = 20
+	)
+	default boolean medallionOfTheDeep()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "tortuganShield",
+		name = "Tortugan shield",
+		description = "Show the Tortugan shield effect",
+		section = capeSection,
+		position = 3
+	)
+	default boolean tortuganShield()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "echoBoots",
+		name = "Echo boots",
+		description = "Show the Echo boots effect",
+		section = feetSection,
+		position = 0
+	)
+	default boolean echoBoots()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "braceletOfEthereum",
+		name = "Bracelet of ethereum",
+		description = "Show the Bracelet of ethereum effect",
+		section = handsSection,
+		position = 2
+	)
+	default boolean braceletOfEthereum()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "cookingGauntlets",
+		name = "Cooking gauntlets",
+		description = "Show the Cooking gauntlets effect",
+		section = handsSection,
+		position = 3
+	)
+	default boolean cookingGauntlets()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "glovesOfSilence",
+		name = "Gloves of silence",
+		description = "Show the Gloves of silence effect",
+		section = handsSection,
+		position = 4
+	)
+	default boolean glovesOfSilence()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "goldsmithGauntlets",
+		name = "Goldsmith gauntlets",
+		description = "Show the Goldsmith gauntlets effect",
+		section = handsSection,
+		position = 5
+	)
+	default boolean goldsmithGauntlets()
+	{
+		return true;
+	}
+
+	@ConfigItem(
 		keyName = "radasBlessing",
 		name = "Rada's blessing",
 		description = "Show the Rada's blessing effect",
@@ -1077,6 +1313,18 @@ public interface SetEffectDisplayConfig extends Config
 	default WarmClothingDisplay warmClothing()
 	{
 		return WarmClothingDisplay.AT_WINTERTODT;
+	}
+
+	@ConfigItem(
+		keyName = "ghostspeak",
+		name = "Ghostspeak items",
+		description = "Show the Ghostspeak amulet and Morytania legs effect",
+		section = miscSection,
+		position = 2
+	)
+	default boolean ghostspeak()
+	{
+		return true;
 	}
 
 	@ConfigItem(

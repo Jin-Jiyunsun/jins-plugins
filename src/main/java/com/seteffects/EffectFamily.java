@@ -57,6 +57,12 @@ enum EffectFamily
 	BONE_WEAPONS("boneWeapons"),
 	BARRONITE_MACE("barroniteMace"),
 	GRANITE_HAMMER("graniteHammer"),
+	BRINE_SABRE("brineSabre"),
+	SCYTHE_OF_VITUR("scytheOfVitur"),
+	VAMPYRE_WEAPONS("vampyreWeapons"),
+	HARPOONS("harpoons"),
+	INFERNAL_TOOLS("infernalTools"),
+	TWINFLAME_STAFF("twinflameStaff"),
 	ENCHANTED_BOLTS("enchantedBolts"),
 
 	// Shields
@@ -70,6 +76,10 @@ enum EffectFamily
 	ANCIENT_WYVERN_SHIELD("ancientWyvernShield"),
 	DRAGONFIRE_WARD("dragonfireWard"),
 	ABYSSAL_LANTERN("abyssalLantern"),
+	ELEMENTAL_TOMES("elementalTomes"),
+	MIRROR_SHIELDS("mirrorShields"),
+	AQUANITE_HOPPER("aquaniteHopper"),
+	GHOSTSPEAK("ghostspeak"),
 
 	// Head and hands
 	SLAYER_HELMET("slayerHelmet"),
@@ -95,6 +105,16 @@ enum EffectFamily
 	BONE_NECKLACES("boneNecklaces"),
 	RING_OF_THE_GODS("ringOfTheGods"),
 	CELESTIAL_RING("celestialRing"),
+	LIGHTBEARER("lightbearer"),
+	EFARITAYS_AID("efaritaysAid"),
+	DODGY_NECKLACE("dodgyNecklace"),
+	MEDALLION_OF_THE_DEEP("medallionOfTheDeep"),
+	TORTUGAN_SHIELD("tortuganShield"),
+	ECHO_BOOTS("echoBoots"),
+	BRACELET_OF_ETHEREUM("braceletOfEthereum"),
+	COOKING_GAUNTLETS("cookingGauntlets"),
+	GLOVES_OF_SILENCE("glovesOfSilence"),
+	GOLDSMITH_GAUNTLETS("goldsmithGauntlets"),
 	ELVEN_SIGNET("elvenSignet"),
 
 	// Skilling outfits

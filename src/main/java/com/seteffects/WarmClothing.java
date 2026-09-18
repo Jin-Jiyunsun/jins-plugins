@@ -121,7 +121,15 @@ final class WarmClothing
 	static EffectLine describe(ItemContainer equipment)
 	{
 		int count = count(equipment);
-		return new EffectLine("Warm clothing", Math.min(count, MAX_COUNTED), MAX_COUNTED,
-			"You have " + count + " pieces of warm clothing equipped.");
+		String text;
+		if (count >= MAX_COUNTED)
+		{
+			text = "You have a full set! Nice and toasty!";
+		}
+		else
+		{
+			text = "You have " + count + (count == 1 ? " piece" : " pieces") + " of warm clothing equipped.";
+		}
+		return new EffectLine("Warm clothing", Math.min(count, MAX_COUNTED), MAX_COUNTED, text);
 	}
 }

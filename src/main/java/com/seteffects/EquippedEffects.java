@@ -67,6 +67,16 @@ final class EquippedEffects
 			lines.add(AbyssalLantern.describe(rawItemId));
 		}
 
+		if (GhostspeakItems.isGhostspeakItem(rawItemId) && enabled.test(EffectFamily.GHOSTSPEAK))
+		{
+			lines.add(GhostspeakItems.describe(rawItemId));
+		}
+
+		if (mappedItemId == ItemID.HUNTING_SILENT_GLOVES && enabled.test(EffectFamily.GLOVES_OF_SILENCE))
+		{
+			lines.add(GlovesOfSilence.describe(diaries::hardArdougne));
+		}
+
 		if (RingOfTheGods.isImbuedRing(rawItemId) && enabled.test(EffectFamily.RING_OF_THE_GODS))
 		{
 			lines.add(RingOfTheGods.describe());
@@ -157,6 +167,9 @@ final class EquippedEffects
 		int slayerHelmRawId = -1;
 		int radasBlessingRawId = -1;
 		int abyssalLanternRawId = -1;
+		boolean hasGlovesOfSilence = false;
+		int ghostspeakLegsRawId = -1;
+		int ghostspeakAmuletRawId = -1;
 		boolean hasImbuedRingOfTheGods = false;
 		boolean hasInquisitorItem = false;
 		boolean hasVirtusItem = false;
@@ -244,6 +257,15 @@ final class EquippedEffects
 				{
 					abyssalLanternRawId = rawItemId;
 				}
+				hasGlovesOfSilence |= mappedItemId == ItemID.HUNTING_SILENT_GLOVES;
+				if (GhostspeakItems.isMorytaniaLegs(rawItemId))
+				{
+					ghostspeakLegsRawId = rawItemId;
+				}
+				else if (GhostspeakItems.isAmulet(rawItemId))
+				{
+					ghostspeakAmuletRawId = rawItemId;
+				}
 				hasImbuedRingOfTheGods |= RingOfTheGods.isImbuedRing(rawItemId);
 			}
 		}
@@ -292,6 +314,18 @@ final class EquippedEffects
 		if (abyssalLanternRawId != -1 && enabled.test(EffectFamily.ABYSSAL_LANTERN))
 		{
 			lines.add(AbyssalLantern.describe(abyssalLanternRawId));
+		}
+
+		if (hasGlovesOfSilence && enabled.test(EffectFamily.GLOVES_OF_SILENCE))
+		{
+			lines.add(GlovesOfSilence.describe(diaries::hardArdougne));
+		}
+
+		// One effect from either source: the legs win when both are worn, as the less obvious source
+		int ghostspeakRawId = ghostspeakLegsRawId != -1 ? ghostspeakLegsRawId : ghostspeakAmuletRawId;
+		if (ghostspeakRawId != -1 && enabled.test(EffectFamily.GHOSTSPEAK))
+		{
+			lines.add(GhostspeakItems.describe(ghostspeakRawId));
 		}
 
 		if (hasImbuedRingOfTheGods && enabled.test(EffectFamily.RING_OF_THE_GODS))

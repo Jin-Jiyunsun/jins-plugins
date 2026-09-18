@@ -94,7 +94,8 @@ public class SetEffectsPlugin extends Plugin
 	private volatile List<EffectLine> vanillaOnlyLines = Collections.emptyList();
 	private RenderKey tooltipKey;
 	private String tooltipText;
-	private final DiaryChecks diaryChecks = new DiaryChecks(this::isHardKandarinDiaryComplete, this::isHardKourendDiaryComplete);
+	private final DiaryChecks diaryChecks = new DiaryChecks(this::isHardKandarinDiaryComplete, this::isHardKourendDiaryComplete,
+		this::isHardArdougneDiaryComplete);
 
 	@Override
 	protected void startUp()
@@ -337,6 +338,11 @@ public class SetEffectsPlugin extends Plugin
 	private boolean isHardKourendDiaryComplete()
 	{
 		return client.getVarbitValue(VarbitID.KOUREND_DIARY_HARD_COMPLETE) == 1;
+	}
+
+	private boolean isHardArdougneDiaryComplete()
+	{
+		return client.getVarbitValue(VarbitID.ARDOUGNE_DIARY_HARD_COMPLETE) == 1;
 	}
 
 	DiaryChecks getDiaryChecks()

@@ -57,6 +57,8 @@ public class EffectFamilyConfigTest
 		used.add(EffectFamily.SLAYER_HELMET);
 		used.add(EffectFamily.RADAS_BLESSING);
 		used.add(EffectFamily.ABYSSAL_LANTERN);
+		used.add(EffectFamily.GHOSTSPEAK);
+		used.add(EffectFamily.GLOVES_OF_SILENCE);
 		used.add(EffectFamily.RING_OF_THE_GODS);
 		used.add(EffectFamily.ENCHANTED_BOLTS);
 		used.add(EffectFamily.SHAYZIEN);

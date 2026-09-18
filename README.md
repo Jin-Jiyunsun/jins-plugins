@@ -1,11 +1,6 @@
 # Set Effects
 
-<!-- TODO: add a screenshot/gif here - upload an image via the GitHub README editor or a PR/issue
-comment to get a user-attachments URL, then replace this comment with:
-<p align="center">
-<img width="800" alt="Set Effects" src="PASTE_URL_HERE" />
-</p>
--->
+<img width="1000" height="648" alt="seteffects" src="https://github.com/user-attachments/assets/69c19ddb-1800-48d8-8558-5b43330a7886" />
 
 Shows the passive set and gear effect for items in the equipment bonuses screen, so you don't
 have to look it up. Hover an item for a tooltip, or check the "Set Effect Bonus" box.

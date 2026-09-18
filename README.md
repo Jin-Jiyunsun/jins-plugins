@@ -1,4 +1,4 @@
-# Set Effects
+# Set Effect Display
 
 <p align="center">
 <img width="1000" height="648" alt="seteffects" src="https://github.com/user-attachments/assets/69c19ddb-1800-48d8-8558-5b43330a7886" />

@@ -21,7 +21,7 @@ import net.runelite.client.ui.overlay.tooltip.TooltipManager;
 
 @Slf4j
 @PluginDescriptor(
-	name = "Set Effects",
+	name = "Set Effect Display",
 	description = "Shows the set/gear effect on hover over items in the equipment window",
 	tags = {"equipment", "tooltip", "set", "barrows", "void", "moons"}
 )

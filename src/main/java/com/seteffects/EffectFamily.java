@@ -111,6 +111,7 @@ enum EffectFamily
 	MEDALLION_OF_THE_DEEP("medallionOfTheDeep"),
 	TORTUGAN_SHIELD("tortuganShield"),
 	ECHO_BOOTS("echoBoots"),
+	ARANEA_BOOTS("araneaBoots"),
 	BRACELET_OF_ETHEREUM("braceletOfEthereum"),
 	COOKING_GAUNTLETS("cookingGauntlets"),
 	GLOVES_OF_SILENCE("glovesOfSilence"),

@@ -1236,9 +1236,21 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Echo boots",
 		description = "Show the Echo boots effect",
 		section = feetSection,
-		position = 0
+		position = 1
 	)
 	default boolean echoBoots()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "araneaBoots",
+		name = "Aranea boots",
+		description = "Show the Aranea boots effect",
+		section = feetSection,
+		position = 0
+	)
+	default boolean araneaBoots()
 	{
 		return true;
 	}

@@ -155,7 +155,7 @@ final class SetEffectsData
 		singles.put(ItemID.SERPENTINE_HELM, new SingleItemEffect(EffectFamily.SERPENTINE_HELM, "Serpentine helm", "While charged with scales, grants immunity to venom and poison. Chance to inflict venom: 16.7% with a non-poisoned melee weapon, 50% with poison or the noxious halberd, or 100% with toxic blowpipe, trident of the swamp, or toxic staff of the dead."));
 
 		// handwear
-		singles.put(ItemID.GAUNTLETS_OF_CHAOS, new SingleItemEffect(EffectFamily.CHAOS_GAUNTLETS, "Chaos gauntlets", "+3 max hit on Bolt spells."));
+		singles.put(ItemID.GAUNTLETS_OF_CHAOS, new SingleItemEffect(EffectFamily.CHAOS_GAUNTLETS, "Chaos gauntlets", "Increases the max hit of your bolt spells by 3, before magic damage and weakness bonuses are applied."));
 		singles.put(ItemID.JEWL_BRACELET_REGEN, new SingleItemEffect(EffectFamily.REGEN_BRACELET, "Regen bracelet", "Doubles the rate of natural Hitpoints regeneration. Stacks with Rapid Heal or the Hitpoints cape, not both."));
 
 		// amulets
@@ -171,11 +171,11 @@ final class SetEffectsData
 		singles.put(ItemID.RING_OF_RECOIL, new SingleItemEffect(EffectFamily.RING_OF_RECOIL, "Ring of recoil", "Returns 1+10% of damage taken back at the attacker."));
 		singles.put(ItemID.ZENYTE_RING_ENCHANTED, new SingleItemEffect(EffectFamily.RING_OF_SUFFERING, "Ring of suffering", "When charged with rings of recoil, returns 1+10% of damage taken back at the attacker."));
 		singles.put(ItemID.BRIMSTONE_RING, new SingleItemEffect(EffectFamily.BRIMSTONE_RING, "Brimstone ring", "Combat spells have a 25% chance to ignore 10% of the target's magic defence."));
-		singles.put(ItemID.AMULET_OF_AIR, new SingleItemEffect(EffectFamily.ELEMENTAL_AMULETS, "Amulet of air", "Increases the max hit of your air spells by 2."));
-		singles.put(ItemID.AMULET_OF_WATER, new SingleItemEffect(EffectFamily.ELEMENTAL_AMULETS, "Amulet of water", "Increases the max hit of your water spells by 2."));
-		singles.put(ItemID.AMULET_OF_EARTH, new SingleItemEffect(EffectFamily.ELEMENTAL_AMULETS, "Amulet of earth", "Increases the max hit of your earth spells by 2."));
-		singles.put(ItemID.AMULET_OF_FIRE, new SingleItemEffect(EffectFamily.ELEMENTAL_AMULETS, "Amulet of fire", "Increases the max hit of your fire spells by 2."));
-		singles.put(ItemID.ELEMENTAL_AMULET, new SingleItemEffect(EffectFamily.ELEMENTAL_AMULETS, "Elemental amulet", "Increases the max hit of your air, water, earth and fire spells by 2."));
+		singles.put(ItemID.AMULET_OF_AIR, new SingleItemEffect(EffectFamily.ELEMENTAL_AMULETS, "Amulet of air", "Increases the max hit of your air spells by 2, before magic damage and weakness bonuses are applied."));
+		singles.put(ItemID.AMULET_OF_WATER, new SingleItemEffect(EffectFamily.ELEMENTAL_AMULETS, "Amulet of water", "Increases the max hit of your water spells by 2, before magic damage and weakness bonuses are applied."));
+		singles.put(ItemID.AMULET_OF_EARTH, new SingleItemEffect(EffectFamily.ELEMENTAL_AMULETS, "Amulet of earth", "Increases the max hit of your earth spells by 2, before magic damage and weakness bonuses are applied."));
+		singles.put(ItemID.AMULET_OF_FIRE, new SingleItemEffect(EffectFamily.ELEMENTAL_AMULETS, "Amulet of fire", "Increases the max hit of your fire spells by 2, before magic damage and weakness bonuses are applied."));
+		singles.put(ItemID.ELEMENTAL_AMULET, new SingleItemEffect(EffectFamily.ELEMENTAL_AMULETS, "Elemental amulet", "Increases the max hit of your air, water, earth and fire spells by 2, before magic damage and weakness bonuses are applied."));
 		singles.put(ItemID.DRAGONBONE_NECKLACE, new SingleItemEffect(EffectFamily.BONE_NECKLACES, "Dragonbone necklace", "Restores 1-5 Prayer points per bone buried, depending on the bone. Does not stack with the Catacombs of Kourend effect."));
 		singles.put(ItemID.BONECRUSHER_NECKLACE, new SingleItemEffect(EffectFamily.BONE_NECKLACES, "Bonecrusher necklace", "Automatically crushes bones and restores 1-5 Prayer points per bone. Requires ecto-token charges."));
 
@@ -190,6 +190,9 @@ final class SetEffectsData
 		singles.put(ItemID.SKILLCAPE_MINING, new SingleItemEffect(EffectFamily.CAPES_OF_ACCOMPLISHMENT, "Mining cape", "5% chance of an extra ore from rocks up to adamantite. Stacks with Varrock armour."));
 		singles.put(ItemID.SKILLCAPE_PRAYER, new SingleItemEffect(EffectFamily.CAPES_OF_ACCOMPLISHMENT, "Prayer cape", "Increases the Prayer points restored by prayer potions, like the holy wrench. Works worn or in your inventory. Does not stack with the wrench or ring of the gods (i)."));
 		singles.put(ItemID.SKILLCAPE_RANGING, new SingleItemEffect(EffectFamily.CAPES_OF_ACCOMPLISHMENT, "Ranging cape", "Acts as Ava's accumulator, recovering 72% of your fired ammunition (80% once upgraded with Vorkath's head)."));
+		singles.put(ItemID.CELESTIAL_RING, new SingleItemEffect(EffectFamily.CELESTIAL_RING, "Celestial ring", "Grants an invisible +4 Mining boost. While charged, 10% chance of an extra ore from rocks up to adamantite."));
+		singles.put(ItemID.CELESTIAL_SIGNET, new SingleItemEffect(EffectFamily.CELESTIAL_RING, "Celestial signet", "Grants an invisible +4 Mining boost. While charged, 10% chance of an extra ore from rocks up to adamantite, granting experience for both. 10% chance to not use a charge on crystal equipment, except the blade of Saeldor and bow of Faerdhinen."));
+		singles.put(ItemID.ELVEN_SIGNET, new SingleItemEffect(EffectFamily.ELVEN_SIGNET, "Elven signet", "10% chance to not use a charge on crystal equipment, except the blade of Saeldor and bow of Faerdhinen."));
 		singles.put(ItemID.SKILLCAPE_RUNECRAFTING, new SingleItemEffect(EffectFamily.CAPES_OF_ACCOMPLISHMENT, "Runecrafting cape", "Allows access to any runic altar without a talisman or tiara. Essence pouches do not degrade when filled."));
 		singles.put(ItemID.SKILLCAPE_SLAYER, new SingleItemEffect(EffectFamily.CAPES_OF_ACCOMPLISHMENT, "Slayer cape", "10% chance to be offered your previous task when getting a new one from a Slayer master. Bypasses combat level requirements when receiving tasks."));
 		singles.put(ItemID.SKILLCAPE_SMITHING, new SingleItemEffect(EffectFamily.CAPES_OF_ACCOMPLISHMENT, "Smithing cape", "Increases the coal bag's capacity to 36 coal. Acts as goldsmith gauntlets."));

@@ -780,6 +780,18 @@ public interface SetEffectDisplayConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "abyssalLantern",
+		name = "Abyssal lantern",
+		description = "Show the Abyssal lantern effect",
+		section = shieldsSection,
+		position = 9
+	)
+	default boolean abyssalLantern()
+	{
+		return true;
+	}
+
+	@ConfigItem(
 		keyName = "slayerHelmet",
 		name = "Slayer helmet",
 		description = "Show the Slayer helmet effect",
@@ -1015,6 +1027,30 @@ public interface SetEffectDisplayConfig extends Config
 		position = 14
 	)
 	default boolean ringOfTheGods()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "celestialRing",
+		name = "Celestial ring and signet",
+		description = "Show the Celestial ring and Celestial signet effects",
+		section = jewellerySection,
+		position = 15
+	)
+	default boolean celestialRing()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "elvenSignet",
+		name = "Elven signet",
+		description = "Show the Elven signet effect",
+		section = jewellerySection,
+		position = 16
+	)
+	default boolean elvenSignet()
 	{
 		return true;
 	}

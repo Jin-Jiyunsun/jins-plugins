@@ -69,6 +69,7 @@ enum EffectFamily
 	DRAGONFIRE_SHIELD("dragonfireShield"),
 	ANCIENT_WYVERN_SHIELD("ancientWyvernShield"),
 	DRAGONFIRE_WARD("dragonfireWard"),
+	ABYSSAL_LANTERN("abyssalLantern"),
 
 	// Head and hands
 	SLAYER_HELMET("slayerHelmet"),
@@ -93,6 +94,8 @@ enum EffectFamily
 	ELEMENTAL_AMULETS("elementalAmulets"),
 	BONE_NECKLACES("boneNecklaces"),
 	RING_OF_THE_GODS("ringOfTheGods"),
+	CELESTIAL_RING("celestialRing"),
+	ELVEN_SIGNET("elvenSignet"),
 
 	// Skilling outfits
 	GRACEFUL("graceful"),

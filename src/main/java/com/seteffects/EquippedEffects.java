@@ -62,6 +62,11 @@ final class EquippedEffects
 			lines.add(RadasBlessing.describe(rawItemId));
 		}
 
+		if (AbyssalLantern.isAbyssalLantern(rawItemId) && enabled.test(EffectFamily.ABYSSAL_LANTERN))
+		{
+			lines.add(AbyssalLantern.describe(rawItemId));
+		}
+
 		if (RingOfTheGods.isImbuedRing(rawItemId) && enabled.test(EffectFamily.RING_OF_THE_GODS))
 		{
 			lines.add(RingOfTheGods.describe());
@@ -151,6 +156,7 @@ final class EquippedEffects
 		int blackMaskRawId = -1;
 		int slayerHelmRawId = -1;
 		int radasBlessingRawId = -1;
+		int abyssalLanternRawId = -1;
 		boolean hasImbuedRingOfTheGods = false;
 		boolean hasInquisitorItem = false;
 		boolean hasVirtusItem = false;
@@ -234,6 +240,10 @@ final class EquippedEffects
 				{
 					radasBlessingRawId = rawItemId;
 				}
+				if (AbyssalLantern.isAbyssalLantern(rawItemId))
+				{
+					abyssalLanternRawId = rawItemId;
+				}
 				hasImbuedRingOfTheGods |= RingOfTheGods.isImbuedRing(rawItemId);
 			}
 		}
@@ -277,6 +287,11 @@ final class EquippedEffects
 		if (radasBlessingRawId != -1 && enabled.test(EffectFamily.RADAS_BLESSING))
 		{
 			lines.add(RadasBlessing.describe(radasBlessingRawId));
+		}
+
+		if (abyssalLanternRawId != -1 && enabled.test(EffectFamily.ABYSSAL_LANTERN))
+		{
+			lines.add(AbyssalLantern.describe(abyssalLanternRawId));
 		}
 
 		if (hasImbuedRingOfTheGods && enabled.test(EffectFamily.RING_OF_THE_GODS))

@@ -74,6 +74,8 @@ public class SetEffectsPlugin extends Plugin
 	private volatile boolean showSetEffectList = true;
 	private volatile boolean showTooltips = true;
 	private volatile boolean verbose = false;
+	// Bumped whenever the config is re-read, so cached results built from it can tell they are stale
+	private volatile int configVersion;
 	private volatile WarmClothingDisplay warmClothingDisplay = WarmClothingDisplay.AT_WINTERTODT;
 
 	/**
@@ -90,6 +92,8 @@ public class SetEffectsPlugin extends Plugin
 	// Blocks of the game's text for sets we don't track ourselves - see VanillaOnlySets; rebuilt
 	// only when the game rewrites its text, read every frame by the overlay
 	private volatile List<EffectLine> vanillaOnlyLines = Collections.emptyList();
+	private RenderKey tooltipKey;
+	private String tooltipText;
 	private final DiaryChecks diaryChecks = new DiaryChecks(this::isHardKandarinDiaryComplete, this::isHardKourendDiaryComplete);
 
 	@Override
@@ -145,6 +149,7 @@ public class SetEffectsPlugin extends Plugin
 			}
 		}
 		disabledFamilies = disabled;
+		configVersion++;
 	}
 
 	boolean isFamilyEnabled(EffectFamily family)
@@ -178,6 +183,11 @@ public class SetEffectsPlugin extends Plugin
 		return region == WINTERTODT_CAMP_REGION || region == WINTERTODT_ARENA_REGION;
 	}
 
+	int getConfigVersion()
+	{
+		return configVersion;
+	}
+
 	boolean isVerbose()
 	{
 		return verbose;
@@ -191,6 +201,14 @@ public class SetEffectsPlugin extends Plugin
 	@Subscribe
 	public void onBeforeRender(BeforeRender event)
 	{
+		// Everything here is for the equipment stats popup, so do nothing at all while it's closed
+		Widget popup = client.getWidget(InterfaceID.Equipment.UNIVERSE);
+		if (popup == null || popup.isHidden())
+		{
+			overlay.popupClosed();
+			return;
+		}
+
 		// Runs every frame, right before it's drawn - blanking here (rather than once per game
 		// tick) keeps the window where the native script's own text could flash through under
 		// our overlay as small as possible
@@ -331,6 +349,19 @@ public class SetEffectsPlugin extends Plugin
 			return null;
 		}
 
+		// Same item, same gear, same config: reuse the last text rather than rebuilding it every frame
+		RenderKey key = RenderKey.of(equipment, diaryChecks, configVersion, false, 0, Collections.emptyList(), "", null, rawItemId);
+		if (key.equals(tooltipKey))
+		{
+			return tooltipText;
+		}
+		tooltipKey = key;
+		tooltipText = buildTooltipText(equipment, rawItemId);
+		return tooltipText;
+	}
+
+	private String buildTooltipText(ItemContainer equipment, int rawItemId)
+	{
 		List<EffectLine> lines = EquippedEffects.describeItem(equipment, rawItemId, this::isFamilyEnabled, verbose, diaryChecks);
 		if (lines.isEmpty())
 		{

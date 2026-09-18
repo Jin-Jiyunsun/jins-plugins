@@ -45,6 +45,7 @@ import net.runelite.client.ui.overlay.OverlayUtil;
  */
 class SetEffectsOverlay extends Overlay implements MouseListener, MouseWheelListener
 {
+	private static final long STALE_AFTER_NANOS = 1_000_000_000L;
 	private static final Color TEXT_COLOR = new Color(0xff981f);
 	private static final int LINE_HEIGHT = 13;
 	private static final int SCROLL_STEP = LINE_HEIGHT * 3;
@@ -86,6 +87,12 @@ class SetEffectsOverlay extends Overlay implements MouseListener, MouseWheelList
 	private Rectangle thumbHitbox;
 	private Rectangle scrollableBounds;
 	private float dragScrollPerPixel;
+	// render() only runs while the equipment interface is being drawn, so when it closes nothing clears
+	// the cached geometry above - the mouse callbacks ignore it once it's this old
+	private volatile long lastDrawNanos;
+	// The last built rows and what they were built from - only touched by render()
+	private RenderKey cachedKey;
+	private List<List<EffectLineFormat.Word>> cachedRows = Collections.emptyList();
 
 	@Inject
 	private SetEffectsOverlay(Client client, SetEffectsPlugin plugin, SpriteManager spriteManager)
@@ -168,13 +175,73 @@ class SetEffectsOverlay extends Overlay implements MouseListener, MouseWheelList
 			? nativeBar
 			: new Rectangle(drawBounds.x + drawBounds.width - scrollbarWidth - 1, drawBounds.y, scrollbarWidth, drawBounds.height);
 
-		List<EffectLine> effectLines = EquippedEffects.describeEquipment(equipment, plugin::isFamilyEnabled, plugin.isVerbose(), plugin.getDiaryChecks(),
-			plugin.getVanillaOnlyLines(), plugin::isWarmClothingShown);
-
 		graphics.setFont(FontManager.getRunescapeFont());
 		FontMetrics metrics = graphics.getFontMetrics();
 
 		int textWidth = drawBounds.width - Math.max(scrollbarWidth, scrollbarArea.width) - 2;
+		// Rebuilt only when something it depends on changed (see RenderKey), not every frame
+		boolean warmShown = plugin.isWarmClothingShown();
+		RenderKey key = RenderKey.of(equipment, plugin.getDiaryChecks(), plugin.getConfigVersion(), warmShown, textWidth,
+			plugin.getVanillaOnlyLines(), plugin.getFallbackText(), graphics.getFont(), -1);
+		if (!key.equals(cachedKey))
+		{
+			cachedRows = buildRows(equipment, warmShown, metrics, textWidth);
+			cachedKey = key;
+		}
+		List<List<EffectLineFormat.Word>> rows = cachedRows;
+
+		// LINE_HEIGHT is baseline-to-baseline spacing - the very last row's descenders extend past
+		// that sum with nothing below them, so without adding descent back in, maxScroll fell just
+		// short of enough to ever fully scroll them into view
+		int contentHeight = rows.size() * LINE_HEIGHT + metrics.getDescent() + BOTTOM_PADDING;
+		int maxScroll = Math.max(0, contentHeight - drawBounds.height);
+		// Snapshotted once and threaded through explicitly rather than re-reading the mutable
+		// scrollY field later in this method - mouseDragged() runs on a different thread and can
+		// write a fresh, unclamped value into that field between this clamp and a later read,
+		// which was making the thumb briefly jump outside the track while actively dragging
+		int clampedScrollY = Math.max(0, Math.min(scrollY, maxScroll));
+		scrollY = clampedScrollY;
+
+		Shape originalClip = graphics.getClip();
+		graphics.setClip(drawBounds);
+
+		int y = drawBounds.y + metrics.getAscent() - clampedScrollY;
+		for (List<EffectLineFormat.Word> row : rows)
+		{
+			// y is the baseline: a row shows once any of it (its top edge at y - ascent, its descenders
+			// at y + descent) is inside the box, and the clip cuts it off smoothly at the edges
+			if (y - metrics.getAscent() < drawBounds.y + drawBounds.height && y + metrics.getDescent() > drawBounds.y)
+			{
+				int x = drawBounds.x;
+				for (EffectLineFormat.Word word : row)
+				{
+					OverlayUtil.renderTextLocation(graphics, new net.runelite.api.Point(x, y), word.text, word.color);
+					x += metrics.stringWidth(word.text + " ");
+				}
+			}
+			y += LINE_HEIGHT;
+		}
+		graphics.setClip(originalClip);
+
+		if (maxScroll <= 0)
+		{
+			clearInputState();
+			return null;
+		}
+
+		scrollableBounds = drawBounds;
+		lastDrawNanos = System.nanoTime();
+		drawScrollbar(graphics, drawBounds, scrollbarArea, scrollbarWidth, maxScroll, contentHeight, clampedScrollY,
+			arrowUp, arrowDown, thumbTop, thumbMiddle, thumbBottom, track);
+
+		return null;
+	}
+
+	private List<List<EffectLineFormat.Word>> buildRows(ItemContainer equipment, boolean warmShown, FontMetrics metrics, int textWidth)
+	{
+		List<EffectLine> effectLines = EquippedEffects.describeEquipment(equipment, plugin::isFamilyEnabled, plugin.isVerbose(), plugin.getDiaryChecks(),
+			plugin.getVanillaOnlyLines(), () -> warmShown);
+
 		List<List<EffectLineFormat.Word>> rows = new ArrayList<>();
 		if (effectLines.isEmpty())
 		{
@@ -212,49 +279,7 @@ class SetEffectsOverlay extends Overlay implements MouseListener, MouseWheelList
 				}
 			}
 		}
-
-		// LINE_HEIGHT is baseline-to-baseline spacing - the very last row's descenders extend past
-		// that sum with nothing below them, so without adding descent back in, maxScroll fell just
-		// short of enough to ever fully scroll them into view
-		int contentHeight = rows.size() * LINE_HEIGHT + metrics.getDescent() + BOTTOM_PADDING;
-		int maxScroll = Math.max(0, contentHeight - drawBounds.height);
-		// Snapshotted once and threaded through explicitly rather than re-reading the mutable
-		// scrollY field later in this method - mouseDragged() runs on a different thread and can
-		// write a fresh, unclamped value into that field between this clamp and a later read,
-		// which was making the thumb briefly jump outside the track while actively dragging
-		int clampedScrollY = Math.max(0, Math.min(scrollY, maxScroll));
-		scrollY = clampedScrollY;
-
-		Shape originalClip = graphics.getClip();
-		graphics.setClip(drawBounds);
-
-		int y = drawBounds.y + metrics.getAscent() - clampedScrollY;
-		for (List<EffectLineFormat.Word> row : rows)
-		{
-			if (y >= drawBounds.y - LINE_HEIGHT && y <= drawBounds.y + drawBounds.height)
-			{
-				int x = drawBounds.x;
-				for (EffectLineFormat.Word word : row)
-				{
-					OverlayUtil.renderTextLocation(graphics, new net.runelite.api.Point(x, y), word.text, word.color);
-					x += metrics.stringWidth(word.text + " ");
-				}
-			}
-			y += LINE_HEIGHT;
-		}
-		graphics.setClip(originalClip);
-
-		if (maxScroll <= 0)
-		{
-			clearInputState();
-			return null;
-		}
-
-		scrollableBounds = drawBounds;
-		drawScrollbar(graphics, drawBounds, scrollbarArea, scrollbarWidth, maxScroll, contentHeight, clampedScrollY,
-			arrowUp, arrowDown, thumbTop, thumbMiddle, thumbBottom, track);
-
-		return null;
+		return rows;
 	}
 
 	private void drawScrollbar(Graphics2D graphics, Rectangle drawBounds, Rectangle scrollbarArea, int scrollbarWidth, int maxScroll, int contentHeight,
@@ -305,6 +330,11 @@ class SetEffectsOverlay extends Overlay implements MouseListener, MouseWheelList
 	@Override
 	public MouseEvent mousePressed(MouseEvent event)
 	{
+		if (!isShowing())
+		{
+			return event;
+		}
+
 		Point point = event.getPoint();
 
 		if (thumbHitbox != null && thumbHitbox.contains(point))
@@ -331,7 +361,7 @@ class SetEffectsOverlay extends Overlay implements MouseListener, MouseWheelList
 	@Override
 	public MouseEvent mouseDragged(MouseEvent event)
 	{
-		if (dragging)
+		if (dragging && isShowing())
 		{
 			int deltaY = event.getPoint().y - dragStartMouseY;
 			scrollY = dragStartScrollY + Math.round(deltaY * dragScrollPerPixel);
@@ -352,7 +382,7 @@ class SetEffectsOverlay extends Overlay implements MouseListener, MouseWheelList
 	public MouseWheelEvent mouseWheelMoved(MouseWheelEvent event)
 	{
 		Rectangle bounds = scrollableBounds;
-		if (bounds != null && bounds.contains(event.getPoint()))
+		if (bounds != null && isShowing() && bounds.contains(event.getPoint()))
 		{
 			scrollY = Math.max(0, scrollY + event.getWheelRotation() * SCROLL_STEP);
 			event.consume();
@@ -391,6 +421,17 @@ class SetEffectsOverlay extends Overlay implements MouseListener, MouseWheelList
 		return container != null && !container.isHidden() ? container : null;
 	}
 
+
+	private boolean isShowing()
+	{
+		return System.nanoTime() - lastDrawNanos < STALE_AFTER_NANOS;
+	}
+
+	/** The plugin saw the popup closed: drop the click areas right away instead of waiting for them to go stale. */
+	void popupClosed()
+	{
+		clearInputState();
+	}
 
 	private Dimension clearInputState()
 	{

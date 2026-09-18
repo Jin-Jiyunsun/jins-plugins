@@ -35,12 +35,12 @@ public interface SetEffectDisplayConfig extends Config
 	@ConfigItem(
 		keyName = "verbose",
 		name = "Verbose",
-		description = "List each worn piece's bonus (Inquisitor's, Virtus) instead of just the total",
+		description = "List each worn piece's bonus (Inquisitor's, Virtus, Graceful, skilling outfits and more) instead of just the total",
 		position = 2
 	)
 	default boolean verbose()
 	{
-		return true;
+		return false;
 	}
 
 	@ConfigSection(

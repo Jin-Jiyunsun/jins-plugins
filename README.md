@@ -25,8 +25,9 @@ have to look it up. Hover an item for a tooltip, or check the "Set Effect Bonus"
 
 - **Show set effect list**: turn off to leave the vanilla "Set Effect Bonus" box alone.
 - **Show tooltips**: turn off to hide the hover tooltips.
-- **Verbose**: on by default. Turn off to skip the per-piece breakdown lines for Inquisitor's
-  armour and Virtus robes and show only the header and current bonus.
+- **Verbose**: off by default. Turn on to also list each worn piece's own bonus for sets with per-piece
+  bonuses (Inquisitor's armour, Virtus robes, Graceful, the skilling outfits and more). Off shows only the
+  header and the current bonus.
 - **Per-item toggles**: every tracked set or item (or family of near-identical variants, like all
   four Salve amulet tiers) has its own checkbox, grouped into collapsible sections (Barrows,
   Armour sets, Weapons, Shields, Head and hands, Jewellery, Skilling outfits, Miscellaneous). An item you turn off

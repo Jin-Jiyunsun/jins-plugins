@@ -6,7 +6,6 @@ import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
 import javax.inject.Inject;
-import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.ItemContainer;
 import net.runelite.api.MenuEntry;
@@ -16,6 +15,7 @@ import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.gameval.VarbitID;
 import net.runelite.api.widgets.Widget;
 import net.runelite.api.widgets.WidgetUtil;
+import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.events.ConfigChanged;
@@ -26,10 +26,9 @@ import net.runelite.client.ui.overlay.OverlayManager;
 import net.runelite.client.ui.overlay.tooltip.Tooltip;
 import net.runelite.client.ui.overlay.tooltip.TooltipManager;
 
-@Slf4j
 @PluginDescriptor(
 	name = "Set Effect Display",
-	description = "Shows the set/gear effect on hover over items in the equipment window",
+	description = "Shows the passive set and gear effects of worn items, on hover and in a scrollable list, in the equipment stats screen",
 	tags = {"equipment", "tooltip", "set", "barrows", "void", "moons"}
 )
 public class SetEffectsPlugin extends Plugin
@@ -42,6 +41,9 @@ public class SetEffectsPlugin extends Plugin
 
 	@Inject
 	private Client client;
+
+	@Inject
+	private ClientThread clientThread;
 
 	@Inject
 	private TooltipManager tooltipManager;
@@ -67,7 +69,7 @@ public class SetEffectsPlugin extends Plugin
 	private volatile Set<EffectFamily> disabledFamilies = Collections.emptySet();
 	private volatile boolean showSetEffectList = true;
 	private volatile boolean showTooltips = true;
-	private volatile boolean verbose = true;
+	private volatile boolean verbose = false;
 
 	/**
 	 * The vanilla "Set Effect Bonus" box's own text, rewritten by the game's own script whenever
@@ -85,7 +87,6 @@ public class SetEffectsPlugin extends Plugin
 	@Override
 	protected void startUp()
 	{
-		log.debug("Set Effects started!");
 		refreshConfig();
 		overlayManager.add(overlay);
 		mouseManager.registerMouseListener(overlay);
@@ -95,10 +96,12 @@ public class SetEffectsPlugin extends Plugin
 	@Override
 	protected void shutDown()
 	{
-		log.debug("Set Effects stopped!");
 		overlayManager.remove(overlay);
 		mouseManager.unregisterMouseListener(overlay);
 		mouseManager.unregisterMouseWheelListener(overlay);
+		// Put the game's own text back - it only rewrites it on equipment changes, so our blank would
+		// otherwise stay until then
+		clientThread.invoke(this::restoreNativeText);
 	}
 
 	@Provides
@@ -214,16 +217,24 @@ public class SetEffectsPlugin extends Plugin
 		{
 			// List turned off: stop blanking, and put the game's own text back if our blank is
 			// still what's showing (the game only rewrites it on equipment changes)
-			if (currentText.equals(lastWrittenText))
-			{
-				setEffectText.setText(lastNativeBaseText);
-				lastWrittenText = null;
-			}
+			restoreNativeText();
 			return;
 		}
 
 		setEffectText.setText(BLANK_TEXT);
 		lastWrittenText = BLANK_TEXT;
+	}
+
+	/** Puts the game's own text back in the box, but only if what's showing is still our blank. */
+	private void restoreNativeText()
+	{
+		Widget setEffectContainer = client.getWidget(InterfaceID.Equipment.SET_EFFECT);
+		Widget setEffectText = setEffectContainer != null ? setEffectContainer.getChild(0) : null;
+		if (setEffectText != null && lastWrittenText != null && lastWrittenText.equals(setEffectText.getText()))
+		{
+			setEffectText.setText(lastNativeBaseText);
+		}
+		lastWrittenText = null;
 	}
 
 	/**

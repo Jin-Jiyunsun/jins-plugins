@@ -13,13 +13,14 @@ have to look it up. Hover an item for a tooltip, or check the "Set Effect Bonus"
   effect.
 - **Set Effect Bonus box takeover**: the vanilla display is replaced with a scrollable, colour-coded list of every tracked effect
   you're currently wearing, sorted alphabetically. Scrolls with the mouse wheel, click arrows, or
-  a draggable thumb, styled to match a native OSRS scrollbar.
+  a draggable thumb, styled to match a native OSRS scrollbar. The scrollbar follows your resource pack,
+  so it matches the game's own if a pack restyles it.
 - **Colour-coded**: effect names are white, a set's worn/total tally is green when complete or red
   when incomplete, and damage/accuracy numbers are yellow.
-- **~100 sets and items tracked**, every number sourced and verified against the OSRS Wiki:
-  all six Barrows sets, Justiciar, Inquisitor's, Obsidian, the three Moons of Peril sets, Virtus,
-  Crystal armour, Shayzien, Void Knight (including Elite), the skilling outfits (Graceful, Angler, Prospector and more),
-  the Salve amulet, Black mask and Slayer helmet, and dozens of individual weapons, shields, amulets and rings.
+- **Over 110 sets, items and item groups tracked**, each with its own toggle and every number sourced and verified against the OSRS Wiki:
+  all six Barrows sets, Justiciar, Inquisitor's, Obsidian, the three Moons of Peril sets, Virtus, Crystal armour, Shayzien,
+  Void Knight (including Elite), the skilling outfits (Graceful, Angler, Prospector and more), Capes of Accomplishment,
+  Wintertodt warm clothing, and dozens of individual weapons, shields, amulets, rings, gloves and boots.
 
 ## Settings
 

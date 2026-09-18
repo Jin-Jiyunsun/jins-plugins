@@ -275,7 +275,10 @@ public class SetEffectsPlugin extends Plugin
 			return;
 		}
 
-		setEffectText.setText(BLANK_TEXT);
+		if (!BLANK_TEXT.equals(currentText))
+		{
+			setEffectText.setText(BLANK_TEXT);
+		}
 		lastWrittenText = BLANK_TEXT;
 	}
 

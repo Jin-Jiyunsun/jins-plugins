@@ -3,6 +3,7 @@ package com.seteffects;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
+import net.runelite.api.EquipmentInventorySlot;
 import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
 import net.runelite.client.game.ItemVariationMapping;
@@ -46,20 +47,27 @@ final class RenderKey
 	{
 		Item[] items = equipment.getItems();
 		int[] ids = new int[items.length];
-		boolean diaryRelevant = false;
 		for (int i = 0; i < items.length; i++)
 		{
-			int id = items[i] != null ? items[i].getId() : -1;
-			ids[i] = id;
-			if (id > 0)
-			{
-				diaryRelevant |= EnchantedBolts.isEnchantedBolt(ItemVariationMapping.map(id)) || SlayerHelm.isSlayerHelm(id);
-			}
+			ids[i] = items[i] != null ? items[i].getId() : -1;
 		}
+
+		// Only bolts (ammo slot) and a Slayer helmet (head slot) depend on the diaries
+		boolean diaryRelevant = isDiaryItem(ids, EquipmentInventorySlot.AMMO.getSlotIdx(), true)
+			|| isDiaryItem(ids, EquipmentInventorySlot.HEAD.getSlotIdx(), false);
 
 		return new RenderKey(ids, configVersion,
 			diaryRelevant && diaries.hardKandarin(), diaryRelevant && diaries.hardKourend(),
 			warmShown, textWidth, vanillaOnly, fallback, font, hoveredItemId);
+	}
+
+	private static boolean isDiaryItem(int[] ids, int slot, boolean bolt)
+	{
+		if (slot >= ids.length || ids[slot] <= 0)
+		{
+			return false;
+		}
+		return bolt ? EnchantedBolts.isEnchantedBolt(ItemVariationMapping.map(ids[slot])) : SlayerHelm.isSlayerHelm(ids[slot]);
 	}
 
 	@Override

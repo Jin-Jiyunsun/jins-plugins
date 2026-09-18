@@ -48,6 +48,8 @@ import net.runelite.client.ui.overlay.OverlayUtil;
  */
 class SetEffectsOverlay extends Overlay implements MouseListener, MouseWheelListener
 {
+	// Our scrollbar sits this far below the native one it is drawn over, to keep the same gap to the frame edge and bottom
+	private static final int SCROLLBAR_OFFSET_Y = 1;
 	private static final long STALE_AFTER_NANOS = 1_000_000_000L;
 	private static final Color TEXT_COLOR = new Color(0xff981f);
 	private static final int LINE_HEIGHT = 13;
@@ -97,8 +99,9 @@ class SetEffectsOverlay extends Overlay implements MouseListener, MouseWheelList
 	// Converted override sprites (a resource pack's), reused while the override is the same object
 	private final Map<Integer, SpritePixels> overrideSources = new HashMap<>();
 	private final Map<Integer, BufferedImage> overrideImages = new HashMap<>();
+	private final Map<Integer, BufferedImage> defaultSprites = new HashMap<>();
 	private RenderKey cachedKey;
-	private List<List<EffectLineFormat.Word>> cachedRows = Collections.emptyList();
+	private List<List<Run>> cachedRows = Collections.emptyList();
 
 	@Inject
 	private SetEffectsOverlay(Client client, SetEffectsPlugin plugin, SpriteManager spriteManager)
@@ -191,10 +194,10 @@ class SetEffectsOverlay extends Overlay implements MouseListener, MouseWheelList
 			plugin.getVanillaOnlyLines(), plugin.getFallbackText(), graphics.getFont(), -1);
 		if (!key.equals(cachedKey))
 		{
-			cachedRows = buildRows(equipment, warmShown, metrics, textWidth);
+			cachedRows = toRuns(buildRows(equipment, warmShown, metrics, textWidth), metrics);
 			cachedKey = key;
 		}
-		List<List<EffectLineFormat.Word>> rows = cachedRows;
+		List<List<Run>> rows = cachedRows;
 
 		// LINE_HEIGHT is baseline-to-baseline spacing - the very last row's descenders extend past
 		// that sum with nothing below them, so without adding descent back in, maxScroll fell just
@@ -212,17 +215,15 @@ class SetEffectsOverlay extends Overlay implements MouseListener, MouseWheelList
 		graphics.setClip(drawBounds);
 
 		int y = drawBounds.y + metrics.getAscent() - clampedScrollY;
-		for (List<EffectLineFormat.Word> row : rows)
+		for (List<Run> row : rows)
 		{
 			// y is the baseline: a row shows once any of it (its top edge at y - ascent, its descenders
 			// at y + descent) is inside the box, and the clip cuts it off smoothly at the edges
 			if (y - metrics.getAscent() < drawBounds.y + drawBounds.height && y + metrics.getDescent() > drawBounds.y)
 			{
-				int x = drawBounds.x;
-				for (EffectLineFormat.Word word : row)
+				for (Run run : row)
 				{
-					drawWord(graphics, metrics, word, x, y);
-					x += metrics.stringWidth(word.text + " ");
+					OverlayUtil.renderTextLocation(graphics, new net.runelite.api.Point(drawBounds.x + run.offsetX, y), run.text, run.color);
 				}
 			}
 			y += LINE_HEIGHT;
@@ -237,7 +238,8 @@ class SetEffectsOverlay extends Overlay implements MouseListener, MouseWheelList
 
 		scrollableBounds = drawBounds;
 		lastDrawNanos = System.nanoTime();
-		drawScrollbar(graphics, drawBounds, scrollbarArea, scrollbarWidth, maxScroll, contentHeight, clampedScrollY,
+		Rectangle shiftedScrollbarArea = new Rectangle(scrollbarArea.x, scrollbarArea.y + SCROLLBAR_OFFSET_Y, scrollbarArea.width, scrollbarArea.height);
+		drawScrollbar(graphics, drawBounds, shiftedScrollbarArea, scrollbarWidth, maxScroll, contentHeight, clampedScrollY,
 			arrowUp, arrowDown, thumbTop, thumbMiddle, thumbBottom, track);
 
 		return null;
@@ -440,7 +442,16 @@ class SetEffectsOverlay extends Overlay implements MouseListener, MouseWheelList
 		{
 			overrideSources.remove(spriteId);
 			overrideImages.remove(spriteId);
-			return spriteManager.getSprite(spriteId, 0);
+			BufferedImage image = defaultSprites.get(spriteId);
+			if (image == null)
+			{
+				image = spriteManager.getSprite(spriteId, 0);
+				if (image != null)
+				{
+					defaultSprites.put(spriteId, image);
+				}
+			}
+			return image;
 		}
 
 		if (overrideSources.get(spriteId) != override)
@@ -451,28 +462,59 @@ class SetEffectsOverlay extends Overlay implements MouseListener, MouseWheelList
 		return overrideImages.get(spriteId);
 	}
 
-	private static void drawWord(Graphics2D graphics, FontMetrics metrics, EffectLineFormat.Word word, int x, int y)
+	/**
+	 * Lays each wrapped row out once, when the rows are built: every piece of text with its x offset
+	 * from the row start, so drawing a frame is just a few draw calls with no font measuring. A
+	 * word with a number in it is split so only the number (not a bracket or comma beside it) is
+	 * drawn in the highlight colour.
+	 */
+	private static List<List<Run>> toRuns(List<List<EffectLineFormat.Word>> rows, FontMetrics metrics)
 	{
-		if (word.numberStart < 0)
+		List<List<Run>> result = new ArrayList<>(rows.size());
+		for (List<EffectLineFormat.Word> row : rows)
 		{
-			OverlayUtil.renderTextLocation(graphics, new net.runelite.api.Point(x, y), word.text, word.color);
-			return;
+			List<Run> runs = new ArrayList<>(row.size());
+			int x = 0;
+			for (EffectLineFormat.Word word : row)
+			{
+				if (word.numberStart < 0)
+				{
+					runs.add(new Run(word.text, word.color, x));
+				}
+				else
+				{
+					String before = word.text.substring(0, word.numberStart);
+					String number = word.text.substring(word.numberStart, word.numberEnd);
+					String after = word.text.substring(word.numberEnd);
+					int numberX = x + metrics.stringWidth(before);
+					if (!before.isEmpty())
+					{
+						runs.add(new Run(before, word.color, x));
+					}
+					runs.add(new Run(number, EffectLineFormat.NUMBER_COLOR, numberX));
+					if (!after.isEmpty())
+					{
+						runs.add(new Run(after, word.color, numberX + metrics.stringWidth(number)));
+					}
+				}
+				x += metrics.stringWidth(word.text + " ");
+			}
+			result.add(runs);
 		}
+		return result;
+	}
 
-		// Only the number itself is drawn in the highlight colour, not a bracket or comma beside it
-		String before = word.text.substring(0, word.numberStart);
-		String number = word.text.substring(word.numberStart, word.numberEnd);
-		String after = word.text.substring(word.numberEnd);
-		int numberX = x + metrics.stringWidth(before);
-		int afterX = numberX + metrics.stringWidth(number);
-		if (!before.isEmpty())
+	private static final class Run
+	{
+		final String text;
+		final Color color;
+		final int offsetX;
+
+		Run(String text, Color color, int offsetX)
 		{
-			OverlayUtil.renderTextLocation(graphics, new net.runelite.api.Point(x, y), before, word.color);
-		}
-		OverlayUtil.renderTextLocation(graphics, new net.runelite.api.Point(numberX, y), number, EffectLineFormat.NUMBER_COLOR);
-		if (!after.isEmpty())
-		{
-			OverlayUtil.renderTextLocation(graphics, new net.runelite.api.Point(afterX, y), after, word.color);
+			this.text = text;
+			this.color = color;
+			this.offsetX = offsetX;
 		}
 	}
 

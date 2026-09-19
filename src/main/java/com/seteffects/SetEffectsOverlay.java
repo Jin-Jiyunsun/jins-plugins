@@ -52,6 +52,7 @@ class SetEffectsOverlay extends Overlay implements MouseListener, MouseWheelList
 	private static final int SCROLLBAR_OFFSET_Y = 1;
 	private static final long STALE_AFTER_NANOS = 1_000_000_000L;
 	private static final Color TEXT_COLOR = EffectLineFormat.EFFECT_COLOR;
+	private static final String EMPTY_TEXT = "When wearing gear that has a passive effect or gives a set bonus, you'll be able to view it here.";
 	private static final int LINE_HEIGHT = 13;
 	private static final int SCROLL_STEP = LINE_HEIGHT * 3;
 
@@ -164,11 +165,7 @@ class SetEffectsOverlay extends Overlay implements MouseListener, MouseWheelList
 			return clearInputState();
 		}
 
-		ItemContainer equipment = client.getItemContainer(InventoryID.WORN);
-		if (equipment == null)
-		{
-			return clearInputState();
-		}
+		ItemContainer equipment = plugin.getWornEquipment();
 
 		// We're drawing our own content over this widget, not the widget's own text, so we're not
 		// bound by its reported width - widen the area we draw/wrap/hit-test against a little
@@ -210,7 +207,7 @@ class SetEffectsOverlay extends Overlay implements MouseListener, MouseWheelList
 		// Rebuilt only when something it depends on changed (see RenderKey), not every frame
 		boolean warmShown = plugin.isWarmClothingShown();
 		RenderKey key = RenderKey.of(equipment, plugin.getDiaryChecks(), plugin.getConfigVersion(), warmShown, textWidth,
-			plugin.getVanillaOnlyLines(), plugin.getFallbackText(), graphics.getFont(), -1);
+			plugin.getVanillaOnlyLines(), graphics.getFont(), -1);
 		if (!key.equals(cachedKey))
 		{
 			cachedRows = toRuns(buildRows(equipment, warmShown, metrics, textWidth), metrics);
@@ -272,17 +269,9 @@ class SetEffectsOverlay extends Overlay implements MouseListener, MouseWheelList
 		List<List<EffectLineFormat.Word>> rows = new ArrayList<>();
 		if (effectLines.isEmpty())
 		{
-			// The native widget's own raw text uses literal <br> tags for its line breaks (its own
-			// rendering convention, not ours) - split on them rather than drawing "<br>" as if it
-			// were a word, which plainWords()/wordWrap() would otherwise do with no interpretation
-			for (String line : plugin.getFallbackText().split("<br>"))
-			{
-				String trimmed = line.trim();
-				if (!trimmed.isEmpty())
-				{
-					rows.addAll(wrapWords(plainWords(trimmed), metrics, textWidth));
-				}
-			}
+			// Our own text rather than the game's: the game only writes its message into the box when
+			// your gear changes, so it is empty when the popup is opened with nothing worn
+			rows.addAll(wrapWords(plainWords(EMPTY_TEXT), metrics, textWidth));
 		}
 		else
 		{

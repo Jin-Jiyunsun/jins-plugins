@@ -89,11 +89,11 @@ public class SetEffectsPlugin extends Plugin
 	 * The vanilla "Set Effect Bonus" box's own text, rewritten by the game's own script whenever
 	 * equipment changes (it already natively describes some sets, e.g. full Barrows brothers).
 	 * We blank the native widget every frame and draw our own scrollable text over it instead
-	 * (see SetEffectsOverlay); this is what that overlay falls back to showing when nothing we
-	 * track is equipped. These two track what we last saw/wrote so a later update can tell
-	 * whether the game refreshed the text since our last blank (in which case that's the real
-	 * fallback) or whether it's still our own blank (in which case reuse the stored fallback).
+	 * (see SetEffectsOverlay). These two track what we last saw/wrote so a later update can tell
+	 * whether the game refreshed the text since our last blank (a fresh native text, kept so it
+	 * can be put back and parsed for the sets we don't track) or whether it's still our own blank.
 	 */
+
 	private String lastNativeBaseText = "";
 	private String lastWrittenText;
 	// Blocks of the game's text for sets we don't track ourselves - see VanillaOnlySets; rebuilt
@@ -382,15 +382,6 @@ public class SetEffectsPlugin extends Plugin
 	}
 
 	/**
-	 * What the overlay should show in place of a real effect summary, when nothing currently
-	 * equipped is one we recognize - whatever the game's own box would otherwise be saying.
-	 */
-	String getFallbackText()
-	{
-		return lastNativeBaseText;
-	}
-
-	/**
 	 * The equipment bonuses screen's slot widgets sometimes carry the item id directly and
 	 * sometimes carry it on a child (the same generic item-slot widget is reused in multiple
 	 * interfaces, and only some of those instances have the item as a direct child) - try both.
@@ -456,16 +447,19 @@ public class SetEffectsPlugin extends Plugin
 		return diaryChecks;
 	}
 
-	private String buildTooltip(int rawItemId)
+	/** The worn equipment, or "nothing worn" while the client has no container for it yet. */
+	ItemContainer getWornEquipment()
 	{
 		ItemContainer equipment = client.getItemContainer(InventoryID.WORN);
-		if (equipment == null)
-		{
-			return null;
-		}
+		return equipment != null ? equipment : NothingWorn.INSTANCE;
+	}
+
+	private String buildTooltip(int rawItemId)
+	{
+		ItemContainer equipment = getWornEquipment();
 
 		// Same item, same gear, same config: reuse the last text rather than rebuilding it every frame
-		RenderKey key = RenderKey.of(equipment, diaryChecks, configVersion, false, 0, Collections.emptyList(), "", null, rawItemId);
+		RenderKey key = RenderKey.of(equipment, diaryChecks, configVersion, false, 0, Collections.emptyList(), null, rawItemId);
 		if (key.equals(tooltipKey))
 		{
 			return tooltipText;

@@ -25,12 +25,11 @@ final class RenderKey
 	private final boolean warmShown;
 	private final int textWidth;
 	private final List<EffectLine> vanillaOnly;
-	private final String fallback;
 	private final Object font;
 	private final int hoveredItemId;
 
 	private RenderKey(int[] itemIds, int configVersion, boolean diaryKandarin, boolean diaryKourend, boolean diaryArdougne,
-		boolean warmShown, int textWidth, List<EffectLine> vanillaOnly, String fallback, Object font, int hoveredItemId)
+		boolean warmShown, int textWidth, List<EffectLine> vanillaOnly, Object font, int hoveredItemId)
 	{
 		this.itemIds = itemIds;
 		this.configVersion = configVersion;
@@ -40,13 +39,12 @@ final class RenderKey
 		this.warmShown = warmShown;
 		this.textWidth = textWidth;
 		this.vanillaOnly = vanillaOnly;
-		this.fallback = fallback;
 		this.font = font;
 		this.hoveredItemId = hoveredItemId;
 	}
 
 	static RenderKey of(ItemContainer equipment, DiaryChecks diaries, int configVersion, boolean warmShown, int textWidth,
-		List<EffectLine> vanillaOnly, String fallback, Object font, int hoveredItemId)
+		List<EffectLine> vanillaOnly, Object font, int hoveredItemId)
 	{
 		Item[] items = equipment.getItems();
 		int[] ids = new int[items.length];
@@ -67,7 +65,7 @@ final class RenderKey
 		return new RenderKey(ids, configVersion,
 			(bolts || hoveredIsBolt(hoveredItemId)) && diaries.hardKandarin(), slayerHelm && diaries.hardKourend(),
 			(silence || hoveredIsSilence(hoveredItemId)) && diaries.hardArdougne(),
-			warmShown, textWidth, vanillaOnly, fallback, font, hoveredItemId);
+			warmShown, textWidth, vanillaOnly, font, hoveredItemId);
 	}
 
 	private static int idAt(int[] ids, int slot)
@@ -107,7 +105,6 @@ final class RenderKey
 			&& hoveredItemId == other.hoveredItemId
 			&& Arrays.equals(itemIds, other.itemIds)
 			&& Objects.equals(vanillaOnly, other.vanillaOnly)
-			&& Objects.equals(fallback, other.fallback)
 			&& Objects.equals(font, other.font);
 	}
 
@@ -115,6 +112,6 @@ final class RenderKey
 	public int hashCode()
 	{
 		return Objects.hash(Arrays.hashCode(itemIds), configVersion, diaryKandarin, diaryKourend, diaryArdougne, warmShown, textWidth,
-			vanillaOnly, fallback, font, hoveredItemId);
+			vanillaOnly, font, hoveredItemId);
 	}
 }

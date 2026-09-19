@@ -81,6 +81,8 @@ public class SetEffectsPlugin extends Plugin
 	private volatile boolean verbose = false;
 	// Bumped whenever the config is re-read, so cached results built from it can tell they are stale
 	private volatile int configVersion;
+	// Set if the per-frame work ever throws (see reportFailure); the plugin then stays idle until restarted
+	private volatile boolean failed;
 	private volatile WarmClothingDisplay warmClothingDisplay = WarmClothingDisplay.AT_WINTERTODT;
 
 	/**
@@ -105,6 +107,7 @@ public class SetEffectsPlugin extends Plugin
 	@Override
 	protected void startUp()
 	{
+		failed = false;
 		migrateLegacyTooltipSetting();
 		refreshConfig();
 		overlayManager.add(overlay);
@@ -224,6 +227,51 @@ public class SetEffectsPlugin extends Plugin
 
 	@Subscribe
 	public void onBeforeRender(BeforeRender event)
+	{
+		if (failed)
+		{
+			return;
+		}
+
+		try
+		{
+			handleBeforeRender();
+		}
+		catch (Exception | LinkageError e)
+		{
+			reportFailure();
+		}
+	}
+
+	boolean hasFailed()
+	{
+		return failed;
+	}
+
+	/**
+	 * Called when per-frame work throws. An Error thrown while the client draws (a NoSuchFieldError from
+	 * stale or mismatched classes, say) is not caught by RuneLite and takes the whole game down, so
+	 * instead the plugin gives the vanilla box back and goes idle until it is restarted.
+	 */
+	void reportFailure()
+	{
+		if (failed)
+		{
+			return;
+		}
+
+		failed = true;
+		try
+		{
+			restoreNativeText();
+		}
+		catch (Exception | LinkageError ignored)
+		{
+			// nothing more to do
+		}
+	}
+
+	private void handleBeforeRender()
 	{
 		Widget popup = client.getWidget(InterfaceID.Equipment.UNIVERSE);
 		boolean popupOpen = popup != null && !popup.isHidden();

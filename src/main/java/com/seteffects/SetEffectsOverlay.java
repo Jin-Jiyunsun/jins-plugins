@@ -119,6 +119,25 @@ class SetEffectsOverlay extends Overlay implements MouseListener, MouseWheelList
 	@Override
 	public Dimension render(Graphics2D graphics)
 	{
+		if (plugin.hasFailed())
+		{
+			return clearInputState();
+		}
+
+		try
+		{
+			return renderList(graphics);
+		}
+		catch (Exception | LinkageError e)
+		{
+			// See SetEffectsPlugin#reportFailure - an Error escaping this method would crash the client
+			plugin.reportFailure();
+			return clearInputState();
+		}
+	}
+
+	private Dimension renderList(Graphics2D graphics)
+	{
 		if (!plugin.isSetEffectListEnabled())
 		{
 			return clearInputState();

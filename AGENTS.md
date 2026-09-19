@@ -26,6 +26,7 @@
 - Use `LinkBrowser` to open URLs, not `java.awt.Desktop`
 - When looking up Widgets, pass the component ID from gamevals (eg `client.getWidget(InterfaceID.DomEndLevelUi.LOOT_VALUE)`) - do not manually combine interface + component child IDs.
 - Use of Java reflection is forbidden.
+- Do not use the Old School Runescape Wiki as as free to use back-end or scrape data from it unnecessarily.
 
 ## HTTP & JSON
 

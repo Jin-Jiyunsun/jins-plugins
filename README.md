@@ -40,4 +40,4 @@ construction and thieving.
 
 BSD-2-Clause. See [LICENSE](LICENSE).
 
-This plugin was entirely generated using AI.
+While tested by myself in game, this plugin was entirely generated using AI.

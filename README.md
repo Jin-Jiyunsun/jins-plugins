@@ -54,4 +54,4 @@ Every route was recorded in-game and is accurate to the tile when no smoothing i
 
 BSD-2-Clause. See [LICENSE](LICENSE).
 
-This plugin was entirely generated using AI.
+While tested by myself in game, this plugin was entirely generated using AI.

@@ -29,3 +29,9 @@ All 14 tabs have their own section in the plugin's config panel:
 - **Text case**: You can choose if you'd prefer Standard Capitalisation,
   UPPERCASE or lowercase, depending on which is easier for you to read at
   a glance.
+  
+### License
+
+BSD-2-Clause. See [LICENSE](LICENSE).
+
+While tested by myself in game, this plugin was entirely generated using AI.

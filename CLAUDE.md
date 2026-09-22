@@ -1,0 +1,2 @@
+@AGENTS.md
+@TABKEYBINDS.local.md

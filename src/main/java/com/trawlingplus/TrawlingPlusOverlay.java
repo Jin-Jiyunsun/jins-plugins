@@ -144,6 +144,17 @@ class TrawlingPlusOverlay extends Overlay
 	private Stroke areaStroke;
 	private int areaThickness;
 
+	// Whole route leaves the route out when less than this much of it, in tiles, is inside the loaded map:
+	// a scrap at the edge of the view says nothing and only costs drawing. Worked out once a tick, for the
+	// route it was last worked out for.
+	private static final double MIN_LOADED_ROUTE_TILES = 50;
+	// A route passing within this many tiles of the boat is drawn however little of it is loaded: the loaded
+	// map isn't always centred on the boat, so near its edge the route being sailed along can fall short.
+	private static final double NEAR_ROUTE_TILES = 15;
+	private int loadedTick = -1;
+	private ShoalRoute loadedRoute;
+	private boolean loadedEnough;
+
 	// How far faded in the fishing point dot is, and when that was last worked out.
 	private double fishingPointFade;
 	private long lastFishingPointMillis = -1;
@@ -256,10 +267,68 @@ class TrawlingPlusOverlay extends Overlay
 
 		int beyond = tilesBeyondScene(view);
 		if (route.overlaps(view.getBaseX() - beyond, view.getBaseY() - beyond,
-			view.getBaseX() + view.getSizeX() + beyond, view.getBaseY() + view.getSizeY() + beyond))
+			view.getBaseX() + view.getSizeX() + beyond, view.getBaseY() + view.getSizeY() + beyond)
+			&& enoughLoaded(view, route, beyond))
 		{
 			drawWholeRoute(graphics, view, route, shoals, now);
 		}
+	}
+
+	/**
+	 * Whether enough of the route is inside the loaded map to be worth drawing, rather than a scrap at its
+	 * edge, or it passes close by the boat. The loaded map only moves between ticks, so this is worked out once a tick, and stops counting as
+	 * soon as there is enough.
+	 */
+	private boolean enoughLoaded(WorldView view, ShoalRoute route, int beyond)
+	{
+		int tick = client.getTickCount();
+		if (tick == loadedTick && route == loadedRoute)
+		{
+			return loadedEnough;
+		}
+		loadedTick = tick;
+		loadedRoute = route;
+
+		double fromX = view.getBaseX() - beyond;
+		double fromY = view.getBaseY() - beyond;
+		double toX = view.getBaseX() + view.getSizeX() + beyond;
+		double toY = view.getBaseY() + view.getSizeY() + beyond;
+		double[] boat = plugin.getBoatPlace();
+		double loaded = 0;
+		for (int block = 0; block < route.blockCount() && loaded < MIN_LOADED_ROUTE_TILES; block++)
+		{
+			if (!route.blockWithin(block, fromX, fromY, toX, toY))
+			{
+				continue;
+			}
+
+			for (int sample = route.blockFrom(block); sample < route.blockTo(block); sample++)
+			{
+				double dx = boat == null ? 0 : route.sampleX(sample) - boat[0];
+				double dy = boat == null ? 0 : route.sampleY(sample) - boat[1];
+				if (boat != null && dx * dx + dy * dy <= NEAR_ROUTE_TILES * NEAR_ROUTE_TILES)
+				{
+					// Beside the boat, so drawn whatever the length.
+					loaded = MIN_LOADED_ROUTE_TILES;
+					break;
+				}
+
+				// Each piece of the line from this sample to the next, counted when both ends are loaded.
+				int next = (sample + 1) % route.sampleCount();
+				if (within(route.sampleX(sample), route.sampleY(sample), fromX, fromY, toX, toY)
+					&& within(route.sampleX(next), route.sampleY(next), fromX, fromY, toX, toY))
+				{
+					loaded += route.forward(route.sampleDistance(sample), route.sampleDistance(next));
+				}
+			}
+		}
+		loadedEnough = loaded >= MIN_LOADED_ROUTE_TILES;
+		return loadedEnough;
+	}
+
+	private static boolean within(double x, double y, double fromX, double fromY, double toX, double toY)
+	{
+		return x >= fromX && x <= toX && y >= fromY && y <= toY;
 	}
 
 	private void drawNextStops(Graphics2D graphics, List<PlacedShoal> shoals, long now)

@@ -49,6 +49,8 @@ Every route was recorded in-game and is accurate to the tile when no smoothing i
 - Each part of the display is toggleable. The route line, direction arrows, stops, the shoal's
   heading arrow, the fishable area, the heads up display and the side panel have their own
   section in the config panel.
+- **Fish**: switch each fish on or off to focus on the ones you're after. A fish that's switched
+  off has its routes, shoals and map markers hidden.
 
 ### License
 

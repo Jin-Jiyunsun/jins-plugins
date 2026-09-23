@@ -93,6 +93,8 @@ final class ShoalRoute
 	private final double maxY;
 	// Which of the drawn points pass close to where sea creatures that attack boats spawn, set by markDanger.
 	private boolean[] danger = new boolean[0];
+	// Whether any of the route is marked dangerous, so a route with none is passed over whole.
+	private boolean anyDanger;
 	// Circles of tiles, as {x, y, tiles}, marked safe by hand regardless of danger; never null.
 	private final double[][] safe;
 	// Where sea creatures that attack boats spawn close enough to threaten this route, place by place; never null.
@@ -832,7 +834,21 @@ final class ShoalRoute
 		closeGaps(marked, gapTiles);
 		clearSafe(marked);
 		danger = marked;
+		boolean any = false;
+		for (boolean sample : marked)
+		{
+			any |= sample;
+		}
+		anyDanger = any;
 		dangerousThreats = found;
+	}
+
+	/**
+	 * Whether any stretch of the route is marked dangerous.
+	 */
+	boolean hasDanger()
+	{
+		return anyDanger;
 	}
 
 	private void clearSafe(boolean[] marked)

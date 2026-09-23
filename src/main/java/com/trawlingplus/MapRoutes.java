@@ -110,6 +110,11 @@ final class MapRoutes
 	static void dangerStretches(Graphics2D graphics, ShoalRoute route, Projection onto, Color colour, int thickness,
 		double pixelsPerTile, double fromX, double fromY, double toX, double toY)
 	{
+		if (!route.hasDanger())
+		{
+			return;
+		}
+
 		// The same thinning of points as the route line itself, so the two lie on top of each other.
 		int stride = 1;
 		if (pixelsPerTile > 0 && route.sampleCount() > 0)

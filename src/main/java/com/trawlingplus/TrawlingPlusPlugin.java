@@ -76,6 +76,10 @@ import net.runelite.client.util.Text;
 )
 public class TrawlingPlusPlugin extends Plugin
 {
+	// The config keys of the Fish section's switches.
+	private static final Set<String> FISH_KEYS = Set.of("showBluefin", "showGiantKrill", "showHaddock", "showYellowfin",
+		"showHalibut", "showMarlin");
+
 	private static final Map<Integer, String> SPECIES_BY_CLICKBOX = Map.of(
 		ObjectID.SAILING_SHOAL_CLICKBOX_GIANT_KRILL, "Giant krill",
 		ObjectID.SAILING_SHOAL_CLICKBOX_HADDOCK, "Haddock",
@@ -317,6 +321,7 @@ public class TrawlingPlusPlugin extends Plugin
 	{
 		routeData = ShoalRoute.read(gson);
 		routes = ShoalRoute.build(routeData, config.routeSmoothing());
+		readShownFish();
 		markDanger(routes);
 		Map<String, RouteData.Species> byName = new HashMap<>();
 		for (RouteData.Species species : routeData.species)
@@ -388,16 +393,92 @@ public class TrawlingPlusPlugin extends Plugin
 	// one of the maps routes show on.
 	private List<DangerMarker> dangerMarkers = Collections.emptyList();
 
+	// The fish switched off in the Fish section, by the name their routes carry, and the routes of every other
+	// fish. Read when a switch changes rather than asked of the config every frame. Replaced whole rather than
+	// changed, since the config is read on another thread than the one drawing.
+	private volatile Set<String> hiddenFish = Collections.emptySet();
+	private volatile List<ShoalRoute> shownRoutes = Collections.emptyList();
+
 	/**
 	 * A skull on the world map, told apart from every other plugin's points so only these are ever taken off.
 	 */
 	private static final class DangerMarker extends WorldMapPoint
 	{
-		DangerMarker(double x, double y, String name)
+		// The fish of the route this skull threatens, so it goes with that fish's switch.
+		final String fish;
+
+		DangerMarker(double x, double y, String name, String fish)
 		{
 			super(new WorldPoint((int) Math.round(x), (int) Math.round(y), 0), TrawlingPlusMapOverlay.DANGER_ICON);
 			setTooltip(name);
+			this.fish = fish;
 		}
+	}
+
+	/**
+	 * Reads which fish are switched off in the Fish section, and which routes that leaves shown.
+	 */
+	private void readShownFish()
+	{
+		Set<String> hidden = new HashSet<>();
+		if (!config.showBluefin())
+		{
+			hidden.add("Bluefin");
+		}
+		if (!config.showGiantKrill())
+		{
+			hidden.add("Giant krill");
+		}
+		if (!config.showHaddock())
+		{
+			hidden.add("Haddock");
+		}
+		if (!config.showYellowfin())
+		{
+			hidden.add("Yellowfin");
+		}
+		if (!config.showHalibut())
+		{
+			hidden.add("Halibut");
+		}
+		if (!config.showMarlin())
+		{
+			hidden.add("Marlin");
+		}
+		hiddenFish = hidden;
+		shownRoutes = shownOf(routes);
+	}
+
+	private List<ShoalRoute> shownOf(List<ShoalRoute> all)
+	{
+		List<ShoalRoute> shown = new ArrayList<>();
+		for (ShoalRoute route : all)
+		{
+			if (!hiddenFish.contains(route.getSpecies()))
+			{
+				shown.add(route);
+			}
+		}
+		return shown;
+	}
+
+	/**
+	 * The routes of the fish switched on in the Fish section.
+	 */
+	List<ShoalRoute> getShownRoutes()
+	{
+		return shownRoutes;
+	}
+
+	/**
+	 * Whether a shoal's fish is switched on: the fish of the route it swims, which a mixed shoal shares, or of
+	 * the shoal itself before it has been matched to one.
+	 */
+	boolean isShown(Shoal shoal)
+	{
+		ShoalRoute route = shoal.getRoute();
+		String fish = route != null ? route.getSpecies() : SPECIES_BY_CLICKBOX.get(shoal.getClickbox());
+		return fish == null || !hiddenFish.contains(fish);
 	}
 
 	/**
@@ -422,7 +503,10 @@ public class TrawlingPlusPlugin extends Plugin
 	 */
 	private static final class ShoalMarker extends WorldMapPoint
 	{
-		ShoalMarker(WorldPoint icon, BufferedImage blank, String name)
+		// The fish of the route beside the icon, so the tooltip goes with that fish's switch.
+		final String fish;
+
+		ShoalMarker(WorldPoint icon, BufferedImage blank, String name, String fish)
 		{
 			// A tile to the west of the icon's own coordinate, as RuneLite's World Map plugin places its quest icons over
 			// the game's: at the coordinate itself a point sits a tile east of the icon it covers.
@@ -431,6 +515,7 @@ public class TrawlingPlusPlugin extends Plugin
 			setImagePoint(new Point(SHOAL_ICON_PAD_LEFT + (blank.getWidth() - SHOAL_ICON_PAD_LEFT - SHOAL_ICON_PAD) / 2,
 				blank.getHeight() / 2));
 			setTooltip(name);
+			this.fish = fish;
 		}
 	}
 
@@ -485,9 +570,13 @@ public class TrawlingPlusPlugin extends Plugin
 					ShoalRoute route = routeBeside(at.getX(), at.getY());
 					if (route != null)
 					{
-						ShoalMarker marker = new ShoalMarker(at, blankLike(icon.getType()), route.getSpecies() + " shoal");
+						ShoalMarker marker = new ShoalMarker(at, blankLike(icon.getType()), route.getSpecies() + " shoal",
+							route.getSpecies());
 						shoalMarkers.add(marker);
-						worldMapPointManager.add(marker);
+						if (!hiddenFish.contains(marker.fish))
+						{
+							worldMapPointManager.add(marker);
+						}
 					}
 				}
 			}
@@ -545,7 +634,28 @@ public class TrawlingPlusPlugin extends Plugin
 		worldMapPointManager.removeIf(DangerMarker.class::isInstance);
 		if (worldMapShown())
 		{
-			dangerMarkers.forEach(worldMapPointManager::add);
+			for (DangerMarker marker : dangerMarkers)
+			{
+				if (!hiddenFish.contains(marker.fish))
+				{
+					worldMapPointManager.add(marker);
+				}
+			}
+		}
+	}
+
+	/**
+	 * Puts the shoal icon tooltips found so far on the world map for the fish switched on, and takes the rest off.
+	 */
+	private void showShoalMarkers()
+	{
+		worldMapPointManager.removeIf(ShoalMarker.class::isInstance);
+		for (ShoalMarker marker : shoalMarkers)
+		{
+			if (!hiddenFish.contains(marker.fish))
+			{
+				worldMapPointManager.add(marker);
+			}
 		}
 	}
 
@@ -562,7 +672,7 @@ public class TrawlingPlusPlugin extends Plugin
 			for (int threat = 0; threat < route.dangerousThreatCount(); threat++)
 			{
 				markers.add(new DangerMarker(route.dangerousThreatX(threat), route.dangerousThreatY(threat),
-					route.dangerousThreatName(threat)));
+					route.dangerousThreatName(threat), route.getSpecies()));
 			}
 		}
 		dangerMarkers = markers;
@@ -669,6 +779,23 @@ public class TrawlingPlusPlugin extends Plugin
 			clientThread.invoke(this::showDangerMarkers);
 		}
 
+		if (TrawlingPlusConfig.GROUP.equals(event.getGroup()) && FISH_KEYS.contains(event.getKey()))
+		{
+			clientThread.invoke(() ->
+			{
+				readShownFish();
+				// Dropped at once rather than left drawn through the wait before another route takes over.
+				if (nearestRoute != null && hiddenFish.contains(nearestRoute.getSpecies()))
+				{
+					nearestRoute = null;
+				}
+				contender = null;
+				contenderTicks = 0;
+				showDangerMarkers();
+				showShoalMarkers();
+			});
+		}
+
 		if (TrawlingPlusConfig.GROUP.equals(event.getGroup()) && TrawlingPlusConfig.SMOOTHING_KEY.equals(event.getKey()))
 		{
 			// Config changes arrive on the Swing thread; reshape the routes on the client thread, where
@@ -696,6 +823,7 @@ public class TrawlingPlusPlugin extends Plugin
 		nearestRoute = counterpart(nearestRoute, reshaped);
 		contender = counterpart(contender, reshaped);
 		routes = reshaped;
+		shownRoutes = shownOf(reshaped);
 	}
 
 	/**
@@ -935,9 +1063,10 @@ public class TrawlingPlusPlugin extends Plugin
 		// How many of them are in range at all. Most of the time it is one, and one route has nothing to
 		// be nearer than, so there is nothing to work out: knowing how far away it is would only ever be
 		// used to rule others out, and there are none to rule out.
+		List<ShoalRoute> shown = shownRoutes;
 		ShoalRoute only = null;
 		int candidates = 0;
-		for (ShoalRoute route : routes)
+		for (ShoalRoute route : shown)
 		{
 			if (route.overlaps(fromX, fromY, toX, toY))
 			{
@@ -962,13 +1091,14 @@ public class TrawlingPlusPlugin extends Plugin
 		// The one already being drawn is looked at first, since the boat is usually still nearest the
 		// route it was nearest a tick ago. That gives a distance to beat straight away, and every route
 		// whose box is further off than that is then passed over without being looked through at all.
-		ShoalRoute closest = nearestRoute != null && nearestRoute.overlaps(fromX, fromY, toX, toY)
+		ShoalRoute closest = nearestRoute != null && !hiddenFish.contains(nearestRoute.getSpecies())
+			&& nearestRoute.overlaps(fromX, fromY, toX, toY)
 			? nearestRoute
 			: null;
 		double nearestOffset = closest == null ? Double.MAX_VALUE
 			: closest.project(afloat[0], afloat[1]).offset;
 
-		for (ShoalRoute route : routes)
+		for (ShoalRoute route : shown)
 		{
 			if (route == closest || !route.overlaps(fromX, fromY, toX, toY)
 				|| route.boxDistance(afloat[0], afloat[1]) >= nearestOffset)
@@ -1673,7 +1803,7 @@ public class TrawlingPlusPlugin extends Plugin
 		double nearestGap = Double.MAX_VALUE;
 		for (Shoal shoal : shoals.values())
 		{
-			double[] at = shoal.position(client);
+			double[] at = isShown(shoal) ? shoal.position(client) : null;
 			if (at == null)
 			{
 				continue;

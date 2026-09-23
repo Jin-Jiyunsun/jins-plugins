@@ -78,6 +78,13 @@ public interface TrawlingPlusConfig extends Config
 	String depthSection = "shoalDepth";
 
 	@ConfigSection(
+		name = "Fish",
+		description = "Which fish's routes and shoals to show",
+		position = 54
+	)
+	String fishSection = "fish";
+
+	@ConfigSection(
 		name = "Side panel",
 		description = "Marks on the trawling nets in the sailing side panel",
 		position = 41
@@ -784,5 +791,77 @@ public interface TrawlingPlusConfig extends Config
 	default LineThickness fishableAreaThickness()
 	{
 		return LineThickness.MEDIUM;
+	}
+
+	@ConfigItem(
+		keyName = "showBluefin",
+		name = "Bluefin",
+		description = "Show bluefin routes and shoals.",
+		position = 55,
+		section = fishSection
+	)
+	default boolean showBluefin()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "showGiantKrill",
+		name = "Giant krill",
+		description = "Show giant krill routes and shoals.",
+		position = 56,
+		section = fishSection
+	)
+	default boolean showGiantKrill()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "showHaddock",
+		name = "Haddock",
+		description = "Show haddock routes and shoals.",
+		position = 57,
+		section = fishSection
+	)
+	default boolean showHaddock()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "showYellowfin",
+		name = "Yellowfin",
+		description = "Show yellowfin routes and shoals.",
+		position = 58,
+		section = fishSection
+	)
+	default boolean showYellowfin()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "showHalibut",
+		name = "Halibut",
+		description = "Show halibut routes and shoals.",
+		position = 59,
+		section = fishSection
+	)
+	default boolean showHalibut()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "showMarlin",
+		name = "Marlin",
+		description = "Show marlin routes and shoals.",
+		position = 60,
+		section = fishSection
+	)
+	default boolean showMarlin()
+	{
+		return true;
 	}
 }

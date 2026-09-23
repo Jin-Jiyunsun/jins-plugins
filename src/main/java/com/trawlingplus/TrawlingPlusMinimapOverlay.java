@@ -135,7 +135,7 @@ class TrawlingPlusMinimapOverlay extends Overlay
 		// Only a shoal the client is drawing in the world may be marked on the map.
 		for (Shoal shoal : plugin.getShoals())
 		{
-			if (shoal.rendered(client))
+			if (plugin.isShown(shoal) && shoal.rendered(client))
 			{
 				MapRoutes.shoal(graphics, config, client, shoal, onto, SHOAL);
 			}

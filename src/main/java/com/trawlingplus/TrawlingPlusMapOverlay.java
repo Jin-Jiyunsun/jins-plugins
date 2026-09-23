@@ -237,7 +237,7 @@ class TrawlingPlusMapOverlay extends Overlay
 		Shape clip = graphics.getClip();
 		graphics.clip(mapArea(within));
 
-		for (ShoalRoute route : plugin.getRoutes())
+		for (ShoalRoute route : plugin.getShownRoutes())
 		{
 			// Whether any of the route could be on screen, from the box it fits inside, rather than by
 			// working out where every point of it lands only to throw the lot away. The map is panned
@@ -260,7 +260,7 @@ class TrawlingPlusMapOverlay extends Overlay
 		// leaving it to be worked out from the order events arrive in.
 		for (Shoal shoal : plugin.getShoals())
 		{
-			if (shoal.rendered(client))
+			if (plugin.isShown(shoal) && shoal.rendered(client))
 			{
 				MapRoutes.shoal(graphics, config, client, shoal, onto, SHOAL);
 			}

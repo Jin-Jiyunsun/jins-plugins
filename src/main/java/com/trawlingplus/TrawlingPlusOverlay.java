@@ -143,6 +143,9 @@ class TrawlingPlusOverlay extends Overlay
 	private final Polygon area = new Polygon();
 	private Stroke areaStroke;
 	private int areaThickness;
+	// The same for the stops' outline, which every stop is drawn with.
+	private Stroke stopStroke;
+	private int stopThickness;
 
 	// Whole route leaves the route out when less than this much of it, in tiles, is inside the loaded map:
 	// a scrap at the edge of the view says nothing and only costs drawing. Worked out once a tick, for the
@@ -152,6 +155,9 @@ class TrawlingPlusOverlay extends Overlay
 	// map isn't always centred on the boat, so near its edge the route being sailed along can fall short.
 	private static final double NEAR_ROUTE_TILES = 15;
 	private int loadedTick = -1;
+	// How many tiles the loaded map reaches beyond the scene, worked out once a frame rather than for every
+	// point placed.
+	private int frameBeyond;
 	private ShoalRoute loadedRoute;
 	private boolean loadedEnough;
 
@@ -182,6 +188,8 @@ class TrawlingPlusOverlay extends Overlay
 	@Override
 	public Dimension render(Graphics2D graphics)
 	{
+		WorldView top = client.getTopLevelWorldView();
+		frameBeyond = top == null ? 0 : tilesBeyondScene(top);
 		// Routes included: there is no point being shown where the fish are by a boat that cannot
 		// catch them, though how strict to be about that is the Show guides setting.
 		if (client.getGameState() != GameState.LOGGED_IN || !plugin.showGuides())
@@ -242,10 +250,16 @@ class TrawlingPlusOverlay extends Overlay
 		List<PlacedShoal> placed = new ArrayList<>();
 		for (Shoal shoal : plugin.getShoals())
 		{
+			// Unmatched or switched off, so not placed: asked first, since placing one means looking it up.
 			ShoalRoute route = shoal.getRoute();
+			if (route == null || !plugin.isShown(shoal))
+			{
+				continue;
+			}
+
 			WorldView view = shoal.parentView(client);
 			double[] position = shoal.position(client);
-			if (route != null && view != null && position != null)
+			if (view != null && position != null)
 			{
 				placed.add(new PlacedShoal(shoal, route, view, position, now));
 			}
@@ -265,7 +279,7 @@ class TrawlingPlusOverlay extends Overlay
 			return;
 		}
 
-		int beyond = tilesBeyondScene(view);
+		int beyond = frameBeyond;
 		if (route.overlaps(view.getBaseX() - beyond, view.getBaseY() - beyond,
 			view.getBaseX() + view.getSizeX() + beyond, view.getBaseY() + view.getSizeY() + beyond)
 			&& enoughLoaded(view, route, beyond))
@@ -347,7 +361,7 @@ class TrawlingPlusOverlay extends Overlay
 			// Only the runs of the route that reach the loaded map. Most of a route is well outside it,
 			// and a run can be dismissed in four comparisons instead of asking the same of all sixty
 			// four points inside it.
-			int beyond = tilesBeyondScene(view);
+			int beyond = frameBeyond;
 			double fromX = view.getBaseX() - beyond;
 			double fromY = view.getBaseY() - beyond;
 			double toX = view.getBaseX() + view.getSizeX() + beyond;
@@ -897,15 +911,35 @@ class TrawlingPlusOverlay extends Overlay
 		// The first arrow sits one spacing in from the start of the route, so where the loop closes, its
 		// last arrow and first arrow are never closer than the spacing.
 		graphics.setColor(opacity >= 1 ? config.directionArrowColour() : withOpacity(config.directionArrowColour(), opacity));
-		for (int arrow = 1; arrow * spacing < route.length(); arrow++)
+
+		// Only the arrows on runs of the route that reach the loaded map, as the line is drawn: an arrow off it
+		// can't be drawn, and a run is dismissed in four comparisons rather than placing every arrow along it.
+		int beyond = view.isTopLevel() ? frameBeyond : 0;
+		double fromX = view.getBaseX() - beyond;
+		double fromY = view.getBaseY() - beyond;
+		double toX = view.getBaseX() + view.getSizeX() + beyond;
+		double toY = view.getBaseY() + view.getSizeY() + beyond;
+		for (int block = 0; block < route.blockCount(); block++)
 		{
-			double at = arrow * spacing;
-			if (route.forward(from, at) < stretch)
+			if (!route.blockWithin(block, fromX, fromY, toX, toY))
 			{
-				Path2D head = arrowhead(view, onRoute(route, at, length), length, ARROW_HALF_WIDTH, ARROW_NOTCH);
-				if (head != null)
+				continue;
+			}
+
+			double opens = route.sampleDistance(route.blockFrom(block));
+			double closes = route.blockTo(block) < route.sampleCount()
+				? route.sampleDistance(route.blockTo(block)) : route.length();
+			for (int arrow = Math.max(1, (int) Math.ceil(opens / spacing));
+				arrow * spacing < closes && arrow * spacing < route.length(); arrow++)
+			{
+				double at = arrow * spacing;
+				if (route.forward(from, at) < stretch)
 				{
-					graphics.fill(head);
+					Path2D head = arrowhead(view, onRoute(route, at, length), length, ARROW_HALF_WIDTH, ARROW_NOTCH);
+					if (head != null)
+					{
+						graphics.fill(head);
+					}
 				}
 			}
 		}
@@ -976,11 +1010,14 @@ class TrawlingPlusOverlay extends Overlay
 		double y = at[1];
 		double dx = at[2];
 		double dy = at[3];
+		// Given up on at the first corner that can't be placed, rather than placing the rest for nothing.
 		Point tip = toCanvas(view, x + dx * halfLength, y + dy * halfLength);
-		Point left = toCanvas(view, x - dx * halfLength - dy * halfWidth, y - dy * halfLength + dx * halfWidth);
-		Point back = toCanvas(view, x - dx * notch, y - dy * notch);
-		Point right = toCanvas(view, x - dx * halfLength + dy * halfWidth, y - dy * halfLength - dx * halfWidth);
-		if (tip == null || left == null || back == null || right == null)
+		Point left = tip == null ? null
+			: toCanvas(view, x - dx * halfLength - dy * halfWidth, y - dy * halfLength + dx * halfWidth);
+		Point back = left == null ? null : toCanvas(view, x - dx * notch, y - dy * notch);
+		Point right = back == null ? null
+			: toCanvas(view, x - dx * halfLength + dy * halfWidth, y - dy * halfLength - dx * halfWidth);
+		if (right == null)
 		{
 			return null;
 		}
@@ -1001,7 +1038,7 @@ class TrawlingPlusOverlay extends Overlay
 		if (area != null)
 		{
 			OverlayUtil.renderPolygon(graphics, area, withOpacity(colour, opacity), withOpacity(STOP_FILL, opacity),
-				new BasicStroke(config.stopThickness().pixels()));
+				stopOutline(config.stopThickness().pixels()));
 		}
 	}
 
@@ -1139,6 +1176,16 @@ class TrawlingPlusOverlay extends Overlay
 			FISHING_POINT_SIZE, FISHING_POINT_SIZE);
 	}
 
+	private Stroke stopOutline(int pixels)
+	{
+		if (stopStroke == null || pixels != stopThickness)
+		{
+			stopThickness = pixels;
+			stopStroke = new BasicStroke(pixels);
+		}
+		return stopStroke;
+	}
+
 	private Stroke areaOutline(int pixels)
 	{
 		if (areaStroke == null || pixels != areaThickness)
@@ -1178,7 +1225,7 @@ class TrawlingPlusOverlay extends Overlay
 	{
 		int localX = (int) Math.round((x - view.getBaseX()) * Perspective.LOCAL_TILE_SIZE) + Perspective.LOCAL_HALF_TILE_SIZE;
 		int localY = (int) Math.round((y - view.getBaseY()) * Perspective.LOCAL_TILE_SIZE) + Perspective.LOCAL_HALF_TILE_SIZE;
-		int beyond = tilesBeyondScene(view) * Perspective.LOCAL_TILE_SIZE;
+		int beyond = (view.isTopLevel() ? frameBeyond : 0) * Perspective.LOCAL_TILE_SIZE;
 		if (localX < -beyond || localY < -beyond
 			|| localX >= view.getSizeX() * Perspective.LOCAL_TILE_SIZE + beyond
 			|| localY >= view.getSizeY() * Perspective.LOCAL_TILE_SIZE + beyond)

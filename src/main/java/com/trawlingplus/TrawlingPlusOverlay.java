@@ -448,9 +448,19 @@ class TrawlingPlusOverlay extends Overlay
 			{
 				placed.shoal.clearArrivedStop();
 			}
-			else if (config.showStops())
+			else
 			{
-				drawStop(graphics, view, route, arrived, config.nextStopColour(), placed.headingOpacity);
+				// The last few tiles to it keep shrinking as the shoal swims in, rather than vanishing the moment
+				// it comes close enough to count as heading for the next stop.
+				double left = route.forward(distance, route.stopDistance(arrived));
+				if (left <= ShoalRoute.AT_STOP_TILES)
+				{
+					drawStretch(graphics, view, route, distance, left, placed.headingOpacity);
+				}
+				if (config.showStops())
+				{
+					drawStop(graphics, view, route, arrived, config.nextStopColour(), placed.headingOpacity);
+				}
 			}
 		}
 
@@ -468,39 +478,7 @@ class TrawlingPlusOverlay extends Overlay
 			}
 		}
 		double drawn = stretch * routeReveal;
-
-		if (config.showRouteLine())
-		{
-			int from = route.sampleAt(distance);
-			int steps = Math.floorMod(route.sampleAt(route.stopDistance(next)) - from, route.sampleCount());
-
-			// Starts where the shoal is along the route rather than where the shoal itself is, so the line
-			// only ever gets shorter as the shoal swims along it. Joining it to the shoal instead leaves a
-			// first piece that swings about, since a smoothed route never runs exactly through the shoal.
-			Line line = new Line();
-			double[] start = route.pointAt(distance);
-			line.add(toCanvas(view, start[0], start[1]));
-			for (int step = 0; step < steps; step++)
-			{
-				int sample = (from + step) % route.sampleCount();
-				if (route.forward(distance, route.sampleDistance(sample)) >= drawn)
-				{
-					break;
-				}
-				line.add(toCanvas(view, route.sampleX(sample), route.sampleY(sample)));
-			}
-
-			// Ends along the route too, level with the stop once it has drawn all the way there, rather than
-			// at the stop itself: a smoothed route passes beside a stop, and joining the two leaves a hook.
-			double[] end = route.pointAt(distance + drawn);
-			line.add(toCanvas(view, end[0], end[1]));
-			drawLine(graphics, line);
-		}
-
-		if (config.showDirectionArrows())
-		{
-			drawArrows(graphics, view, route, distance, drawn);
-		}
+		drawStretch(graphics, view, route, distance, drawn, 1);
 
 		if (config.showStops() && stopReveal > 0)
 		{
@@ -547,7 +525,7 @@ class TrawlingPlusOverlay extends Overlay
 		boolean[] wanted = new boolean[HELM_LINES];
 		wanted[DEPTH_LINE] = boat != null && config.showShoalDepth() && depth != ShoalDepth.UNKNOWN;
 		wanted[TIME_LINE] = boat != null && config.showTimeAtStop() && seconds >= 0;
-		wanted[BAITED_LINE] = boat != null && config.showBaited() && plugin.isBaited();
+		wanted[BAITED_LINE] = boat != null && config.showBaited() && (plugin.isBaited() || plugin.isOutOfBait());
 		wanted[FISH_LINE] = boat != null && config.showFishInNets() && plugin.netsFitted() && plugin.fishLineWanted(now);
 		wanted[HOLD_LINE] = boat != null && config.showFishInNets() && plugin.isHoldFull();
 
@@ -602,6 +580,12 @@ class TrawlingPlusOverlay extends Overlay
 			text[count] = plugin.getBaitedLabel();
 			// Text, so drawn solid whatever the picked colour says.
 			colour[count] = TrawlingPlusNetOverlay.opaque(config.baitedColour());
+			if (plugin.isOutOfBait())
+			{
+				// Out of bait pulses between the picked colour and red, in time with the other warnings.
+				double pulse = warningPulse(now);
+				colour[count] = blend(colour[count], HOLD_FULL_COLOUR, pulse);
+			}
 			showing[count] = opacity[BAITED_LINE];
 			width[count] = letters.stringWidth(text[count]);
 			count++;
@@ -610,6 +594,12 @@ class TrawlingPlusOverlay extends Overlay
 		{
 			text[count] = plugin.getFishLabel();
 			colour[count] = TrawlingPlusNetOverlay.opaque(config.fishInNetsColour());
+			if (plugin.netsFull())
+			{
+				// Full nets pulse between the picked colour and red, in time with the hold full warning.
+				double pulse = warningPulse(now);
+				colour[count] = blend(colour[count], HOLD_FULL_COLOUR, pulse);
+			}
 			showing[count] = opacity[FISH_LINE];
 			width[count] = letters.stringWidth(text[count]);
 			count++;
@@ -625,7 +615,7 @@ class TrawlingPlusOverlay extends Overlay
 		if (opacity[HOLD_LINE] > 0)
 		{
 			// Eased back and forth rather than blinking, starting and ending on the first colour.
-			double pulse = (1 - Math.cos(2 * Math.PI * (now % HOLD_FULL_PULSE_MILLIS) / HOLD_FULL_PULSE_MILLIS)) / 2;
+			double pulse = warningPulse(now);
 			text[count] = HOLD_FULL;
 			colour[count] = blend(HOLD_FULL_COLOUR, HOLD_FULL_PULSE_COLOUR, pulse);
 			showing[count] = opacity[HOLD_LINE];
@@ -699,10 +689,56 @@ class TrawlingPlusOverlay extends Overlay
 	/**
 	 * Draws one piece of a route's line.
 	 */
+	/**
+	 * Draws the route line and its arrows for a stretch ahead of a distance round the route, as far as it
+	 * has been drawn out to, at the given opacity.
+	 */
+	private void drawStretch(Graphics2D graphics, WorldView view, ShoalRoute route, double distance, double drawn,
+		double opacity)
+	{
+		if (config.showRouteLine())
+		{
+			int from = route.sampleAt(distance);
+			int steps = Math.floorMod(route.sampleAt(distance + drawn) - from, route.sampleCount());
+
+			// Starts where the shoal is along the route rather than where the shoal itself is, so the line
+			// only ever gets shorter as the shoal swims along it. Joining it to the shoal instead leaves a
+			// first piece that swings about, since a smoothed route never runs exactly through the shoal.
+			Line line = new Line();
+			double[] start = route.pointAt(distance);
+			line.add(toCanvas(view, start[0], start[1]));
+			for (int step = 0; step < steps; step++)
+			{
+				int sample = (from + step) % route.sampleCount();
+				if (route.forward(distance, route.sampleDistance(sample)) >= drawn)
+				{
+					break;
+				}
+				line.add(toCanvas(view, route.sampleX(sample), route.sampleY(sample)));
+			}
+
+			// Ends along the route too, level with the stop once it has drawn all the way there, rather than
+			// at the stop itself: a smoothed route passes beside a stop, and joining the two leaves a hook.
+			double[] end = route.pointAt(distance + drawn);
+			line.add(toCanvas(view, end[0], end[1]));
+			drawLine(graphics, line, opacity);
+		}
+
+		if (config.showDirectionArrows())
+		{
+			drawArrows(graphics, view, route, distance, drawn, opacity);
+		}
+	}
+
 	private void drawLine(Graphics2D graphics, Line line)
 	{
+		drawLine(graphics, line, 1);
+	}
+
+	private void drawLine(Graphics2D graphics, Line line, double opacity)
+	{
 		// Round joins and caps so the short segments the curve is drawn with blend into one smooth line.
-		graphics.setColor(config.routeColour());
+		graphics.setColor(opacity >= 1 ? config.routeColour() : withOpacity(config.routeColour(), opacity));
 		graphics.setStroke(new BasicStroke(config.routeLineThickness().pixels(), BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
 		graphics.draw(line.path);
 	}
@@ -778,6 +814,12 @@ class TrawlingPlusOverlay extends Overlay
 	 */
 	private void drawArrows(Graphics2D graphics, WorldView view, ShoalRoute route, double from, double stretch)
 	{
+		drawArrows(graphics, view, route, from, stretch, 1);
+	}
+
+	private void drawArrows(Graphics2D graphics, WorldView view, ShoalRoute route, double from, double stretch,
+		double opacity)
+	{
 		// Clamped as well as limited in the settings panel, since a spacing of 0 would never finish.
 		int spacing = Math.max(TrawlingPlusConfig.MIN_ARROW_SPACING,
 			Math.min(TrawlingPlusConfig.MAX_ARROW_SPACING, config.directionArrowSpacing()));
@@ -785,7 +827,7 @@ class TrawlingPlusOverlay extends Overlay
 
 		// The first arrow sits one spacing in from the start of the route, so where the loop closes, its
 		// last arrow and first arrow are never closer than the spacing.
-		graphics.setColor(config.directionArrowColour());
+		graphics.setColor(opacity >= 1 ? config.directionArrowColour() : withOpacity(config.directionArrowColour(), opacity));
 		for (int arrow = 1; arrow * spacing < route.length(); arrow++)
 		{
 			double at = arrow * spacing;
@@ -900,6 +942,15 @@ class TrawlingPlusOverlay extends Overlay
 	private static Color withOpacity(Color colour, double opacity)
 	{
 		return new Color(colour.getRed(), colour.getGreen(), colour.getBlue(), (int) Math.round(colour.getAlpha() * opacity));
+	}
+
+	/**
+	 * How far through its pulse a warning line is, from 0 to 1 and back once a second, so every warning
+	 * pulses in time.
+	 */
+	private static double warningPulse(long now)
+	{
+		return (1 - Math.cos(2 * Math.PI * (now % HOLD_FULL_PULSE_MILLIS) / HOLD_FULL_PULSE_MILLIS)) / 2;
 	}
 
 	/**

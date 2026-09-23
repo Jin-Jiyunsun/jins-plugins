@@ -41,6 +41,7 @@ import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.events.ItemContainerChanged;
 import net.runelite.api.events.VarbitChanged;
+import net.runelite.api.events.WidgetClosed;
 import net.runelite.api.events.WidgetLoaded;
 import net.runelite.api.events.WorldEntityDespawned;
 import net.runelite.api.events.WorldEntitySpawned;
@@ -156,6 +157,12 @@ public class TrawlingPlusPlugin extends Plugin
 	// The nets share one catch of up to this many fish, however many are fitted.
 	private static final int NET_CAPACITY = 250;
 
+	// How many ticks after the hold's screen closes a deposit made just before can still leave the inventory.
+	private static final int DEPOSIT_TICKS = 2;
+
+	// The most bait the Baited line counts up to; more shows as this with a plus.
+	private static final int MAX_BAIT_SHOWN = 999;
+
 	// How long the fish line stays up once the nets are empty and raised, after they were last emptied,
 	// found empty or raised.
 	private static final long FISH_LINE_LINGER_MILLIS = 60_000;
@@ -242,13 +249,23 @@ public class TrawlingPlusPlugin extends Plugin
 	// The tick a crewmate last found no offcuts to bait with, so a change in the baited step that comes with it
 	// isn't taken for a bait laid.
 	private int baitFailedTick = -1;
+	// The tick a bait was last announced in chat ("Bosun Zarah has baited a nearby halibut shoal with some fine
+	// fish offcuts."), which is a real bait even on the same tick as a failed one, as when offcuts go into an
+	// empty hold just as a crewmate tries; and the tick offcuts were last counted into the hold from the
+	// inventory, which a failed attempt that same tick came before.
+	private int baitAnnouncedTick = -1;
+	private int depositTick = -1;
 
 	// How much of each bait the hold had when it was last opened, less what has been used since, or -1
 	// before the hold has been opened this session. The game only sends the hold when it is opened, so
 	// between openings this is an estimate. Every chum station uses one offcut per bait.
 	private int plainBait = -1;
 	private int fineBait = -1;
-	private String baitedLabel = label(-1);
+	// Whether the bait the nearest shoal takes was seen running out: the last offcut laid, or a crewmate finding
+	// none. Only then does the Baited line say there is none, never while the count isn't known. Cleared once the
+	// hold is opened with offcuts in it, or when a new session makes the count unknown.
+	private boolean ranOutOfBait;
+	private String baitedLabel = label(-1, false);
 	// The shoal the last bait was laid on, until it next arrives at a stop; whether it was sitting at one
 	// on the last tick; and how many ticks ago the bait was laid.
 	private Shoal baitedShoal;
@@ -269,11 +286,19 @@ public class TrawlingPlusPlugin extends Plugin
 	private int inventoryTick = -1;
 	private int inventoryAdded = -1;
 	private boolean takePending;
+	// Each kind of offcut in the inventory as of the last inventory update, or -1 before the first, and the
+	// tick the hold's contents last arrived. Offcuts leaving the inventory aboard went into the hold, which
+	// is how a deposit is counted when the hold is shut before its own update is sent.
+	private int inventoryPlain = -1;
+	private int inventoryFine = -1;
+	private int holdTick = -1;
+	// Whether the hold's screen is open, and the tick it last closed, or -1. Only offcuts leaving the inventory
+	// while it is open, or just after, went into the hold; any other time they were dropped or used up.
+	private boolean holdOpen;
+	private int holdClosedTick = -1;
 	// Whether the hold is full: found without room when the nets were last emptied into it, or showing no
 	// free slots when last opened, until it is known to have room again.
 	private boolean holdFull;
-	// Whether the nets full notification has gone off since the nets last had room.
-	private boolean netsFullWarned;
 	// The shoal the leaving notification is watching, whether it was sitting at a stop on the last tick,
 	// and whether the stop it is at has been warned about already.
 	private Shoal leavingShoal;
@@ -309,6 +334,8 @@ public class TrawlingPlusPlugin extends Plugin
 				&& client.getVarbitValue(VarbitID.SAILING_PLAYER_IS_ON_PLAYER_BOAT) == 1;
 			resetFish(aboard ? -1 : 0);
 			inventoryFilled = -1;
+			inventoryPlain = -1;
+			inventoryFine = -1;
 			takePending = false;
 			// Started part way through a session, the slots won't change to say what they hold.
 			netsFitted = readNetsFitted();
@@ -410,12 +437,13 @@ public class TrawlingPlusPlugin extends Plugin
 	/**
 	 * Lays a tooltip over each trawling shoal icon the world map has loaded, once each, naming the species of the
 	 * recorded route it sits beside. It only looks while the world map is open, and stops once every recorded
-	 * route has one, and only while routes are shown on the world map, since the tooltips are only put on it
-	 * then. Each area of the map is looked through once. Icons beside routes not yet recorded get none.
+	 * route has one. The tooltips go on whatever maps routes are shown on, even none, since they name the
+	 * game's own icons rather than anything the plugin draws. Each area of the map is looked through once. Icons beside
+	 * routes not yet recorded get none.
 	 */
 	private void findShoalIcons()
 	{
-		if (shoalMarkers.size() >= routes.size() || !worldMapShown())
+		if (shoalMarkers.size() >= routes.size())
 		{
 			return;
 		}
@@ -459,10 +487,7 @@ public class TrawlingPlusPlugin extends Plugin
 					{
 						ShoalMarker marker = new ShoalMarker(at, blankLike(icon.getType()), route.getSpecies() + " shoal");
 						shoalMarkers.add(marker);
-						if (worldMapShown())
-						{
-							worldMapPointManager.add(marker);
-						}
+						worldMapPointManager.add(marker);
 					}
 				}
 			}
@@ -513,18 +538,6 @@ public class TrawlingPlusPlugin extends Plugin
 	}
 
 	/**
-	 * Puts the shoal icon tooltips on the world map, or takes them off, to match the settings.
-	 */
-	private void showShoalMarkers()
-	{
-		worldMapPointManager.removeIf(ShoalMarker.class::isInstance);
-		if (worldMapShown())
-		{
-			shoalMarkers.forEach(worldMapPointManager::add);
-		}
-	}
-
-	/**
 	 * Puts the skulls on the world map, or takes them off, to match the settings.
 	 */
 	private void showDangerMarkers()
@@ -569,12 +582,15 @@ public class TrawlingPlusPlugin extends Plugin
 			// A new session, so what the hold held last time is no longer known.
 			plainBait = -1;
 			fineBait = -1;
-			baitedLabel = label(-1);
+			ranOutOfBait = false;
+			baitedLabel = label(-1, false);
 			// Logging out empties the nets into the hold, throwing away whatever doesn't fit, so every
 			// session starts with them empty.
 			resetFish(0);
 			inventoryFilled = -1;
 			inventoryAdded = -1;
+			inventoryPlain = -1;
+			inventoryFine = -1;
 			takePending = false;
 		}
 	}
@@ -604,7 +620,12 @@ public class TrawlingPlusPlugin extends Plugin
 		ItemContainer contents = event.getItemContainer();
 		plainBait = contents == null ? 0 : contents.count(ItemID.BRUT_FISH_CUTS);
 		fineBait = contents == null ? 0 : contents.count(ItemID.SAILING_FINE_FISH_OFFCUTS);
-		baitedLabel = label(baitLeft());
+		holdTick = client.getTickCount();
+		if (plainBait + fineBait > 0)
+		{
+			ranOutOfBait = false;
+		}
+		baitedLabel = baitLabel();
 		// The hold is only sent while its screen is open, and that screen shows in its corner how many slots
 		// are taken out of how many. Its numbers are filled in after the contents arrive.
 		clientThread.invokeLater(this::readHoldSpace);
@@ -645,11 +666,7 @@ public class TrawlingPlusPlugin extends Plugin
 		if (TrawlingPlusConfig.GROUP.equals(event.getGroup())
 			&& "showOnMaps".equals(event.getKey()))
 		{
-			clientThread.invoke(() ->
-			{
-				showDangerMarkers();
-				showShoalMarkers();
-			});
+			clientThread.invoke(this::showDangerMarkers);
 		}
 
 		if (TrawlingPlusConfig.GROUP.equals(event.getGroup()) && TrawlingPlusConfig.SMOOTHING_KEY.equals(event.getKey()))
@@ -801,7 +818,7 @@ public class TrawlingPlusPlugin extends Plugin
 		showGuides = guidesWanted();
 		followNearestRoute();
 		baited = stillBaited();
-		baitedLabel = label(baitLeft());
+		baitedLabel = baitLabel();
 		netsAtDepth = netsSetToDepth();
 		checkShoalLeaving();
 	}
@@ -1081,6 +1098,15 @@ public class TrawlingPlusPlugin extends Plugin
 	}
 
 	/**
+	 * Whether the bait the nearest shoal takes has run out, as worked out on the last tick or when the hold
+	 * was last opened. Only ever true once it has been seen running out, never while the count isn't known.
+	 */
+	boolean isOutOfBait()
+	{
+		return ranOutOfBait && baitLeft() == 0;
+	}
+
+	/**
 	 * What the Baited line says, with how much bait the nearest shoal can still be given, as worked out
 	 * on the last tick or when the hold was last opened.
 	 */
@@ -1092,6 +1118,14 @@ public class TrawlingPlusPlugin extends Plugin
 	/**
 	 * What the fish line says: how many fish are in the nets, or a question mark while that is not known.
 	 */
+	/**
+	 * Whether the nets are known to be full.
+	 */
+	boolean netsFull()
+	{
+		return fishInNets >= NET_CAPACITY;
+	}
+
 	String getFishLabel()
 	{
 		return fishLabel;
@@ -1163,6 +1197,12 @@ public class TrawlingPlusPlugin extends Plugin
 			return;
 		}
 
+		if (message.contains("baited a nearby"))
+		{
+			baitAnnouncedTick = client.getTickCount();
+			return;
+		}
+
 		if (message.startsWith("There are no fish in"))
 		{
 			// What opening an empty net says, in a box of its own rather than the menu a net with fish opens.
@@ -1206,9 +1246,14 @@ public class TrawlingPlusPlugin extends Plugin
 		}
 		else if (message.startsWith("Your net has no more space"))
 		{
-			// "Your net has no more space for any raw bluefin." The nets hold one catch between them, so this
-			// is all of them full.
-			warnNetsFull();
+			// "Your net has no more space for any raw bluefin.", for the crew's attempts as well as the player's.
+			// On its own it doesn't mean the nets are full: it turns up now and then with plenty of room left,
+			// the nets catching again straight after. So it only notifies while the count says full as well,
+			// and then every time it is said.
+			if (netsFull())
+			{
+				notifier.notify(config.notifyNetsFull(), "Your trawling nets are full.");
+			}
 		}
 		else if (netsFitted())
 		{
@@ -1221,10 +1266,6 @@ public class TrawlingPlusPlugin extends Plugin
 			if (fish >= 0 && fishInNets >= 0)
 			{
 				setFish(Math.min(NET_CAPACITY, fishInNets + fish));
-				if (fishInNets >= NET_CAPACITY)
-				{
-					warnNetsFull();
-				}
 			}
 		}
 	}
@@ -1240,6 +1281,20 @@ public class TrawlingPlusPlugin extends Plugin
 		{
 			// The menu's lines are filled in after it loads.
 			clientThread.invokeLater(this::readNetMenu);
+		}
+		else if (event.getGroupId() == InterfaceID.SAILING_BOAT_CARGOHOLD)
+		{
+			holdOpen = true;
+		}
+	}
+
+	@Subscribe
+	public void onWidgetClosed(WidgetClosed event)
+	{
+		if (event.getGroupId() == InterfaceID.SAILING_BOAT_CARGOHOLD)
+		{
+			holdOpen = false;
+			holdClosedTick = client.getTickCount();
 		}
 	}
 
@@ -1296,11 +1351,21 @@ public class TrawlingPlusPlugin extends Plugin
 	private void countInventory(ItemContainer inventory)
 	{
 		int filled = 0;
+		int plain = 0;
+		int fine = 0;
 		for (Item item : inventory == null ? new Item[0] : inventory.getItems())
 		{
 			if (item.getId() >= 0)
 			{
 				filled++;
+			}
+			if (item.getId() == ItemID.BRUT_FISH_CUTS)
+			{
+				plain += item.getQuantity();
+			}
+			else if (item.getId() == ItemID.SAILING_FINE_FISH_OFFCUTS)
+			{
+				fine += item.getQuantity();
 			}
 		}
 
@@ -1308,11 +1373,38 @@ public class TrawlingPlusPlugin extends Plugin
 		inventoryAdded = inventoryFilled < 0 ? -1 : Math.max(0, filled - inventoryFilled);
 		inventoryFilled = filled;
 		inventoryTick = client.getTickCount();
+		countDeposits(plain, fine);
 		if (takePending)
 		{
 			takePending = false;
 			takeFromNets(inventoryAdded);
 		}
+	}
+
+	/**
+	 * Adds offcuts that just left the inventory aboard to the hold's count. The hold is only sent while its
+	 * screen is open, so offcuts put in just as it is shut never show up there; the inventory is always
+	 * sent. When the hold's own contents came the same tick they already include the deposit, and win. Only
+	 * counted while the hold's screen is open or just shut, so offcuts dropped any other time aren't.
+	 */
+	private void countDeposits(int plain, int fine)
+	{
+		if (fineBait >= 0 && inventoryFine >= 0 && holdTick != client.getTickCount()
+			&& (holdOpen || holdClosedTick >= 0 && client.getTickCount() - holdClosedTick <= DEPOSIT_TICKS)
+			&& (plain < inventoryPlain || fine < inventoryFine)
+			&& client.getVarbitValue(VarbitID.SAILING_PLAYER_IS_ON_PLAYER_BOAT) == 1)
+		{
+			plainBait += Math.max(0, inventoryPlain - plain);
+			fineBait += Math.max(0, inventoryFine - fine);
+			if (plainBait + fineBait > 0)
+			{
+				ranOutOfBait = false;
+			}
+			depositTick = client.getTickCount();
+			baitedLabel = baitLabel();
+		}
+		inventoryPlain = plain;
+		inventoryFine = fine;
 	}
 
 	private void takeFromNets(int taken)
@@ -1324,20 +1416,6 @@ public class TrawlingPlusPlugin extends Plugin
 	{
 		fishInNets = fish;
 		fishLabel = fishLabel(fish);
-		if (fish >= 0 && fish < NET_CAPACITY)
-		{
-			// The nets have room again, so the next time they fill is worth a notification.
-			netsFullWarned = false;
-		}
-	}
-
-	private void warnNetsFull()
-	{
-		if (!netsFullWarned)
-		{
-			netsFullWarned = true;
-			notifier.notify(config.notifyNetsFull(), "Your trawling nets are full.");
-		}
 	}
 
 	/**
@@ -1374,6 +1452,10 @@ public class TrawlingPlusPlugin extends Plugin
 
 	private static String fishLabel(int fish)
 	{
+		if (fish >= NET_CAPACITY)
+		{
+			return "Nets full";
+		}
 		return "Fish: " + (fish < 0 ? "?" : Integer.toString(fish));
 	}
 
@@ -1413,16 +1495,19 @@ public class TrawlingPlusPlugin extends Plugin
 		baitFailedTick = client.getTickCount();
 		baitedShoal = null;
 		baited = false;
-		if (nearestShoal != null && takesPlainOffcuts(nearestShoal))
+		// Offcuts counted into the hold this same tick went in after the attempt that found none.
+		boolean justDeposited = depositTick == client.getTickCount();
+		if (!justDeposited && nearestShoal != null && takesPlainOffcuts(nearestShoal))
 		{
 			plainBait = 0;
 			fineBait = 0;
 		}
-		else if (plainBait >= 0)
+		else if (!justDeposited && plainBait >= 0)
 		{
 			fineBait = 0;
 		}
-		baitedLabel = label(baitLeft());
+		ranOutOfBait = baitLeft() == 0;
+		baitedLabel = baitLabel();
 	}
 
 	/**
@@ -1443,6 +1528,10 @@ public class TrawlingPlusPlugin extends Plugin
 		else if (fineBait > 0)
 		{
 			fineBait--;
+		}
+		if (baitLeft() == 0)
+		{
+			ranOutOfBait = true;
 		}
 	}
 
@@ -1465,9 +1554,19 @@ public class TrawlingPlusPlugin extends Plugin
 		return species != null && "any".equals(species.bait);
 	}
 
-	private static String label(int left)
+	private String baitLabel()
 	{
-		return "Baited (" + (left < 0 ? "?" : Integer.toString(left)) + " left)";
+		return label(baitLeft(), isOutOfBait());
+	}
+
+	private static String label(int left, boolean outOfBait)
+	{
+		if (outOfBait)
+		{
+			return "No bait";
+		}
+		// Counted in full, but a hold stocked with thousands only needs to say it has plenty.
+		return "Baited (" + (left < 0 ? "?" : left > MAX_BAIT_SHOWN ? MAX_BAIT_SHOWN + "+" : Integer.toString(left)) + " left)";
 	}
 
 	/**
@@ -1482,7 +1581,9 @@ public class TrawlingPlusPlugin extends Plugin
 	{
 		int step = client.getVarbitValue(VarbitID.SAILING_PLAYER_TRAWLING_SHOAL_BAITED_STEP);
 		// A change on the tick a crewmate found nothing to bait with, or the one after, is that failed attempt.
-		boolean laid = baitedStep != null && baitedStep != step && client.getTickCount() - baitFailedTick > 1;
+		int tick = client.getTickCount();
+		boolean laid = baitedStep != null && baitedStep != step
+			&& (tick - baitFailedTick > 1 || tick - baitAnnouncedTick <= 1);
 		baitedStep = step;
 
 		if (laid && nearestShoal != null)
@@ -1490,7 +1591,11 @@ public class TrawlingPlusPlugin extends Plugin
 			baitedShoal = nearestShoal;
 			baitedWasStopped = nearestShoal.stopped();
 			ticksSinceBait = 0;
-			useBait();
+			if (holdTick != tick)
+			{
+				// The hold's contents sent on the same tick as the bait already have that offcut taken out.
+				useBait();
+			}
 		}
 		else if (baitedShoal != null)
 		{

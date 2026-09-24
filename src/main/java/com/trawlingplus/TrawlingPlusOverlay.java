@@ -104,6 +104,22 @@ class TrawlingPlusOverlay extends Overlay
 	// clears the mast and the crew.
 	private static final int HELM_TEXT_HEIGHT = 250;
 
+	// Where the display goes at the bow and above the sails, read once per boat type from its deck: how far up the
+	// deck the front of the hull is and how high the top of the tallest thing on it is, both in the deck's local
+	// units, and which boat and deck they were read for. The display sits a little back from the tip,
+	// and a little above the top.
+	private static final int BOW_INSET = Perspective.LOCAL_TILE_SIZE;
+	// How far towards the helm from the bow's spot the display sits over the sails, and how far from their top,
+	// in tenths of a tile, by boat config, tuned in game: the skiff and the sloop. The raft has none, and puts the
+	// display at its bow instead.
+	private static final Map<Integer, int[]> SAILS_BY_BOAT = Map.of(2, new int[]{12, -23}, 3, new int[]{21, -27});
+
+	private int anchorConfig = -1;
+	private int anchorDeckView = -1;
+	private int anchorTriedTick = -1;
+	private int bowLocalY;
+	private int sailTop;
+
 	// A dark box behind the display at the helm, so its text reads against the water whatever its colour.
 	private static final Color HELM_BACKGROUND = new Color(0, 0, 0, 150);
 	private static final int HELM_PADDING = 3;
@@ -338,7 +354,7 @@ class TrawlingPlusOverlay extends Overlay
 			fishingPointFade = 0;
 			lastFishingPointMillis = -1;
 		}
-		drawHelm(graphics);
+		// The display on the boat is drawn by TrawlingPlusHelmOverlay, in a layer above the game's health bars.
 
 		if (antialiasing != null)
 		{
@@ -695,7 +711,7 @@ class TrawlingPlusOverlay extends Overlay
 	 * Draws the display at the helm of the player's boat: the depth, time left at the stop, fish in the
 	 * nets, bait and the hold full warning, each line fading in and out on its own.
 	 */
-	private void drawHelm(Graphics2D graphics)
+	void drawHelm(Graphics2D graphics)
 	{
 		if (!config.showHeadsUpDisplay())
 		{
@@ -828,17 +844,39 @@ class TrawlingPlusOverlay extends Overlay
 		{
 			across -= Perspective.LOCAL_HALF_TILE_SIZE;
 		}
-		LocalPoint atStern = new LocalPoint(across,
+		LocalPoint anchor = new LocalPoint(across,
 			deck.getSizeY() * Perspective.LOCAL_TILE_SIZE / 2 + hull.getBoundsHeight() / 4
 				+ Perspective.LOCAL_TILE_SIZE * 3 / 2, deck);
-		LocalPoint afloatAtStern = boat.transformToMainWorld(atStern);
-		if (afloatAtStern == null)
+		int lift = HELM_TEXT_HEIGHT;
+		// At the bow or above the sails instead, once this boat's deck has been read for where those are; until
+		// then, which is only as its models load, at the helm.
+		TrawlingPlusConfig.HudPosition position = config.hudPosition();
+		if (position != TrawlingPlusConfig.HudPosition.HELM && readAnchors(boat, deck, hull))
+		{
+			// A raft's sail is barely above its deck, so above it is the same as at its bow.
+			if (position == TrawlingPlusConfig.HudPosition.BOW || !SAILS_BY_BOAT.containsKey(hull.getId()))
+			{
+				anchor = new LocalPoint(across, bowLocalY, deck);
+			}
+			else
+			{
+				// Over the deck a little towards the helm from the bow's spot, which from any angle reads as above the
+				// sails, near the height of their top.
+				// In tenths of a tile, by boat type.
+				int[] sails = SAILS_BY_BOAT.get(hull.getId());
+				int back = sails[0] * Perspective.LOCAL_TILE_SIZE / 10;
+				int offset = sails[1] * Perspective.LOCAL_TILE_SIZE / 10;
+				anchor = new LocalPoint(across, bowLocalY + back, deck);
+				lift = sailTop + offset;
+			}
+		}
+		LocalPoint afloat = boat.transformToMainWorld(anchor);
+		if (afloat == null)
 		{
 			return;
 		}
 
-		Point at = Perspective.getCanvasTextLocation(client, graphics, afloatAtStern, text[0],
-			HELM_TEXT_HEIGHT);
+		Point at = Perspective.getCanvasTextLocation(client, graphics, afloat, text[0], lift);
 		if (at == null)
 		{
 			return;
@@ -857,16 +895,25 @@ class TrawlingPlusOverlay extends Overlay
 		int left = at.getX() + (letters.stringWidth(text[0]) - wide) / 2;
 		int top = at.getY() - letters.getAscent() - (count - 1) * lineHeight;
 
+		// Kept inside the game view, so zoomed in close, where its place on the boat is off the edge of the
+		// screen, it stops at the edge rather than going out of sight.
+		int boxWidth = wide + HELM_PADDING * 2;
+		int boxHeight = lineHeight * count + HELM_PADDING * 2;
+		int shiftX = keepInside(left - HELM_PADDING, boxWidth, client.getViewportXOffset(), client.getViewportWidth());
+		int shiftY = keepInside(top - HELM_PADDING, boxHeight, client.getViewportYOffset(), client.getViewportHeight());
+		left += shiftX;
+		top += shiftY;
+		int bottom = at.getY() + shiftY;
+
 		// One pill around the lot, as opaque as whichever line is showing the most, so it does not
 		// flicker as one of them fades while the others stay.
 		graphics.setColor(withOpacity(HELM_BACKGROUND, solid));
-		graphics.fillRoundRect(left - HELM_PADDING, top - HELM_PADDING,
-			wide + HELM_PADDING * 2, lineHeight * count + HELM_PADDING * 2, 6, 6);
+		graphics.fillRoundRect(left - HELM_PADDING, top - HELM_PADDING, boxWidth, boxHeight, 6, 6);
 
 		for (int line = 0; line < count; line++)
 		{
 			int from = left + (wide - width[line]) / 2;
-			int baseline = at.getY() - line * lineHeight;
+			int baseline = bottom - line * lineHeight;
 			line(graphics, text[line], from, baseline, colour[line], showing[line]);
 			if (line == depthAt && ticked)
 			{
@@ -879,8 +926,19 @@ class TrawlingPlusOverlay extends Overlay
 	}
 
 	/**
-	 * Draws one piece of a route's line.
+	 * How far to move a box from a start along one axis, with a size, to keep it inside a stretch of screen
+	 * starting at another, with its own size: 0 when it already fits.
 	 */
+	private static int keepInside(int start, int size, int from, int length)
+	{
+		if (start < from)
+		{
+			return from - start;
+		}
+		int over = start + size - (from + length);
+		return over > 0 ? -Math.min(over, start - from) : 0;
+	}
+
 	/**
 	 * Draws the route line and its arrows for a stretch ahead of a distance round the route, as far as it
 	 * has been drawn out to, at the given opacity.
@@ -1488,6 +1546,94 @@ class TrawlingPlusOverlay extends Overlay
 	 * lowest level covering the most tiles, the one with the most points if two tie: the deck floor on a sloop
 	 * and a skiff, which spans the whole hull. Done once per boat type, not every frame.
 	 */
+	/**
+	 * Reads, once per boat type, where the display goes at the bow and above the sails: the front of the hull's
+	 * outline on the deck floor, and the height of the top of the tallest thing on the deck, the mast or its sails. True once they are known for this boat; the deck is looked through at most once a tick until then,
+	 * while its models load.
+	 */
+	private boolean readAnchors(WorldEntity boat, WorldView deck, WorldEntityConfig hull)
+	{
+		if (hull.getId() == anchorConfig && deck.getId() == anchorDeckView)
+		{
+			return true;
+		}
+		if (client.getTickCount() == anchorTriedTick)
+		{
+			return false;
+		}
+		anchorTriedTick = client.getTickCount();
+
+		Tile[][][] planes = deck.getScene().getTiles();
+		GameObject floor = null;
+		Model floorModel = null;
+		int floorArea = 0;
+		GameObject tallest = null;
+		int tallestTop = Integer.MIN_VALUE;
+		for (int plane = 0; plane < planes.length; plane++)
+		{
+			for (Tile[] row : planes[plane])
+			{
+				for (Tile tile : row)
+				{
+					for (GameObject object : tile == null ? new GameObject[0] : tile.getGameObjects())
+					{
+						Renderable renderable = object == null ? null : object.getRenderable();
+						Model model = renderable == null ? null
+							: renderable instanceof Model ? (Model) renderable : renderable.getModel();
+						if (model == null || model.getVerticesCount() == 0)
+						{
+							continue;
+						}
+
+						// How far above the water its highest point is: the game counts heights upwards as negative.
+						float highest = Float.MAX_VALUE;
+						float[] heights = model.getVerticesY();
+						for (int v = 0; v < model.getVerticesCount(); v++)
+						{
+							highest = Math.min(highest, heights[v]);
+						}
+						int top = -(object.getZ() + (int) highest);
+						if (top > tallestTop)
+						{
+							tallestTop = top;
+							tallest = object;
+						}
+
+						int area = object.sizeX() * object.sizeY();
+						if (plane == 0 && (area > floorArea || area == floorArea && model.getVerticesCount() > floorModel.getVerticesCount()))
+						{
+							floor = object;
+							floorModel = model;
+							floorArea = area;
+						}
+					}
+				}
+			}
+		}
+		if (floor == null || tallest == null)
+		{
+			return false;
+		}
+
+		// The front of the floor, the lowest point of its model up the deck turned the way it faces, a little way
+		// back so the display sits over the boat rather than past its tip.
+		int turned = floor.getOrientation() & 2047;
+		int sin = Perspective.SINE[turned];
+		int cos = Perspective.COSINE[turned];
+		float[] xs = floorModel.getVerticesX();
+		float[] zs = floorModel.getVerticesZ();
+		int front = Integer.MAX_VALUE;
+		for (int v = 0; v < floorModel.getVerticesCount(); v++)
+		{
+			front = Math.min(front, floor.getLocalLocation().getY() + (int) ((zs[v] * cos - xs[v] * sin) / 65536));
+		}
+		bowLocalY = front + BOW_INSET;
+		sailTop = tallestTop;
+		anchorConfig = hull.getId();
+		anchorDeckView = deck.getId();
+		return true;
+	}
+
 	private int readFootprint(WorldView deck)
 	{
 		Tile[][][] planes = deck.getScene().getTiles();

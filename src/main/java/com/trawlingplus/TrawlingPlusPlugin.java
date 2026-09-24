@@ -208,6 +208,10 @@ public class TrawlingPlusPlugin extends Plugin
 	@Inject
 	private TrawlingPlusNetOverlay netOverlay;
 
+	// The display on the boat, drawn above the game's health bars by the main overlay's own code, so made from it
+	// rather than injected, which would make a second main overlay.
+	private TrawlingPlusHelmOverlay helmOverlay;
+
 	@Inject
 	private TrawlingPlusMapOverlay mapOverlay;
 
@@ -349,6 +353,8 @@ public class TrawlingPlusPlugin extends Plugin
 			holdFull = false;
 		});
 		overlayManager.add(overlay);
+		helmOverlay = new TrawlingPlusHelmOverlay(client, this, overlay);
+		overlayManager.add(helmOverlay);
 		overlayManager.add(netOverlay);
 		overlayManager.add(mapOverlay);
 		overlayManager.add(minimapOverlay);
@@ -361,6 +367,7 @@ public class TrawlingPlusPlugin extends Plugin
 	protected void shutDown()
 	{
 		overlayManager.remove(overlay);
+		overlayManager.remove(helmOverlay);
 		overlayManager.remove(netOverlay);
 		overlayManager.remove(mapOverlay);
 		overlayManager.remove(minimapOverlay);

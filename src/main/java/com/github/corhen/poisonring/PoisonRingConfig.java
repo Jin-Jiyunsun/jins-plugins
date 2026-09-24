@@ -15,7 +15,7 @@ public interface PoisonRingConfig extends Config {
         position = 1
     )
     default int shiftX() {
-        return 1;
+        return 0;
     }
 
     @ConfigItem(
@@ -25,7 +25,7 @@ public interface PoisonRingConfig extends Config {
         position = 2
     )
     default int shiftY() {
-        return 1;
+        return 0;
     }
 
     @ConfigItem(
@@ -35,7 +35,7 @@ public interface PoisonRingConfig extends Config {
         position = 3
     )
     default int diameter() {
-        return -1;
+        return 0;
     }
 
     @ConfigItem(
@@ -75,6 +75,6 @@ public interface PoisonRingConfig extends Config {
         position = 6
     )
     default Color venomColor() {
-        return new Color(0, 255, 0, 255);
+        return new Color(169, 56, 223, 255);
     }
 }

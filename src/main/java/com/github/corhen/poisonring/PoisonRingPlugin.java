@@ -4,10 +4,10 @@ import com.google.inject.Provides;
 import javax.inject.Inject;
 import net.runelite.api.Client;
 import net.runelite.api.HitsplatID;
-import net.runelite.api.VarPlayer;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.events.HitsplatApplied;
 import net.runelite.api.events.VarbitChanged;
+import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.plugins.Plugin;
@@ -59,13 +59,13 @@ public class PoisonRingPlugin extends Plugin {
 
     @Subscribe
     public void onVarbitChanged(VarbitChanged event) {
-        if (event.getVarpId() == VarPlayer.POISON) {
+        if (event.getVarpId() == VarPlayerID.POISON) {
             checkPoisonState();
         }
     }
 
     private void checkPoisonState() {
-        int newValue = client.getVarpValue(VarPlayer.POISON);
+        int newValue = client.getVarpValue(VarPlayerID.POISON);
         
         if (newValue <= 0) {
             poisonValue = 0;
@@ -92,8 +92,13 @@ public class PoisonRingPlugin extends Plugin {
 
     @Subscribe
     public void onGameTick(GameTick event) {
-        if (poisonValue > 0 && ticksUntilDamage > 0) {
-            ticksUntilDamage--;
+        if (poisonValue > 0) {
+            if (ticksUntilDamage > 0) {
+                ticksUntilDamage--;
+            }
+        } else if (config.testMode()) {
+            // Simulate a poison cycle: count down, then refill as if a poison hit just landed
+            ticksUntilDamage = ticksUntilDamage > 0 ? ticksUntilDamage - 1 : POISON_TICK_RATE;
         }
     }
 

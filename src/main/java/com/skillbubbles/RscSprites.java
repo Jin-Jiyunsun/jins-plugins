@@ -140,10 +140,24 @@ final class RscSprites
 		// No sprite of its own - reusing the plain hammer as the closest visual stand-in.
 		ITEM_FILES.put(ItemID.IMCANDO_HAMMER, "hammer.png");
 		ITEM_FILES.put(ItemID.GLASSBLOWINGPIPE, "glassblowing_pipe.png");
+		ITEM_FILES.put(ItemID.SHEARS, "shears.png");
 		ITEM_FILES.put(ItemID.NEEDLE, "needle.png");
 		ITEM_FILES.put(ItemID.CHISEL, "chisel.png");
 		ITEM_FILES.put(ItemID.KNIFE, "knife.png");
 		ITEM_FILES.put(ItemID.PESTLE_AND_MORTAR, "pestle_and_mortar.png");
+
+		// Farming didn't exist in RSC, but the spade did, and Jin added RSC-style rake, dibber,
+		// watering can and secateurs sprites to the dump. The rest reuse the closest RSC sprite
+		// (Jin's call).
+		ITEM_FILES.put(ItemID.SPADE, "spade.png");
+		ITEM_FILES.put(ItemID.RAKE, "rake.png");
+		ITEM_FILES.put(ItemID.DIBBER, "seed_dibber.png");
+		ITEM_FILES.put(ItemID.WATERING_CAN_8, "watering_can.png");
+		ITEM_FILES.put(ItemID.SECATEURS, "secateurs.png");
+		ITEM_FILES.put(ItemID.PLANT_CURE, "potion.png");
+		ITEM_FILES.put(ItemID.BUCKET_COMPOST, "bucket.png");
+		ITEM_FILES.put(ItemID.BOTTOMLESS_COMPOST_BUCKET_FILLED, "bucket.png");
+		ITEM_FILES.put(ItemID.GARDENING_TROWEL, "trowel.png");
 
 		// Fishing tools
 		ITEM_FILES.put(ItemID.FISHING_ROD, "fishing_rod.png");

@@ -172,6 +172,8 @@ final class SkillActions
 		add(AnimationID.HUMAN_SPINNINGWHEEL_60, Skill.CRAFTING, SkillAction.NO_TOOL);
 		add(AnimationID.HUMAN_BATTLESTAFF_CRAFTING, Skill.CRAFTING, SkillAction.NO_TOOL);
 		add(AnimationID.HUMAN_CRAFTING, Skill.CRAFTING, SkillAction.NO_TOOL);
+		// Shearing sheep - no XP of its own, but wool is a Crafting material
+		add(AnimationID.HUMAN_SHEARING, Skill.CRAFTING, ItemID.SHEARS);
 		// Gem cutting - every gem has its own animation, but the tool is always a chisel
 		add(AnimationID.HUMAN_OPALCUTTING, Skill.CRAFTING, ItemID.CHISEL);
 		add(AnimationID.HUMAN_JADECUTTING, Skill.CRAFTING, ItemID.CHISEL);
@@ -225,8 +227,32 @@ final class SkillActions
 		add(AnimationID.HUMAN_LAYTRAP, Skill.HUNTER, SkillAction.NO_TOOL);
 		add(AnimationID.HUMAN_BUTTERFLYNET_SWING, Skill.HUNTER, SkillAction.NO_TOOL);
 
-		// Farming - one generic animation covers raking, planting, composting and harvesting
+		// Farming - most patch actions have their own animation, so each maps straight to its tool.
 		add(AnimationID.HUMAN_FARMING, Skill.FARMING, SkillAction.NO_TOOL);
+		add(AnimationID.FARMING_RAKING, Skill.FARMING, ItemID.RAKE);
+		// Planting - the in-game planting animation is the "no dibber drawn" variant (confirmed
+		// in game), but it's still the seed dibber's job.
+		add(AnimationID.FARMING_SEED_DIBBING, Skill.FARMING, ItemID.DIBBER);
+		add(AnimationID.FARMING_SEED_DIBBING_NODIB, Skill.FARMING, ItemID.DIBBER);
+		add(AnimationID.FARMING_WATERING, Skill.FARMING, ItemID.WATERING_CAN_8);
+		add(AnimationID.FARMING_PLANT_CURE, Skill.FARMING, ItemID.PLANT_CURE);
+		// Composting - one animation for compost, supercompost and ultracompost alike, so always
+		// the plain bucket (Jin's call). The bottomless bucket has its own animation.
+		add(AnimationID.FARMING_POUR_WATER, Skill.FARMING, ItemID.BUCKET_COMPOST);
+		add(AnimationID.FARMING_POUR_WATER_BOTTOMLESSBUCKET, Skill.FARMING, ItemID.BOTTOMLESS_COMPOST_BUCKET_FILLED);
+		// Harvesting herbs, bushes, fruit trees and flowers is hand-picking, but secateurs are
+		// the farming harvest tool, so they stand in (Jin's call).
+		add(AnimationID.PICKING_HIGH, Skill.FARMING, ItemID.SECATEURS);
+		add(AnimationID.PICKING_MID, Skill.FARMING, ItemID.SECATEURS);
+		add(AnimationID.PICKING_LOW, Skill.FARMING, ItemID.SECATEURS);
+		add(AnimationID.FARMING_PICK_MUSHROOM, Skill.FARMING, ItemID.SECATEURS);
+		// Digging up allotments and other spade harvests. Clue digging shares this animation, so
+		// it briefly shows a Farming bubble too - accepted (Jin's call).
+		add(AnimationID.HUMAN_DIG, Skill.FARMING, ItemID.SPADE);
+		// Plant pots - digging up a seedling/sapling and filling a pot with soil
+		add(AnimationID.FARMING_TROWEL_DIG, Skill.FARMING, ItemID.GARDENING_TROWEL);
+		add(AnimationID.FARMING_TROWEL_DIGGING, Skill.FARMING, ItemID.GARDENING_TROWEL);
+		add(AnimationID.FARMING_FILLING_PLANTPOT, Skill.FARMING, ItemID.GARDENING_TROWEL);
 
 		// Construction
 		add(AnimationID.HUMAN_POH_BUILD, Skill.CONSTRUCTION, SkillAction.NO_TOOL);

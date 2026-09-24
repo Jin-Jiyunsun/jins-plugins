@@ -166,6 +166,22 @@ class TrawlingPlusOverlay extends Overlay
 	// How many tiles the loaded map reaches beyond the scene, worked out once a frame rather than for every
 	// point placed.
 	private int frameBeyond;
+	// This frame's arrow style, and for Facing camera, where the camera is in local units.
+	private TrawlingPlusConfig.ArrowStyle arrowStyle = TrawlingPlusConfig.ArrowStyle.FACING;
+	private double frameCameraX;
+	private double frameCameraY;
+	// The most and fewest pixels a tile may cover for a camera-facing arrow this frame, or -1 for no limit: no more
+	// than the size where the camera is aimed, nor a tenth of the screen's height for an arrow, and no less than half
+	// that size. Tuned in game.
+	private static final double FACING_MIN_SCALE = 0.5;
+	private static final double FACING_MAX_SCREEN = 0.1;
+	private double facingLimit = -1;
+	private double facingMinimum = -1;
+	// The last size a tile could be measured at where the camera is aimed.
+	private double facingReference = -1;
+	private static final double FACING_MAX_SCALE = 1;
+	// How far apart, in tiles, the places a camera-facing arrow is measured off are.
+	private static final double FACING_SPAN = 2;
 
 	// Whether the route line, direction arrows and stops are left out from under the boat this frame: Clear around
 	// boat is on, the player is aboard, and the hull's outline has been read. Taken from where the boat is drawn
@@ -250,6 +266,33 @@ class TrawlingPlusOverlay extends Overlay
 	{
 		WorldView top = client.getTopLevelWorldView();
 		frameBeyond = top == null ? 0 : tilesBeyondScene(top);
+		arrowStyle = config.arrowStyle();
+		if (arrowStyle == TrawlingPlusConfig.ArrowStyle.FACING)
+		{
+			// Where the camera is, for finding the way straight across the screen at each arrow, and how big a tile
+			// is where it is aimed, which no arrow may grow past or shrink far below.
+			frameCameraX = client.getCameraX();
+			frameCameraY = client.getCameraY();
+			// Measured where the camera is aimed rather than at the boat, which the camera needn't be centred on.
+			double focusX = top == null ? 0 : top.getBaseX()
+				+ (client.getCameraFocalPointX() - Perspective.LOCAL_HALF_TILE_SIZE) / Perspective.LOCAL_TILE_SIZE;
+			// The focal point's Y is its height; across the map it runs X and Z.
+			double focusY = top == null ? 0 : top.getBaseY()
+				+ (client.getCameraFocalPointZ() - Perspective.LOCAL_HALF_TILE_SIZE) / Perspective.LOCAL_TILE_SIZE;
+			double atBoat = top == null ? -1 : acrossScreen(top, focusX, focusY, toCanvas(top, focusX, focusY));
+			// A frame where it can't be measured keeps the last size that could, rather than letting arrows grow
+			// without any limit.
+			if (atBoat > 0)
+			{
+				facingReference = atBoat;
+			}
+			facingLimit = facingReference > 0 ? facingReference * FACING_MAX_SCALE : -1;
+			// And never more than a share of the screen, however close the camera: with it level with the sea and
+			// near, even the size where it is aimed is big. Per tile, from the arrow's length of a tile and a half.
+			double screenLimit = client.getViewportHeight() * FACING_MAX_SCREEN / ARROW_LENGTH;
+			facingLimit = facingLimit > 0 ? Math.min(facingLimit, screenLimit) : screenLimit;
+			facingMinimum = facingReference > 0 ? facingReference * FACING_MIN_SCALE : -1;
+		}
 		// Routes included: there is no point being shown where the fish are by a boat that cannot
 		// catch them, though how strict to be about that is the Show guides setting.
 		if (client.getGameState() != GameState.LOGGED_IN || !plugin.showGuides())
@@ -1092,6 +1135,14 @@ class TrawlingPlusOverlay extends Overlay
 		double y = at[1];
 		double dx = at[2];
 		double dy = at[3];
+		if (arrowStyle == TrawlingPlusConfig.ArrowStyle.STANDING)
+		{
+			return standingArrowhead(view, x, y, dx, dy, halfLength, halfWidth, notch);
+		}
+		if (arrowStyle == TrawlingPlusConfig.ArrowStyle.FACING)
+		{
+			return facingArrowhead(view, x, y, dx, dy, halfLength, halfWidth, notch);
+		}
 		// Given up on at the first corner that can't be placed, rather than placing the rest for nothing.
 		Point tip = toCanvas(view, x + dx * halfLength, y + dy * halfLength);
 		Point left = tip == null ? null
@@ -1111,6 +1162,104 @@ class TrawlingPlusOverlay extends Overlay
 		arrow.lineTo(right.getX(), right.getY());
 		arrow.closePath();
 		return arrow;
+	}
+
+	/**
+	 * The same arrowhead stood up along the route, like a sail: its width goes up and down instead of across, its
+	 * tip and notch on the route so the line runs through its middle. The same four corners, placed at their heights.
+	 */
+	private Path2D standingArrowhead(WorldView view, double x, double y, double dx, double dy, double halfLength,
+		double halfWidth, double notch)
+	{
+		Point tip = toCanvas(view, x + dx * halfLength, y + dy * halfLength, 0);
+		Point top = tip == null ? null : toCanvas(view, x - dx * halfLength, y - dy * halfLength, halfWidth);
+		Point back = top == null ? null : toCanvas(view, x - dx * notch, y - dy * notch, 0);
+		Point bottom = back == null ? null : toCanvas(view, x - dx * halfLength, y - dy * halfLength, -halfWidth);
+		return bottom == null ? null : path(tip, top, back, bottom);
+	}
+
+	/**
+	 * The same arrowhead stood up and turned to face the camera, pointing the way the route runs across the screen,
+	 * centred on the route. Its size comes from a distance measured across the screen at the arrow, which
+	 * perspective never squashes, so it keeps its size whichever way the route runs. Four points placed.
+	 */
+	private Path2D facingArrowhead(WorldView view, double x, double y, double dx, double dy, double halfLength,
+		double halfWidth, double notch)
+	{
+		// Which way it points and how big it is are both read off places a couple of tiles apart rather than right
+		// beside it: the screen only places whole pixels, and over a short gap a pixel's rounding swings the arrow
+		// about as the camera moves.
+		Point middle = toCanvas(view, x, y);
+		Point ahead = middle == null ? null : toCanvas(view, x + dx * FACING_SPAN, y + dy * FACING_SPAN);
+		Point behind = ahead == null ? null : toCanvas(view, x - dx * FACING_SPAN, y - dy * FACING_SPAN);
+		double perTile = behind == null ? -1 : acrossScreen(view, x, y, middle);
+		if (perTile < 0)
+		{
+			return null;
+		}
+		// Right by the camera, perspective blows a place up far beyond anything else on screen, so no arrow is let
+		// grow past a set size against one at the boat.
+		if (facingLimit > 0)
+		{
+			perTile = Math.min(perTile, facingLimit);
+		}
+		// And far off, it would shrink past reading, so none is let shrink past a set size against one at the boat.
+		if (facingMinimum > 0)
+		{
+			perTile = Math.max(perTile, facingMinimum);
+		}
+		double ax = ahead.getX() - behind.getX();
+		double ay = ahead.getY() - behind.getY();
+		double apart = Math.hypot(ax, ay);
+		// Heading straight towards or away from the camera there is no way across the screen to point, so it
+		// points up the screen, the way the route leads off into the distance.
+		double ux = apart < 1e-6 ? 0 : ax / apart;
+		double uy = apart < 1e-6 ? -1 : ay / apart;
+		// Across the arrow on screen. Its middle is on the route, so the line runs through it.
+		double nx = -uy;
+		double ny = ux;
+		double length = halfLength * perTile;
+		double width = halfWidth * perTile;
+		double cx = middle.getX();
+		double cy = middle.getY();
+
+		Path2D.Double arrow = new Path2D.Double();
+		arrow.moveTo(cx + ux * length, cy + uy * length);
+		arrow.lineTo(cx - ux * length + nx * width, cy - uy * length + ny * width);
+		arrow.lineTo(cx - ux * notch * perTile, cy - uy * notch * perTile);
+		arrow.lineTo(cx - ux * length - nx * width, cy - uy * length - ny * width);
+		arrow.closePath();
+
+		return arrow;
+	}
+
+	/**
+	 * How many pixels a tile covers at a place, measured along the ground lying straight across the screen there,
+	 * which the camera looking down never squashes: square to the line from the camera to the place, seen from
+	 * above. -1 when it can't be placed.
+	 */
+	private double acrossScreen(WorldView view, double x, double y, Point at)
+	{
+		double localX = (x - view.getBaseX()) * Perspective.LOCAL_TILE_SIZE + Perspective.LOCAL_HALF_TILE_SIZE;
+		double localY = (y - view.getBaseY()) * Perspective.LOCAL_TILE_SIZE + Perspective.LOCAL_HALF_TILE_SIZE;
+		double sightX = localX - frameCameraX;
+		double sightY = localY - frameCameraY;
+		double sight = Math.hypot(sightX, sightY);
+		double acrossX = sight < 1e-6 ? 1 : -sightY / sight;
+		double acrossY = sight < 1e-6 ? 0 : sightX / sight;
+		Point side = at == null ? null : toCanvas(view, x + acrossX * FACING_SPAN, y + acrossY * FACING_SPAN);
+		return side == null ? -1 : Math.hypot(side.getX() - at.getX(), side.getY() - at.getY()) / FACING_SPAN;
+	}
+
+	private static Path2D path(Point a, Point b, Point c, Point d)
+	{
+		Path2D.Double path = new Path2D.Double();
+		path.moveTo(a.getX(), a.getY());
+		path.lineTo(b.getX(), b.getY());
+		path.lineTo(c.getX(), c.getY());
+		path.lineTo(d.getX(), d.getY());
+		path.closePath();
+		return path;
 	}
 
 	private void drawStop(Graphics2D graphics, WorldView view, ShoalRoute route, int stop, Color colour, double opacity)
@@ -1807,6 +1956,21 @@ class TrawlingPlusOverlay extends Overlay
 	private static double scaled(double length, int percent)
 	{
 		return length * Math.max(TrawlingPlusConfig.MIN_ARROW_SCALE, Math.min(TrawlingPlusConfig.MAX_ARROW_SCALE, percent)) / 100;
+	}
+
+	/**
+	 * World tile coordinates on the canvas, raised the given number of tiles above the water, or null.
+	 */
+	private Point toCanvas(WorldView view, double x, double y, double raised)
+	{
+		LocalPoint local = toLocal(view, x, y);
+		if (local == null)
+		{
+			return null;
+		}
+		int height = view.getTileHeight(local.getX(), local.getY(), view.getPlane())
+			- (int) Math.round(raised * Perspective.LOCAL_TILE_SIZE);
+		return Perspective.localToCanvas(client, view.getId(), local.getX(), local.getY(), height);
 	}
 
 	private Point toCanvas(WorldView view, double x, double y)

@@ -43,12 +43,14 @@ Every route was recorded in-game and is accurate to the tile when no smoothing i
 ## Settings
 
 - **Show guides**: whether route lines, arrows and stop markers show all the time or only while
-  the nets are lowered.
+  your boat has trawling nets fitted.
 - **Show on maps**: minimap, world map, both or off. The world map is also where dangerous water
   is marked.
 - Each part of the display is toggleable. The route line, direction arrows, stops, the shoal's
   heading arrow, the fishable area, the heads up display and the side panel have their own
   section in the config panel.
+- **Arrow style**: arrows on the water can face the camera (the default), stand upright along the
+  route, or lie flat on the water.
 - **Fish**: switch each fish on or off to focus on the ones you're after. A fish that's switched
   off has its routes, shoals and map markers hidden.
 

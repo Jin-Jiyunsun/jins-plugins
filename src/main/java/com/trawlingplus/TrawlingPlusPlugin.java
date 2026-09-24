@@ -382,11 +382,6 @@ public class TrawlingPlusPlugin extends Plugin
 		return shoals.values();
 	}
 
-	List<ShoalRoute> getRoutes()
-	{
-		return routes;
-	}
-
 	// The skull and crossbones on the world map for each place sea creatures that attack boats spawn close
 	// enough to a route to threaten it, placed among the spawns that are that close so it sits by the
 	// dangerous stretch, with the creature's name and level as its tooltip. On the map whenever the world map is

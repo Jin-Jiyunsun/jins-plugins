@@ -898,6 +898,15 @@ public class TrawlingPlusPlugin extends Plugin
 			return;
 		}
 
+		// A boat with no net fitted, which a raft always is since it can't take one, has nothing to show under Nets
+		// only, so nothing is worked out for it either: no shoals followed, no routes matched.
+		showGuides = guidesWanted();
+		if (!showGuides)
+		{
+			stopTracking();
+			return;
+		}
+
 		for (Map.Entry<Integer, WorldEntity> entry : entities.entrySet())
 		{
 			Integer clickbox = clickboxByView.get(entry.getKey());
@@ -943,7 +952,6 @@ public class TrawlingPlusPlugin extends Plugin
 		boat = own;
 		boatPlace = worldPlace(own.getLocalLocation());
 		nearestShoal = nearest();
-		showGuides = guidesWanted();
 		followNearestRoute();
 		baited = stillBaited();
 		baitedLabel = baitLabel();

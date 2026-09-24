@@ -6,18 +6,26 @@ import java.awt.Dimension;
 import java.awt.FontMetrics;
 import java.awt.Graphics2D;
 import java.awt.Polygon;
+import java.awt.Rectangle;
 import java.awt.RenderingHints;
 import java.awt.Stroke;
+import java.awt.geom.Line2D;
 import java.awt.geom.Path2D;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import javax.inject.Inject;
 import net.runelite.api.Client;
 import net.runelite.api.Constants;
+import net.runelite.api.GameObject;
 import net.runelite.api.GameState;
+import net.runelite.api.Model;
 import net.runelite.api.Perspective;
 import net.runelite.api.Point;
+import net.runelite.api.Renderable;
+import net.runelite.api.Tile;
 import net.runelite.api.WorldEntity;
 import net.runelite.api.WorldEntityConfig;
 import net.runelite.api.WorldView;
@@ -159,43 +167,57 @@ class TrawlingPlusOverlay extends Overlay
 	// point placed.
 	private int frameBeyond;
 
-	// The oval over the boat's hull that the route line, direction arrows and stops are left out of this frame,
-	// when Clear around boat is on and the player is aboard: its middle in world tiles, the unit direction from
-	// helm to bow, and half its length and width in tiles. Taken from where the boat is drawn this frame rather
-	// than last tick, so the gap glides and turns with it.
+	// Whether the route line, direction arrows and stops are left out from under the boat this frame: Clear around
+	// boat is on, the player is aboard, and the hull's outline has been read. Taken from where the boat is drawn
+	// this frame rather than last tick, so the gap glides and turns with it.
 	private boolean clearing;
-	// How far outside the oval, in tiles, arrows and stops take to fade back in. The line is cut at the oval.
+	// The hull's own outline seen from above, read once per boat type from its model: corners in the deck's
+	// local units, which boat type they are for, and this frame's corners in world tiles with the box round them.
+	// How many corners it is cut down to: the fewest that fit every boat, tuned in game.
+	private static final int FOOTPRINT_POINTS = 7;
+	private int footprintConfig = -1;
+	private int footprintTriedTick = -1;
+	private int footprintDeckView = -1;
+	private int footprintCount;
+	private final double[] footLocalX = new double[FOOTPRINT_POINTS];
+	private final double[] footLocalY = new double[FOOTPRINT_POINTS];
+	private final double[] footX = new double[FOOTPRINT_POINTS];
+	private final double[] footY = new double[FOOTPRINT_POINTS];
+	private double footFromX;
+	private double footFromY;
+	private double footToX;
+	private double footToY;
+	// How far outside the hull's outline, in tiles, arrows and stops take to fade back in. The line is cut at it.
 	private static final double CLEAR_FADE_TILES = 1.5;
-	// The oval against the hull, tuned in game: this much wider and longer in total, in tiles, than the hull's
-	// own bounds, and its middle this far towards the bow from the middle of the deck.
-	private static final double CLEAR_EXTRA_WIDTH_TILES = 1.6;
-	private static final double CLEAR_EXTRA_LENGTH_TILES = -0.5;
-	private static final double CLEAR_FORWARD_TILES = 0.9;
-	// The oval stood up into a column CLEAR_HEIGHT_TILES tall, which keeps the hull clear without hiding the
-	// line behind the sails: its outline on screen, from the oval at the waterline and at the top, and the
-	// boat's middle and the camera in local units for telling what is behind the boat. Rebuilt every frame into
-	// the same polygon. A column this low needs few points round it.
+	// The outline stood up into a column CLEAR_HEIGHT_TILES tall, which keeps the hull clear without hiding the
+	// line behind the sails: its outline on screen, from the hull's outline at the waterline and at the top, and
+	// the boat's middle and the camera in local units for telling what is behind the boat. Rebuilt every frame
+	// into the same polygon.
 	private static final double CLEAR_HEIGHT_TILES = 1;
-	private static final int VOLUME_RING_POINTS = 16;
+	// Boat types less tall than that, by their boat config, tuned in game: the skiff, and the raft, which is flat
+	// enough that its outline on the water is all there is to it. There are only these three player boats.
+	private static final Map<Integer, Double> CLEAR_HEIGHT_BY_BOAT = Map.of(1, 0.0, 2, 0.9);
+	// This frame's boat's height, from the above.
+	private double clearHeightTiles = CLEAR_HEIGHT_TILES;
 	private boolean volume;
 	private final Polygon silhouette = new Polygon();
-	private final int[] ringX = new int[VOLUME_RING_POINTS * 2];
-	private final int[] ringY = new int[VOLUME_RING_POINTS * 2];
-	private final int[] ringOrder = new int[VOLUME_RING_POINTS * 2];
-	private final int[] ringHull = new int[VOLUME_RING_POINTS * 4];
+	private final int[] ringX = new int[FOOTPRINT_POINTS * 2];
+	private final int[] ringY = new int[FOOTPRINT_POINTS * 2];
+	private final int[] ringOrder = new int[FOOTPRINT_POINTS * 2];
+	private final int[] ringHull = new int[FOOTPRINT_POINTS * 4];
 	private double centreLocalX;
 	private double centreLocalY;
 	private double cameraX;
 	private double cameraY;
 	private int volumeBaseX;
 	private int volumeBaseY;
-	private java.awt.Rectangle silhouetteBounds = new java.awt.Rectangle();
+	private Rectangle silhouetteBounds = new Rectangle();
+	// The fade at the outline's edge, in pixels, and the outline's box grown by it, beyond which nothing fades.
+	private double silhouetteBand = 1;
+	private final Rectangle fadeBounds = new Rectangle();
+	// The middle of the hull's outline this frame, in world tiles.
 	private double clearX;
 	private double clearY;
-	private double bowX;
-	private double bowY;
-	private double halfLength;
-	private double halfWidth;
 	private ShoalRoute loadedRoute;
 	private boolean loadedEnough;
 
@@ -228,13 +250,14 @@ class TrawlingPlusOverlay extends Overlay
 	{
 		WorldView top = client.getTopLevelWorldView();
 		frameBeyond = top == null ? 0 : tilesBeyondScene(top);
-		findClearing(top);
 		// Routes included: there is no point being shown where the fish are by a boat that cannot
 		// catch them, though how strict to be about that is the Show guides setting.
 		if (client.getGameState() != GameState.LOGGED_IN || !plugin.showGuides())
 		{
 			return null;
 		}
+		// Only once something is to be drawn, so a boat with nothing showing doesn't work it out for nothing.
+		findClearing(top);
 
 		Object antialiasing = graphics.getRenderingHint(RenderingHints.KEY_ANTIALIASING);
 		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
@@ -984,7 +1007,7 @@ class TrawlingPlusOverlay extends Overlay
 					Path2D head = shown <= 0 ? null : arrowhead(view, place, length, ARROW_HALF_WIDTH, ARROW_NOTCH);
 					if (head != null)
 					{
-						// Only an arrow near the boat's oval changes colour; the rest share the one already set.
+						// Only an arrow near the boat changes colour; the rest share the one already set.
 						if (shown < 1)
 						{
 							graphics.setColor(withOpacity(colour, shown));
@@ -1092,12 +1115,7 @@ class TrawlingPlusOverlay extends Overlay
 
 	private void drawStop(Graphics2D graphics, WorldView view, ShoalRoute route, int stop, Color colour, double opacity)
 	{
-		opacity *= clearFade(route.stopX(stop), route.stopY(stop));
-		if (opacity > 0 && behindBoat(route.stopX(stop), route.stopY(stop))
-			&& hiddenAt(route.stopX(stop), route.stopY(stop), toCanvas(view, route.stopX(stop), route.stopY(stop))))
-		{
-			return;
-		}
+		opacity *= clearShown(view, route.stopX(stop), route.stopY(stop));
 		if (opacity <= 0)
 		{
 			return;
@@ -1247,7 +1265,8 @@ class TrawlingPlusOverlay extends Overlay
 	}
 
 	/**
-	 * Works out this frame's circle around the boat to leave clear, or that there is none.
+	 * Works out this frame's area around the boat to leave clear, or that there is none: none until the hull's
+	 * outline has been read, which is within a tick or so of boarding.
 	 */
 	private void findClearing(WorldView top)
 	{
@@ -1261,57 +1280,173 @@ class TrawlingPlusOverlay extends Overlay
 			return;
 		}
 
-		// Down the middle of the hull, which on one an odd number of tiles wide is half a tile off the middle of
-		// its view, as at the helm; CLEAR_FORWARD_TILES towards the bow from the middle of the deck, and a tile
-		// further on to read which way the bow points. The bow is the low end of the boat's own view.
-		int across = deck.getSizeX() * Perspective.LOCAL_TILE_SIZE / 2;
-		if ((hull.getBoundsWidth() / Perspective.LOCAL_TILE_SIZE) % 2 != 0)
-		{
-			across -= Perspective.LOCAL_HALF_TILE_SIZE;
-		}
-		int middle = deck.getSizeY() * Perspective.LOCAL_TILE_SIZE / 2
-			- (int) Math.round(CLEAR_FORWARD_TILES * Perspective.LOCAL_TILE_SIZE);
-		LocalPoint centre = boat.transformToMainWorld(new LocalPoint(across, middle, deck));
-		LocalPoint ahead = boat.transformToMainWorld(new LocalPoint(across, middle - Perspective.LOCAL_TILE_SIZE, deck));
-		if (centre == null || ahead == null)
+		clearing = placeFootprint(top, boat, deck, hull);
+		if (!clearing)
 		{
 			return;
 		}
-
-		double dx = (double) (ahead.getX() - centre.getX()) / Perspective.LOCAL_TILE_SIZE;
-		double dy = (double) (ahead.getY() - centre.getY()) / Perspective.LOCAL_TILE_SIZE;
-		double apart = Math.hypot(dx, dy);
-		if (apart < 1e-9)
-		{
-			return;
-		}
-
-		clearX = top.getBaseX() + (double) (centre.getX() - Perspective.LOCAL_HALF_TILE_SIZE) / Perspective.LOCAL_TILE_SIZE;
-		clearY = top.getBaseY() + (double) (centre.getY() - Perspective.LOCAL_HALF_TILE_SIZE) / Perspective.LOCAL_TILE_SIZE;
-		bowX = dx / apart;
-		bowY = dy / apart;
-		halfLength = (hull.getBoundsHeight() / (double) Perspective.LOCAL_TILE_SIZE + CLEAR_EXTRA_LENGTH_TILES) / 2;
-		halfWidth = (hull.getBoundsWidth() / (double) Perspective.LOCAL_TILE_SIZE + CLEAR_EXTRA_WIDTH_TILES) / 2;
-		clearing = halfLength > 0 && halfWidth > 0;
-		volume = clearing && findVolume(top, centre);
+		clearX = (footFromX + footToX) / 2;
+		clearY = (footFromY + footToY) / 2;
+		clearHeightTiles = CLEAR_HEIGHT_BY_BOAT.getOrDefault(hull.getId(), CLEAR_HEIGHT_TILES);
+		volume = findVolume(top);
 	}
 
 	/**
-	 * Outlines on screen the column the oval makes when stood up CLEAR_HEIGHT_TILES, and notes where the boat and
-	 * camera are, for telling what the boat stands in front of. False when too little of it can be placed.
+	 * Places the hull's outline on the water for this frame, reading it from the hull's model first if this boat
+	 * type hasn't been read yet. False when there is no outline to be had yet.
 	 */
-	private boolean findVolume(WorldView top, LocalPoint centre)
+	private boolean placeFootprint(WorldView top, WorldEntity boat, WorldView deck, WorldEntityConfig hull)
 	{
-		int height = (int) Math.round(CLEAR_HEIGHT_TILES * Perspective.LOCAL_TILE_SIZE);
-		int count = 0;
-		for (int step = 0; step < VOLUME_RING_POINTS; step++)
+		if ((hull.getId() != footprintConfig || deck.getId() != footprintDeckView)
+			&& client.getTickCount() != footprintTriedTick)
 		{
-			int point = step * AREA_POINTS / VOLUME_RING_POINTS;
-			double along = CIRCLE_X[point] * halfLength;
-			double side = CIRCLE_Y[point] * halfWidth;
-			double x = clearX + along * bowX - side * bowY;
-			double y = clearY + along * bowY + side * bowX;
-			LocalPoint local = toLocal(top, x, y);
+			// Looked for at most once a tick, so a hull whose model hasn't loaded yet isn't searched for every frame.
+			footprintTriedTick = client.getTickCount();
+			footprintCount = readFootprint(deck);
+			if (footprintCount >= 3)
+			{
+				footprintConfig = hull.getId();
+				footprintDeckView = deck.getId();
+			}
+		}
+		if (footprintCount < 3 || hull.getId() != footprintConfig)
+		{
+			return false;
+		}
+
+		footFromX = footFromY = Double.MAX_VALUE;
+		footToX = footToY = -Double.MAX_VALUE;
+		for (int k = 0; k < footprintCount; k++)
+		{
+			LocalPoint afloat = boat.transformToMainWorld(new LocalPoint((int) footLocalX[k], (int) footLocalY[k], deck));
+			if (afloat == null)
+			{
+				return false;
+			}
+			footX[k] = top.getBaseX() + (double) (afloat.getX() - Perspective.LOCAL_HALF_TILE_SIZE) / Perspective.LOCAL_TILE_SIZE;
+			footY[k] = top.getBaseY() + (double) (afloat.getY() - Perspective.LOCAL_HALF_TILE_SIZE) / Perspective.LOCAL_TILE_SIZE;
+			footFromX = Math.min(footFromX, footX[k]);
+			footFromY = Math.min(footFromY, footY[k]);
+			footToX = Math.max(footToX, footX[k]);
+			footToY = Math.max(footToY, footY[k]);
+		}
+		return true;
+	}
+
+	/**
+	 * Reads the hull's outline from above off its model into footLocalX/Y, in the deck's local units, and says how
+	 * many corners it has, or 0 if the hull can't be found yet. The outline comes from the object on the deck's
+	 * lowest level covering the most tiles, the one with the most points if two tie: the deck floor on a sloop
+	 * and a skiff, which spans the whole hull. Done once per boat type, not every frame.
+	 */
+	private int readFootprint(WorldView deck)
+	{
+		Tile[][][] planes = deck.getScene().getTiles();
+		if (planes.length == 0)
+		{
+			return 0;
+		}
+
+		GameObject best = null;
+		Model bestModel = null;
+		int bestArea = 0;
+		for (Tile[] row : planes[0])
+		{
+			for (Tile tile : row)
+			{
+				for (GameObject object : tile == null ? new GameObject[0] : tile.getGameObjects())
+				{
+					Renderable renderable = object == null ? null : object.getRenderable();
+					Model model = renderable == null ? null
+						: renderable instanceof Model ? (Model) renderable : renderable.getModel();
+					if (model == null || model.getVerticesCount() == 0)
+					{
+						continue;
+					}
+					int area = object.sizeX() * object.sizeY();
+					if (area > bestArea || area == bestArea && model.getVerticesCount() > bestModel.getVerticesCount())
+					{
+						best = object;
+						bestModel = model;
+						bestArea = area;
+					}
+				}
+			}
+		}
+		if (best == null)
+		{
+			return 0;
+		}
+
+		// Its points flattened onto the deck, turned the way the object faces, then outlined.
+		int count = bestModel.getVerticesCount();
+		float[] xs = bestModel.getVerticesX();
+		float[] zs = bestModel.getVerticesZ();
+		int turned = best.getOrientation() & 2047;
+		int sin = Perspective.SINE[turned];
+		int cos = Perspective.COSINE[turned];
+		int[] flatX = new int[count];
+		int[] flatY = new int[count];
+		for (int v = 0; v < count; v++)
+		{
+			flatX[v] = best.getLocalLocation().getX() + (int) ((zs[v] * sin + xs[v] * cos) / 65536);
+			flatY[v] = best.getLocalLocation().getY() + (int) ((zs[v] * cos - xs[v] * sin) / 65536);
+		}
+		Polygon outline = new Polygon();
+		outline(flatX, flatY, count, new int[count], new int[count * 2], outline);
+
+		// Thinned to the fewest corners that keep its shape, since each is moved with the boat and placed on screen
+		// every frame: again and again, the corner whose loss changes the outline least goes, which is the one
+		// making the smallest triangle with its neighbours. The bow's point and the stern's corners make big ones,
+		// so they stay. Done once per boat type.
+		int kept = outline.npoints;
+		int[] keptX = Arrays.copyOf(outline.xpoints, kept);
+		int[] keptY = Arrays.copyOf(outline.ypoints, kept);
+		while (kept > FOOTPRINT_POINTS)
+		{
+			int least = 0;
+			double leastArea = Double.MAX_VALUE;
+			for (int k = 0; k < kept; k++)
+			{
+				int before = (k + kept - 1) % kept;
+				int after = (k + 1) % kept;
+				double area = Math.abs((double) (keptX[k] - keptX[before]) * (keptY[after] - keptY[before])
+					- (double) (keptY[k] - keptY[before]) * (keptX[after] - keptX[before]));
+				if (area < leastArea)
+				{
+					leastArea = area;
+					least = k;
+				}
+			}
+			System.arraycopy(keptX, least + 1, keptX, least, kept - least - 1);
+			System.arraycopy(keptY, least + 1, keptY, least, kept - least - 1);
+			kept--;
+		}
+		for (int k = 0; k < kept; k++)
+		{
+			footLocalX[k] = keptX[k];
+			footLocalY[k] = keptY[k];
+		}
+		return kept;
+	}
+
+	/**
+	 * Outlines on screen the column the hull's outline makes when stood up to this boat's height, and notes where
+	 * the boat and camera are, for telling what the boat stands in front of. False when there is no height, or too
+	 * little of it can be placed.
+	 */
+	private boolean findVolume(WorldView top)
+	{
+		int height = (int) Math.round(clearHeightTiles * Perspective.LOCAL_TILE_SIZE);
+		if (height <= 0)
+		{
+			// No height, so no volume: the outline on the water covers it.
+			return false;
+		}
+		int count = 0;
+		for (int step = 0; step < footprintCount; step++)
+		{
+			LocalPoint local = toLocal(top, footX[step], footY[step]);
 			if (local == null)
 			{
 				continue;
@@ -1336,13 +1471,22 @@ class TrawlingPlusOverlay extends Overlay
 		}
 
 		outline(ringX, ringY, count, ringOrder, ringHull, silhouette);
-		centreLocalX = centre.getX();
-		centreLocalY = centre.getY();
+		centreLocalX = (clearX - top.getBaseX()) * Perspective.LOCAL_TILE_SIZE + Perspective.LOCAL_HALF_TILE_SIZE;
+		centreLocalY = (clearY - top.getBaseY()) * Perspective.LOCAL_TILE_SIZE + Perspective.LOCAL_HALF_TILE_SIZE;
 		cameraX = client.getCameraX();
 		cameraY = client.getCameraY();
 		volumeBaseX = top.getBaseX();
 		volumeBaseY = top.getBaseY();
 		silhouetteBounds = silhouette.getBounds();
+
+		// How many pixels the fade covers at the boat right now, from a tile measured there, so the fade at the
+		// outline's edge keeps about the same width as the camera zooms.
+		Point from = toCanvas(top, clearX, clearY);
+		Point to = toCanvas(top, clearX + 1, clearY);
+		double perTile = from == null || to == null ? 0 : Math.hypot(to.getX() - from.getX(), to.getY() - from.getY());
+		silhouetteBand = Math.max(1, perTile * CLEAR_FADE_TILES);
+		fadeBounds.setBounds(silhouetteBounds);
+		fadeBounds.grow((int) Math.ceil(silhouetteBand), (int) Math.ceil(silhouetteBand));
 		return silhouette.npoints >= 3;
 	}
 
@@ -1395,8 +1539,8 @@ class TrawlingPlusOverlay extends Overlay
 	}
 
 	/**
-	 * Whether a point of the route, in world tiles and where it lands on screen, is hidden: inside the oval, or,
-	 * inside the volume's outline on screen and further from the camera than the boat's
+	 * Whether a point of the route, in world tiles and where it lands on screen, is hidden: inside the hull's outline,
+	 * or inside the volume's outline on screen and further from the camera than the boat's
 	 * middle, which is the part of the column the boat stands in front of.
 	 */
 	private boolean hiddenAt(double x, double y, Point canvas)
@@ -1441,7 +1585,7 @@ class TrawlingPlusOverlay extends Overlay
 	}
 
 	/**
-	 * Adds the next point of a route line while the boat's volume is left clear. What is hidden is no longer a plain oval, so
+	 * Adds the next point of a route line while the boat's volume is left clear. What is hidden isn't a simple shape, so
 	 * where the line crosses in or out is found by halving the piece between the two points a few times rather
 	 * than worked out directly; a piece near the boat that starts and ends in view is checked at its middle too.
 	 */
@@ -1513,87 +1657,119 @@ class TrawlingPlusOverlay extends Overlay
 	}
 
 	/**
-	 * How far along the hull from the oval's middle a point is, as a fraction of half its length.
-	 */
-	private double alongHull(double x, double y)
-	{
-		return ((x - clearX) * bowX + (y - clearY) * bowY) / halfLength;
-	}
-
-	/**
-	 * How far across the hull from the oval's middle a point is, as a fraction of half its width.
-	 */
-	private double acrossHull(double x, double y)
-	{
-		return (-(x - clearX) * bowY + (y - clearY) * bowX) / halfWidth;
-	}
-
-	/**
-	 * How much of an arrow or stop at a point to show, from 0 inside the oval over the boat's hull to 1 once
-	 * CLEAR_FADE_TILES outside it, measured along the line from the oval's middle. Always 1 without the oval.
+	 * How much of an arrow or stop at a point to show, from 0 inside the hull's outline to 1 once CLEAR_FADE_TILES
+	 * outside it. Always 1 when nothing is being left clear.
 	 */
 	private double clearFade(double x, double y)
 	{
-		if (!clearing)
-		{
-			return 1;
-		}
-
-		double along = alongHull(x, y);
-		double side = acrossHull(x, y);
-		double inner = Math.sqrt(along * along + side * side);
-		if (inner <= 1)
-		{
-			return 0;
-		}
-
-		// The same point measured against the oval grown by the fade on every side. Along the line out from the
-		// middle, both measures grow in step with distance, so how far the point is between the two ovals comes
-		// straight out of them.
-		double outerAlong = along * halfLength / (halfLength + CLEAR_FADE_TILES);
-		double outerSide = side * halfWidth / (halfWidth + CLEAR_FADE_TILES);
-		double outer = Math.sqrt(outerAlong * outerAlong + outerSide * outerSide);
-		if (outer >= 1)
-		{
-			return 1;
-		}
-		double fraction = outer * (inner - 1) / (inner - outer);
-		// Smoothstep, so the fade eases in and out like the others.
-		return fraction * fraction * (3 - 2 * fraction);
+		return clearing ? footprintFade(x, y) : 1;
 	}
 
 	/**
 	 * How much of an arrow centred at a point, {x, y, ...} in world tiles, to show near the boat: faded by the
-	 * oval, and not at all where the boat stands in front of it.
+	 * hull's outline, and not at all where the boat stands in front of it.
 	 */
 	private double clearShown(WorldView view, double[] place)
 	{
-		double shown = clearFade(place[0], place[1]);
-		if (shown > 0 && behindBoat(place[0], place[1]) && hiddenAt(place[0], place[1], toCanvas(view, place[0], place[1])))
+		return clearShown(view, place[0], place[1]);
+	}
+
+	/**
+	 * How much of an arrow or stop centred at a point in world tiles to show near the boat: faded by the hull's outline, and
+	 * where the boat stands in front of it, faded by how far outside the boat's outline on screen it lands, over
+	 * about the same width as the fade on the water.
+	 */
+	private double clearShown(WorldView view, double x, double y)
+	{
+		double shown = clearFade(x, y);
+		if (shown > 0 && behindBoat(x, y))
 		{
-			return 0;
+			shown = Math.min(shown, silhouetteFade(toCanvas(view, x, y)));
 		}
 		return shown;
 	}
 
 	/**
-	 * Whether a point is inside the oval over the boat's hull left clear this frame.
+	 * From 0 inside the boat's outline on screen to 1 once silhouetteBand pixels outside it, eased.
 	 */
-	private boolean cleared(double x, double y)
+	private double silhouetteFade(Point canvas)
 	{
-		if (!clearing)
+		if (canvas == null || !fadeBounds.contains(canvas.getX(), canvas.getY()))
 		{
-			return false;
+			return 1;
 		}
-		double along = alongHull(x, y);
-		double side = acrossHull(x, y);
-		return along * along + side * side < 1;
+		if (silhouette.contains(canvas.getX(), canvas.getY()))
+		{
+			return 0;
+		}
+
+		double nearest = Double.MAX_VALUE;
+		for (int k = 0; k < silhouette.npoints; k++)
+		{
+			int next = (k + 1) % silhouette.npoints;
+			nearest = Math.min(nearest, Line2D.ptSegDistSq(silhouette.xpoints[k], silhouette.ypoints[k],
+				silhouette.xpoints[next], silhouette.ypoints[next], canvas.getX(), canvas.getY()));
+		}
+		double fraction = Math.min(1, Math.sqrt(nearest) / silhouetteBand);
+		return fraction * fraction * (3 - 2 * fraction);
 	}
 
 	/**
-	 * Adds the next point of a route line, in world tiles. With the boat's oval to leave clear, the line is cut
-	 * exactly where it crosses the oval's edge, going in and coming out, rather than at the nearest point
-	 * outside it, so the gap keeps its shape as the boat moves.
+	 * Whether a point in world tiles is inside the hull's outline this frame: a crossing count, after the box.
+	 */
+	private boolean inFootprint(double x, double y)
+	{
+		if (x < footFromX || x > footToX || y < footFromY || y > footToY)
+		{
+			return false;
+		}
+		boolean inside = false;
+		for (int k = 0, j = footprintCount - 1; k < footprintCount; j = k++)
+		{
+			if ((footY[k] > y) != (footY[j] > y)
+				&& x < (footX[j] - footX[k]) * (y - footY[k]) / (footY[j] - footY[k]) + footX[k])
+			{
+				inside = !inside;
+			}
+		}
+		return inside;
+	}
+
+	/**
+	 * From 0 inside the hull's outline to 1 once CLEAR_FADE_TILES outside it, eased, by the distance to its
+	 * nearest edge.
+	 */
+	private double footprintFade(double x, double y)
+	{
+		if (x < footFromX - CLEAR_FADE_TILES || x > footToX + CLEAR_FADE_TILES
+			|| y < footFromY - CLEAR_FADE_TILES || y > footToY + CLEAR_FADE_TILES)
+		{
+			return 1;
+		}
+		if (inFootprint(x, y))
+		{
+			return 0;
+		}
+		double nearest = Double.MAX_VALUE;
+		for (int k = 0, j = footprintCount - 1; k < footprintCount; j = k++)
+		{
+			nearest = Math.min(nearest, Line2D.ptSegDistSq(footX[j], footY[j], footX[k], footY[k], x, y));
+		}
+		double fraction = Math.min(1, Math.sqrt(nearest) / CLEAR_FADE_TILES);
+		return fraction * fraction * (3 - 2 * fraction);
+	}
+
+	/**
+	 * Whether a point is inside the hull's outline left clear this frame.
+	 */
+	private boolean cleared(double x, double y)
+	{
+		return clearing && inFootprint(x, y);
+	}
+
+	/**
+	 * Adds the next point of a route line, in world tiles, cut where it passes under or behind the boat when that
+	 * is to be left clear.
 	 */
 	private void addPoint(Line line, WorldView view, double x, double y)
 	{
@@ -1602,66 +1778,7 @@ class TrawlingPlusOverlay extends Overlay
 			line.add(toCanvas(view, x, y));
 			return;
 		}
-		if (volume)
-		{
-			addVolumePoint(line, view, x, y);
-			return;
-		}
-
-		boolean inside = cleared(x, y);
-		if (!line.hasLast)
-		{
-			line.add(inside ? null : toCanvas(view, x, y));
-		}
-		else
-		{
-			boolean wasInside = cleared(line.lastX, line.lastY);
-			if (!wasInside || !inside)
-			{
-				// Where the piece from the last point to this one crosses the oval, as fractions of the way along it.
-				// Measured along and across the hull in halves of its length and width, the oval is a circle of
-				// radius one, and the fractions come out the same as they would in tiles.
-				double dx = x - line.lastX;
-				double dy = y - line.lastY;
-				double fx = alongHull(line.lastX, line.lastY);
-				double fy = acrossHull(line.lastX, line.lastY);
-				double gx = alongHull(x, y) - fx;
-				double gy = acrossHull(x, y) - fy;
-				double a = gx * gx + gy * gy;
-				double b = 2 * (fx * gx + fy * gy);
-				double c = fx * fx + fy * fy - 1;
-				double disc = b * b - 4 * a * c;
-				double root = disc > 0 && a > 0 ? Math.sqrt(disc) : -1;
-				double enters = root < 0 ? -1 : (-b - root) / (2 * a);
-				double leaves = root < 0 ? -1 : (-b + root) / (2 * a);
-
-				if (!wasInside && inside)
-				{
-					line.add(toCanvas(view, line.lastX + dx * enters, line.lastY + dy * enters));
-					line.add(null);
-				}
-				else if (wasInside)
-				{
-					line.add(toCanvas(view, line.lastX + dx * leaves, line.lastY + dy * leaves));
-					line.add(toCanvas(view, x, y));
-				}
-				else if (enters > 0 && leaves < 1)
-				{
-					// Passing straight through the circle between two points outside it.
-					line.add(toCanvas(view, line.lastX + dx * enters, line.lastY + dy * enters));
-					line.add(null);
-					line.add(toCanvas(view, line.lastX + dx * leaves, line.lastY + dy * leaves));
-					line.add(toCanvas(view, x, y));
-				}
-				else
-				{
-					line.add(toCanvas(view, x, y));
-				}
-			}
-		}
-		line.lastX = x;
-		line.lastY = y;
-		line.hasLast = true;
+		addVolumePoint(line, view, x, y);
 	}
 
 	private Stroke stopOutline(int pixels)
@@ -1771,7 +1888,7 @@ class TrawlingPlusOverlay extends Overlay
 	{
 		private final Path2D.Double path = new Path2D.Double();
 		private boolean connected;
-		// The last point added, in world tiles, for cutting the line at the edge of the boat's clear oval.
+		// The last point added, in world tiles, for cutting the line at the edge of the boat's clear area.
 		private boolean hasLast;
 		private boolean lastHidden;
 		private Point lastCanvas;

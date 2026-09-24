@@ -40,8 +40,7 @@ import net.runelite.api.gameval.ItemID;
  *     used whenever karambwan is cooked, quest or not, so it's tracked despite the name.</li>
  *     <li>Macro pheasant and its good/bad variants (an anti-botting decoy item, not real food),
  *     and raw mystery meat (name suggests a joke item) - confirmed excluded with Jin, 2026-09-18.
- *     Raw impaler meat is also excluded (unclear source/whether it's cooked via the normal
- *     Cooking animation at all) - not yet confirmed either way, ask before adding it.</li>
+ *     Raw impaler meat is also excluded - it isn't cookable.</li>
  * </ul>
  * Pizzas are a single tracked id regardless of topping - {@code UNCOOKED_PIZZA} is the same item
  * whether it'll finish as a plain, meat, anchovy or pineapple pizza, the topping only becoming

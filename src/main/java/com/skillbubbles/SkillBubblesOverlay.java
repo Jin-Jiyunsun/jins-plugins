@@ -41,6 +41,7 @@ import net.runelite.api.Client;
 import net.runelite.api.Player;
 import net.runelite.api.Point;
 import net.runelite.api.Skill;
+import net.runelite.api.SpritePixels;
 import net.runelite.api.gameval.AnimationID;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.game.SpriteManager;
@@ -84,6 +85,9 @@ class SkillBubblesOverlay extends Overlay
 	private final ItemManager itemManager;
 	private final SpriteManager spriteManager;
 	private final Map<Skill, BufferedImage> skillIconCache = new EnumMap<>(Skill.class);
+	// The resource pack override each cached skill icon was built from (null = the game's own
+	// sprite), so a pack being switched, changed or turned off shows up on the next frame.
+	private final Map<Skill, SpritePixels> skillIconOverrides = new EnumMap<>(Skill.class);
 	// Item icons sit on a fixed-size canvas where the actual artwork isn't necessarily centered
 	// in it (e.g. an axe held diagonally has more padding on one side than the other), so
 	// centering on the full image bounds leaves it looking off-centre in the bubble. This caches,
@@ -471,6 +475,7 @@ class SkillBubblesOverlay extends Overlay
 	void clearCaches()
 	{
 		skillIconCache.clear();
+		skillIconOverrides.clear();
 		toolIconCenterCache.clear();
 		resizedIconCache.clear();
 		classicBubbleCache.clear();
@@ -523,19 +528,47 @@ class SkillBubblesOverlay extends Overlay
 
 	private BufferedImage skillIcon(Skill skill)
 	{
-		BufferedImage cached = skillIconCache.get(skill);
-		if (cached != null)
-		{
-			return cached;
-		}
-
 		Integer spriteId = SkillIcons.spriteId(skill);
 		if (spriteId == null)
 		{
 			return null;
 		}
 
-		spriteManager.getSpriteAsync(spriteId, 0, sprite -> skillIconCache.put(skill, sprite));
+		// Resource packs replace sprites through the client's override map, which SpriteManager
+		// never reads - so check it first, or the bubble would ignore the pack. Compared by
+		// identity: a pack switch/change/disable swaps the object, and only then is this skill's
+		// icon (and any resized copy of it) rebuilt, not every frame.
+		SpritePixels override = client.getSpriteOverrides().get(spriteId);
+		if (override != skillIconOverrides.get(skill))
+		{
+			skillIconOverrides.put(skill, override);
+			skillIconCache.remove(skill);
+			long identity = -(skill.ordinal() + 1L);
+			resizedIconCache.keySet().removeIf(key -> (key >> 32) == identity);
+		}
+
+		BufferedImage cached = skillIconCache.get(skill);
+		if (cached != null)
+		{
+			return cached;
+		}
+
+		if (override != null)
+		{
+			BufferedImage image = override.toBufferedImage();
+			skillIconCache.put(skill, image);
+			return image;
+		}
+
+		spriteManager.getSpriteAsync(spriteId, 0, sprite ->
+		{
+			// A pack may have been turned on while this was loading - don't let the game's own
+			// sprite overwrite it.
+			if (skillIconOverrides.get(skill) == null)
+			{
+				skillIconCache.put(skill, sprite);
+			}
+		});
 		return skillIconCache.get(skill);
 	}
 }

@@ -28,6 +28,7 @@ import net.runelite.client.config.Config;
 import net.runelite.client.config.ConfigGroup;
 import net.runelite.client.config.ConfigItem;
 import net.runelite.client.config.Range;
+import net.runelite.client.config.Units;
 
 @ConfigGroup("skill-bubbles")
 public interface SkillBubblesConfig extends Config
@@ -45,10 +46,11 @@ public interface SkillBubblesConfig extends Config
 	}
 
 	@Range(min = 75, max = 125)
+	@Units(Units.PERCENT)
 	@ConfigItem(
 		position = 1,
 		keyName = "scale",
-		name = "Scale (%)",
+		name = "Scale",
 		description = "Size of the bubble and icon, as a percentage of<br>"
 			+ "the default (100)"
 	)
@@ -58,10 +60,11 @@ public interface SkillBubblesConfig extends Config
 	}
 
 	@Range(min = 0, max = 999)
+	@Units(Units.SECONDS)
 	@ConfigItem(
 		position = 2,
 		keyName = "idleSeconds",
-		name = "Hide after (s)",
+		name = "Hide after",
 		description = "How many seconds of no matching action before<br>"
 			+ "the bubble disappears"
 	)

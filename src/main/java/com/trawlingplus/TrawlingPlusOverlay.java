@@ -40,6 +40,9 @@ class TrawlingPlusOverlay extends Overlay
 	// Stops are drawn as a square this many tiles across, roughly the size of a shoal.
 	private static final int STOP_SIZE = 3;
 
+	// What an empty deck tile holds, shared rather than made afresh for each one while the deck is looked through.
+	private static final GameObject[] NO_OBJECTS = new GameObject[0];
+
 	// How far a shoal can be fished from, in tiles along each axis. It is the same for every kind of
 	// shoal, but it is not measured from the middle of the boat: it is measured from a point towards the
 	// bow, so a boat pointing its bow at a shoal can fish it from further away than one pointing its
@@ -1575,7 +1578,7 @@ class TrawlingPlusOverlay extends Overlay
 			{
 				for (Tile tile : row)
 				{
-					for (GameObject object : tile == null ? new GameObject[0] : tile.getGameObjects())
+					for (GameObject object : tile == null ? NO_OBJECTS : tile.getGameObjects())
 					{
 						Renderable renderable = object == null ? null : object.getRenderable();
 						Model model = renderable == null ? null
@@ -1649,7 +1652,7 @@ class TrawlingPlusOverlay extends Overlay
 		{
 			for (Tile tile : row)
 			{
-				for (GameObject object : tile == null ? new GameObject[0] : tile.getGameObjects())
+				for (GameObject object : tile == null ? NO_OBJECTS : tile.getGameObjects())
 				{
 					Renderable renderable = object == null ? null : object.getRenderable();
 					Model model = renderable == null ? null

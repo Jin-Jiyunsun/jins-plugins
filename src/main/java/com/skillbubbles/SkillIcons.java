@@ -27,12 +27,10 @@ package com.skillbubbles;
 import java.util.EnumMap;
 import java.util.Map;
 import net.runelite.api.Skill;
-import net.runelite.api.SpriteID;
+import net.runelite.api.gameval.SpriteID;
 
 /**
- * The stats-tab sprite for each skilling skill this plugin tracks. There is no gameval
- * constant for these (gameval's sprite IDs are unnamed indices into a widget's sprite list),
- * so this uses the hand-named {@link SpriteID} constants instead.
+ * The stats-tab sprite for each skilling skill this plugin tracks.
  */
 final class SkillIcons
 {
@@ -49,19 +47,19 @@ final class SkillIcons
 
 	static
 	{
-		SPRITE_IDS.put(Skill.WOODCUTTING, SpriteID.SKILL_WOODCUTTING);
-		SPRITE_IDS.put(Skill.MINING, SpriteID.SKILL_MINING);
-		SPRITE_IDS.put(Skill.FISHING, SpriteID.SKILL_FISHING);
-		SPRITE_IDS.put(Skill.FIREMAKING, SpriteID.SKILL_FIREMAKING);
-		SPRITE_IDS.put(Skill.COOKING, SpriteID.SKILL_COOKING);
-		SPRITE_IDS.put(Skill.SMITHING, SpriteID.SKILL_SMITHING);
-		SPRITE_IDS.put(Skill.RUNECRAFT, SpriteID.SKILL_RUNECRAFT);
-		SPRITE_IDS.put(Skill.CRAFTING, SpriteID.SKILL_CRAFTING);
-		SPRITE_IDS.put(Skill.FLETCHING, SpriteID.SKILL_FLETCHING);
-		SPRITE_IDS.put(Skill.HERBLORE, SpriteID.SKILL_HERBLORE);
-		SPRITE_IDS.put(Skill.HUNTER, SpriteID.SKILL_HUNTER);
-		SPRITE_IDS.put(Skill.FARMING, SpriteID.SKILL_FARMING);
-		SPRITE_IDS.put(Skill.CONSTRUCTION, SpriteID.SKILL_CONSTRUCTION);
-		SPRITE_IDS.put(Skill.THIEVING, SpriteID.SKILL_THIEVING);
+		SPRITE_IDS.put(Skill.WOODCUTTING, SpriteID.Staticons.WOODCUTTING);
+		SPRITE_IDS.put(Skill.MINING, SpriteID.Staticons.MINING);
+		SPRITE_IDS.put(Skill.FISHING, SpriteID.Staticons.FISHING);
+		SPRITE_IDS.put(Skill.FIREMAKING, SpriteID.Staticons.FIREMAKING);
+		SPRITE_IDS.put(Skill.COOKING, SpriteID.Staticons.COOKING);
+		SPRITE_IDS.put(Skill.SMITHING, SpriteID.Staticons.SMITHING);
+		SPRITE_IDS.put(Skill.RUNECRAFT, SpriteID.Staticons2.RUNECRAFT);
+		SPRITE_IDS.put(Skill.CRAFTING, SpriteID.Staticons.CRAFTING);
+		SPRITE_IDS.put(Skill.FLETCHING, SpriteID.Staticons.FLETCHING);
+		SPRITE_IDS.put(Skill.HERBLORE, SpriteID.Staticons.HERBLORE);
+		SPRITE_IDS.put(Skill.HUNTER, SpriteID.Staticons2.HUNTER);
+		SPRITE_IDS.put(Skill.FARMING, SpriteID.Staticons2.FARMING);
+		SPRITE_IDS.put(Skill.CONSTRUCTION, SpriteID.Staticons2.CONSTRUCTION);
+		SPRITE_IDS.put(Skill.THIEVING, SpriteID.Staticons.THIEVING);
 	}
 }

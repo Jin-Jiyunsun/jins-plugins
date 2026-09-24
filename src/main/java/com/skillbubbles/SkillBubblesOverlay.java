@@ -33,12 +33,9 @@ import java.awt.RadialGradientPaint;
 import java.awt.RenderingHints;
 import java.awt.geom.Point2D;
 import java.awt.image.BufferedImage;
-import java.io.IOException;
-import java.io.InputStream;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.Map;
-import javax.imageio.ImageIO;
 import javax.inject.Inject;
 import net.runelite.api.Client;
 import net.runelite.api.Player;
@@ -50,6 +47,7 @@ import net.runelite.client.game.SpriteManager;
 import net.runelite.client.ui.overlay.Overlay;
 import net.runelite.client.ui.overlay.OverlayLayer;
 import net.runelite.client.ui.overlay.OverlayPosition;
+import net.runelite.client.util.ImageUtil;
 
 class SkillBubblesOverlay extends Overlay
 {
@@ -99,10 +97,8 @@ class SkillBubblesOverlay extends Overlay
 	// surrogate id for skill icons (item ids are always non-negative) so both share one key
 	// space without colliding.
 	private final Map<Long, BufferedImage> resizedIconCache = new HashMap<>();
-	// The classic bubble backdrop mask, loaded once and reused - null once read() has been tried
-	// means "no image available", not "not loaded yet" (see classicBubbleMask()).
+	// The classic bubble backdrop mask, loaded once on first use and reused.
 	private BufferedImage classicBubbleMask;
-	private boolean classicBubbleMaskLoaded;
 	// Recoloured + resized per bubble height, so the (cheap, but not free) recolour pass doesn't
 	// run every frame.
 	private final Map<Integer, BufferedImage> classicBubbleCache = new HashMap<>();
@@ -271,11 +267,8 @@ class SkillBubblesOverlay extends Overlay
 			// CLASSIC_BUBBLE_COLOR and scaled with nearest-neighbour, so it stays crisp and
 			// blocky instead of picking up soft antialiased edges.
 			BufferedImage classicBubble = classicBubbleImage(bubbleSize);
-			if (classicBubble != null)
-			{
-				int bubbleDrawX = bubbleX - (classicBubble.getWidth() - bubbleSize) / 2;
-				graphics.drawImage(classicBubble, bubbleDrawX, bubbleY, null);
-			}
+			int bubbleDrawX = bubbleX - (classicBubble.getWidth() - bubbleSize) / 2;
+			graphics.drawImage(classicBubble, bubbleDrawX, bubbleY, null);
 		}
 		else
 		{
@@ -441,11 +434,6 @@ class SkillBubblesOverlay extends Overlay
 	private BufferedImage buildClassicBubbleImage(int height)
 	{
 		BufferedImage mask = classicBubbleMask();
-		if (mask == null)
-		{
-			return null;
-		}
-
 		int width = Math.round(height * mask.getWidth() / (float) mask.getHeight());
 		BufferedImage resized = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
 		Graphics2D g = resized.createGraphics();
@@ -468,20 +456,28 @@ class SkillBubblesOverlay extends Overlay
 
 	private BufferedImage classicBubbleMask()
 	{
-		if (!classicBubbleMaskLoaded)
+		if (classicBubbleMask == null)
 		{
-			classicBubbleMaskLoaded = true;
-			try (InputStream in = SkillBubblesOverlay.class.getResourceAsStream("rsc/bubble.png"))
-			{
-				classicBubbleMask = in == null ? null : ImageIO.read(in);
-			}
-			catch (IOException e)
-			{
-				classicBubbleMask = null;
-			}
+			classicBubbleMask = ImageUtil.loadImageResource(SkillBubblesOverlay.class, "rsc/bubble.png");
 		}
 
 		return classicBubbleMask;
+	}
+
+	/**
+	 * Drops every cached image, so a disabled plugin doesn't keep them in memory. Client thread
+	 * only, like render(), since the caches are plain HashMaps.
+	 */
+	void clearCaches()
+	{
+		skillIconCache.clear();
+		toolIconCenterCache.clear();
+		resizedIconCache.clear();
+		classicBubbleCache.clear();
+		classicBubbleMask = null;
+		sizingImage = null;
+		sizingImageScale = -1;
+		RscSprites.clearCache();
 	}
 
 	private BufferedImage sizingImage(int size)

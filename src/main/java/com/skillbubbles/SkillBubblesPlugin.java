@@ -42,6 +42,7 @@ import net.runelite.api.events.AnimationChanged;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.events.ItemContainerChanged;
+import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.plugins.Plugin;
@@ -63,6 +64,9 @@ public class SkillBubblesPlugin extends Plugin
 
 	@Inject
 	private Client client;
+
+	@Inject
+	private ClientThread clientThread;
 
 	@Inject
 	private SkillBubblesConfig config;
@@ -102,6 +106,15 @@ public class SkillBubblesPlugin extends Plugin
 	{
 		log.debug("Skill Bubbles started");
 		overlayManager.add(overlay);
+		// Enabling the plugin mid-session gets no LOGGED_IN event to seed from, and the counts
+		// left over from before it was disabled are stale - reseed from the real inventory now.
+		clientThread.invokeLater(() ->
+		{
+			if (client.getGameState() == GameState.LOGGED_IN)
+			{
+				seedInventoryBaselines();
+			}
+		});
 	}
 
 	@Override
@@ -110,6 +123,13 @@ public class SkillBubblesPlugin extends Plugin
 		log.debug("Skill Bubbles stopped");
 		overlayManager.remove(overlay);
 		currentAction = null;
+		// shutDown() runs on the Swing thread, but the caches and detected items are only ever
+		// touched on the client thread - clear them there so the two can't overlap.
+		clientThread.invokeLater(() ->
+		{
+			overlay.clearCaches();
+			forgetDetectedIngredients();
+		});
 	}
 
 	SkillAction getLastAction()

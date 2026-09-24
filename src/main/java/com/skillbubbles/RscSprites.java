@@ -25,14 +25,12 @@
 package com.skillbubbles;
 
 import java.awt.image.BufferedImage;
-import java.io.IOException;
-import java.io.InputStream;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.Map;
-import javax.imageio.ImageIO;
 import net.runelite.api.Skill;
 import net.runelite.api.gameval.ItemID;
+import net.runelite.client.util.ImageUtil;
 
 /**
  * Maps items and skills to a RuneScape Classic-style sprite bundled under
@@ -65,19 +63,13 @@ final class RscSprites
 
 	private static BufferedImage load(String fileName)
 	{
-		return fileName == null ? null : CACHE.computeIfAbsent(fileName, RscSprites::read);
+		return fileName == null ? null : CACHE.computeIfAbsent(fileName,
+			f -> ImageUtil.loadImageResource(RscSprites.class, "rsc/" + f));
 	}
 
-	private static BufferedImage read(String fileName)
+	static void clearCache()
 	{
-		try (InputStream in = RscSprites.class.getResourceAsStream("rsc/" + fileName))
-		{
-			return in == null ? null : ImageIO.read(in);
-		}
-		catch (IOException e)
-		{
-			return null;
-		}
+		CACHE.clear();
 	}
 
 	static

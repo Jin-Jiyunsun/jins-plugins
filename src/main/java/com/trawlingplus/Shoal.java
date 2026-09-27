@@ -51,6 +51,13 @@ final class Shoal
 	private boolean headingArrowHidden = true;
 	private double headingArrowOpacity;
 	private long lastFadeMillis = -1;
+	// How much of the heading arrow shows near the boat: held where it was for HEADING_CLEAR_HOLD_MILLIS once the
+	// boat starts to cover it, then faded down at the arrow's usual pace. Started afresh after a gap in drawing it.
+	private static final long HEADING_CLEAR_HOLD_MILLIS = 1000;
+	private static final long HEADING_CLEAR_GAP_MILLIS = 250;
+	private double headingClearShown = 1;
+	private long headingClearDropMillis = -1;
+	private long lastClearMillis = -1;
 
 	// The next stop the route is being drawn out to, and when that started.
 	private int revealStop = -1;
@@ -227,6 +234,31 @@ final class Shoal
 
 		// Smoothstep, so the fade eases in and out rather than changing at a constant rate.
 		return headingArrowOpacity * headingArrowOpacity * (3 - 2 * headingArrowOpacity);
+	}
+
+	/**
+	 * How much of the heading arrow to show near the boat, given how much the boat's clear area would show of it
+	 * right now: the same, except that as the boat comes over it, it stays where it was for a second before fading.
+	 * Coming out from under the boat shows it again at once. Call once per frame it is drawn.
+	 */
+	double heldClearShown(double shown, long nowMillis)
+	{
+		long since = lastClearMillis < 0 ? Long.MAX_VALUE : nowMillis - lastClearMillis;
+		if (since > HEADING_CLEAR_GAP_MILLIS || shown >= headingClearShown)
+		{
+			headingClearShown = shown;
+			headingClearDropMillis = -1;
+		}
+		else if (headingClearDropMillis < 0)
+		{
+			headingClearDropMillis = nowMillis;
+		}
+		else if (nowMillis - headingClearDropMillis >= HEADING_CLEAR_HOLD_MILLIS)
+		{
+			headingClearShown = Math.max(shown, headingClearShown - Math.max(0, since) / FADE_MILLIS);
+		}
+		lastClearMillis = nowMillis;
+		return headingClearShown;
 	}
 
 	/**

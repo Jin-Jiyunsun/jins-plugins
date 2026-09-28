@@ -46,10 +46,16 @@ Every route was recorded in-game and is accurate to the tile when no smoothing i
   your boat has trawling nets fitted.
 - **Show on maps**: minimap, world map, both or off. The world map is also where dangerous water
   is marked.
+- **Clear around boat**: hides the route line, direction arrows and stops under your boat, fading
+  them out around its hull.
 - Each part of the display is toggleable. The route line, direction arrows, stops, the shoal's
   heading arrow, the fishable area, the heads up display and the side panel have their own
   section in the config panel.
 - **Display position**: the heads up display can sit at the helm, the bow or above the sails.
+- **Timer bar**: moves the game's stop timer bar from over the shoal to the bottom of the heads up
+  display, sized to match it.
+- **Animated**: the heads up display fades its lines in and out and grows to fit them. Turn it off
+  for instant changes.
 - **Arrow style**: arrows on the water can face the camera (the default), stand upright along the
   route, or lie flat on the water.
 - **Fish**: switch each fish on or off to focus on the ones you're after. A fish that's switched

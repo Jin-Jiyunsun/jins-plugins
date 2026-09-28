@@ -28,6 +28,7 @@ import net.runelite.api.Perspective;
 import net.runelite.api.NPC;
 import net.runelite.api.Player;
 import net.runelite.api.Point;
+import net.runelite.api.Renderable;
 import net.runelite.api.SpritePixels;
 import net.runelite.api.Tile;
 import net.runelite.api.WorldEntity;
@@ -48,6 +49,7 @@ import net.runelite.api.events.WorldEntitySpawned;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.gameval.ItemID;
+import net.runelite.api.gameval.NpcID;
 import net.runelite.api.gameval.ObjectID;
 import net.runelite.api.gameval.VarbitID;
 import net.runelite.api.widgets.Widget;
@@ -58,6 +60,8 @@ import net.runelite.api.worldmap.WorldMapRegion;
 import net.runelite.api.worldmap.WorldMapRenderer;
 import net.runelite.client.Notifier;
 import net.runelite.client.callback.ClientThread;
+import net.runelite.client.callback.RenderCallback;
+import net.runelite.client.callback.RenderCallbackManager;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.events.ConfigChanged;
@@ -194,6 +198,9 @@ public class TrawlingPlusPlugin extends Plugin
 	private ClientThread clientThread;
 
 	@Inject
+	private RenderCallbackManager renderCallbackManager;
+
+	@Inject
 	private Notifier notifier;
 
 	@Inject
@@ -244,6 +251,17 @@ public class TrawlingPlusPlugin extends Plugin
 	private ShoalRoute contender;
 	private int contenderTicks;
 	private boolean showGuides;
+	// Whether the game's own bar over a shoal at a stop is hidden, which it is while the display shows it instead,
+	// kept from the setting since the game asks about everything it draws, many times a frame.
+	private volatile boolean hideStopBar;
+	private final RenderCallback drawCallback = new RenderCallback()
+	{
+		@Override
+		public boolean addEntity(Renderable renderable, boolean ui)
+		{
+			return shouldDraw(renderable, ui);
+		}
+	};
 	// Whether the boat has a trawling net in either slot, updated whenever the game changes either slot.
 	private boolean netsFitted;
 	// Whether either net is lowered into the water, updated whenever the game changes either net's depth.
@@ -352,6 +370,8 @@ public class TrawlingPlusPlugin extends Plugin
 			// Whatever the hold was doing while the plugin was off is not known, so don't warn about it.
 			holdFull = false;
 		});
+		hideStopBar = config.showTimerBar();
+		renderCallbackManager.register(drawCallback);
 		overlayManager.add(overlay);
 		helmOverlay = new TrawlingPlusHelmOverlay(client, this, overlay);
 		overlayManager.add(helmOverlay);
@@ -366,6 +386,7 @@ public class TrawlingPlusPlugin extends Plugin
 	@Override
 	protected void shutDown()
 	{
+		renderCallbackManager.unregister(drawCallback);
 		overlayManager.remove(overlay);
 		overlayManager.remove(helmOverlay);
 		overlayManager.remove(netOverlay);
@@ -382,6 +403,17 @@ public class TrawlingPlusPlugin extends Plugin
 			mapRegionsSeen.clear();
 		});
 		log.debug("Trawling Plus stopped");
+	}
+
+	/**
+	 * Whether the game should draw something: everything, except the bar over a shoal at a stop while that is to be
+	 * hidden and the guides are showing. The bar belongs to the shoal's ripples and is drawn with the rest of their
+	 * overhead display, so only that is left out; the ripples themselves still draw.
+	 */
+	private boolean shouldDraw(Renderable renderable, boolean drawingUI)
+	{
+		return !drawingUI || !hideStopBar || !showGuides || !(renderable instanceof NPC)
+			|| ((NPC) renderable).getId() != NpcID.SAILING_SHOAL_RIPPLES;
 	}
 
 	Collection<Shoal> getShoals()
@@ -775,6 +807,11 @@ public class TrawlingPlusPlugin extends Plugin
 	@Subscribe
 	public void onConfigChanged(ConfigChanged event)
 	{
+		if (TrawlingPlusConfig.GROUP.equals(event.getGroup()) && TrawlingPlusConfig.TIMER_BAR_KEY.equals(event.getKey()))
+		{
+			hideStopBar = config.showTimerBar();
+		}
+
 		if (TrawlingPlusConfig.GROUP.equals(event.getGroup())
 			&& "showOnMaps".equals(event.getKey()))
 		{
@@ -1853,6 +1890,15 @@ public class TrawlingPlusPlugin extends Plugin
 	double getSecondsAtStop()
 	{
 		return nearestShoal == null ? -1 : nearestShoal.secondsAtStop();
+	}
+
+	/**
+	 * How full the bar over the shoal nearest the boat is at its stop, from 0 to 1, or -1 if there is no such shoal
+	 * or it is on the move.
+	 */
+	double getStopBarFraction()
+	{
+		return nearestShoal == null ? -1 : nearestShoal.stopBarFraction();
 	}
 
 	/**

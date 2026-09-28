@@ -1,7 +1,9 @@
 package com.trawlingplus;
 
+import java.awt.AlphaComposite;
 import java.awt.BasicStroke;
 import java.awt.Color;
+import java.awt.Composite;
 import java.awt.Dimension;
 import java.awt.FontMetrics;
 import java.awt.GradientPaint;
@@ -9,10 +11,12 @@ import java.awt.Graphics2D;
 import java.awt.Paint;
 import java.awt.Polygon;
 import java.awt.Rectangle;
+import java.awt.Shape;
 import java.awt.RenderingHints;
 import java.awt.Stroke;
 import java.awt.geom.Line2D;
 import java.awt.geom.Path2D;
+import java.awt.image.BufferedImage;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -27,11 +31,14 @@ import net.runelite.api.Model;
 import net.runelite.api.Perspective;
 import net.runelite.api.Point;
 import net.runelite.api.Renderable;
+import net.runelite.api.SpritePixels;
 import net.runelite.api.Tile;
 import net.runelite.api.WorldEntity;
 import net.runelite.api.WorldEntityConfig;
 import net.runelite.api.WorldView;
 import net.runelite.api.coords.LocalPoint;
+import net.runelite.api.gameval.SpriteID;
+import net.runelite.client.game.SpriteManager;
 import net.runelite.client.ui.overlay.Overlay;
 import net.runelite.client.ui.overlay.OverlayLayer;
 import net.runelite.client.ui.overlay.OverlayPosition;
@@ -41,6 +48,13 @@ class TrawlingPlusOverlay extends Overlay
 {
 	// Stops are drawn as a square this many tiles across, roughly the size of a shoal.
 	private static final int STOP_SIZE = 3;
+	// A round stop is the circle through the middle of each side of that square: a smooth curve through
+	// STOP_CURVE_POINTS points of it, into the same polygon and path each time.
+	private static final int STOP_CURVE_POINTS = 8;
+	private final Polygon stopCircle = new Polygon();
+	private final Path2D.Double stopCurve = new Path2D.Double();
+	// Which of a circle's points each placed corner is, so a gap where some were off the map is known.
+	private final int[] circleSteps = new int[AREA_POINTS];
 
 	// What an empty deck tile holds, shared rather than made afresh for each one while the deck is looked through.
 	private static final GameObject[] NO_OBJECTS = new GameObject[0];
@@ -142,7 +156,19 @@ class TrawlingPlusOverlay extends Overlay
 	private static final int BAITED_LINE = 2;
 	private static final int FISH_LINE = 3;
 	private static final int HOLD_LINE = 4;
-	private static final int HELM_LINES = 5;
+	// Not a line of text: the timer bar, under them all.
+	private static final int BAR_LINE = 5;
+	private static final int HELM_LINES = 6;
+
+	// The timer bar: the game's own bar over a shoal, from the same two pictures the game draws it
+	// with, so it looks the same whether they are the game's or RuneLite's high detail ones. Kept below the text,
+	// this far under it.
+	private static final int BAR_FRONT = SpriteID.HeadbarIce90.FRONT;
+	private static final int BAR_BACK = SpriteID.HeadbarIce90.BACK;
+	private static final int BAR_GAP = 2;
+	// As wide as the text above it, so it matches the display whatever is showing, but never narrower than this,
+	// in pixels: under a short line such as the depth alone, the display widens to it instead.
+	private static final int BAR_MIN_WIDTH = 60;
 
 	// The warning on top of the display while the hold is full, pulsing between two colours, from one to
 	// the other and back in this long.
@@ -170,6 +196,10 @@ class TrawlingPlusOverlay extends Overlay
 	// The fishable area, and the stroke it is drawn with, kept between frames: the shape is redrawn every
 	// frame but never changes size, and the thickness only changes when a setting does.
 	private final Polygon area = new Polygon();
+	// A round area is a smooth curve through this many of its points, as round as the full count at a quarter of
+	// the placing.
+	private static final int AREA_CURVE_POINTS = 16;
+	private final Path2D.Double areaCurve = new Path2D.Double();
 	private Stroke areaStroke;
 	private int areaThickness;
 	// The same for the stops' outline, which every stop is drawn with.
@@ -280,26 +310,66 @@ class TrawlingPlusOverlay extends Overlay
 	private ShoalRoute loadedRoute;
 	private boolean loadedEnough;
 
-	// How far faded in the fishing point dot is, and when that was last worked out.
+	// How far faded in the fishable area and its dot are, and when that was last worked out.
 	private double fishingPointFade;
+	// Where the fishable area last was: the nearest shoal's world view and place, kept so it can fade out there.
+	private WorldView areaView;
+	private double areaX;
+	private double areaY;
 	private long lastFishingPointMillis = -1;
 
 	private final Client client;
 	private final TrawlingPlusPlugin plugin;
 	private final TrawlingPlusConfig config;
+	private final SpriteManager spriteManager;
+
+	// The bar's two pictures this frame, and the replacements they were made from when a skin or resource pack has
+	// swapped them, so each is only turned into an image once. How full it last was, kept while it fades out.
+	private BufferedImage barFrontSprite;
+	private BufferedImage barBackSprite;
+	// The two pictures resized to the display's width, remade only when that width or the pictures change.
+	private BufferedImage barFront;
+	private BufferedImage barBack;
+	private int barWidth = -1;
+	private SpritePixels barFrontSource;
+	private SpritePixels barBackSource;
+	private double fadingBarFull;
 
 	// How far faded in each line of the display at the helm is, by line.
 	private final double[] helmFades = new double[HELM_LINES];
+	// Each line's working out for the frame, kept rather than made afresh every frame. Every entry read is written
+	// first: the per-line ones for every line, the rest for the lines laid out.
+	private final boolean[] helmWanted = new boolean[HELM_LINES];
+	private final boolean[] helmWasUp = new boolean[HELM_LINES];
+	private final double[] helmOpacity = new double[HELM_LINES];
+	private final boolean[] helmLaid = new boolean[HELM_LINES];
+	private final String[] helmText = new String[HELM_LINES];
+	private final Color[] helmColour = new Color[HELM_LINES];
+	private final double[] helmShowing = new double[HELM_LINES];
+	private final int[] helmWidth = new int[HELM_LINES];
+	// The display's background grows and shrinks to fit rather than jumping: how tall its text and bar are and how
+	// wide it is drawn, catching up with the real sizes most of the way in about HELM_RESIZE_MILLIS. A line or the
+	// bar arriving in a display already on screen waits until the background has grown at least half way to make
+	// room for it, then fades in: the height it is growing from and to, and whether it is that far yet.
+	private static final double HELM_RESIZE_MILLIS = 60;
+	private double shownTextHeight;
+	private double shownBarHeight;
+	private double shownWide;
+	private long lastResizeMillis = -1;
+	private int resizeFrom;
+	private int resizeTo;
+	private boolean roomReady = true;
 	private long lastHelmFadeMillis = -1;
 	private ShoalDepth fadingDepth = ShoalDepth.UNKNOWN;
 
 	@Inject
-	TrawlingPlusOverlay(Client client, TrawlingPlusPlugin plugin, TrawlingPlusConfig config)
+	TrawlingPlusOverlay(Client client, TrawlingPlusPlugin plugin, TrawlingPlusConfig config, SpriteManager spriteManager)
 	{
 		super(plugin);
 		this.client = client;
 		this.plugin = plugin;
 		this.config = config;
+		this.spriteManager = spriteManager;
 		setPosition(OverlayPosition.DYNAMIC);
 		setLayer(OverlayLayer.ABOVE_SCENE);
 	}
@@ -378,11 +448,19 @@ class TrawlingPlusOverlay extends Overlay
 			}
 		}
 		drawShoalArrows(graphics, shoals, now);
-		boolean areaDrawn = config.showFishableArea() && drawFishableArea(graphics);
-		// Switched off, the dot goes at once like anything else; it only fades as the area comes and goes.
-		if (config.showFishableArea() && config.showFishingPoint())
+		// The area and its dot fade in and out together as the area comes and goes. Switched off, both go at once
+		// like anything else.
+		if (config.showFishableArea())
 		{
-			drawFishingPoint(graphics, areaDrawn, now);
+			fadeFishableArea(placeFishableArea(), now);
+			if (fishingPointFade > 0 && areaView != null)
+			{
+				drawFishableArea(graphics);
+			}
+			if (config.showFishingPoint())
+			{
+				drawFishingPoint(graphics);
+			}
 		}
 		else
 		{
@@ -763,31 +841,45 @@ class TrawlingPlusOverlay extends Overlay
 			fadingDepth = depth;
 		}
 
-		double seconds = boat == null ? -1 : plugin.getSecondsAtStop();
+		double seconds = boat == null || !config.showTimeAtStop() ? -1 : plugin.getSecondsAtStop();
+		double barFull = boat == null || !config.showTimerBar() ? -1 : plugin.getStopBarFraction();
+		if (barFull >= 0)
+		{
+			fadingBarFull = barFull;
+		}
 		long now = System.currentTimeMillis();
-		boolean[] wanted = new boolean[HELM_LINES];
+		boolean[] wanted = helmWanted;
 		wanted[DEPTH_LINE] = boat != null && config.showShoalDepth() && depth != ShoalDepth.UNKNOWN;
-		wanted[TIME_LINE] = boat != null && config.showTimeAtStop() && seconds >= 0;
+		wanted[TIME_LINE] = seconds >= 0;
+		wanted[BAR_LINE] = barFull >= 0;
 		wanted[BAITED_LINE] = boat != null && config.showBaited() && (plugin.isBaited() || plugin.isOutOfBait());
 		wanted[FISH_LINE] = boat != null && config.showFishInNets() && plugin.netsFitted() && plugin.fishLineWanted(now);
 		wanted[HOLD_LINE] = boat != null && config.showFishInNets() && plugin.isHoldFull();
 
-		// A line coming or going while another holds the pill up is a change inside something already
-		// on screen, so it happens at once. The fade is for the display itself arriving or leaving.
-		double step = lastHelmFadeMillis < 0 ? 0
+		// A line going while another holds the pill up goes at once, and one coming waits for room to be made for it
+		// and then fades in. The display itself arriving or leaving fades as a whole.
+		// With Animated off, everything shows and goes at once.
+		boolean animated = config.animatedHud();
+		double step = !animated ? 1 : lastHelmFadeMillis < 0 ? 0
 			: Math.max(0, now - lastHelmFadeMillis) / HELM_FADE_MILLIS;
-		boolean[] wasUp = new boolean[HELM_LINES];
+		boolean[] wasUp = helmWasUp;
 		for (int line = 0; line < HELM_LINES; line++)
 		{
 			wasUp[line] = helmFades[line] > 0;
 		}
 
-		double[] opacity = new double[HELM_LINES];
+		double[] opacity = helmOpacity;
+		boolean[] laid = helmLaid;
 		for (int line = 0; line < HELM_LINES; line++)
 		{
-			// Another line already holding the pill up means this one is changing inside a display that
-			// is already on screen, so it changes at once rather than fading.
-			opacity[line] = fade(line, wanted[line], step, othersUp(wasUp, line));
+			// Another line already holding the pill up means this one is changing inside a display that is already on
+			// screen. The timer bar fades out whatever else is up, as it comes and goes with the stops.
+			boolean inside = othersUp(wasUp, line);
+			opacity[line] = wanted[line] && inside && animated && !roomReady
+				? fade(line, true, 0, false)
+				: fade(line, wanted[line], step, inside && !wanted[line] && line != BAR_LINE);
+			// Given its place while it waits, so the background grows to make room for it.
+			laid[line] = opacity[line] > 0 || wanted[line];
 		}
 		lastHelmFadeMillis = now;
 
@@ -799,16 +891,16 @@ class TrawlingPlusOverlay extends Overlay
 		}
 
 		// The lines that are actually showing, bottom first, so a gap in the middle closes up.
-		String[] text = new String[HELM_LINES];
-		Color[] colour = new Color[HELM_LINES];
-		double[] showing = new double[HELM_LINES];
-		int[] width = new int[HELM_LINES];
+		String[] text = helmText;
+		Color[] colour = helmColour;
+		double[] showing = helmShowing;
+		int[] width = helmWidth;
 		FontMetrics letters = graphics.getFontMetrics();
-		boolean ticked = opacity[DEPTH_LINE] > 0 && config.showDepthTick() && plugin.isAtDepth();
+		boolean ticked = laid[DEPTH_LINE] && config.showDepthTick() && plugin.isAtDepth();
 		int count = 0;
 		int depthAt = -1;
 
-		if (opacity[DEPTH_LINE] > 0 && fadingDepth != ShoalDepth.UNKNOWN)
+		if (laid[DEPTH_LINE] && fadingDepth != ShoalDepth.UNKNOWN)
 		{
 			depthAt = count;
 			text[count] = fadingDepth.toString();
@@ -818,7 +910,7 @@ class TrawlingPlusOverlay extends Overlay
 				+ (ticked ? TICK_GAP + TrawlingPlusNetOverlay.TICK_WIDTH : 0);
 			count++;
 		}
-		if (opacity[BAITED_LINE] > 0)
+		if (laid[BAITED_LINE])
 		{
 			text[count] = plugin.getBaitedLabel();
 			// Text, so drawn solid whatever the picked colour says.
@@ -833,7 +925,7 @@ class TrawlingPlusOverlay extends Overlay
 			width[count] = letters.stringWidth(text[count]);
 			count++;
 		}
-		if (opacity[FISH_LINE] > 0)
+		if (laid[FISH_LINE])
 		{
 			text[count] = plugin.getFishLabel();
 			colour[count] = TrawlingPlusNetOverlay.opaque(config.fishInNetsColour());
@@ -847,7 +939,7 @@ class TrawlingPlusOverlay extends Overlay
 			width[count] = letters.stringWidth(text[count]);
 			count++;
 		}
-		if (opacity[TIME_LINE] > 0)
+		if (laid[TIME_LINE])
 		{
 			text[count] = Math.max(0, Math.round(seconds)) + "s";
 			colour[count] = TrawlingPlusNetOverlay.opaque(config.timeLeftColour());
@@ -855,7 +947,7 @@ class TrawlingPlusOverlay extends Overlay
 			width[count] = letters.stringWidth(text[count]);
 			count++;
 		}
-		if (opacity[HOLD_LINE] > 0)
+		if (laid[HOLD_LINE])
 		{
 			// Eased back and forth rather than blinking, starting and ending on the first colour.
 			double pulse = warningPulse(now);
@@ -866,10 +958,14 @@ class TrawlingPlusOverlay extends Overlay
 			count++;
 		}
 
-		if (count == 0)
+		double barShowing = opacity[BAR_LINE];
+		boolean bar = laid[BAR_LINE] && readBar();
+		if (count == 0 && !bar)
 		{
 			return;
 		}
+		// Placed by its bottom line of text, or with only the bar, where that line would be.
+		String placedBy = count > 0 ? text[0] : "";
 
 		// The helm sits a quarter of the hull length behind the middle of the boat, and the text a
 		// tile and a half further back again. A hull an odd number of tiles wide has its middle
@@ -911,7 +1007,7 @@ class TrawlingPlusOverlay extends Overlay
 			return;
 		}
 
-		Point at = Perspective.getCanvasTextLocation(client, graphics, afloat, text[0], lift);
+		Point at = Perspective.getCanvasTextLocation(client, graphics, afloat, placedBy, lift);
 		if (at == null)
 		{
 			return;
@@ -927,15 +1023,56 @@ class TrawlingPlusOverlay extends Overlay
 			wide = Math.max(wide, width[line]);
 			solid = Math.max(solid, showing[line]);
 		}
-		int left = at.getX() + (letters.stringWidth(text[0]) - wide) / 2;
+		// The bar hangs below the text, so the text keeps its place whether it shows or not, and is as wide as it.
+		int barHeight = 0;
+		if (bar)
+		{
+			sizeBar(Math.max(BAR_MIN_WIDTH, wide));
+			wide = Math.max(wide, barBack.getWidth());
+			solid = Math.max(solid, barShowing);
+			barHeight = (count > 0 ? BAR_GAP : 0) + barBack.getHeight();
+		}
+		int left = at.getX() + (letters.stringWidth(placedBy) - wide) / 2;
 		int top = at.getY() - letters.getAscent() - (count - 1) * lineHeight;
+
+		// The background's size this frame, growing and shrinking towards what it holds. Starts at its size when it
+		// hasn't been drawn for a while, since it is fading in then anyway.
+		int textHeight = lineHeight * count;
+		if (!animated || lastResizeMillis < 0 || now - lastResizeMillis > HELM_FADE_MILLIS)
+		{
+			shownTextHeight = textHeight;
+			shownBarHeight = barHeight;
+			shownWide = wide;
+		}
+		else
+		{
+			double behind = Math.exp(-(now - lastResizeMillis) / HELM_RESIZE_MILLIS);
+			shownTextHeight = textHeight + (shownTextHeight - textHeight) * behind;
+			shownBarHeight = barHeight + (shownBarHeight - barHeight) * behind;
+			shownWide = wide + (shownWide - wide) * behind;
+		}
+		lastResizeMillis = now;
+		int boxTextHeight = (int) Math.round(shownTextHeight);
+		int boxWide = (int) Math.round(shownWide);
+		int boxBar = (int) Math.round(shownBarHeight);
+
+		// Whether it has grown half way to its new height yet, for what is waiting on it next frame.
+		int heading = textHeight + barHeight;
+		if (heading != resizeTo)
+		{
+			resizeFrom = boxTextHeight + boxBar;
+			resizeTo = heading;
+		}
+		roomReady = resizeTo <= resizeFrom || (boxTextHeight + boxBar - resizeFrom) * 2 >= resizeTo - resizeFrom;
 
 		// Kept inside the game view, so zoomed in close, where its place on the boat is off the edge of the
 		// screen, it stops at the edge rather than going out of sight.
-		int boxWidth = wide + HELM_PADDING * 2;
-		int boxHeight = lineHeight * count + HELM_PADDING * 2;
-		int shiftX = keepInside(left - HELM_PADDING, boxWidth, client.getViewportXOffset(), client.getViewportWidth());
-		int shiftY = keepInside(top - HELM_PADDING, boxHeight, client.getViewportYOffset(), client.getViewportHeight());
+		int boxLeft = left + (wide - boxWide) / 2 - HELM_PADDING;
+		int boxTop = top + textHeight - boxTextHeight - HELM_PADDING;
+		int boxWidth = boxWide + HELM_PADDING * 2;
+		int boxHeight = boxTextHeight + boxBar + HELM_PADDING * 2;
+		int shiftX = keepInside(boxLeft, boxWidth, client.getViewportXOffset(), client.getViewportWidth());
+		int shiftY = keepInside(boxTop, boxHeight, client.getViewportYOffset(), client.getViewportHeight());
 		left += shiftX;
 		top += shiftY;
 		int bottom = at.getY() + shiftY;
@@ -943,7 +1080,7 @@ class TrawlingPlusOverlay extends Overlay
 		// One pill around the lot, as opaque as whichever line is showing the most, so it does not
 		// flicker as one of them fades while the others stay.
 		graphics.setColor(withOpacity(HELM_BACKGROUND, solid));
-		graphics.fillRoundRect(left - HELM_PADDING, top - HELM_PADDING, boxWidth, boxHeight, 6, 6);
+		graphics.fillRoundRect(boxLeft + shiftX, boxTop + shiftY, boxWidth, boxHeight, 6, 6);
 
 		for (int line = 0; line < count; line++)
 		{
@@ -958,6 +1095,90 @@ class TrawlingPlusOverlay extends Overlay
 					withOpacity(TrawlingPlusNetOverlay.TICK, showing[line]));
 			}
 		}
+
+		if (bar)
+		{
+			drawBar(graphics, left + (wide - barBack.getWidth()) / 2,
+				top + lineHeight * count + (count > 0 ? BAR_GAP : 0), fadingBarFull, barShowing);
+		}
+	}
+
+	/**
+	 * Draws the stop bar the way the game does: the full picture up to how far along it is, and the empty one
+	 * after. RuneLite's high detail bars have a pixel of border at each end that is not part of the bar, so there
+	 * it runs between the two.
+	 */
+	private void drawBar(Graphics2D graphics, int x, int y, double full, double opacity)
+	{
+		int wide = barBack.getWidth();
+		int border = barFrontSource != null ? 1 : 0;
+		int filled = border + (int) (full * (wide - border * 2));
+		Composite composite = graphics.getComposite();
+		if (opacity < 1)
+		{
+			graphics.setComposite(AlphaComposite.SrcOver.derive((float) opacity));
+		}
+		int high = Math.min(barFront.getHeight(), barBack.getHeight());
+		graphics.drawImage(barFront, x, y, x + filled, y + high, 0, 0, filled, high, null);
+		graphics.drawImage(barBack, x + filled, y, x + wide, y + high, filled, 0, wide, high, null);
+		graphics.setComposite(composite);
+	}
+
+	/**
+	 * Finds the stop bar's two pictures, the replacements a skin or resource pack has put in the client first,
+	 * since the sprite manager's own lookup skips them. False until both are loaded.
+	 */
+	private boolean readBar()
+	{
+		SpritePixels front = client.getSpriteOverrides().get(BAR_FRONT);
+		SpritePixels back = client.getSpriteOverrides().get(BAR_BACK);
+		if (front != barFrontSource || barFrontSprite == null)
+		{
+			barFrontSprite = front != null ? front.toBufferedImage() : spriteManager.getSprite(BAR_FRONT, 0);
+			barFrontSource = front;
+			barWidth = -1;
+		}
+		if (back != barBackSource || barBackSprite == null)
+		{
+			barBackSprite = back != null ? back.toBufferedImage() : spriteManager.getSprite(BAR_BACK, 0);
+			barBackSource = back;
+			barWidth = -1;
+		}
+		return barFrontSprite != null && barBackSprite != null;
+	}
+
+	/**
+	 * Resizes the bar's pictures to a width, only when it differs from the last.
+	 */
+	private void sizeBar(int wide)
+	{
+		if (wide != barWidth)
+		{
+			barFront = resized(barFrontSprite, wide, barFrontSource != null);
+			barBack = resized(barBackSprite, wide, barBackSource != null);
+			barWidth = wide;
+		}
+	}
+
+	/**
+	 * One of the bar's pictures stretched or squeezed to a width. A high detail one keeps its pixel of border at
+	 * each end as it is and only its middle changes, so the ends stay crisp.
+	 */
+	private static BufferedImage resized(BufferedImage image, int wide, boolean bordered)
+	{
+		if (image.getWidth() == wide)
+		{
+			return image;
+		}
+		int high = image.getHeight();
+		int border = bordered ? 1 : 0;
+		BufferedImage sized = new BufferedImage(wide, high, BufferedImage.TYPE_INT_ARGB);
+		Graphics2D drawing = sized.createGraphics();
+		drawing.drawImage(image, 0, 0, border, high, 0, 0, border, high, null);
+		drawing.drawImage(image, border, 0, wide - border, high, border, 0, image.getWidth() - border, high, null);
+		drawing.drawImage(image, wide - border, 0, wide, high, image.getWidth() - border, 0, image.getWidth(), high, null);
+		drawing.dispose();
+		return sized;
 	}
 
 	/**
@@ -1446,13 +1667,98 @@ class TrawlingPlusOverlay extends Overlay
 			return;
 		}
 
-		LocalPoint local = toLocal(view, route.stopX(stop), route.stopY(stop));
-		Polygon area = local == null ? null : Perspective.getCanvasTileAreaPoly(client, local, STOP_SIZE);
+		Shape area;
+		if (config.stopShape() == TrawlingPlusConfig.FishableShape.CIRCLE)
+		{
+			area = stopCircle(view, route.stopX(stop), route.stopY(stop));
+		}
+		else
+		{
+			LocalPoint local = toLocal(view, route.stopX(stop), route.stopY(stop));
+			area = local == null ? null : Perspective.getCanvasTileAreaPoly(client, local, STOP_SIZE);
+		}
 		if (area != null)
 		{
 			OverlayUtil.renderPolygon(graphics, area, withOpacity(colour, opacity), withOpacity(STOP_FILL, opacity),
 				stopOutline(config.stopThickness().pixels()));
 		}
+	}
+
+	/**
+	 * A round stop around a point in world tiles, or null when too little of it is on the loaded map to draw.
+	 */
+	private Shape stopCircle(WorldView view, double x, double y)
+	{
+		return roundOutline(view, x, y, STOP_SIZE / 2.0, STOP_CURVE_POINTS, stopCircle, stopCurve);
+	}
+
+	/**
+	 * A circle on the water around a point in world tiles, of a radius in tiles, as it lands on screen: a smooth
+	 * curve through a few points of it, which is as round as many more at a fraction of the placing. Points off the
+	 * loaded map are left out, and the curve goes straight across the gap they leave, so the part that is on it still
+	 * draws; null when fewer than three are on it. Into the given polygon and path, reused between frames.
+	 */
+	private Shape roundOutline(WorldView view, double x, double y, double radius, int points, Polygon corners,
+		Path2D.Double curve)
+	{
+		corners.reset();
+		for (int step = 0; step < points; step++)
+		{
+			int of = step * (AREA_POINTS / points);
+			Point edge = toCanvas(view, x + CIRCLE_X[of] * radius, y + CIRCLE_Y[of] * radius);
+			if (edge != null)
+			{
+				circleSteps[corners.npoints] = step;
+				corners.addPoint(edge.getX(), edge.getY());
+			}
+		}
+		return corners.npoints < 3 ? null : smoothLoop(corners, circleSteps, points, curve);
+	}
+
+	/**
+	 * A smooth closed curve through the corners of a polygon placed round a circle of a number of points, into the
+	 * given path: each stretch between two corners that are next to each other round the circle is a cubic curve
+	 * heading the way the corners either side of it lie (a Catmull-Rom spline), and one across a gap where points
+	 * were left out is straight. Which point of the circle each corner is comes from steps.
+	 */
+	private static Path2D smoothLoop(Polygon corners, int[] steps, int points, Path2D.Double into)
+	{
+		int[] xs = corners.xpoints;
+		int[] ys = corners.ypoints;
+		int n = corners.npoints;
+		into.reset();
+		into.moveTo(xs[0], ys[0]);
+		for (int k = 0; k < n; k++)
+		{
+			int next = (k + 1) % n;
+			if (!besideOnCircle(steps[k], steps[next], points))
+			{
+				into.lineTo(xs[next], ys[next]);
+				continue;
+			}
+			// A neighbour missing from the far side of either end leaves that end heading along the stretch itself.
+			int before = (k + n - 1) % n;
+			int after = (next + 1) % n;
+			if (!besideOnCircle(steps[before], steps[k], points))
+			{
+				before = k;
+			}
+			if (!besideOnCircle(steps[next], steps[after], points))
+			{
+				after = next;
+			}
+			into.curveTo(
+				xs[k] + (xs[next] - xs[before]) / 6.0, ys[k] + (ys[next] - ys[before]) / 6.0,
+				xs[next] - (xs[after] - xs[k]) / 6.0, ys[next] - (ys[after] - ys[k]) / 6.0,
+				xs[next], ys[next]);
+		}
+		into.closePath();
+		return into;
+	}
+
+	private static boolean besideOnCircle(int step, int next, int points)
+	{
+		return (next - step + points) % points == 1;
 	}
 
 	/**
@@ -1492,11 +1798,10 @@ class TrawlingPlusOverlay extends Overlay
 	}
 
 	/**
-	 * Outlines the water the nearest shoal can be fished from, as a square or circle around the shoal,
-	 * and says whether it drew it. The shape is centred on the shoal itself, so it travels with the shoal
-	 * and only sits still because the shoal does.
+	 * Finds where the fishable area is this frame, around the nearest shoal, and says whether there is one. The
+	 * shoal's place is kept, so an area that has gone fades out where it last was.
 	 */
-	private boolean drawFishableArea(Graphics2D graphics)
+	private boolean placeFishableArea()
 	{
 		Shoal shoal = plugin.getNearestShoal();
 		WorldView view = shoal == null ? null : shoal.parentView(client);
@@ -1505,39 +1810,16 @@ class TrawlingPlusOverlay extends Overlay
 		{
 			return false;
 		}
-
-		// Walked around the shape a point at a time, so one running off the loaded map still draws the
-		// part that is on it. The same shape every frame, so it is drawn into the same polygon rather
-		// than a new one, off points worked out once.
-		boolean circle = config.fishableAreaShape() == TrawlingPlusConfig.FishableShape.CIRCLE;
-		double[] shapeX = circle ? CIRCLE_X : SQUARE_X;
-		double[] shapeY = circle ? CIRCLE_Y : SQUARE_Y;
-		area.reset();
-		for (int step = 0; step < AREA_POINTS; step++)
-		{
-			Point edge = toCanvas(view, at[0] + shapeX[step] * FISHABLE_REACH, at[1] + shapeY[step] * FISHABLE_REACH);
-			if (edge != null)
-			{
-				area.addPoint(edge.getX(), edge.getY());
-			}
-		}
-
-		if (area.npoints < AREA_POINTS / 4)
-		{
-			// Too little of it is on screen to make a shape out of.
-			return false;
-		}
-
-		OverlayUtil.renderPolygon(graphics, area, config.fishableAreaColour(),
-			config.fishableAreaFillColour(), areaOutline(config.fishableAreaThickness().pixels()));
+		areaView = view;
+		areaX = at[0];
+		areaY = at[1];
 		return true;
 	}
 
 	/**
-	 * A dot on the boat at the point the fishable area is measured to, so the boat can fish the shoal
-	 * whenever the dot is inside it. It fades in as the area appears and out as it goes.
+	 * Moves the fishable area and its dot towards shown or hidden.
 	 */
-	private void drawFishingPoint(Graphics2D graphics, boolean wanted, long now)
+	private void fadeFishableArea(boolean wanted, long now)
 	{
 		// Not drawn for a while, as when off the boat, so it starts from nothing rather than jumping in.
 		if (lastFishingPointMillis < 0 || now - lastFishingPointMillis > FISHING_POINT_FADE_MILLIS * 2)
@@ -1548,6 +1830,75 @@ class TrawlingPlusOverlay extends Overlay
 		double step = (now - lastFishingPointMillis) / FISHING_POINT_FADE_MILLIS;
 		lastFishingPointMillis = now;
 		fishingPointFade = wanted ? Math.min(1, fishingPointFade + step) : Math.max(0, fishingPointFade - step);
+	}
+
+	/**
+	 * Outlines the water the nearest shoal can be fished from, as a square or circle around the shoal. The shape
+	 * is centred on the shoal itself, so it travels with the shoal and only sits still because the shoal does.
+	 */
+	private void drawFishableArea(Graphics2D graphics)
+	{
+		WorldView view = areaView;
+		double[] at = {areaX, areaY};
+
+		// Walked around the shape a point at a time, so one running off the loaded map still draws the
+		// part that is on it. The same shape every frame, so it is drawn into the same polygon rather
+		// than a new one, off points worked out once. A circle is a smooth curve through a few of its
+		// points while they are all on the map.
+		Shape outline;
+		if (config.fishableAreaShape() == TrawlingPlusConfig.FishableShape.CIRCLE)
+		{
+			outline = roundOutline(view, at[0], at[1], FISHABLE_REACH, AREA_CURVE_POINTS, area, areaCurve);
+		}
+		else
+		{
+			// Just its four corners, which on flat water is the whole square. Only when one can't be placed, as when
+			// it is behind a low camera, is it walked round a point at a time so the rest still draws.
+			area.reset();
+			for (int step = 0; step < AREA_POINTS; step += AREA_POINTS_PER_SIDE)
+			{
+				Point corner = toCanvas(view, at[0] + SQUARE_X[step] * FISHABLE_REACH, at[1] + SQUARE_Y[step] * FISHABLE_REACH);
+				if (corner != null)
+				{
+					area.addPoint(corner.getX(), corner.getY());
+				}
+			}
+			boolean corners = area.npoints == 4;
+			if (!corners)
+			{
+				area.reset();
+				for (int step = 0; step < AREA_POINTS; step++)
+				{
+					Point edge = toCanvas(view, at[0] + SQUARE_X[step] * FISHABLE_REACH, at[1] + SQUARE_Y[step] * FISHABLE_REACH);
+					if (edge != null)
+					{
+						area.addPoint(edge.getX(), edge.getY());
+					}
+				}
+			}
+			outline = corners || area.npoints >= AREA_POINTS / 4 ? area : null;
+		}
+
+		if (outline == null)
+		{
+			// Too little of it is on screen to make a shape out of.
+			return;
+		}
+
+		// Faded only while fading, rather than making the same colours again every frame.
+		boolean faded = fishingPointFade < 1;
+		OverlayUtil.renderPolygon(graphics, outline,
+			faded ? withOpacity(config.fishableAreaColour(), fishingPointFade) : config.fishableAreaColour(),
+			faded ? withOpacity(config.fishableAreaFillColour(), fishingPointFade) : config.fishableAreaFillColour(),
+			areaOutline(config.fishableAreaThickness().pixels()));
+	}
+
+	/**
+	 * A dot on the boat at the point the fishable area is measured to, so the boat can fish the shoal
+	 * whenever the dot is inside it. It fades in as the area appears and out as it goes.
+	 */
+	private void drawFishingPoint(Graphics2D graphics)
+	{
 		if (fishingPointFade <= 0)
 		{
 			return;

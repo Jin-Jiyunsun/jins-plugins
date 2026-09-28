@@ -53,11 +53,15 @@ final class Shoal
 	private long lastFadeMillis = -1;
 	// How much of the heading arrow shows near the boat: held where it was for HEADING_CLEAR_HOLD_MILLIS once the
 	// boat starts to cover it, then faded down at the arrow's usual pace. Started afresh after a gap in drawing it.
-	private static final long HEADING_CLEAR_HOLD_MILLIS = 1000;
+	private static final long HEADING_CLEAR_HOLD_MILLIS = 1500;
 	private static final long HEADING_CLEAR_GAP_MILLIS = 250;
 	private double headingClearShown = 1;
 	private long headingClearDropMillis = -1;
 	private long lastClearMillis = -1;
+	// When the shoal last moved off from a stop it was seen sitting at, for the same length of time after which the
+	// boat doesn't hide the arrow at all, so it is seen setting off.
+	private boolean seenStill;
+	private long setOffMillis = -1;
 
 	// The next stop the route is being drawn out to, and when that started.
 	private int revealStop = -1;
@@ -169,6 +173,15 @@ final class Shoal
 	}
 
 	/**
+	 * How full the game's bar over the shoal is at its stop, from 0 to 1 as the game has it, or -1 while it is on
+	 * the move.
+	 */
+	double stopBarFraction()
+	{
+		return barLeft < 0 || barScale <= 0 ? -1 : Math.min(1, (double) barLeft / barScale);
+	}
+
+	/**
 	 * How long the shoal has left at this stop, in seconds, or -1 when that is not known exactly. It is
 	 * only known for a stop that was watched from its first tick: a shoal found part way through one
 	 * could only be guessed at from how far down its bar is, and a guess is worse than nothing here.
@@ -202,16 +215,27 @@ final class Shoal
 	 */
 	void update(double[] position, double[] target)
 	{
+		boolean judged = false;
 		if (target != null)
 		{
 			if (lastTarget != null)
 			{
 				headingArrowHidden = target[0] == lastTarget[0] && target[1] == lastTarget[1];
+				judged = true;
 			}
 		}
 		else if (lastPosition != null)
 		{
 			headingArrowHidden = position[0] == lastPosition[0] && position[1] == lastPosition[1];
+			judged = true;
+		}
+		if (judged)
+		{
+			if (seenStill && !headingArrowHidden)
+			{
+				setOffMillis = System.currentTimeMillis();
+			}
+			seenStill = headingArrowHidden;
 		}
 		lastPosition = position;
 		lastTarget = target;
@@ -238,12 +262,21 @@ final class Shoal
 
 	/**
 	 * How much of the heading arrow to show near the boat, given how much the boat's clear area would show of it
-	 * right now: the same, except that as the boat comes over it, it stays where it was for a second before fading.
+	 * right now: the same, except that as the boat comes over it, it stays where it was for a second and a half
+	 * before fading, and for a second and a half after the shoal moves off from a stop, it is not hidden at all.
 	 * Coming out from under the boat shows it again at once. Call once per frame it is drawn.
 	 */
 	double heldClearShown(double shown, long nowMillis)
 	{
 		long since = lastClearMillis < 0 ? Long.MAX_VALUE : nowMillis - lastClearMillis;
+		lastClearMillis = nowMillis;
+		if (setOffMillis >= 0 && nowMillis - setOffMillis < HEADING_CLEAR_HOLD_MILLIS)
+		{
+			// Just set off from a stop, so shown whatever the boat is over.
+			headingClearShown = 1;
+			headingClearDropMillis = -1;
+			return 1;
+		}
 		if (since > HEADING_CLEAR_GAP_MILLIS || shown >= headingClearShown)
 		{
 			headingClearShown = shown;
@@ -257,7 +290,6 @@ final class Shoal
 		{
 			headingClearShown = Math.max(shown, headingClearShown - Math.max(0, since) / FADE_MILLIS);
 		}
-		lastClearMillis = nowMillis;
 		return headingClearShown;
 	}
 

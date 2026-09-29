@@ -5,10 +5,10 @@ import java.util.Arrays;
 import net.runelite.api.gameval.ItemID;
 
 /**
- * What one boat's cargo hold holds of the catches from the fishing spots at sea, and how many of its slots are
- * taken out of how many. Only known once its screen has been opened, the only time the game sends it, and kept up
- * to date after by what is deposited or withdrawn as it is shut. Every fish takes a slot of its own, since fish
- * don't stack.
+ * What one boat's cargo hold holds of the catches from the fishing spots at sea, and how many of its slots the
+ * rest of its cargo takes out of how many. Only known once its screen has been opened, the only time the game
+ * sends it, and kept up to date after by what is deposited or withdrawn as it is shut. Every fish takes a slot of
+ * its own, since fish don't stack, so the slots left for them are what the rest doesn't take.
  */
 final class CargoHold
 {
@@ -33,13 +33,21 @@ final class CargoHold
 		new Color(0xcc86d9), new Color(0x72bf3f), new Color(0x6bbf52), new Color(0xd97b5b)
 	};
 
-	// How many of each, by SEA_FISH, and the slots taken and there are, or -1 before the screen has shown them.
+	// How many of each, by SEA_FISH, and the slots taken by everything else, such as bait, planks, salvage and
+	// trawled fish, and there are, or -1 before the screen has shown them.
 	private final int[] fish = new int[SEA_FISH.length];
-	private int taken = -1;
+	private int others = -1;
 	private int capacity = -1;
+	// How many times any of those has changed, which the display goes by to only write its lines out again then.
+	private int changes;
 	// Whether the display at the helm warns that it is full: found without room when the nets were last emptied
 	// into it, or showing no free slots when last opened, until it is known to have room again.
 	private boolean fullWarning;
+
+	int changes()
+	{
+		return changes;
+	}
 
 	boolean fullWarning()
 	{
@@ -56,14 +64,26 @@ final class CargoHold
 		return fish[kind];
 	}
 
-	int taken()
+	/**
+	 * How many catches from the fishing spots at sea it holds, all kinds together.
+	 */
+	int caught()
 	{
-		return taken;
+		int caught = 0;
+		for (int count : fish)
+		{
+			caught += count;
+		}
+		return caught;
 	}
 
-	int capacity()
+	/**
+	 * How many of those catches it has slots for, counting the ones in it: all of its slots but those the rest of
+	 * its cargo takes.
+	 */
+	int room()
 	{
-		return capacity;
+		return capacity - others;
 	}
 
 	/**
@@ -71,38 +91,36 @@ final class CargoHold
 	 */
 	boolean known()
 	{
-		return taken >= 0 && capacity > 0;
+		return others >= 0 && capacity > 0;
 	}
 
 	boolean full()
 	{
-		return known() && taken >= capacity;
-	}
-
-	/**
-	 * Whether it holds any catches from the fishing spots at sea.
-	 */
-	boolean hasFish()
-	{
-		for (int count : fish)
-		{
-			if (count > 0)
-			{
-				return true;
-			}
-		}
-		return false;
+		return known() && caught() >= room();
 	}
 
 	void setFish(int kind, int count)
 	{
-		fish[kind] = count;
+		if (fish[kind] != count)
+		{
+			fish[kind] = count;
+			changes++;
+		}
 	}
 
+	/**
+	 * Takes the slots taken and there are from its screen, once its catches are counted: those not taken by them
+	 * are taken by the rest.
+	 */
 	void setSlots(int taken, int capacity)
 	{
-		this.taken = taken;
-		this.capacity = capacity;
+		int others = Math.max(0, taken - caught());
+		if (others != this.others || capacity != this.capacity)
+		{
+			this.others = others;
+			this.capacity = capacity;
+			changes++;
+		}
 	}
 
 	/**
@@ -111,10 +129,7 @@ final class CargoHold
 	void deposit(int kind, int count)
 	{
 		fish[kind] += count;
-		if (taken >= 0)
-		{
-			taken += count;
-		}
+		changes++;
 	}
 
 	/**
@@ -123,10 +138,7 @@ final class CargoHold
 	void withdraw(int kind, int count)
 	{
 		fish[kind] = Math.max(0, fish[kind] - count);
-		if (taken >= 0)
-		{
-			taken = Math.max(0, taken - count);
-		}
+		changes++;
 	}
 
 	/**
@@ -135,9 +147,10 @@ final class CargoHold
 	void empty()
 	{
 		Arrays.fill(fish, 0);
-		if (taken >= 0)
+		changes++;
+		if (others >= 0)
 		{
-			taken = 0;
+			others = 0;
 		}
 		fullWarning = false;
 	}

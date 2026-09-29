@@ -5,6 +5,7 @@ import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Composite;
 import java.awt.Dimension;
+import java.awt.Font;
 import java.awt.FontMetrics;
 import java.awt.GradientPaint;
 import java.awt.Graphics2D;
@@ -337,26 +338,51 @@ class TrawlingPlusOverlay extends Overlay
 
 	// How far faded in each line of the display at the helm is, by line.
 	private final double[] helmFades = new double[HELM_LINES];
-	// The hold's display: its title on a line of its own and the slots taken under it, the gap between it and the
-	// display at the helm below it, and between its two columns, in pixels. This frame's lines, top first, as the
-	// name on the left and the count on the right, in its colour, in how many lines: the title, the slots and up to
-	// every fish; how wide its columns are together, and its box; whether the hold is full; the order its fish are
-	// listed in; and how far faded in it is, and when that was worked out.
+	// The hold's display: its title on a line of its own and its fish out of the slots they have under it, the gap
+	// between it and the display at the helm below it, and between its two columns, in pixels. This frame's lines,
+	// top first, as the name on the left and the count on the right, in its colour, in how many lines: the title,
+	// the slots and up to every fish, and which of its places each is (the title, the slots, then one per fish); how
+	// wide its columns are together, and its box as drawn this frame; whether the hold is full; the order its fish
+	// are listed in; and how far faded in it is, and when that was worked out.
+	// Like the display at the helm, its box grows and shrinks rather than jumping, its lines slide to their new
+	// places, and a fish arriving waits for room and then fades in: per place, how far faded in it is, how far up
+	// from the bottom of the box its baseline is drawn, and whether it was laid out last frame; how wide its
+	// columns and how tall its box are drawn; and the height it is growing from and to, and whether it is half way.
 	private static final String HOLD_TITLE = "Fish in Hold";
 	private static final String HOLD_TOTAL = "Total";
 	private static final int HOLD_GAP = 4;
 	private static final int HOLD_COLUMN_GAP = 12;
-	private final String[] holdLeft = new String[CargoHold.SEA_FISH.length + 2];
-	private final String[] holdRight = new String[CargoHold.SEA_FISH.length + 2];
-	private final Color[] holdColour = new Color[CargoHold.SEA_FISH.length + 2];
+	private static final int HOLD_PLACES = CargoHold.SEA_FISH.length + 2;
+	private final String[] holdLeft = new String[HOLD_PLACES];
+	private final String[] holdRight = new String[HOLD_PLACES];
+	private final Color[] holdColour = new Color[HOLD_PLACES];
+	private final int[] holdPlace = new int[HOLD_PLACES];
 	private final int[] holdOrder = new int[CargoHold.SEA_FISH.length];
 	private int holdLines;
 	private int holdWide;
+	// The lines are only written out again when what the hold holds or the font changes: how wide each count is, how
+	// tall a line is and how far down its baseline sits, and the hold, its number of changes and the font they
+	// were written out for.
+	private final int[] holdRightWidth = new int[HOLD_PLACES];
+	private int holdLineHeight;
+	private int holdAscent;
+	private CargoHold laidHold;
+	private int laidChanges;
+	private Font laidFont;
 	private int holdBoxWidth;
 	private int holdBoxHeight;
 	private boolean holdFull;
 	private double holdFade;
 	private long lastHoldFadeMillis = -1;
+	private final double[] holdLineFade = new double[HOLD_PLACES];
+	private final double[] holdShownUp = new double[HOLD_PLACES];
+	private final boolean[] holdWasLaid = new boolean[HOLD_PLACES];
+	private final boolean[] holdLaid = new boolean[HOLD_PLACES];
+	private double holdShownWide;
+	private double holdShownHeight;
+	private int holdResizeFrom;
+	private int holdResizeTo;
+	private boolean holdRoomReady = true;
 	// Each line's working out for the frame, kept rather than made afresh every frame. Every entry read is written
 	// first: the per-line ones for every line, the rest for the lines laid out.
 	private final boolean[] helmWanted = new boolean[HELM_LINES];
@@ -841,6 +867,17 @@ class TrawlingPlusOverlay extends Overlay
 	}
 
 	/**
+	 * Whether either display on the player's boat could be up this frame: the guides are showing, they are fishing a
+	 * spot at sea, or the hold's display is still fading out after they stopped. Asked before anything else, so
+	 * with neither, nothing about them is worked out.
+	 */
+	boolean displayWanted()
+	{
+		return plugin.showGuides() || plugin.isSeaFishing()
+			|| holdFade > 0 && System.currentTimeMillis() - lastHoldFadeMillis <= HELM_FADE_MILLIS;
+	}
+
+	/**
 	 * Draws the displays on the player's boat: the one at the helm while the guides are showing, and the hold's
 	 * above it while fishing a spot at sea, or in its place when it is the only one up.
 	 */
@@ -853,7 +890,7 @@ class TrawlingPlusOverlay extends Overlay
 		}
 
 		// The hold's display is laid out first, so the one at the helm can make room for it above itself. It shows
-		// whenever it is wanted, even on a raft, which has no nets for the guides to wait on.
+		// in either guides mode, even on a raft, which has no nets for the guides to wait on.
 		long now = System.currentTimeMillis();
 		boolean hold = layOutHold(graphics, now);
 		boolean helm = plugin.showGuides() && drawTrawling(graphics, now, hold);
@@ -1161,37 +1198,112 @@ class TrawlingPlusOverlay extends Overlay
 	}
 
 	/**
-	 * Works out the hold's display for this frame and says whether it is up: its title, how full the hold is under
-	 * that, and the fish in it below, most first, each name with its count lined up on the right. Fades in when it
-	 * arrives, and goes at once, as it only goes when stepping off the boat or switching it off.
+	 * Works out the hold's display for this frame and says whether it is up. Fades in as fishing a spot starts and
+	 * out as it ends, and goes at once when stepping off the boat or switching it off. A fish arriving in it grows
+	 * the box and fades in once there's room, and one going goes at once and the box shrinks after it.
 	 */
 	private boolean layOutHold(Graphics2D graphics, long now)
 	{
-		CargoHold record = plugin.getShownHold();
+		// Not fishing a spot, and faded out already, so there is nothing to work out.
+		boolean fishing = plugin.isSeaFishing();
+		if (!fishing && holdFade <= 0)
+		{
+			return false;
+		}
+		CargoHold record = plugin.getHold();
 		if (record == null)
 		{
 			holdFade = 0;
 			lastHoldFadeMillis = -1;
 			return false;
 		}
-		if (!config.animatedHud())
+
+		// With Animated off, it comes and goes at once. Arriving, or back after not being drawn for a while, it is
+		// laid out at its size at once, as it is fading in as a whole then anyway; with Animated off, it always is.
+		boolean animated = config.animatedHud();
+		boolean fresh = !animated || lastHoldFadeMillis < 0 || now - lastHoldFadeMillis > HELM_FADE_MILLIS;
+		double elapsed = lastHoldFadeMillis < 0 ? 0 : Math.max(0, now - lastHoldFadeMillis);
+		double pillStep = animated ? elapsed / HELM_FADE_MILLIS : 1;
+		holdFade = fishing ? Math.min(1, holdFade + pillStep) : Math.max(0, holdFade - pillStep);
+		if (!fishing && holdFade <= 0)
 		{
-			holdFade = 1;
-		}
-		else if (lastHoldFadeMillis >= 0)
-		{
-			holdFade = Math.min(1, holdFade + Math.max(0, now - lastHoldFadeMillis) / HELM_FADE_MILLIS);
+			lastHoldFadeMillis = -1;
+			return false;
 		}
 		lastHoldFadeMillis = now;
 
+		// Its lines only change with what the hold holds or the font, so they are only written out again then.
+		Font font = graphics.getFont();
+		if (record != laidHold || record.changes() != laidChanges || !font.equals(laidFont))
+		{
+			laidHold = record;
+			laidChanges = record.changes();
+			laidFont = font;
+			writeHoldLines(record, graphics.getFontMetrics());
+		}
+
+		// The box's size this frame, growing and shrinking towards what it holds, and whether it has grown half way
+		// to its new height yet, for a fish waiting on it.
+		int lineHeight = holdLineHeight;
+		int height = lineHeight * holdLines + HELM_PADDING * 2;
+		double behind = fresh ? 0 : Math.exp(-elapsed / HELM_RESIZE_MILLIS);
+		double wasHeight = fresh ? height : holdShownHeight;
+		holdShownWide = holdWide + (holdShownWide - holdWide) * behind;
+		holdShownHeight = height + (holdShownHeight - height) * behind;
+		if (fresh || height != holdResizeTo)
+		{
+			holdResizeFrom = (int) Math.round(wasHeight);
+			holdResizeTo = height;
+		}
+		holdRoomReady = holdResizeTo <= holdResizeFrom
+			|| (Math.round(holdShownHeight) - holdResizeFrom) * 2 >= holdResizeTo - holdResizeFrom;
+
+		// Each line slides to its place, counted up from the bottom of the box, or starts there when new. One new
+		// waits until there's room and then fades in; one already in stays in; one gone goes at once.
+		double step = fresh ? 1 : elapsed / HELM_FADE_MILLIS;
+		for (int place = 0; place < HOLD_PLACES; place++)
+		{
+			holdLaid[place] = false;
+		}
+		for (int line = 0; line < holdLines; line++)
+		{
+			int place = holdPlace[line];
+			holdLaid[place] = true;
+			double up = height - HELM_PADDING - holdAscent - line * lineHeight;
+			holdShownUp[place] = fresh || !holdWasLaid[place] ? up : up + (holdShownUp[place] - up) * behind;
+			holdLineFade[place] = fresh ? 1
+				: holdLineFade[place] > 0 || holdRoomReady ? Math.min(1, holdLineFade[place] + step) : 0;
+		}
+		for (int place = 0; place < HOLD_PLACES; place++)
+		{
+			if (!holdLaid[place])
+			{
+				holdLineFade[place] = 0;
+			}
+			holdWasLaid[place] = holdLaid[place];
+		}
+
+		holdBoxWidth = (int) Math.round(holdShownWide) + HELM_PADDING * 2;
+		holdBoxHeight = (int) Math.round(holdShownHeight);
+		return true;
+	}
+
+	/**
+	 * Writes out the hold's display's lines: its title, how full the hold is under that, and the fish in it below,
+	 * most first, each name with its count lined up on the right; and how wide and tall they are.
+	 */
+	private void writeHoldLines(CargoHold record, FontMetrics letters)
+	{
 		holdLines = 0;
 		holdFull = record.full();
+		holdPlace[holdLines] = 0;
 		holdLeft[holdLines] = HOLD_TITLE;
 		holdRight[holdLines] = "";
 		holdColour[holdLines] = Color.WHITE;
 		holdLines++;
+		holdPlace[holdLines] = 1;
 		holdLeft[holdLines] = holdFull ? HOLD_FULL : HOLD_TOTAL;
-		holdRight[holdLines] = record.taken() + "/" + record.capacity();
+		holdRight[holdLines] = record.caught() + "/" + record.room();
 		holdColour[holdLines] = Color.WHITE;
 		holdLines++;
 
@@ -1214,25 +1326,50 @@ class TrawlingPlusOverlay extends Overlay
 		}
 		for (int k = 0; k < kinds && record.fish(holdOrder[k]) > 0; k++)
 		{
+			holdPlace[holdLines] = 2 + holdOrder[k];
 			holdLeft[holdLines] = CargoHold.SEA_FISH_NAMES[holdOrder[k]];
 			holdRight[holdLines] = String.valueOf(record.fish(holdOrder[k]));
 			holdColour[holdLines] = CargoHold.SEA_FISH_COLOURS[holdOrder[k]];
 			holdLines++;
 		}
 
-		// The title spans both columns, so it only has to fit their width, not be part of the left one.
-		FontMetrics letters = graphics.getFontMetrics();
-		int leftWide = 0;
-		int rightWide = 0;
-		for (int line = 1; line < holdLines; line++)
+		// The counts line up on the right of a column as wide as they would be in the widest digit, so the display
+		// doesn't change width by a pixel or two whenever one changes. The fish never outnumber the room for them,
+		// so the slots line is the widest, and only its number of digits counts.
+		int digit = 0;
+		for (char c = '0'; c <= '9'; c++)
 		{
-			leftWide = Math.max(leftWide, letters.stringWidth(holdLeft[line]));
-			rightWide = Math.max(rightWide, letters.stringWidth(holdRight[line]));
+			digit = Math.max(digit, letters.charWidth(c));
+		}
+		int roomDigits = digits(record.room());
+		int rightWide = digit * (Math.max(digits(record.caught()), roomDigits) + roomDigits) + letters.charWidth('/');
+
+		// The title spans both columns, so it only has to fit their width, not be part of the left one.
+		int leftWide = 0;
+		for (int line = 0; line < holdLines; line++)
+		{
+			holdRightWidth[line] = letters.stringWidth(holdRight[line]);
+			if (line > 0)
+			{
+				leftWide = Math.max(leftWide, letters.stringWidth(holdLeft[line]));
+			}
 		}
 		holdWide = Math.max(leftWide + HOLD_COLUMN_GAP + rightWide, letters.stringWidth(HOLD_TITLE));
-		holdBoxWidth = holdWide + HELM_PADDING * 2;
-		holdBoxHeight = letters.getHeight() * holdLines + HELM_PADDING * 2;
-		return true;
+		holdLineHeight = letters.getHeight();
+		holdAscent = letters.getAscent();
+	}
+
+	/**
+	 * How many digits a whole number is written with.
+	 */
+	private static int digits(int number)
+	{
+		int digits = 1;
+		for (int rest = Math.abs(number) / 10; rest > 0; rest /= 10)
+		{
+			digits++;
+		}
+		return digits;
 	}
 
 	/**
@@ -1250,8 +1387,7 @@ class TrawlingPlusOverlay extends Overlay
 			return;
 		}
 
-		FontMetrics letters = graphics.getFontMetrics();
-		int bottom = at.getY() + letters.getHeight() - letters.getAscent() + HELM_PADDING;
+		int bottom = at.getY() + holdLineHeight - holdAscent + HELM_PADDING;
 		int shiftX = keepInside(at.getX() - holdBoxWidth / 2, holdBoxWidth, client.getViewportXOffset(),
 			client.getViewportWidth());
 		int shiftY = keepInside(bottom - holdBoxHeight, holdBoxHeight, client.getViewportYOffset(),
@@ -1265,22 +1401,26 @@ class TrawlingPlusOverlay extends Overlay
 	 */
 	private void drawHold(Graphics2D graphics, int centre, int bottom, long now)
 	{
-		FontMetrics letters = graphics.getFontMetrics();
-		int lineHeight = letters.getHeight();
 		graphics.setColor(withOpacity(HELM_BACKGROUND, holdFade));
 		graphics.fillRoundRect(centre - holdBoxWidth / 2, bottom - holdBoxHeight, holdBoxWidth, holdBoxHeight, 6, 6);
 
-		int left = centre - holdWide / 2;
-		int baseline = bottom - holdBoxHeight + HELM_PADDING + letters.getAscent();
+		// The columns spread with the box as it widens, so the counts slide out rather than jump.
+		int wide = holdBoxWidth - HELM_PADDING * 2;
+		int left = centre - wide / 2;
 		for (int line = 0; line < holdLines; line++)
 		{
+			int place = holdPlace[line];
+			double opacity = holdFade * holdLineFade[place];
+			if (opacity <= 0)
+			{
+				continue;
+			}
+			int baseline = bottom - (int) Math.round(holdShownUp[place]);
 			// Full pulses between the two warning colours, in time with the other warnings; each fish is in its own.
 			Color colour = line == 1 && holdFull
 				? blend(HOLD_FULL_COLOUR, HOLD_FULL_PULSE_COLOUR, warningPulse(now)) : holdColour[line];
-			line(graphics, holdLeft[line], left, baseline, colour, holdFade);
-			line(graphics, holdRight[line], left + holdWide - letters.stringWidth(holdRight[line]), baseline,
-				colour, holdFade);
-			baseline += lineHeight;
+			line(graphics, holdLeft[line], left, baseline, colour, opacity);
+			line(graphics, holdRight[line], left + wide - holdRightWidth[line], baseline, colour, opacity);
 		}
 	}
 

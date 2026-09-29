@@ -31,9 +31,8 @@ class TrawlingPlusHelmOverlay extends Overlay
 	@Override
 	public Dimension render(Graphics2D graphics)
 	{
-		// Whether the guides are showing is the display at the helm's to ask, not the hold's, which also shows on a
-		// raft under Nets only.
-		if (client.getGameState() != GameState.LOGGED_IN)
+		// Not just while the guides are showing: the hold's display shows in either guides mode, even on a raft.
+		if (client.getGameState() != GameState.LOGGED_IN || !overlay.displayWanted())
 		{
 			return null;
 		}

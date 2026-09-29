@@ -826,9 +826,10 @@ public class TrawlingPlusPlugin extends Plugin
 
 		ItemContainer contents = event.getItemContainer();
 		CargoHold record = boatRecord();
+		int tick = client.getTickCount();
 		for (int kind = 0; kind < CargoHold.SEA_FISH.length; kind++)
 		{
-			record.setFish(kind, contents == null ? 0 : contents.count(CargoHold.SEA_FISH[kind]));
+			record.setFish(kind, contents == null ? 0 : contents.count(CargoHold.SEA_FISH[kind]), tick);
 		}
 		plainBait = contents == null ? 0 : contents.count(ItemID.BRUT_FISH_CUTS);
 		fineBait = contents == null ? 0 : contents.count(ItemID.SAILING_FINE_FISH_OFFCUTS);
@@ -1854,7 +1855,7 @@ public class TrawlingPlusPlugin extends Plugin
 			{
 				if (sea[kind] < inventorySea[kind])
 				{
-					record.deposit(kind, inventorySea[kind] - sea[kind]);
+					record.deposit(kind, inventorySea[kind] - sea[kind], tick);
 				}
 				else if (sea[kind] > inventorySea[kind] && seaCatchTick != tick)
 				{

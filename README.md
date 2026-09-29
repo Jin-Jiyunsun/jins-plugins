@@ -22,9 +22,9 @@ and keeps track of your nets, bait and cargo hold from a HUD on the boat.
   the nets, bait remaining, a hold-full warning and each net's depth.
 - **Cargo hold display**: while fishing the fishing spots at sea with a rod, net, harpoon, lobster
   pot or karambwan vessel, a second pill shows how many fish are in your boat's hold, out of how
-  many fit alongside the rest of your cargo, and how many of each. It stacks above the heads up
-  display, works on a raft too, and warns when the hold is full. Open the hold once each session
-  so it can count what's inside.
+  many fit alongside the rest of your cargo, and how many of each of the last three kinds you put
+  in, with any others together. It stacks above the heads up display, works on a raft too, and
+  warns when the hold is full. Open the hold once each session so it can count what's inside.
 - **Side panel depth guide**: highlights which depth each trawling net should be set to, and ticks
   it once it's set correctly.
 - **Notifications**: optional alerts for full nets, a full cargo hold, or a shoal about to leave

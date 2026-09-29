@@ -339,11 +339,13 @@ class TrawlingPlusOverlay extends Overlay
 	// How far faded in each line of the display at the helm is, by line.
 	private final double[] helmFades = new double[HELM_LINES];
 	// The hold's display: its title on a line of its own and its fish out of the slots they have under it, the gap
-	// between it and the display at the helm below it, and between its two columns, in pixels. This frame's lines,
-	// top first, as the name on the left and the count on the right, in its colour, in how many lines: the title,
-	// the slots and up to every fish, and which of its places each is (the title, the slots, then one per fish); how
-	// wide its columns are together, and its box as drawn this frame; whether the hold is full; the order its fish
-	// are listed in; and how far faded in it is, and when that was worked out.
+	// between it and the display at the helm below it, and between its two columns, in pixels. How many kinds of
+	// fish get a line of their own, the ones that went in most recently, and what the line for the rest is called and
+	// its colour. This frame's lines, top first, as the name on the left and the count on the right, in its colour,
+	// in how many lines: the title, the slots, those kinds and the rest, and which of its places each is (the
+	// title, the slots, one per kind, then the rest); how wide its columns are together, and its box as drawn this
+	// frame; whether the hold is full; the order its fish are listed in; and how far faded in it is, and when that
+	// was worked out.
 	// Like the display at the helm, its box grows and shrinks rather than jumping, its lines slide to their new
 	// places, and a fish arriving waits for room and then fades in: per place, how far faded in it is, how far up
 	// from the bottom of the box its baseline is drawn, and whether it was laid out last frame; how wide its
@@ -352,7 +354,11 @@ class TrawlingPlusOverlay extends Overlay
 	private static final String HOLD_TOTAL = "Total";
 	private static final int HOLD_GAP = 4;
 	private static final int HOLD_COLUMN_GAP = 12;
-	private static final int HOLD_PLACES = CargoHold.SEA_FISH.length + 2;
+	private static final int HOLD_KINDS_SHOWN = 3;
+	private static final String HOLD_OTHER = "Other";
+	private static final Color HOLD_OTHER_COLOUR = new Color(0xc0c0c0);
+	private static final int HOLD_OTHER_PLACE = CargoHold.SEA_FISH.length + 2;
+	private static final int HOLD_PLACES = CargoHold.SEA_FISH.length + 3;
 	private final String[] holdLeft = new String[HOLD_PLACES];
 	private final String[] holdRight = new String[HOLD_PLACES];
 	private final Color[] holdColour = new Color[HOLD_PLACES];
@@ -1290,7 +1296,8 @@ class TrawlingPlusOverlay extends Overlay
 
 	/**
 	 * Writes out the hold's display's lines: its title, how full the hold is under that, and the fish in it below,
-	 * most first, each name with its count lined up on the right; and how wide and tall they are.
+	 * the three kinds that went in most recently, most first, then the rest together, each name with its count lined
+	 * up on the right; and how wide and tall they are.
 	 */
 	private void writeHoldLines(CargoHold record, FontMetrics letters)
 	{
@@ -1307,29 +1314,37 @@ class TrawlingPlusOverlay extends Overlay
 		holdColour[holdLines] = Color.WHITE;
 		holdLines++;
 
-		// Most first, and in the order of the fishing spots between two of the same.
-		int kinds = CargoHold.SEA_FISH.length;
-		for (int kind = 0; kind < kinds; kind++)
+		// Only the kinds that went in most recently get a line each, so the list never grows to every fish there is:
+		// between two that went in together, or before any deposit has been seen, the one with more. Those are listed
+		// most first, and in the order of the fishing spots between two of the same, and the rest share a line below.
+		int held = 0;
+		for (int kind = 0; kind < CargoHold.SEA_FISH.length; kind++)
 		{
-			holdOrder[kind] = kind;
+			if (record.fish(kind) > 0)
+			{
+				holdOrder[held++] = kind;
+			}
 		}
-		for (int k = 1; k < kinds; k++)
+		sortKinds(record, held, true);
+		int shown = Math.min(HOLD_KINDS_SHOWN, held);
+		sortKinds(record, shown, false);
+		int rest = record.caught();
+		for (int k = 0; k < shown; k++)
 		{
 			int kind = holdOrder[k];
-			int j = k;
-			while (j > 0 && record.fish(holdOrder[j - 1]) < record.fish(kind))
-			{
-				holdOrder[j] = holdOrder[j - 1];
-				j--;
-			}
-			holdOrder[j] = kind;
+			holdPlace[holdLines] = 2 + kind;
+			holdLeft[holdLines] = CargoHold.SEA_FISH_NAMES[kind];
+			holdRight[holdLines] = String.valueOf(record.fish(kind));
+			holdColour[holdLines] = CargoHold.SEA_FISH_COLOURS[kind];
+			holdLines++;
+			rest -= record.fish(kind);
 		}
-		for (int k = 0; k < kinds && record.fish(holdOrder[k]) > 0; k++)
+		if (held > shown)
 		{
-			holdPlace[holdLines] = 2 + holdOrder[k];
-			holdLeft[holdLines] = CargoHold.SEA_FISH_NAMES[holdOrder[k]];
-			holdRight[holdLines] = String.valueOf(record.fish(holdOrder[k]));
-			holdColour[holdLines] = CargoHold.SEA_FISH_COLOURS[holdOrder[k]];
+			holdPlace[holdLines] = HOLD_OTHER_PLACE;
+			holdLeft[holdLines] = HOLD_OTHER;
+			holdRight[holdLines] = String.valueOf(rest);
+			holdColour[holdLines] = HOLD_OTHER_COLOUR;
 			holdLines++;
 		}
 
@@ -1357,6 +1372,38 @@ class TrawlingPlusOverlay extends Overlay
 		holdWide = Math.max(leftWide + HOLD_COLUMN_GAP + rightWide, letters.stringWidth(HOLD_TITLE));
 		holdLineHeight = letters.getHeight();
 		holdAscent = letters.getAscent();
+	}
+
+	/**
+	 * Sorts the first so many kinds of fish in the hold's list: when asked, by the deposit that last brought them,
+	 * most recent first; then by how many there are, most first; then in the order of the fishing spots.
+	 */
+	private void sortKinds(CargoHold record, int count, boolean recentFirst)
+	{
+		for (int k = 1; k < count; k++)
+		{
+			int kind = holdOrder[k];
+			int j = k;
+			while (j > 0 && listedBefore(record, kind, holdOrder[j - 1], recentFirst))
+			{
+				holdOrder[j] = holdOrder[j - 1];
+				j--;
+			}
+			holdOrder[j] = kind;
+		}
+	}
+
+	private static boolean listedBefore(CargoHold record, int kind, int other, boolean recentFirst)
+	{
+		if (recentFirst && record.lastDeposit(kind) != record.lastDeposit(other))
+		{
+			return record.lastDeposit(kind) > record.lastDeposit(other);
+		}
+		if (record.fish(kind) != record.fish(other))
+		{
+			return record.fish(kind) > record.fish(other);
+		}
+		return kind < other;
 	}
 
 	/**

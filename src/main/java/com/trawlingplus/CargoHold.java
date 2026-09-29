@@ -40,6 +40,11 @@ final class CargoHold
 	private int capacity = -1;
 	// How many times any of those has changed, which the display goes by to only write its lines out again then.
 	private int changes;
+	// Which went in most recently: by SEA_FISH, the number of the deposit that last brought each, or 0 if none has
+	// been seen; how many deposits there have been, those on the same tick counting as one; and the last one's tick.
+	private final int[] lastDeposit = new int[SEA_FISH.length];
+	private int deposits;
+	private int depositTick = -1;
 	// Whether the display at the helm warns that it is full: found without room when the nets were last emptied
 	// into it, or showing no free slots when last opened, until it is known to have room again.
 	private boolean fullWarning;
@@ -47,6 +52,14 @@ final class CargoHold
 	int changes()
 	{
 		return changes;
+	}
+
+	/**
+	 * The number of the deposit that last brought this kind, higher for more recent ones, or 0 if none has been seen.
+	 */
+	int lastDeposit(int kind)
+	{
+		return lastDeposit[kind];
 	}
 
 	boolean fullWarning()
@@ -99,10 +112,18 @@ final class CargoHold
 		return known() && caught() >= room();
 	}
 
-	void setFish(int kind, int count)
+	/**
+	 * Takes how many of a kind its screen shows, on the tick it showed them. More than it was known to hold were just
+	 * deposited; before its contents are known, there is nothing to say which went in last.
+	 */
+	void setFish(int kind, int count, int tick)
 	{
 		if (fish[kind] != count)
 		{
+			if (count > fish[kind] && known())
+			{
+				noteDeposit(kind, tick);
+			}
 			fish[kind] = count;
 			changes++;
 		}
@@ -126,10 +147,21 @@ final class CargoHold
 	/**
 	 * Adds fish put in without the screen sending them, as when deposited just as it is shut.
 	 */
-	void deposit(int kind, int count)
+	void deposit(int kind, int count, int tick)
 	{
 		fish[kind] += count;
+		noteDeposit(kind, tick);
 		changes++;
+	}
+
+	private void noteDeposit(int kind, int tick)
+	{
+		if (tick != depositTick)
+		{
+			depositTick = tick;
+			deposits++;
+		}
+		lastDeposit[kind] = deposits;
 	}
 
 	/**

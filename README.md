@@ -20,6 +20,10 @@ and keeps track of your nets, bait and cargo hold from a HUD on the boat.
   threaten.
 - **Heads up display**: a pill on the boat showing time left at the current stop, fish caught in
   the nets, bait remaining, a hold-full warning and each net's depth.
+- **Cargo hold display**: while fishing the fishing spots at sea with a rod, net, harpoon, lobster
+  pot or karambwan vessel, a second pill shows how full your boat's hold is and how many of each
+  fish are in it. It stacks above the heads up display, works on a raft too, and warns when the
+  hold is full. Open the hold once each session so it can count what's inside.
 - **Side panel depth guide**: highlights which depth each trawling net should be set to, and ticks
   it once it's set correctly.
 - **Notifications**: optional alerts for full nets, a full cargo hold, or a shoal about to leave
@@ -56,6 +60,7 @@ Every route was recorded in-game and is accurate to the tile when no smoothing i
   display, sized to match it.
 - **Animated**: the heads up display fades its lines in and out and grows to fit them. Turn it off
   for instant changes.
+- **Cargo hold**: shows or hides the cargo hold display, in the heads up display section.
 - **Arrow style**: arrows on the water can face the camera (the default), stand upright along the
   route, or lie flat on the water.
 - **Fish**: switch each fish on or off to focus on the ones you're after. A fish that's switched

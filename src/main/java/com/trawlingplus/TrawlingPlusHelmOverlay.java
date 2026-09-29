@@ -17,14 +17,12 @@ import net.runelite.client.ui.overlay.OverlayPosition;
 class TrawlingPlusHelmOverlay extends Overlay
 {
 	private final Client client;
-	private final TrawlingPlusPlugin plugin;
 	private final TrawlingPlusOverlay overlay;
 
 	TrawlingPlusHelmOverlay(Client client, TrawlingPlusPlugin plugin, TrawlingPlusOverlay overlay)
 	{
 		super(plugin);
 		this.client = client;
-		this.plugin = plugin;
 		this.overlay = overlay;
 		setPosition(OverlayPosition.DYNAMIC);
 		setLayer(OverlayLayer.UNDER_WIDGETS);
@@ -33,7 +31,9 @@ class TrawlingPlusHelmOverlay extends Overlay
 	@Override
 	public Dimension render(Graphics2D graphics)
 	{
-		if (client.getGameState() != GameState.LOGGED_IN || !plugin.showGuides())
+		// Whether the guides are showing is the display at the helm's to ask, not the hold's, which also shows on a
+		// raft under Nets only.
+		if (client.getGameState() != GameState.LOGGED_IN)
 		{
 			return null;
 		}

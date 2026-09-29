@@ -337,6 +337,26 @@ class TrawlingPlusOverlay extends Overlay
 
 	// How far faded in each line of the display at the helm is, by line.
 	private final double[] helmFades = new double[HELM_LINES];
+	// The hold's display: its title on a line of its own and the slots taken under it, the gap between it and the
+	// display at the helm below it, and between its two columns, in pixels. This frame's lines, top first, as the
+	// name on the left and the count on the right, in its colour, in how many lines: the title, the slots and up to
+	// every fish; how wide its columns are together, and its box; whether the hold is full; the order its fish are
+	// listed in; and how far faded in it is, and when that was worked out.
+	private static final String HOLD_TITLE = "Fish in Hold";
+	private static final String HOLD_TOTAL = "Total";
+	private static final int HOLD_GAP = 4;
+	private static final int HOLD_COLUMN_GAP = 12;
+	private final String[] holdLeft = new String[CargoHold.SEA_FISH.length + 2];
+	private final String[] holdRight = new String[CargoHold.SEA_FISH.length + 2];
+	private final Color[] holdColour = new Color[CargoHold.SEA_FISH.length + 2];
+	private final int[] holdOrder = new int[CargoHold.SEA_FISH.length];
+	private int holdLines;
+	private int holdWide;
+	private int holdBoxWidth;
+	private int holdBoxHeight;
+	private boolean holdFull;
+	private double holdFade;
+	private long lastHoldFadeMillis = -1;
 	// Each line's working out for the frame, kept rather than made afresh every frame. Every entry read is written
 	// first: the per-line ones for every line, the rest for the lines laid out.
 	private final boolean[] helmWanted = new boolean[HELM_LINES];
@@ -821,16 +841,35 @@ class TrawlingPlusOverlay extends Overlay
 	}
 
 	/**
-	 * Draws the display at the helm of the player's boat: the depth, time left at the stop, fish in the
-	 * nets, bait and the hold full warning, each line fading in and out on its own.
+	 * Draws the displays on the player's boat: the one at the helm while the guides are showing, and the hold's
+	 * above it while fishing a spot at sea, or in its place when it is the only one up.
 	 */
 	void drawHelm(Graphics2D graphics)
 	{
+		// The heads up display's own switch covers both.
 		if (!config.showHeadsUpDisplay())
 		{
 			return;
 		}
 
+		// The hold's display is laid out first, so the one at the helm can make room for it above itself. It shows
+		// whenever it is wanted, even on a raft, which has no nets for the guides to wait on.
+		long now = System.currentTimeMillis();
+		boolean hold = layOutHold(graphics, now);
+		boolean helm = plugin.showGuides() && drawTrawling(graphics, now, hold);
+		if (hold && !helm)
+		{
+			drawHoldAlone(graphics, now);
+		}
+	}
+
+	/**
+	 * Draws the display at the helm of the player's boat: the depth, time left at the stop, fish in the
+	 * nets, bait and the hold full warning, each line fading in and out on its own, and the hold's display
+	 * above it when that is up. Says whether it drew anything.
+	 */
+	private boolean drawTrawling(Graphics2D graphics, long now, boolean hold)
+	{
 		// Each line of the display stands on its own. Only the depth waits on a depth being known; the
 		// rest have nothing to do with it and are not held up by it.
 		WorldEntity boat = plugin.getBoat();
@@ -847,14 +886,14 @@ class TrawlingPlusOverlay extends Overlay
 		{
 			fadingBarFull = barFull;
 		}
-		long now = System.currentTimeMillis();
 		boolean[] wanted = helmWanted;
 		wanted[DEPTH_LINE] = boat != null && config.showShoalDepth() && depth != ShoalDepth.UNKNOWN;
 		wanted[TIME_LINE] = seconds >= 0;
 		wanted[BAR_LINE] = barFull >= 0;
 		wanted[BAITED_LINE] = boat != null && config.showBaited() && (plugin.isBaited() || plugin.isOutOfBait());
 		wanted[FISH_LINE] = boat != null && config.showFishInNets() && plugin.netsFitted() && plugin.fishLineWanted(now);
-		wanted[HOLD_LINE] = boat != null && config.showFishInNets() && plugin.isHoldFull();
+		// The hold's own display says when it is full, when that is up.
+		wanted[HOLD_LINE] = boat != null && config.showFishInNets() && plugin.isHoldFull() && !hold;
 
 		// A line going while another holds the pill up goes at once, and one coming waits for room to be made for it
 		// and then fades in. The display itself arriving or leaving fades as a whole.
@@ -887,7 +926,7 @@ class TrawlingPlusOverlay extends Overlay
 		WorldEntityConfig hull = boat == null ? null : boat.getConfig();
 		if (deck == null || hull == null)
 		{
-			return;
+			return false;
 		}
 
 		// The lines that are actually showing, bottom first, so a gap in the middle closes up.
@@ -962,55 +1001,15 @@ class TrawlingPlusOverlay extends Overlay
 		boolean bar = laid[BAR_LINE] && readBar();
 		if (count == 0 && !bar)
 		{
-			return;
+			return false;
 		}
 		// Placed by its bottom line of text, or with only the bar, where that line would be.
 		String placedBy = count > 0 ? text[0] : "";
 
-		// The helm sits a quarter of the hull length behind the middle of the boat, and the text a
-		// tile and a half further back again. A hull an odd number of tiles wide has its middle
-		// tile half a tile off the middle of the view.
-		int across = deck.getSizeX() * Perspective.LOCAL_TILE_SIZE / 2;
-		if ((hull.getBoundsWidth() / Perspective.LOCAL_TILE_SIZE) % 2 != 0)
-		{
-			across -= Perspective.LOCAL_HALF_TILE_SIZE;
-		}
-		LocalPoint anchor = new LocalPoint(across,
-			deck.getSizeY() * Perspective.LOCAL_TILE_SIZE / 2 + hull.getBoundsHeight() / 4
-				+ Perspective.LOCAL_TILE_SIZE * 3 / 2, deck);
-		int lift = HELM_TEXT_HEIGHT;
-		// At the bow or above the sails instead, once this boat's deck has been read for where those are; until
-		// then, which is only as its models load, at the helm.
-		TrawlingPlusConfig.HudPosition position = config.hudPosition();
-		if (position != TrawlingPlusConfig.HudPosition.HELM && readAnchors(boat, deck, hull))
-		{
-			// A raft's sail is barely above its deck, so above it is the same as at its bow.
-			if (position == TrawlingPlusConfig.HudPosition.BOW || !SAILS_BY_BOAT.containsKey(hull.getId()))
-			{
-				anchor = new LocalPoint(across, bowLocalY, deck);
-			}
-			else
-			{
-				// Over the deck a little towards the helm from the bow's spot, which from any angle reads as above the
-				// sails, near the height of their top.
-				// In tenths of a tile, by boat type.
-				int[] sails = SAILS_BY_BOAT.get(hull.getId());
-				int back = sails[0] * Perspective.LOCAL_TILE_SIZE / 10;
-				int offset = sails[1] * Perspective.LOCAL_TILE_SIZE / 10;
-				anchor = new LocalPoint(across, bowLocalY + back, deck);
-				lift = sailTop + offset;
-			}
-		}
-		LocalPoint afloat = boat.transformToMainWorld(anchor);
-		if (afloat == null)
-		{
-			return;
-		}
-
-		Point at = Perspective.getCanvasTextLocation(client, graphics, afloat, placedBy, lift);
+		Point at = helmPoint(graphics, boat, deck, hull, placedBy);
 		if (at == null)
 		{
-			return;
+			return false;
 		}
 
 		// getCanvasTextLocation gives the left end of the bottom line's baseline; the stack grows up
@@ -1066,13 +1065,20 @@ class TrawlingPlusOverlay extends Overlay
 		roomReady = resizeTo <= resizeFrom || (boxTextHeight + boxBar - resizeFrom) * 2 >= resizeTo - resizeFrom;
 
 		// Kept inside the game view, so zoomed in close, where its place on the boat is off the edge of the
-		// screen, it stops at the edge rather than going out of sight.
+		// screen, it stops at the edge rather than going out of sight. With the hold's display above it, the two
+		// are kept in as one, so neither is pushed over the other.
 		int boxLeft = left + (wide - boxWide) / 2 - HELM_PADDING;
 		int boxTop = top + textHeight - boxTextHeight - HELM_PADDING;
 		int boxWidth = boxWide + HELM_PADDING * 2;
 		int boxHeight = boxTextHeight + boxBar + HELM_PADDING * 2;
-		int shiftX = keepInside(boxLeft, boxWidth, client.getViewportXOffset(), client.getViewportWidth());
-		int shiftY = keepInside(boxTop, boxHeight, client.getViewportYOffset(), client.getViewportHeight());
+		int centre = left + wide / 2;
+		int blockLeft = hold ? Math.min(boxLeft, centre - holdBoxWidth / 2) : boxLeft;
+		int blockRight = hold ? Math.max(boxLeft + boxWidth, centre - holdBoxWidth / 2 + holdBoxWidth)
+			: boxLeft + boxWidth;
+		int blockTop = hold ? boxTop - HOLD_GAP - holdBoxHeight : boxTop;
+		int shiftX = keepInside(blockLeft, blockRight - blockLeft, client.getViewportXOffset(), client.getViewportWidth());
+		int shiftY = keepInside(blockTop, boxTop + boxHeight - blockTop, client.getViewportYOffset(),
+			client.getViewportHeight());
 		left += shiftX;
 		top += shiftY;
 		int bottom = at.getY() + shiftY;
@@ -1100,6 +1106,181 @@ class TrawlingPlusOverlay extends Overlay
 		{
 			drawBar(graphics, left + (wide - barBack.getWidth()) / 2,
 				top + lineHeight * count + (count > 0 ? BAR_GAP : 0), fadingBarFull, barShowing);
+		}
+
+		if (hold)
+		{
+			drawHold(graphics, centre + shiftX, boxTop + shiftY - HOLD_GAP, now);
+		}
+		return true;
+	}
+
+	/**
+	 * Where the display at the helm, or the hold's in its place, sits on screen: the left end of the baseline of a
+	 * bottom line of text centred there, at the helm, the bow or above the sails. Null when it can't be placed.
+	 */
+	private Point helmPoint(Graphics2D graphics, WorldEntity boat, WorldView deck, WorldEntityConfig hull,
+		String placedBy)
+	{
+		// The helm sits a quarter of the hull length behind the middle of the boat, and the text a
+		// tile and a half further back again. A hull an odd number of tiles wide has its middle
+		// tile half a tile off the middle of the view.
+		int across = deck.getSizeX() * Perspective.LOCAL_TILE_SIZE / 2;
+		if ((hull.getBoundsWidth() / Perspective.LOCAL_TILE_SIZE) % 2 != 0)
+		{
+			across -= Perspective.LOCAL_HALF_TILE_SIZE;
+		}
+		LocalPoint anchor = new LocalPoint(across,
+			deck.getSizeY() * Perspective.LOCAL_TILE_SIZE / 2 + hull.getBoundsHeight() / 4
+				+ Perspective.LOCAL_TILE_SIZE * 3 / 2, deck);
+		int lift = HELM_TEXT_HEIGHT;
+		// At the bow or above the sails instead, once this boat's deck has been read for where those are; until
+		// then, which is only as its models load, at the helm.
+		TrawlingPlusConfig.HudPosition position = config.hudPosition();
+		if (position != TrawlingPlusConfig.HudPosition.HELM && readAnchors(boat, deck, hull))
+		{
+			// A raft's sail is barely above its deck, so above it is the same as at its bow.
+			if (position == TrawlingPlusConfig.HudPosition.BOW || !SAILS_BY_BOAT.containsKey(hull.getId()))
+			{
+				anchor = new LocalPoint(across, bowLocalY, deck);
+			}
+			else
+			{
+				// Over the deck a little towards the helm from the bow's spot, which from any angle reads as above the
+				// sails, near the height of their top.
+				// In tenths of a tile, by boat type.
+				int[] sails = SAILS_BY_BOAT.get(hull.getId());
+				int back = sails[0] * Perspective.LOCAL_TILE_SIZE / 10;
+				int offset = sails[1] * Perspective.LOCAL_TILE_SIZE / 10;
+				anchor = new LocalPoint(across, bowLocalY + back, deck);
+				lift = sailTop + offset;
+			}
+		}
+		LocalPoint afloat = boat.transformToMainWorld(anchor);
+		return afloat == null ? null : Perspective.getCanvasTextLocation(client, graphics, afloat, placedBy, lift);
+	}
+
+	/**
+	 * Works out the hold's display for this frame and says whether it is up: its title, how full the hold is under
+	 * that, and the fish in it below, most first, each name with its count lined up on the right. Fades in when it
+	 * arrives, and goes at once, as it only goes when stepping off the boat or switching it off.
+	 */
+	private boolean layOutHold(Graphics2D graphics, long now)
+	{
+		CargoHold record = plugin.getShownHold();
+		if (record == null)
+		{
+			holdFade = 0;
+			lastHoldFadeMillis = -1;
+			return false;
+		}
+		if (!config.animatedHud())
+		{
+			holdFade = 1;
+		}
+		else if (lastHoldFadeMillis >= 0)
+		{
+			holdFade = Math.min(1, holdFade + Math.max(0, now - lastHoldFadeMillis) / HELM_FADE_MILLIS);
+		}
+		lastHoldFadeMillis = now;
+
+		holdLines = 0;
+		holdFull = record.full();
+		holdLeft[holdLines] = HOLD_TITLE;
+		holdRight[holdLines] = "";
+		holdColour[holdLines] = Color.WHITE;
+		holdLines++;
+		holdLeft[holdLines] = holdFull ? HOLD_FULL : HOLD_TOTAL;
+		holdRight[holdLines] = record.taken() + "/" + record.capacity();
+		holdColour[holdLines] = Color.WHITE;
+		holdLines++;
+
+		// Most first, and in the order of the fishing spots between two of the same.
+		int kinds = CargoHold.SEA_FISH.length;
+		for (int kind = 0; kind < kinds; kind++)
+		{
+			holdOrder[kind] = kind;
+		}
+		for (int k = 1; k < kinds; k++)
+		{
+			int kind = holdOrder[k];
+			int j = k;
+			while (j > 0 && record.fish(holdOrder[j - 1]) < record.fish(kind))
+			{
+				holdOrder[j] = holdOrder[j - 1];
+				j--;
+			}
+			holdOrder[j] = kind;
+		}
+		for (int k = 0; k < kinds && record.fish(holdOrder[k]) > 0; k++)
+		{
+			holdLeft[holdLines] = CargoHold.SEA_FISH_NAMES[holdOrder[k]];
+			holdRight[holdLines] = String.valueOf(record.fish(holdOrder[k]));
+			holdColour[holdLines] = CargoHold.SEA_FISH_COLOURS[holdOrder[k]];
+			holdLines++;
+		}
+
+		// The title spans both columns, so it only has to fit their width, not be part of the left one.
+		FontMetrics letters = graphics.getFontMetrics();
+		int leftWide = 0;
+		int rightWide = 0;
+		for (int line = 1; line < holdLines; line++)
+		{
+			leftWide = Math.max(leftWide, letters.stringWidth(holdLeft[line]));
+			rightWide = Math.max(rightWide, letters.stringWidth(holdRight[line]));
+		}
+		holdWide = Math.max(leftWide + HOLD_COLUMN_GAP + rightWide, letters.stringWidth(HOLD_TITLE));
+		holdBoxWidth = holdWide + HELM_PADDING * 2;
+		holdBoxHeight = letters.getHeight() * holdLines + HELM_PADDING * 2;
+		return true;
+	}
+
+	/**
+	 * Draws the hold's display where the one at the helm would be, when it is the only one up: its bottom line
+	 * where that one's would be.
+	 */
+	private void drawHoldAlone(Graphics2D graphics, long now)
+	{
+		WorldEntity boat = plugin.getOwnBoat();
+		WorldView deck = boat == null ? null : boat.getWorldView();
+		WorldEntityConfig hull = boat == null ? null : boat.getConfig();
+		Point at = deck == null || hull == null ? null : helmPoint(graphics, boat, deck, hull, "");
+		if (at == null)
+		{
+			return;
+		}
+
+		FontMetrics letters = graphics.getFontMetrics();
+		int bottom = at.getY() + letters.getHeight() - letters.getAscent() + HELM_PADDING;
+		int shiftX = keepInside(at.getX() - holdBoxWidth / 2, holdBoxWidth, client.getViewportXOffset(),
+			client.getViewportWidth());
+		int shiftY = keepInside(bottom - holdBoxHeight, holdBoxHeight, client.getViewportYOffset(),
+			client.getViewportHeight());
+		drawHold(graphics, at.getX() + shiftX, bottom + shiftY, now);
+	}
+
+	/**
+	 * Draws the hold's display as laid out this frame, centred on a point across and with its bottom edge at a
+	 * point down the screen.
+	 */
+	private void drawHold(Graphics2D graphics, int centre, int bottom, long now)
+	{
+		FontMetrics letters = graphics.getFontMetrics();
+		int lineHeight = letters.getHeight();
+		graphics.setColor(withOpacity(HELM_BACKGROUND, holdFade));
+		graphics.fillRoundRect(centre - holdBoxWidth / 2, bottom - holdBoxHeight, holdBoxWidth, holdBoxHeight, 6, 6);
+
+		int left = centre - holdWide / 2;
+		int baseline = bottom - holdBoxHeight + HELM_PADDING + letters.getAscent();
+		for (int line = 0; line < holdLines; line++)
+		{
+			// Full pulses between the two warning colours, in time with the other warnings; each fish is in its own.
+			Color colour = line == 1 && holdFull
+				? blend(HOLD_FULL_COLOUR, HOLD_FULL_PULSE_COLOUR, warningPulse(now)) : holdColour[line];
+			line(graphics, holdLeft[line], left, baseline, colour, holdFade);
+			line(graphics, holdRight[line], left + holdWide - letters.stringWidth(holdRight[line]), baseline,
+				colour, holdFade);
+			baseline += lineHeight;
 		}
 	}
 

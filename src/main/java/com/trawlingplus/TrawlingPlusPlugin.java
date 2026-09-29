@@ -178,6 +178,15 @@ public class TrawlingPlusPlugin extends Plugin
 	// "You catch four giant krill!", "You catch a haddock!", "Jolly Jim catches three giant krill!"
 	private static final Pattern CATCH = Pattern.compile("^(?:You catch|.+ catches) (\\S+) ");
 
+	// Starting to fish one of the spots at sea, which only the player does, never the crew: every tool says so as it
+	// starts, before anything is caught: "You cast out your line..." or "...your net...", "You attempt to catch a
+	// lobster.", "You start harpooning fish.", "You lower the Karambwan vessel." Aboard the player's own boat this is
+	// only ever fishing a spot at sea; the nets say "You begin operating the trawling net..." instead. From then on
+	// the player's own catches are the spot's, whatever they name.
+	private static final Pattern SEA_START = Pattern.compile(
+		"^You (?:cast out your|attempt to catch|start harpooning|lower the Karambwan vessel)");
+	private static final String NETS_START = "You begin operating the trawling net";
+
 	// The first line of the menu a net opens: "There are 46 fish across the two nets on the boat."
 	private static final Pattern NET_MENU = Pattern.compile("^There (?:is|are) (\\S+) fish");
 
@@ -322,9 +331,23 @@ public class TrawlingPlusPlugin extends Plugin
 	// while it is open, or just after, went into the hold; any other time they were dropped or used up.
 	private boolean holdOpen;
 	private int holdClosedTick = -1;
-	// Whether the hold is full: found without room when the nets were last emptied into it, or showing no
-	// free slots when last opened, until it is known to have room again.
-	private boolean holdFull;
+	// Each account's boats' holds as last seen, kept until the client closes or the plugin is switched off, since
+	// logging out, as when disconnected for being idle, leaves them as they were; and the logged in account's, by
+	// the game's number for the boat last boarded, which is the one whose hold was opened. Whether the player has
+	// been fishing a spot at sea since boarding, which shows the hold's display, until they step off. Each catch
+	// from those spots in the inventory as of its last update, or null before the first, for counting what goes
+	// into the hold as it is shut.
+	private final Map<Long, Map<Integer, CargoHold>> holdsByAccount = new HashMap<>();
+	private Map<Integer, CargoHold> holds = new HashMap<>();
+	private boolean seaFishing;
+	private int[] inventorySea;
+	// The tick a catch from those spots was last announced, or -1. Whether the player's own catches are coming from
+	// one of those spots rather than the nets: since they last started fishing one, until they start on the nets or
+	// step off.
+	private int seaCatchTick = -1;
+	private boolean fishingSpot;
+	// The player's own boat while they are aboard it, whether or not anything else is being shown on it.
+	private WorldEntity ownBoat;
 	// The shoal the leaving notification is watching, whether it was sitting at a stop on the last tick,
 	// and whether the stop it is at has been warned about already.
 	private Shoal leavingShoal;
@@ -367,8 +390,11 @@ public class TrawlingPlusPlugin extends Plugin
 			// Started part way through a session, the slots won't change to say what they hold.
 			netsFitted = readNetsFitted();
 			netsLowered = readNetsLowered();
-			// Whatever the hold was doing while the plugin was off is not known, so don't warn about it.
-			holdFull = false;
+			// Switched on part way through a session, no login is seen to say whose holds to keep.
+			if (client.getGameState() == GameState.LOGGED_IN)
+			{
+				holds = holdsByAccount.computeIfAbsent(client.getAccountHash(), account -> new HashMap<>());
+			}
 		});
 		hideStopBar = config.showTimerBar();
 		renderCallbackManager.register(drawCallback);
@@ -401,6 +427,11 @@ public class TrawlingPlusPlugin extends Plugin
 			shoalMarkers.clear();
 			shoalIconsSeen.clear();
 			mapRegionsSeen.clear();
+			// Nothing going into or out of the holds is counted while switched off, so what they hold is no longer known.
+			holdsByAccount.clear();
+			holds = new HashMap<>();
+			seaFishing = false;
+			fishingSpot = false;
 		});
 		log.debug("Trawling Plus stopped");
 	}
@@ -719,6 +750,9 @@ public class TrawlingPlusPlugin extends Plugin
 		if (event.getGameState() == GameState.HOPPING || event.getGameState() == GameState.LOGIN_SCREEN)
 		{
 			clearShoals();
+			seaFishing = false;
+			fishingSpot = false;
+			ownBoat = null;
 		}
 
 		if (event.getGameState() == GameState.LOGIN_SCREEN)
@@ -736,6 +770,12 @@ public class TrawlingPlusPlugin extends Plugin
 			inventoryPlain = -1;
 			inventoryFine = -1;
 			takePending = false;
+			inventorySea = null;
+		}
+		else if (event.getGameState() == GameState.LOGGED_IN)
+		{
+			// Whoever logged in, whose holds are the ones to show; the same account's again after a hop.
+			holds = holdsByAccount.computeIfAbsent(client.getAccountHash(), account -> new HashMap<>());
 		}
 	}
 
@@ -762,6 +802,11 @@ public class TrawlingPlusPlugin extends Plugin
 		}
 
 		ItemContainer contents = event.getItemContainer();
+		CargoHold record = holds.computeIfAbsent(boatNumber(), number -> new CargoHold());
+		for (int kind = 0; kind < CargoHold.SEA_FISH.length; kind++)
+		{
+			record.setFish(kind, contents == null ? 0 : contents.count(CargoHold.SEA_FISH[kind]));
+		}
 		plainBait = contents == null ? 0 : contents.count(ItemID.BRUT_FISH_CUTS);
 		fineBait = contents == null ? 0 : contents.count(ItemID.SAILING_FINE_FISH_OFFCUTS);
 		holdTick = client.getTickCount();
@@ -785,7 +830,18 @@ public class TrawlingPlusPlugin extends Plugin
 		int capacity = widgetNumber(InterfaceID.SailingBoatCargohold.CAPACITY);
 		if (taken >= 0 && capacity > 0)
 		{
-			holdFull = taken >= capacity;
+			CargoHold record = holds.computeIfAbsent(boatNumber(), number -> new CargoHold());
+			record.setSlots(taken, capacity);
+			record.setFullWarning(taken >= capacity);
+			if (taken == 0)
+			{
+				// An empty hold sends no contents at all, so this is the only word that it holds nothing: no fish,
+				// and no bait either.
+				record.empty();
+				plainBait = 0;
+				fineBait = 0;
+				baitedLabel = baitLabel();
+			}
 		}
 	}
 
@@ -930,6 +986,7 @@ public class TrawlingPlusPlugin extends Plugin
 		findShoalIcons();
 
 		WorldEntity own = boardedBoat();
+		ownBoat = own;
 		if (own == null)
 		{
 			stopTracking();
@@ -1314,7 +1371,31 @@ public class TrawlingPlusPlugin extends Plugin
 	 */
 	boolean isHoldFull()
 	{
-		return holdFull;
+		CargoHold record = holds.get(boatNumber());
+		return record != null && record.fullWarning();
+	}
+
+	/**
+	 * The player's own boat while they are aboard it, found on the tick, whether or not the guides are showing.
+	 */
+	WorldEntity getOwnBoat()
+	{
+		return ownBoat;
+	}
+
+	/**
+	 * The hold of the boat the player is on, while its display is wanted: its hold has been opened this session,
+	 * and they have been fishing a spot at sea since boarding or it still holds some of those catches, which
+	 * stay in it when they step off. Null otherwise.
+	 */
+	CargoHold getShownHold()
+	{
+		if (!config.showCargoHold() || ownBoat == null)
+		{
+			return null;
+		}
+		CargoHold record = holds.get(boatNumber());
+		return record != null && record.known() && (seaFishing || record.hasFish()) ? record : null;
 	}
 
 	/**
@@ -1357,7 +1438,36 @@ public class TrawlingPlusPlugin extends Plugin
 			// Asking the crew on the dock to move everything in the hold to the bank empties it. This is said
 			// off the boat, so it comes before the check for being aboard; what the crewmate says once it is
 			// done is in their own words, so this is the line to go by.
-			holdFull = false;
+			CargoHold record = holds.get(boatNumber());
+			if (record != null)
+			{
+				record.empty();
+			}
+			return;
+		}
+
+		if (message.startsWith(NETS_START))
+		{
+			// Back on the nets, so the player's own catches are theirs again.
+			fishingSpot = false;
+		}
+
+		boolean start = SEA_START.matcher(message).find();
+		boolean seaCatch = fishingSpot && message.startsWith("You catch ");
+		if (start || seaCatch)
+		{
+			// Fishing a spot at sea, from the moment it starts, which puts nothing in the nets. Asked of the game's
+			// own flag rather than the boat the plugin follows, since on a raft under Nets only it follows none.
+			if (client.getVarbitValue(VarbitID.SAILING_PLAYER_IS_ON_PLAYER_BOAT) == 1)
+			{
+				seaFishing = true;
+				fishingSpot = true;
+			}
+			if (seaCatch)
+			{
+				// What it brings arrives in the inventory the same tick, which isn't taken out of the hold.
+				seaCatchTick = client.getTickCount();
+			}
 			return;
 		}
 
@@ -1390,11 +1500,12 @@ public class TrawlingPlusPlugin extends Plugin
 			// "..., but there was not enough space in there to do so entirely." A hold without room for them
 			// all keeps some back and doesn't say how many; one that took them all had room.
 			boolean noRoom = message.contains("not enough");
-			if (noRoom && !holdFull)
+			CargoHold record = holds.computeIfAbsent(boatNumber(), number -> new CargoHold());
+			if (noRoom && !record.fullWarning())
 			{
 				notifier.notify(config.notifyHoldFull(), "Your cargo hold is full.");
 			}
-			holdFull = noRoom;
+			record.setFullWarning(noRoom);
 			if (noRoom)
 			{
 				setFish(-1);
@@ -1462,6 +1573,9 @@ public class TrawlingPlusPlugin extends Plugin
 		else if (event.getGroupId() == InterfaceID.SAILING_BOAT_CARGOHOLD)
 		{
 			holdOpen = true;
+			// Read here as well as when its contents arrive, since an empty hold sends none. Its numbers are filled
+			// in after it loads.
+			clientThread.invokeLater(this::readHoldSpace);
 		}
 	}
 
@@ -1488,6 +1602,8 @@ public class TrawlingPlusPlugin extends Plugin
 		if (varbit == VarbitID.SAILING_PLAYER_IS_ON_PLAYER_BOAT && event.getValue() == 0)
 		{
 			resetFish(0);
+			seaFishing = false;
+			fishingSpot = false;
 		}
 		else if (varbit == NET_SLOTS[0] || varbit == NET_SLOTS[1])
 		{
@@ -1530,11 +1646,17 @@ public class TrawlingPlusPlugin extends Plugin
 		int filled = 0;
 		int plain = 0;
 		int fine = 0;
+		int[] sea = new int[CargoHold.SEA_FISH.length];
 		for (Item item : inventory == null ? new Item[0] : inventory.getItems())
 		{
 			if (item.getId() >= 0)
 			{
 				filled++;
+				int kind = seaFishKind(item.getId());
+				if (kind >= 0)
+				{
+					sea[kind] += item.getQuantity();
+				}
 			}
 			if (item.getId() == ItemID.BRUT_FISH_CUTS)
 			{
@@ -1551,6 +1673,7 @@ public class TrawlingPlusPlugin extends Plugin
 		inventoryFilled = filled;
 		inventoryTick = client.getTickCount();
 		countDeposits(plain, fine);
+		countSeaTransfers(sea);
 		if (takePending)
 		{
 			takePending = false;
@@ -1582,6 +1705,55 @@ public class TrawlingPlusPlugin extends Plugin
 		}
 		inventoryPlain = plain;
 		inventoryFine = fine;
+	}
+
+	/**
+	 * Moves catches from the fishing spots at sea between the inventory aboard and the hold's count, the same way
+	 * as offcuts: only while its screen is open or just shut, and not when its own contents came the same tick.
+	 * Those leaving the inventory went in, and those arriving came out, unless a catch was announced that tick.
+	 */
+	private void countSeaTransfers(int[] sea)
+	{
+		CargoHold record = holds.get(boatNumber());
+		int tick = client.getTickCount();
+		if (record != null && inventorySea != null && holdTick != tick
+			&& (holdOpen || holdClosedTick >= 0 && tick - holdClosedTick <= DEPOSIT_TICKS)
+			&& client.getVarbitValue(VarbitID.SAILING_PLAYER_IS_ON_PLAYER_BOAT) == 1)
+		{
+			for (int kind = 0; kind < sea.length; kind++)
+			{
+				if (sea[kind] < inventorySea[kind])
+				{
+					record.deposit(kind, inventorySea[kind] - sea[kind]);
+				}
+				else if (sea[kind] > inventorySea[kind] && seaCatchTick != tick)
+				{
+					record.withdraw(kind, sea[kind] - inventorySea[kind]);
+				}
+			}
+		}
+		inventorySea = sea;
+	}
+
+	private static int seaFishKind(int item)
+	{
+		for (int kind = 0; kind < CargoHold.SEA_FISH.length; kind++)
+		{
+			if (CargoHold.SEA_FISH[kind] == item)
+			{
+				return kind;
+			}
+		}
+		return -1;
+	}
+
+	/**
+	 * The game's number for the player's boat last boarded, which is the one they are on while aboard: what each
+	 * boat's hold is kept by.
+	 */
+	private int boatNumber()
+	{
+		return client.getVarbitValue(VarbitID.SAILING_LAST_PERSONAL_BOAT_BOARDED);
 	}
 
 	private void takeFromNets(int taken)

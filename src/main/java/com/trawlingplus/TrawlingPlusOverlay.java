@@ -884,6 +884,28 @@ class TrawlingPlusOverlay extends Overlay
 	}
 
 	/**
+	 * Lets go of everything kept between frames that holds on to the game or its pictures, as the plugin is switched
+	 * off, so none of it stays in memory; all of it is made again when next needed.
+	 */
+	void forget()
+	{
+		loadedRoute = null;
+		areaView = null;
+		fishingPointFade = 0;
+		barFrontSprite = null;
+		barBackSprite = null;
+		barFront = null;
+		barBack = null;
+		barFrontSource = null;
+		barBackSource = null;
+		barWidth = -1;
+		laidHold = null;
+		laidFont = null;
+		holdFade = 0;
+		lastHoldFadeMillis = -1;
+	}
+
+	/**
 	 * Draws the displays on the player's boat: the one at the helm while the guides are showing, and the hold's
 	 * above it while fishing a spot at sea, or in its place when it is the only one up.
 	 */

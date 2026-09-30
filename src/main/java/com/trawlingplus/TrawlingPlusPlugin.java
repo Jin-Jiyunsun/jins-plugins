@@ -454,6 +454,13 @@ public class TrawlingPlusPlugin extends Plugin
 			boatHold = null;
 			seaFishing = false;
 			fishingSpot = false;
+			// Nothing is kept in memory while switched off: the routes and markers are built again on the next start.
+			ownBoat = null;
+			routes = Collections.emptyList();
+			routeData = null;
+			speciesByName = Collections.emptyMap();
+			dangerMarkers = Collections.emptyList();
+			overlay.forget();
 		});
 		log.debug("Trawling Plus stopped");
 	}

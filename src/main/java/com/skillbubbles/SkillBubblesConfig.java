@@ -40,7 +40,7 @@ public interface SkillBubblesConfig extends Config
 	@ConfigItem(
 		position = 0,
 		keyName = "iconMode",
-		name = "Icon",
+		name = "Icon type",
 		description = "Generic skill icon, or the specific tool being used<br>"
 			+ "(falls back to the skill icon for actions with no single tool)"
 	)
@@ -92,7 +92,7 @@ public interface SkillBubblesConfig extends Config
 	@ConfigItem(
 		position = 4,
 		keyName = "style",
-		name = "Style",
+		name = "Bubble style",
 		description = "Look of the bubble. Classic also swaps the icons<br>"
 			+ "for RuneScape Classic-style art, where one exists"
 	)
@@ -106,8 +106,8 @@ public interface SkillBubblesConfig extends Config
 		position = 5,
 		keyName = "customFill",
 		name = "Custom fill",
-		description = "Fill colour of the bubble when Style is<br>"
-			+ "set to Custom"
+		description = "Fill colour of the bubble when Bubble style<br>"
+			+ "is set to Custom"
 	)
 	default Color customFill()
 	{
@@ -119,8 +119,8 @@ public interface SkillBubblesConfig extends Config
 		position = 6,
 		keyName = "customRim",
 		name = "Custom rim",
-		description = "Rim colour of the bubble when Style is<br>"
-			+ "set to Custom"
+		description = "Rim colour of the bubble when Bubble style<br>"
+			+ "is set to Custom"
 	)
 	default Color customRim()
 	{

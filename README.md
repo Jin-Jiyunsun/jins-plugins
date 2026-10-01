@@ -31,11 +31,11 @@ construction and thieving.
 
 ## Settings
 
-- **Icon**: skill icon or tool icon.
+- **Icon type**: skill icon or tool icon.
 - **Scale**: size of the bubble and icon.
 - **Hide after**: how many seconds of inactivity before the bubble disappears.
 - **Fade in/out**: fade the bubble in and out instead of an instant appear/disappear.
-- **Style**: Gradient, Classic, Speech bubble, Thought bubble, Icon only or Custom.
+- **Bubble style**: Gradient, Classic, Speech bubble, Thought bubble, Icon only or Custom.
 - **Custom fill** / **Custom rim**: the colours used by the Custom style.
 
 ### License

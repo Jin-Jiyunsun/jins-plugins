@@ -69,6 +69,9 @@ public class SkillBubblesPlugin extends Plugin
 	private ClientThread clientThread;
 
 	@Inject
+	private ConfigManager configManager;
+
+	@Inject
 	private SkillBubblesConfig config;
 
 	@Inject
@@ -105,6 +108,7 @@ public class SkillBubblesPlugin extends Plugin
 	protected void startUp()
 	{
 		log.debug("Skill Bubbles started");
+		migrateClassicSprites();
 		overlayManager.add(overlay);
 		// Enabling the plugin mid-session gets no LOGGED_IN event to seed from, and the counts
 		// left over from before it was disabled are stale - reseed from the real inventory now.
@@ -130,6 +134,28 @@ public class SkillBubblesPlugin extends Plugin
 			overlay.clearCaches();
 			forgetDetectedIngredients();
 		});
+	}
+
+	/**
+	 * 1.0 had a "RuneScape Classic sprites" checkbox, now the Classic option of the Style
+	 * dropdown. Carries a ticked box over as Style = Classic (unless a style was already chosen),
+	 * then drops the old key so this only ever runs once.
+	 */
+	private void migrateClassicSprites()
+	{
+		String classicSprites = configManager.getConfiguration(SkillBubblesConfig.GROUP, "classicSprites");
+		if (classicSprites == null)
+		{
+			return;
+		}
+
+		if (Boolean.parseBoolean(classicSprites)
+			&& configManager.getConfiguration(SkillBubblesConfig.GROUP, "style") == null)
+		{
+			configManager.setConfiguration(SkillBubblesConfig.GROUP, "style", SkillBubblesConfig.Style.CLASSIC);
+		}
+
+		configManager.unsetConfiguration(SkillBubblesConfig.GROUP, "classicSprites");
 	}
 
 	SkillAction getLastAction()

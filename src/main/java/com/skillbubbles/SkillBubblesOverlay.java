@@ -25,13 +25,20 @@
 package com.skillbubbles;
 
 import java.awt.AlphaComposite;
+import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Composite;
 import java.awt.Dimension;
 import java.awt.Graphics2D;
 import java.awt.RadialGradientPaint;
 import java.awt.RenderingHints;
+import java.awt.Shape;
+import java.awt.Stroke;
+import java.awt.geom.Area;
+import java.awt.geom.Ellipse2D;
+import java.awt.geom.Path2D;
 import java.awt.geom.Point2D;
+import java.awt.geom.RoundRectangle2D;
 import java.awt.image.BufferedImage;
 import java.util.EnumMap;
 import java.util.HashMap;
@@ -68,6 +75,14 @@ class SkillBubblesOverlay extends Overlay
 	// Tints classicBubbleMask() below - that image is plain white-on-transparent, not this
 	// colour, since it's just a shape mask.
 	private static final Color CLASSIC_BUBBLE_COLOR = new Color(0x9E, 0x9E, 0x9E, 0x6E);
+	// Speech bubble: a light rounded box, wider than the round styles, with a dark outline and a
+	// small tail below it pointing down at the player's head.
+	private static final Color SPEECH_FILL = new Color(0xF1, 0xEA, 0xD9);
+	private static final Color SPEECH_OUTLINE = new Color(0x1A, 0x16, 0x12);
+	private static final float SPEECH_WIDTH_FACTOR = 1.25f;
+	private static final float SPEECH_TAIL_FACTOR = 0.2f;
+	private static final float OUTLINE_WIDTH = 1.5f;
+	private static final BasicStroke OUTLINE_STROKE = new BasicStroke(OUTLINE_WIDTH);
 	// The half-width (in destination pixels) of the zone around a source pixel boundary that
 	// hybridResize() smooths - 0.5 is the textbook Hybrid algorithm's own value; tried smaller
 	// values for a sharper look, but 0.5 won a side-by-side comparison in-game.
@@ -106,6 +121,9 @@ class SkillBubblesOverlay extends Overlay
 	// Recoloured + resized per bubble height, so the (cheap, but not free) recolour pass doesn't
 	// run every frame.
 	private final Map<Integer, BufferedImage> classicBubbleCache = new HashMap<>();
+	// The speech bubble's outline shape, built at the origin once per bubble size (the Area merge
+	// isn't free) and moved into place with a translate each frame.
+	private final Map<Integer, Shape> speechBubbleShapeCache = new HashMap<>();
 
 	@Inject
 	private SkillBubblesOverlay(Client client, SkillBubblesPlugin plugin, SkillBubblesConfig config,
@@ -190,7 +208,9 @@ class SkillBubblesOverlay extends Overlay
 		}
 
 		boolean toolMode = config.iconMode() == SkillBubblesConfig.IconMode.TOOL && toolItemId != SkillAction.NO_TOOL;
-		boolean classicSprites = config.classicSprites();
+		SkillBubblesConfig.Style style = config.style();
+		// The Classic style swaps the icons as well as the backdrop.
+		boolean classicSprites = style == SkillBubblesConfig.Style.CLASSIC;
 
 		// Distinct negative surrogate ranges (well clear of real item ids, and of the plain
 		// skill-ordinal surrogates below) so a classic sprite never shares a resize/centering
@@ -264,25 +284,38 @@ class SkillBubblesOverlay extends Overlay
 			graphics.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, fadeAlpha));
 		}
 
-		if (classicSprites)
+		switch (style)
 		{
-			// RSC's own overhead icon backdrop, from a real sprite (a plain white-on-transparent
-			// shape mask Jin supplied) rather than hand-drawn geometry - recoloured to
-			// CLASSIC_BUBBLE_COLOR and scaled with nearest-neighbour, so it stays crisp and
-			// blocky instead of picking up soft antialiased edges.
-			BufferedImage classicBubble = classicBubbleImage(bubbleSize);
-			int bubbleDrawX = bubbleX - (classicBubble.getWidth() - bubbleSize) / 2;
-			graphics.drawImage(classicBubble, bubbleDrawX, bubbleY, null);
-		}
-		else
-		{
-			// The gradient is computed at render resolution, so scaling it never loses quality.
-			graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-			Point2D.Float center = new Point2D.Float(bubbleX + bubbleSize / 2f, bubbleY + bubbleSize / 2f);
-			graphics.setPaint(new RadialGradientPaint(center, bubbleSize / 2f,
-				new float[] {0f, GLOW_CENTER_FRACTION, GLOW_OUTER_EDGE_FRACTION, 1f},
-				new Color[] {GLOW_CENTER, GLOW_CENTER, GLOW_EDGE, GLOW_OUTER_EDGE}));
-			graphics.fillOval(bubbleX, bubbleY, bubbleSize, bubbleSize);
+			case CLASSIC:
+			{
+				// RSC's own overhead icon backdrop, from a real sprite (a plain
+				// white-on-transparent shape mask Jin supplied) rather than hand-drawn geometry -
+				// recoloured to CLASSIC_BUBBLE_COLOR and scaled with nearest-neighbour, so it stays
+				// crisp and blocky instead of picking up soft antialiased edges.
+				BufferedImage classicBubble = classicBubbleImage(bubbleSize);
+				int bubbleDrawX = bubbleX - (classicBubble.getWidth() - bubbleSize) / 2;
+				graphics.drawImage(classicBubble, bubbleDrawX, bubbleY, null);
+				break;
+			}
+			case CUSTOM:
+				drawCustom(graphics, bubbleX, bubbleY, bubbleSize, config.customFill(), config.customRim());
+				break;
+			case SPEECH_BUBBLE:
+				drawSpeechBubble(graphics, bubbleX, bubbleY, speechBubbleShapeCache.computeIfAbsent(bubbleSize, SkillBubblesOverlay::buildSpeechBubbleShape));
+				break;
+			case ICON_ONLY:
+				break;
+			default:
+			{
+				// The gradient is computed at render resolution, so scaling it never loses quality.
+				graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+				Point2D.Float center = new Point2D.Float(bubbleX + bubbleSize / 2f, bubbleY + bubbleSize / 2f);
+				graphics.setPaint(new RadialGradientPaint(center, bubbleSize / 2f,
+					new float[] {0f, GLOW_CENTER_FRACTION, GLOW_OUTER_EDGE_FRACTION, 1f},
+					new Color[] {GLOW_CENTER, GLOW_CENTER, GLOW_EDGE, GLOW_OUTER_EDGE}));
+				graphics.fillOval(bubbleX, bubbleY, bubbleSize, bubbleSize);
+				break;
+			}
 		}
 
 		int cx = bubbleX + bubbleSize / 2;
@@ -315,6 +348,58 @@ class SkillBubblesOverlay extends Overlay
 
 		graphics.setComposite(originalComposite);
 		return null;
+	}
+
+	// A plain disc with a thin rim, both in the user's own colours.
+	private static void drawCustom(Graphics2D graphics, int x, int y, int size, Color fill, Color rim)
+	{
+		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+		graphics.setColor(fill);
+		graphics.fillOval(x, y, size, size);
+
+		// Inset by half the stroke so the rim sits inside the disc rather than straddling its edge.
+		float inset = OUTLINE_WIDTH / 2f;
+		Stroke originalStroke = graphics.getStroke();
+		graphics.setStroke(OUTLINE_STROKE);
+		graphics.setColor(rim);
+		graphics.draw(new Ellipse2D.Float(x + inset, y + inset, size - OUTLINE_WIDTH, size - OUTLINE_WIDTH));
+		graphics.setStroke(originalStroke);
+	}
+
+	/**
+	 * The box covers the same height as the round styles so the icon sits in the same place; the
+	 * tail hangs below it, into the gap above the head. Box and tail are merged into one shape
+	 * first so the outline doesn't cut a line across the join.
+	 */
+	private static Shape buildSpeechBubbleShape(int size)
+	{
+		float width = size * SPEECH_WIDTH_FACTOR;
+		float left = (size - width) / 2f;
+		float tailHeight = size * SPEECH_TAIL_FACTOR;
+		float centerX = size / 2f;
+
+		Area shape = new Area(new RoundRectangle2D.Float(left, 0, width, size, size * 0.6f, size * 0.6f));
+		Path2D.Float tail = new Path2D.Float();
+		tail.moveTo(centerX - tailHeight * 0.8f, size - 1);
+		tail.lineTo(centerX + tailHeight * 0.8f, size - 1);
+		tail.lineTo(centerX, size + tailHeight);
+		tail.closePath();
+		shape.add(new Area(tail));
+		return shape;
+	}
+
+	private static void drawSpeechBubble(Graphics2D graphics, int x, int y, Shape shape)
+	{
+		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+		graphics.translate(x, y);
+		graphics.setColor(SPEECH_FILL);
+		graphics.fill(shape);
+		Stroke originalStroke = graphics.getStroke();
+		graphics.setStroke(OUTLINE_STROKE);
+		graphics.setColor(SPEECH_OUTLINE);
+		graphics.draw(shape);
+		graphics.setStroke(originalStroke);
+		graphics.translate(-x, -y);
 	}
 
 	/**
@@ -479,6 +564,7 @@ class SkillBubblesOverlay extends Overlay
 		toolIconCenterCache.clear();
 		resizedIconCache.clear();
 		classicBubbleCache.clear();
+		speechBubbleShapeCache.clear();
 		classicBubbleMask = null;
 		sizingImage = null;
 		sizingImageScale = -1;

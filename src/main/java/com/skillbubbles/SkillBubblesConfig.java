@@ -24,15 +24,19 @@
  */
 package com.skillbubbles;
 
+import java.awt.Color;
+import net.runelite.client.config.Alpha;
 import net.runelite.client.config.Config;
 import net.runelite.client.config.ConfigGroup;
 import net.runelite.client.config.ConfigItem;
 import net.runelite.client.config.Range;
 import net.runelite.client.config.Units;
 
-@ConfigGroup("skill-bubbles")
+@ConfigGroup(SkillBubblesConfig.GROUP)
 public interface SkillBubblesConfig extends Config
 {
+	String GROUP = "skill-bubbles";
+
 	@ConfigItem(
 		position = 0,
 		keyName = "iconMode",
@@ -87,19 +91,67 @@ public interface SkillBubblesConfig extends Config
 
 	@ConfigItem(
 		position = 4,
-		keyName = "classicSprites",
-		name = "RuneScape Classic sprites",
-		description = "Use RuneScape Classic-style icons instead of the<br>"
-			+ "current game's, where a classic sprite exists"
+		keyName = "style",
+		name = "Style",
+		description = "Look of the bubble. Classic also swaps the icons<br>"
+			+ "for RuneScape Classic-style art, where one exists"
 	)
-	default boolean classicSprites()
+	default Style style()
 	{
-		return false;
+		return Style.GRADIENT;
+	}
+
+	@Alpha
+	@ConfigItem(
+		position = 5,
+		keyName = "customFill",
+		name = "Custom fill",
+		description = "Fill colour of the bubble when Style is<br>"
+			+ "set to Custom"
+	)
+	default Color customFill()
+	{
+		return new Color(0x15, 0x15, 0x15, 200);
+	}
+
+	@Alpha
+	@ConfigItem(
+		position = 6,
+		keyName = "customRim",
+		name = "Custom rim",
+		description = "Rim colour of the bubble when Style is<br>"
+			+ "set to Custom"
+	)
+	default Color customRim()
+	{
+		return new Color(0x0F, 0x0F, 0x0F);
 	}
 
 	enum IconMode
 	{
 		SKILL,
 		TOOL
+	}
+
+	enum Style
+	{
+		GRADIENT("Gradient"),
+		CLASSIC("Classic"),
+		SPEECH_BUBBLE("Speech bubble"),
+		ICON_ONLY("Icon only"),
+		CUSTOM("Custom");
+
+		private final String name;
+
+		Style(String name)
+		{
+			this.name = name;
+		}
+
+		@Override
+		public String toString()
+		{
+			return name;
+		}
 	}
 }

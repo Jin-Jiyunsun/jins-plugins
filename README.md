@@ -21,8 +21,9 @@ construction and thieving.
   cook it.
 - **Smithing** shows the ore being smelted at a furnace, or the bar being worked at an
   anvil, in place of the generic hammer icon.
-- **RuneScape Classic sprites**: swap the icons for RuneScape Classic-style art where a
-  matching classic sprite exists, for a classic look.
+- **Bubble styles**: the default gradient bubble, a custom bubble in your own fill and
+  rim colours, a speech bubble, icon only, or Classic - RuneScape Classic's own grey bubble with Classic-style icons, where a
+  matching classic sprite exists.
 
 <p align="center">
 <img width="800" height="421" alt="cookclassic-ezgif com-video-to-webp-converter" src="https://github.com/user-attachments/assets/63f46cf3-59a9-43e9-a057-f3a814f6d6b3" />
@@ -34,7 +35,8 @@ construction and thieving.
 - **Scale**: size of the bubble and icon.
 - **Hide after**: how many seconds of inactivity before the bubble disappears.
 - **Fade in/out**: fade the bubble in and out instead of an instant appear/disappear.
-- **RuneScape Classic sprites**: on or off.
+- **Style**: Gradient, Classic, Speech bubble, Icon only or Custom.
+- **Custom fill** / **Custom rim**: the colours used by the Custom style.
 
 ### License
 

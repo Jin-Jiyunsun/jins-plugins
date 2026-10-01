@@ -30,6 +30,7 @@ import java.awt.Color;
 import java.awt.Composite;
 import java.awt.Dimension;
 import java.awt.Graphics2D;
+import java.awt.Paint;
 import java.awt.RadialGradientPaint;
 import java.awt.RenderingHints;
 import java.awt.Shape;
@@ -81,6 +82,15 @@ class SkillBubblesOverlay extends Overlay
 	private static final Color SPEECH_OUTLINE = new Color(0x1A, 0x16, 0x12);
 	private static final float SPEECH_WIDTH_FACTOR = 1.25f;
 	private static final float SPEECH_TAIL_FACTOR = 0.2f;
+	// Thought bubble: the same box, with two shrinking circles trailing down towards the head
+	// instead of the tail. Sizes and gaps are fractions of the bubble size.
+	private static final float THOUGHT_GAP_FACTOR = 0.05f;
+	private static final float THOUGHT_LARGE_CIRCLE_FACTOR = 0.17f;
+	private static final float THOUGHT_SMALL_CIRCLE_FACTOR = 0.1f;
+	// How far right of centre the trail sits: 7.5px at the default bubble size, scaled with it.
+	private static final float THOUGHT_OFFSET_FACTOR = 7.5f / BUBBLE_SIZE;
+	// And how far the trail is raised towards the box: 3px at the default bubble size.
+	private static final float THOUGHT_RAISE_FACTOR = 3f / BUBBLE_SIZE;
 	private static final float OUTLINE_WIDTH = 1.5f;
 	private static final BasicStroke OUTLINE_STROKE = new BasicStroke(OUTLINE_WIDTH);
 	// The half-width (in destination pixels) of the zone around a source pixel boundary that
@@ -121,9 +131,15 @@ class SkillBubblesOverlay extends Overlay
 	// Recoloured + resized per bubble height, so the (cheap, but not free) recolour pass doesn't
 	// run every frame.
 	private final Map<Integer, BufferedImage> classicBubbleCache = new HashMap<>();
-	// The speech bubble's outline shape, built at the origin once per bubble size (the Area merge
-	// isn't free) and moved into place with a translate each frame.
+	// The speech and thought bubbles' outline shapes, built at the origin once per bubble size (the
+	// Area merge isn't free) and moved into place with a translate each frame.
 	private final Map<Integer, Shape> speechBubbleShapeCache = new HashMap<>();
+	private final Map<Integer, Shape> thoughtBubbleShapeCache = new HashMap<>();
+	// The Custom style's rim, likewise built at the origin once per size.
+	private final Map<Integer, Shape> customRimShapeCache = new HashMap<>();
+	// The Gradient style's paint, built at the origin once per size; the gradient is computed in
+	// user space, so translating the graphics moves it along with the disc.
+	private final Map<Integer, Paint> gradientPaintCache = new HashMap<>();
 
 	@Inject
 	private SkillBubblesOverlay(Client client, SkillBubblesPlugin plugin, SkillBubblesConfig config,
@@ -298,10 +314,14 @@ class SkillBubblesOverlay extends Overlay
 				break;
 			}
 			case CUSTOM:
-				drawCustom(graphics, bubbleX, bubbleY, bubbleSize, config.customFill(), config.customRim());
+				drawCustom(graphics, bubbleX, bubbleY, bubbleSize, config.customFill(), config.customRim(),
+					customRimShapeCache.computeIfAbsent(bubbleSize, SkillBubblesOverlay::buildCustomRimShape));
 				break;
 			case SPEECH_BUBBLE:
-				drawSpeechBubble(graphics, bubbleX, bubbleY, speechBubbleShapeCache.computeIfAbsent(bubbleSize, SkillBubblesOverlay::buildSpeechBubbleShape));
+				drawBubbleShape(graphics, bubbleX, bubbleY, speechBubbleShapeCache.computeIfAbsent(bubbleSize, SkillBubblesOverlay::buildSpeechBubbleShape));
+				break;
+			case THOUGHT_BUBBLE:
+				drawBubbleShape(graphics, bubbleX, bubbleY, thoughtBubbleShapeCache.computeIfAbsent(bubbleSize, SkillBubblesOverlay::buildThoughtBubbleShape));
 				break;
 			case ICON_ONLY:
 				break;
@@ -309,11 +329,10 @@ class SkillBubblesOverlay extends Overlay
 			{
 				// The gradient is computed at render resolution, so scaling it never loses quality.
 				graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-				Point2D.Float center = new Point2D.Float(bubbleX + bubbleSize / 2f, bubbleY + bubbleSize / 2f);
-				graphics.setPaint(new RadialGradientPaint(center, bubbleSize / 2f,
-					new float[] {0f, GLOW_CENTER_FRACTION, GLOW_OUTER_EDGE_FRACTION, 1f},
-					new Color[] {GLOW_CENTER, GLOW_CENTER, GLOW_EDGE, GLOW_OUTER_EDGE}));
-				graphics.fillOval(bubbleX, bubbleY, bubbleSize, bubbleSize);
+				graphics.setPaint(gradientPaintCache.computeIfAbsent(bubbleSize, SkillBubblesOverlay::buildGradientPaint));
+				graphics.translate(bubbleX, bubbleY);
+				graphics.fillOval(0, 0, bubbleSize, bubbleSize);
+				graphics.translate(-bubbleX, -bubbleY);
 				break;
 			}
 		}
@@ -351,19 +370,33 @@ class SkillBubblesOverlay extends Overlay
 	}
 
 	// A plain disc with a thin rim, both in the user's own colours.
-	private static void drawCustom(Graphics2D graphics, int x, int y, int size, Color fill, Color rim)
+	private static void drawCustom(Graphics2D graphics, int x, int y, int size, Color fill, Color rim, Shape rimShape)
 	{
 		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 		graphics.setColor(fill);
 		graphics.fillOval(x, y, size, size);
 
-		// Inset by half the stroke so the rim sits inside the disc rather than straddling its edge.
-		float inset = OUTLINE_WIDTH / 2f;
 		Stroke originalStroke = graphics.getStroke();
 		graphics.setStroke(OUTLINE_STROKE);
 		graphics.setColor(rim);
-		graphics.draw(new Ellipse2D.Float(x + inset, y + inset, size - OUTLINE_WIDTH, size - OUTLINE_WIDTH));
+		graphics.translate(x, y);
+		graphics.draw(rimShape);
+		graphics.translate(-x, -y);
 		graphics.setStroke(originalStroke);
+	}
+
+	private static Paint buildGradientPaint(int size)
+	{
+		return new RadialGradientPaint(new Point2D.Float(size / 2f, size / 2f), size / 2f,
+			new float[] {0f, GLOW_CENTER_FRACTION, GLOW_OUTER_EDGE_FRACTION, 1f},
+			new Color[] {GLOW_CENTER, GLOW_CENTER, GLOW_EDGE, GLOW_OUTER_EDGE});
+	}
+
+	// Inset by half the stroke so the rim sits inside the disc rather than straddling its edge.
+	private static Shape buildCustomRimShape(int size)
+	{
+		float inset = OUTLINE_WIDTH / 2f;
+		return new Ellipse2D.Float(inset, inset, size - OUTLINE_WIDTH, size - OUTLINE_WIDTH);
 	}
 
 	/**
@@ -371,14 +404,19 @@ class SkillBubblesOverlay extends Overlay
 	 * tail hangs below it, into the gap above the head. Box and tail are merged into one shape
 	 * first so the outline doesn't cut a line across the join.
 	 */
-	private static Shape buildSpeechBubbleShape(int size)
+	private static Area buildBubbleBox(int size)
 	{
 		float width = size * SPEECH_WIDTH_FACTOR;
 		float left = (size - width) / 2f;
+		return new Area(new RoundRectangle2D.Float(left, 0, width, size, size * 0.6f, size * 0.6f));
+	}
+
+	private static Shape buildSpeechBubbleShape(int size)
+	{
 		float tailHeight = size * SPEECH_TAIL_FACTOR;
 		float centerX = size / 2f;
 
-		Area shape = new Area(new RoundRectangle2D.Float(left, 0, width, size, size * 0.6f, size * 0.6f));
+		Area shape = buildBubbleBox(size);
 		Path2D.Float tail = new Path2D.Float();
 		tail.moveTo(centerX - tailHeight * 0.8f, size - 1);
 		tail.lineTo(centerX + tailHeight * 0.8f, size - 1);
@@ -388,7 +426,26 @@ class SkillBubblesOverlay extends Overlay
 		return shape;
 	}
 
-	private static void drawSpeechBubble(Graphics2D graphics, int x, int y, Shape shape)
+	/**
+	 * Two circles below the box, each a little smaller and further left than the last, so they
+	 * trail away towards the head. They stay separate pieces of one Area, each outlined on its own.
+	 */
+	private static Shape buildThoughtBubbleShape(int size)
+	{
+		float gap = size * THOUGHT_GAP_FACTOR;
+		float large = size * THOUGHT_LARGE_CIRCLE_FACTOR;
+		float small = size * THOUGHT_SMALL_CIRCLE_FACTOR;
+		float centerX = size / 2f + size * THOUGHT_OFFSET_FACTOR;
+
+		Area shape = buildBubbleBox(size);
+		float largeTop = size + gap - size * THOUGHT_RAISE_FACTOR;
+		shape.add(new Area(new Ellipse2D.Float(centerX - large * 0.75f, largeTop, large, large)));
+		float smallTop = largeTop + large + gap;
+		shape.add(new Area(new Ellipse2D.Float(centerX - large * 0.75f - small * 0.6f, smallTop, small, small)));
+		return shape;
+	}
+
+	private static void drawBubbleShape(Graphics2D graphics, int x, int y, Shape shape)
 	{
 		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 		graphics.translate(x, y);
@@ -565,6 +622,9 @@ class SkillBubblesOverlay extends Overlay
 		resizedIconCache.clear();
 		classicBubbleCache.clear();
 		speechBubbleShapeCache.clear();
+		thoughtBubbleShapeCache.clear();
+		customRimShapeCache.clear();
+		gradientPaintCache.clear();
 		classicBubbleMask = null;
 		sizingImage = null;
 		sizingImageScale = -1;

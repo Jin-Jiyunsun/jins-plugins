@@ -138,6 +138,7 @@ public interface SkillBubblesConfig extends Config
 		GRADIENT("Gradient"),
 		CLASSIC("Classic"),
 		SPEECH_BUBBLE("Speech bubble"),
+		THOUGHT_BUBBLE("Thought bubble"),
 		ICON_ONLY("Icon only"),
 		CUSTOM("Custom");
 

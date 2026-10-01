@@ -22,7 +22,7 @@ construction and thieving.
 - **Smithing** shows the ore being smelted at a furnace, or the bar being worked at an
   anvil, in place of the generic hammer icon.
 - **Bubble styles**: the default gradient bubble, a custom bubble in your own fill and
-  rim colours, a speech bubble, icon only, or Classic - RuneScape Classic's own grey bubble with Classic-style icons, where a
+  rim colours, a speech or thought bubble, icon only, or Classic - RuneScape Classic's own grey bubble with Classic-style icons, where a
   matching classic sprite exists.
 
 <p align="center">
@@ -35,7 +35,7 @@ construction and thieving.
 - **Scale**: size of the bubble and icon.
 - **Hide after**: how many seconds of inactivity before the bubble disappears.
 - **Fade in/out**: fade the bubble in and out instead of an instant appear/disappear.
-- **Style**: Gradient, Classic, Speech bubble, Icon only or Custom.
+- **Style**: Gradient, Classic, Speech bubble, Thought bubble, Icon only or Custom.
 - **Custom fill** / **Custom rim**: the colours used by the Custom style.
 
 ### License

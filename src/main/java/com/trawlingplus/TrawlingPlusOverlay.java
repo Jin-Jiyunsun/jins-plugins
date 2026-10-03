@@ -350,7 +350,7 @@ class TrawlingPlusOverlay extends Overlay
 	// places, and a fish arriving waits for room and then fades in: per place, how far faded in it is, how far up
 	// from the bottom of the box its baseline is drawn, and whether it was laid out last frame; how wide its
 	// columns and how tall its box are drawn; and the height it is growing from and to, and whether it is half way.
-	private static final String HOLD_TITLE = "Fish in Hold";
+	private static final String HOLD_TITLE = "Fish in Hold:";
 	private static final String HOLD_TOTAL = "Total";
 	private static final int HOLD_GAP = 4;
 	private static final int HOLD_COLUMN_GAP = 12;
@@ -1368,6 +1368,14 @@ class TrawlingPlusOverlay extends Overlay
 			holdRight[holdLines] = String.valueOf(rest);
 			holdColour[holdLines] = HOLD_OTHER_COLOUR;
 			holdLines++;
+		}
+		if (held == 1 && !holdFull)
+		{
+			// With only one kind, the total is all of that kind, so its name and colour take the total's line instead of
+			// repeating its count on a line of its own. When full, the warning keeps that line and the kind its own.
+			holdLines = 2;
+			holdLeft[1] = CargoHold.SEA_FISH_NAMES[holdOrder[0]];
+			holdColour[1] = CargoHold.SEA_FISH_COLOURS[holdOrder[0]];
 		}
 
 		// The counts line up on the right of a column as wide as they would be in the widest digit, so the display

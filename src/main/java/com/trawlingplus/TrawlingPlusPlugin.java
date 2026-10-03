@@ -357,6 +357,7 @@ public class TrawlingPlusPlugin extends Plugin
 	// The record of the boat last boarded, found once and kept, so the displays don't look for it every frame; null
 	// until it is next needed after boarding another boat or logging in.
 	private CargoHold boatHold;
+	private int boatHoldNumber = -1;
 	private boolean seaFishing;
 	private int awayFromSpotsTick = -1;
 	private int[] inventorySea;
@@ -803,9 +804,15 @@ public class TrawlingPlusPlugin extends Plugin
 		}
 		else if (event.getGameState() == GameState.LOGGED_IN)
 		{
-			// Whoever logged in, whose holds are the ones to show; the same account's again after a hop.
-			holds = holdsByAccount.computeIfAbsent(client.getAccountHash(), account -> new HashMap<>());
-			boatHold = null;
+			// Whoever logged in, whose holds are the ones to show; the same account's again after a hop. This also comes
+			// after every load of a new area of the map, which keeps the boat's hold already found.
+			Map<Integer, CargoHold> account = holdsByAccount.computeIfAbsent(client.getAccountHash(),
+				hash -> new HashMap<>());
+			if (account != holds)
+			{
+				holds = account;
+				boatHold = null;
+			}
 		}
 	}
 
@@ -1030,7 +1037,8 @@ public class TrawlingPlusPlugin extends Plugin
 		// guides are doing, as the hold's display has nothing to do with the nets.
 		if (boatHold == null)
 		{
-			boatHold = holds.get(boatNumber());
+			boatHoldNumber = boatNumber();
+			boatHold = holds.get(boatHoldNumber);
 		}
 		checkNearSpots(own);
 
@@ -1442,7 +1450,8 @@ public class TrawlingPlusPlugin extends Plugin
 	{
 		if (boatHold == null)
 		{
-			boatHold = holds.computeIfAbsent(boatNumber(), number -> new CargoHold());
+			boatHoldNumber = boatNumber();
+			boatHold = holds.computeIfAbsent(boatHoldNumber, number -> new CargoHold());
 		}
 		return boatHold;
 	}
@@ -1714,9 +1723,9 @@ public class TrawlingPlusPlugin extends Plugin
 			seaFishing = false;
 			fishingSpot = false;
 		}
-		else if (varbit == VarbitID.SAILING_LAST_PERSONAL_BOAT_BOARDED)
+		else if (varbit == VarbitID.SAILING_LAST_PERSONAL_BOAT_BOARDED && event.getValue() != boatHoldNumber)
 		{
-			// Another boat, whose hold is looked for again.
+			// Another boat, whose hold is looked for again. The same boat sent again keeps the one already found.
 			boatHold = null;
 		}
 		else if (varbit == NET_SLOTS[0] || varbit == NET_SLOTS[1])

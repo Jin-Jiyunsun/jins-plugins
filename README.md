@@ -28,6 +28,8 @@ and keeps track of your nets, bait and cargo hold from a HUD on the boat.
 - **Fishing spot arrow**: after fishing one of the spots at sea, an arrow beside your boat points
   the way back to it, such as after banking. It hides while you fish, near the spot, and when your
   hold is nearly full.
+- **Fishing spot fish**: a small shoal of the fish each of the spots at sea gives swims around it,
+  so you can tell them apart at a glance. It's only for looks: the spot works just as before.
 - **Side panel depth guide**: highlights which depth each trawling net should be set to, and ticks
   it once it's set correctly.
 - **Notifications**: optional alerts for full nets, a full cargo hold, or a shoal about to leave
@@ -66,6 +68,7 @@ Every route was recorded in-game and is accurate to the tile when no smoothing i
   for instant changes.
 - **Cargo hold**: shows or hides the cargo hold display, in the heads up display section.
 - **Fishing spot arrow**: shows or hides the fishing spot arrow and sets its colour.
+- **Fishing spot fish**: shows or hides the fish swimming at the spots at sea.
 - **Arrow style**: arrows on the water can face the camera (the default), stand upright along the
   route, or lie flat on the water.
 - **Fish**: switch each fish on or off to focus on the ones you're after. A fish that's switched

@@ -16,6 +16,7 @@ public interface TrawlingPlusConfig extends Config
 	String GROUP = "trawling-plus";
 	String SMOOTHING_KEY = "routeSmoothing";
 	String TIMER_BAR_KEY = "showTimerBar";
+	String SPOT_FISH_KEY = "showSpotFish";
 
 	int MIN_ANIMATION_SECONDS = 3;
 	int MAX_ANIMATION_SECONDS = 10;
@@ -74,30 +75,65 @@ public interface TrawlingPlusConfig extends Config
 	@ConfigSection(
 		name = "Depth colours",
 		description = "Colours for each depth, used at the helm and on<br>the side panel",
-		position = 59
+		position = 60
 	)
 	String depthSection = "shoalDepth";
 
 	@ConfigSection(
 		name = "Fish",
 		description = "Which fish's routes and shoals to show",
-		position = 63
+		position = 64
 	)
 	String fishSection = "fish";
 
 	@ConfigSection(
 		name = "Side panel",
 		description = "Marks on the trawling nets in the sailing side panel",
-		position = 50
+		position = 51
 	)
 	String sidePanelSection = "sidePanel";
 
 	@ConfigSection(
 		name = "Notifications",
 		description = "Alerts for the nets, the hold and the shoal",
-		position = 54
+		position = 55
 	)
 	String notificationsSection = "notifications";
+
+	@ConfigSection(
+		name = "Debug: drawing",
+		description = "What the debug marks show",
+		position = 71
+	)
+	String debugDrawingSection = "debugDrawingGroup";
+
+	@ConfigSection(
+		name = "Debug: fish look",
+		description = "How the one kind of fish being tuned looks",
+		position = 72
+	)
+	String debugShapeSection = "debugFishShape";
+
+	@ConfigSection(
+		name = "Debug: fish lanes",
+		description = "The lanes and fish of the one spot being tuned",
+		position = 74
+	)
+	String debugLanesSection = "debugFishLanes";
+
+	@ConfigSection(
+		name = "Debug: making room",
+		description = "How the one kind of fish being tuned eases away from others",
+		position = 75
+	)
+	String debugRoomSection = "debugFishRoom";
+
+	@ConfigSection(
+		name = "Debug: dips",
+		description = "How the one kind of fish being tuned now and then dips deeper",
+		position = 76
+	)
+	String debugDipSection = "debugFishDips";
 
 	enum LineThickness
 	{
@@ -744,10 +780,22 @@ public interface TrawlingPlusConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = SPOT_FISH_KEY,
+		name = "Fishing spot fish",
+		description = "Show a small shoal of the fish each fishing<br>spot at sea gives, swimming around the spot.",
+		position = 50,
+		section = hudSection
+	)
+	default boolean showSpotFish()
+	{
+		return true;
+	}
+
+	@ConfigItem(
 		keyName = "shallowDepthColour",
 		name = "Shallow",
 		description = "Colour of shallow depth.",
-		position = 60,
+		position = 61,
 		section = depthSection
 	)
 	default Color shallowDepthColour()
@@ -759,7 +807,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "moderateDepthColour",
 		name = "Moderate",
 		description = "Colour of moderate depth.",
-		position = 61,
+		position = 62,
 		section = depthSection
 	)
 	default Color moderateDepthColour()
@@ -771,7 +819,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "deepDepthColour",
 		name = "Deep",
 		description = "Colour of deep depth.",
-		position = 62,
+		position = 63,
 		section = depthSection
 	)
 	default Color deepDepthColour()
@@ -783,7 +831,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "showNetDepths",
 		name = "Net depths",
 		description = "Show each net's depth as a letter.<br><b>R</b>: raised, <b>S</b>: shallow, <b>M</b>: moderate, <b>D</b>: deep.<br>Coloured by the Depth colours section.",
-		position = 51,
+		position = 52,
 		section = sidePanelSection
 	)
 	default boolean showNetDepths()
@@ -795,7 +843,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "showNetButton",
 		name = "Depth guide",
 		description = "Highlight the raise or lower button needed to<br>reach the target depth.",
-		position = 52,
+		position = 53,
 		section = sidePanelSection
 	)
 	default boolean showNetButton()
@@ -807,7 +855,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "showNetCorrect",
 		name = "Tick on correct depth",
 		description = "Show a tick on the side panel's net when its<br>depth is correct.",
-		position = 53,
+		position = 54,
 		section = sidePanelSection
 	)
 	default boolean showNetCorrect()
@@ -819,7 +867,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "notifyNetsFull",
 		name = "Nets full",
 		description = "Notify when the nets are full.",
-		position = 55,
+		position = 56,
 		section = notificationsSection
 	)
 	default Notification notifyNetsFull()
@@ -831,7 +879,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "notifyHoldFull",
 		name = "Hold full",
 		description = "Notify when emptying the nets finds the<br>cargo hold full.",
-		position = 56,
+		position = 57,
 		section = notificationsSection
 	)
 	default Notification notifyHoldFull()
@@ -843,7 +891,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "notifyShoalLeaving",
 		name = "Shoal leaving",
 		description = "Notify when the nearest shoal is about to<br>leave its stop.",
-		position = 57,
+		position = 58,
 		section = notificationsSection
 	)
 	default Notification notifyShoalLeaving()
@@ -860,7 +908,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "shoalLeavingSeconds",
 		name = "Leaving warning",
 		description = "How long before the shoal leaves to notify.<br><b>0</b>: as it sets off.<br><b>Above 0</b>: needs the stop's timer running.",
-		position = 58,
+		position = 59,
 		section = notificationsSection
 	)
 	default int shoalLeavingSeconds()
@@ -946,7 +994,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "showBluefin",
 		name = "Bluefin",
 		description = "Show bluefin routes and shoals.",
-		position = 64,
+		position = 65,
 		section = fishSection
 	)
 	default boolean showBluefin()
@@ -958,7 +1006,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "showGiantKrill",
 		name = "Giant krill",
 		description = "Show giant krill routes and shoals.",
-		position = 65,
+		position = 66,
 		section = fishSection
 	)
 	default boolean showGiantKrill()
@@ -970,7 +1018,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "showHaddock",
 		name = "Haddock",
 		description = "Show haddock routes and shoals.",
-		position = 66,
+		position = 67,
 		section = fishSection
 	)
 	default boolean showHaddock()
@@ -982,7 +1030,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "showYellowfin",
 		name = "Yellowfin",
 		description = "Show yellowfin routes and shoals.",
-		position = 67,
+		position = 68,
 		section = fishSection
 	)
 	default boolean showYellowfin()
@@ -994,7 +1042,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "showHalibut",
 		name = "Halibut",
 		description = "Show halibut routes and shoals.",
-		position = 68,
+		position = 69,
 		section = fishSection
 	)
 	default boolean showHalibut()
@@ -1006,11 +1054,391 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "showMarlin",
 		name = "Marlin",
 		description = "Show marlin routes and shoals.",
-		position = 69,
+		position = 70,
 		section = fishSection
 	)
 	default boolean showMarlin()
 	{
 		return true;
+	}
+
+	@ConfigItem(
+		keyName = "debugMiddles",
+		name = "Spot middles",
+		description = "Mark the middle each spot's fish swim round.",
+		position = 72,
+		section = debugDrawingSection
+	)
+	default boolean debugMiddles()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "debugLanes",
+		name = "Lanes",
+		description = "Draw each spot's lanes as rings.",
+		position = 73,
+		section = debugDrawingSection
+	)
+	default boolean debugLanes()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "debugDots",
+		name = "Fish dots",
+		description = "Dot each fish: green, red changing lanes,<br>ringed yellow making room, blue dipping.",
+		position = 74,
+		section = debugDrawingSection
+	)
+	default boolean debugDots()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "debugPivots",
+		name = "Wag points",
+		description = "Draw a line from each fish's middle to the<br>point it wags about.",
+		position = 75,
+		section = debugDrawingSection
+	)
+	default boolean debugPivots()
+	{
+		return true;
+	}
+
+	@Range(min = -256, max = 256)
+	@ConfigItem(
+		keyName = "debugSpotFishSink",
+		name = "Fish sink",
+		description = "How far the fish at the spots sit below the<br>water, 128 to a tile. Higher is deeper.",
+		position = 81,
+		section = debugShapeSection
+	)
+	default int debugSpotFishSink()
+	{
+		return 6;
+	}
+
+	@Range(min = 0, max = 128)
+	@ConfigItem(
+		keyName = "debugSpotFishBob",
+		name = "Fish bob",
+		description = "How far the fish being tuned rise as they bob,<br>128 to a tile.",
+		position = 82,
+		section = debugShapeSection
+	)
+	default int debugSpotFishBob()
+	{
+		return 4;
+	}
+
+	@Range(min = -180, max = 180)
+	@ConfigItem(
+		keyName = "debugSpotFishRoll",
+		name = "Fish roll",
+		description = "How far the fish being tuned is rolled up off<br>its side, in degrees: 0 lies flat, 90 stands up.",
+		position = 78,
+		section = debugShapeSection
+	)
+	default int debugSpotFishRoll()
+	{
+		return 0;
+	}
+
+	@Range(min = -90, max = 90)
+	@ConfigItem(
+		keyName = "debugSpotFishTilt",
+		name = "Fish tilt",
+		description = "How far the fish at the spots tilt head up,<br>in degrees.",
+		position = 79,
+		section = debugShapeSection
+	)
+	default int debugSpotFishTilt()
+	{
+		return 0;
+	}
+
+	@Range(min = 10, max = 200)
+	@Units(Units.PERCENT)
+	@ConfigItem(
+		keyName = "debugSpotFishSize",
+		name = "Fish size",
+		description = "How big the fish at the spots are, out of<br>the item's own size.",
+		position = 80,
+		section = debugShapeSection
+	)
+	default int debugSpotFishSize()
+	{
+		return 55;
+	}
+
+	@Range(min = -180, max = 180)
+	@ConfigItem(
+		keyName = "debugSpotFishTurn",
+		name = "Fish turn",
+		description = "How far the fish being tuned is turned to face<br>the way it swims, in degrees.",
+		position = 86,
+		section = debugShapeSection
+	)
+	default int debugSpotFishTurn()
+	{
+		return 126;
+	}
+
+	@Range(min = -720, max = 720)
+	@ConfigItem(
+		keyName = "debugSpotFishSpin",
+		name = "Fish spin",
+		description = "How fast the fish being tuned spins round as it<br>swims, in degrees a second. 0 doesn't spin.",
+		position = 87,
+		section = debugShapeSection
+	)
+	default int debugSpotFishSpin()
+	{
+		return 200;
+	}
+
+	@Range(max = 127)
+	@ConfigItem(
+		keyName = "debugSpotFishLightest",
+		name = "Fish min lightness",
+		description = "How light, at least, every face of the fish<br>being tuned is, from 0 to 127 on the game's<br>colour scale. 0 leaves it as it is.",
+		position = 88,
+		section = debugShapeSection
+	)
+	default int debugSpotFishLightest()
+	{
+		return 0;
+	}
+
+	@Range(max = 50)
+	@Units(Units.PERCENT)
+	@ConfigItem(
+		keyName = "debugSpotFishSizeSpread",
+		name = "Fish size variation",
+		description = "How much smaller than the size above each<br>fish may be, picked at random. Not used while<br>size variation is off in the code.",
+		position = 89,
+		section = debugShapeSection
+	)
+	default int debugSpotFishSizeSpread()
+	{
+		return 17;
+	}
+
+	@Range(max = 300)
+	@Units(Units.PERCENT)
+	@ConfigItem(
+		keyName = "debugSpotFishWag",
+		name = "Fish wag",
+		description = "How far the fish being tuned wags its tail,<br>against the usual. 0 doesn't wag.",
+		position = 84,
+		section = debugShapeSection
+	)
+	default int debugSpotFishWag()
+	{
+		return 100;
+	}
+
+	@Range(max = 200)
+	@Units(Units.PERCENT)
+	@ConfigItem(
+		keyName = "debugSpotFishTip",
+		name = "Fish tipping",
+		description = "How far the fish being tuned tips nose up and<br>down as it bobs and dips. 0 stays level.",
+		position = 83,
+		section = debugShapeSection
+	)
+	default int debugSpotFishTip()
+	{
+		return 100;
+	}
+
+	@Range(min = -128, max = 128)
+	@ConfigItem(
+		keyName = "debugSpotFishPivot",
+		name = "Fish wag pivot",
+		description = "How far ahead of the middle of the fish at the<br>spots they turn as they wag, 128 to a tile.",
+		position = 85,
+		section = debugShapeSection
+	)
+	default int debugSpotFishPivot()
+	{
+		return 16;
+	}
+
+	@Range(min = 2, max = 16)
+	@ConfigItem(
+		keyName = "debugSpotFishLanes",
+		name = "Fish lanes",
+		description = "How many lanes the fish at the spot being<br>tuned swim in.",
+		position = 90,
+		section = debugLanesSection
+	)
+	default int debugSpotFishLanes()
+	{
+		return 10;
+	}
+
+	@Range(min = 1, max = 48)
+	@ConfigItem(
+		keyName = "debugSpotFishCount",
+		name = "Fish count",
+		description = "How many fish swim at the spot being tuned.",
+		position = 91,
+		section = debugLanesSection
+	)
+	default int debugSpotFishCount()
+	{
+		return 20;
+	}
+
+	@Range(min = 64, max = 320)
+	@ConfigItem(
+		keyName = "debugSpotFishShoalSize",
+		name = "Fish shoal size",
+		description = "How far out the outermost lane at the spot<br>being tuned is, 128 to a tile. The spot is 320<br>out to its edge.",
+		position = 93,
+		section = debugLanesSection
+	)
+	default int debugSpotFishShoalSize()
+	{
+		return 224;
+	}
+
+	@Range(min = 1, max = 6)
+	@ConfigItem(
+		keyName = "debugSpotFishSharkLanes",
+		name = "Shark lanes",
+		description = "How many lanes the ring of sharks outside the<br>shoal at the spot being tuned has.",
+		position = 94,
+		section = debugLanesSection
+	)
+	default int debugSpotFishSharkLanes()
+	{
+		return 1;
+	}
+
+	@Range(min = -256, max = 256)
+	@ConfigItem(
+		keyName = "debugSpotFishSharkGap",
+		name = "Shark ring gap",
+		description = "How far outside the shoal's outermost lane the<br>sharks' first lane is, 128 to a tile. Below 0 it<br>is inside, overlapping the shoal.",
+		position = 95,
+		section = debugLanesSection
+	)
+	default int debugSpotFishSharkGap()
+	{
+		return 64;
+	}
+
+	@Range(min = 8, max = 256)
+	@ConfigItem(
+		keyName = "debugSpotFishSharkWidth",
+		name = "Shark lane width",
+		description = "How far apart the sharks' lanes are, 128 to a<br>tile.",
+		position = 96,
+		section = debugLanesSection
+	)
+	default int debugSpotFishSharkWidth()
+	{
+		return 64;
+	}
+
+	@Range(min = 4, max = 64)
+	@ConfigItem(
+		keyName = "debugSpotFishLaneWidth",
+		name = "Fish lane width",
+		description = "How far apart the lanes at the spot being tuned<br>are, 128 to a tile. The innermost lane moves to<br>fit, and the gaps the fish keep follow it.",
+		position = 92,
+		section = debugLanesSection
+	)
+	default int debugSpotFishLaneWidth()
+	{
+		return 45;
+	}
+
+	@Range(max = 40)
+	@ConfigItem(
+		keyName = "debugSpotFishRoom",
+		name = "Fish make room",
+		description = "How far, at most, the fish at the spots ease<br>away from each other when near, 128 to a tile.",
+		position = 97,
+		section = debugRoomSection
+	)
+	default int debugSpotFishRoom()
+	{
+		return 40;
+	}
+
+	@Range(min = 1, max = 256)
+	@ConfigItem(
+		keyName = "debugSpotFishRoomRange",
+		name = "Fish make room range",
+		description = "How near the fish at the spots have to be to<br>ease away from each other, 128 to a tile.",
+		position = 98,
+		section = debugRoomSection
+	)
+	default int debugSpotFishRoomRange()
+	{
+		return 60;
+	}
+
+	@Range(min = 1, max = 100)
+	@Units(Units.PERCENT)
+	@ConfigItem(
+		keyName = "debugSpotFishRoomEase",
+		name = "Fish make room ease",
+		description = "How much of the way to where they want to be<br>the fish at the spots ease each client tick<br>(20 ms) while making room. Higher is quicker.",
+		position = 99,
+		section = debugRoomSection
+	)
+	default int debugSpotFishRoomEase()
+	{
+		return 30;
+	}
+
+	@Range(min = 1, max = 300)
+	@Units(Units.SECONDS)
+	@ConfigItem(
+		keyName = "debugSpotFishDipEvery",
+		name = "Fish dip every",
+		description = "How often, on average, each fish at the spots<br>dips deeper.",
+		position = 100,
+		section = debugDipSection
+	)
+	default int debugSpotFishDipEvery()
+	{
+		return 10;
+	}
+
+	@Range(max = 256)
+	@ConfigItem(
+		keyName = "debugSpotFishDipDepth",
+		name = "Fish dip depth",
+		description = "How much deeper the fish at the spots dip, at<br>most, 128 to a tile.",
+		position = 101,
+		section = debugDipSection
+	)
+	default int debugSpotFishDipDepth()
+	{
+		return 10;
+	}
+
+	@Range(min = 100, max = 10000)
+	@Units(Units.MILLISECONDS)
+	@ConfigItem(
+		keyName = "debugSpotFishDipLength",
+		name = "Fish dip length",
+		description = "How long a dip takes the fish at the spots,<br>down and back up.",
+		position = 102,
+		section = debugDipSection
+	)
+	default int debugSpotFishDipLength()
+	{
+		return 1500;
 	}
 }

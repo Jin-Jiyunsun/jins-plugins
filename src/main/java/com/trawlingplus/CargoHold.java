@@ -113,6 +113,14 @@ final class CargoHold
 	}
 
 	/**
+	 * Whether at least a share of its slots, 0.9 being 90%, are taken, by anything, once known.
+	 */
+	boolean fullTo(double share)
+	{
+		return known() && capacity - room() + caught() >= capacity * share;
+	}
+
+	/**
 	 * Takes how many of a kind its screen shows, on the tick it showed them. More than it was known to hold were just
 	 * deposited; before its contents are known, there is nothing to say which went in last.
 	 */

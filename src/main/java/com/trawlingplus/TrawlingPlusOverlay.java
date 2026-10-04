@@ -123,6 +123,9 @@ class TrawlingPlusOverlay extends Overlay
 	// How far above the deck the display at the helm floats, in local units: about two tiles, which
 	// clears the mast and the crew.
 	private static final int HELM_TEXT_HEIGHT = 250;
+	// The raft, by its boat config, which has no mast or crew to clear, so at the helm the display sits half a tile
+	// lower over it.
+	private static final int RAFT_CONFIG = 1;
 
 	// Where the display goes at the bow and above the sails, read once per boat type from its deck: how far up the
 	// deck the front of the hull is and how high the top of the tallest thing on it is, both in the deck's local
@@ -193,6 +196,22 @@ class TrawlingPlusOverlay extends Overlay
 	private static final double SHOAL_ARROW_LENGTH = 2.4;
 	private static final double SHOAL_ARROW_HALF_WIDTH = 1.0 / 2.4;
 	private static final double SHOAL_ARROW_NOTCH = 0.45 / 2.4;
+	// How far, in tiles, the fishing spot arrow keeps from the hull.
+	private static final double SPOT_ARROW_GAP_TILES = 0.75;
+	// How big it is next to the shoal heading arrow, whose shape it has.
+	private static final double SPOT_ARROW_SCALE = 0.75;
+	// How much shorter, in tiles, its path round the boat is ahead of it than behind, the bow being pointed.
+	private static final double SPOT_ARROW_BOW_TRIM_TILES = 1;
+	// Half the size of a fishing spot at sea, which is 5 tiles across, in tiles from its middle.
+	private static final double SEA_SPOT_HALF_SIZE = 2.5;
+	// How far faded in the fishing spot arrow is and when that was worked out, or -1 once faded out.
+	private double spotArrowFade;
+	private long lastSpotArrowMillis = -1;
+	// Whether, where it was last placed, it would have been past the spot, pointing away from it; and whether, as last
+	// worked out, on the tick given, it is past or over the spot, which hides it.
+	private boolean spotArrowPast;
+	private boolean spotArrowBlocked;
+	private int spotCheckTick = -1;
 
 	// The fishable area, and the stroke it is drawn with, kept between frames: the shape is redrawn every
 	// frame but never changes size, and the thickness only changes when a setting does.
@@ -359,17 +378,19 @@ class TrawlingPlusOverlay extends Overlay
 	private static final Color HOLD_OTHER_COLOUR = new Color(0xc0c0c0);
 	private static final int HOLD_OTHER_PLACE = CargoHold.SEA_FISH.length + 2;
 	private static final int HOLD_PLACES = CargoHold.SEA_FISH.length + 3;
-	private final String[] holdLeft = new String[HOLD_PLACES];
-	private final String[] holdRight = new String[HOLD_PLACES];
-	private final Color[] holdColour = new Color[HOLD_PLACES];
-	private final int[] holdPlace = new int[HOLD_PLACES];
+	// The most lines it can have: the title, the slots, those kinds and the rest.
+	private static final int HOLD_LINES = HOLD_KINDS_SHOWN + 3;
+	private final String[] holdLeft = new String[HOLD_LINES];
+	private final String[] holdRight = new String[HOLD_LINES];
+	private final Color[] holdColour = new Color[HOLD_LINES];
+	private final int[] holdPlace = new int[HOLD_LINES];
 	private final int[] holdOrder = new int[CargoHold.SEA_FISH.length];
 	private int holdLines;
 	private int holdWide;
 	// The lines are only written out again when what the hold holds or the font changes: how wide each count is, how
 	// tall a line is and how far down its baseline sits, and the hold, its number of changes and the font they
 	// were written out for.
-	private final int[] holdRightWidth = new int[HOLD_PLACES];
+	private final int[] holdRightWidth = new int[HOLD_LINES];
 	private int holdLineHeight;
 	private int holdAscent;
 	private CargoHold laidHold;
@@ -468,8 +489,25 @@ class TrawlingPlusOverlay extends Overlay
 		}
 		// Routes included: there is no point being shown where the fish are by a boat that cannot
 		// catch them, though how strict to be about that is the Show guides setting.
-		if (client.getGameState() != GameState.LOGGED_IN || !plugin.showGuides())
+		// The fishing spot arrow has nothing to do with nets, so it shows whatever the guides are doing.
+		boolean loggedIn = client.getGameState() == GameState.LOGGED_IN;
+		// Drawn while wanted or still fading out; switched off, it just isn't drawn.
+		boolean spotArrow = loggedIn && config.showSpotArrow() && (plugin.getFishedSpot() != null || spotArrowFade > 0);
+		if (!loggedIn || !plugin.showGuides())
 		{
+			// Nothing is left clear around the boat without the guides, so the hull's outline isn't placed yet.
+			clearing = false;
+			volume = false;
+			if (spotArrow)
+			{
+				Object antialiasing = graphics.getRenderingHint(RenderingHints.KEY_ANTIALIASING);
+				graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+				drawSpotArrow(graphics, top);
+				if (antialiasing != null)
+				{
+					graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, antialiasing);
+				}
+			}
 			return null;
 		}
 		// Only once something is to be drawn, so a boat with nothing showing doesn't work it out for nothing.
@@ -477,6 +515,10 @@ class TrawlingPlusOverlay extends Overlay
 
 		Object antialiasing = graphics.getRenderingHint(RenderingHints.KEY_ANTIALIASING);
 		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+		if (spotArrow)
+		{
+			drawSpotArrow(graphics, top);
+		}
 
 		// With the route line, stops and direction arrows all off, only the shoals' heading arrows are drawn.
 		boolean routes = config.showRouteLine() || config.showStops() || config.showDirectionArrows();
@@ -903,6 +945,10 @@ class TrawlingPlusOverlay extends Overlay
 		laidFont = null;
 		holdFade = 0;
 		lastHoldFadeMillis = -1;
+		spotArrowFade = 0;
+		lastSpotArrowMillis = -1;
+		spotArrowBlocked = false;
+		spotCheckTick = -1;
 	}
 
 	/**
@@ -1202,6 +1248,10 @@ class TrawlingPlusOverlay extends Overlay
 		// At the bow or above the sails instead, once this boat's deck has been read for where those are; until
 		// then, which is only as its models load, at the helm.
 		TrawlingPlusConfig.HudPosition position = config.hudPosition();
+		if (position == TrawlingPlusConfig.HudPosition.HELM && hull.getId() == RAFT_CONFIG)
+		{
+			lift = HELM_TEXT_HEIGHT - Perspective.LOCAL_HALF_TILE_SIZE;
+		}
 		if (position != TrawlingPlusConfig.HudPosition.HELM && readAnchors(boat, deck, hull))
 		{
 			// A raft's sail is barely above its deck, so above it is the same as at its bow.
@@ -1799,6 +1849,185 @@ class TrawlingPlusOverlay extends Overlay
 	}
 
 	/**
+	 * Points the way from the boat to the fishing spot at sea being fished, with an arrow like the shoal heading
+	 * arrow on the water off the hull, on the side nearest the spot, going round the boat as it moves. Fades in and
+	 * out like the display on the boat, where it is, the spot's place being kept once the arrow's rules hide it.
+	 */
+	private void drawSpotArrow(Graphics2D graphics, WorldView top)
+	{
+		long now = System.currentTimeMillis();
+		double[] place = placeSpotArrow(graphics, top);
+		// Not past the spot, pointing away from it, nor over the spot itself, where it would only cover what it points
+		// at: both as the boat sits on or beside it. Worked out once a tick, not every frame.
+		int tick = client.getTickCount();
+		if (place != null && tick != spotCheckTick)
+		{
+			spotCheckTick = tick;
+			spotArrowBlocked = spotArrowPast || overSpot(place, plugin.getRememberedSpot(), spotArrowLength());
+		}
+		boolean wanted = place != null && !spotArrowBlocked && plugin.getFishedSpot() != null;
+		double step = !config.animatedHud() ? 1 : lastSpotArrowMillis < 0 ? 0
+			: Math.max(0, now - lastSpotArrowMillis) / HELM_FADE_MILLIS;
+		spotArrowFade = wanted ? Math.min(1, spotArrowFade + step) : Math.max(0, spotArrowFade - step);
+		// Faded out, it starts from nothing next time rather than catching up on the time it wasn't drawn.
+		lastSpotArrowMillis = wanted || spotArrowFade > 0 ? now : -1;
+		if (place == null || spotArrowFade <= 0)
+		{
+			return;
+		}
+
+		// Always flat on the water, whatever the arrow style, lying beside the boat like a mark on the sea.
+		double length = spotArrowLength();
+		Path2D arrow = flatArrowhead(top, place[0], place[1], place[2], place[3], length / 2,
+			length * SHOAL_ARROW_HALF_WIDTH, length * SHOAL_ARROW_NOTCH);
+		if (arrow != null)
+		{
+			// Smoothstep, like the display's lines, so it eases in and out.
+			double shown = spotArrowFade * spotArrowFade * (3 - 2 * spotArrowFade);
+			graphics.setColor(withOpacity(config.spotArrowColour(), shown));
+			graphics.fill(arrow);
+		}
+	}
+
+	/**
+	 * Whether the fishing spot arrow, placed as {x, y, dx, dy}, would lie over any of the spot's square on the water:
+	 * its middle or any of its corners inside it, or any corner of the square inside the arrow.
+	 */
+	private static boolean overSpot(double[] place, double[] spot, double length)
+	{
+		double x = place[0];
+		double y = place[1];
+		double dx = place[2];
+		double dy = place[3];
+		double halfLength = length / 2;
+		double halfWidth = length * SHOAL_ARROW_HALF_WIDTH;
+		double[] cornersX = {x, x + dx * halfLength, x - dx * halfLength - dy * halfWidth,
+			x - dx * halfLength + dy * halfWidth};
+		double[] cornersY = {y, y + dy * halfLength, y - dy * halfLength + dx * halfWidth,
+			y - dy * halfLength - dx * halfWidth};
+		for (int c = 0; c < cornersX.length; c++)
+		{
+			if (Math.abs(cornersX[c] - spot[0]) <= SEA_SPOT_HALF_SIZE
+				&& Math.abs(cornersY[c] - spot[1]) <= SEA_SPOT_HALF_SIZE)
+			{
+				return true;
+			}
+		}
+		// A corner of the square inside the arrow's triangle, tip and back corners, for a square poking into its side.
+		for (int corner = 0; corner < 4; corner++)
+		{
+			double px = spot[0] + (corner % 2 == 0 ? -SEA_SPOT_HALF_SIZE : SEA_SPOT_HALF_SIZE);
+			double py = spot[1] + (corner < 2 ? -SEA_SPOT_HALF_SIZE : SEA_SPOT_HALF_SIZE);
+			if (inTriangle(px, py, cornersX[1], cornersY[1], cornersX[2], cornersY[2], cornersX[3], cornersY[3]))
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static boolean inTriangle(double px, double py, double ax, double ay, double bx, double by, double cx, double cy)
+	{
+		double ab = (bx - ax) * (py - ay) - (by - ay) * (px - ax);
+		double bc = (cx - bx) * (py - by) - (cy - by) * (px - bx);
+		double ca = (ax - cx) * (py - cy) - (ay - cy) * (px - cx);
+		return (ab >= 0 && bc >= 0 && ca >= 0) || (ab <= 0 && bc <= 0 && ca <= 0);
+	}
+
+	/**
+	 * Where the fishing spot arrow goes this frame, as {x, y, dx, dy} in world tiles, its middle and the unit way to
+	 * the spot, and whether the boat is within range of the spot, where it hides. Null when it can't be placed.
+	 */
+	private double[] placeSpotArrow(Graphics2D graphics, WorldView top)
+	{
+		double[] spot = plugin.getRememberedSpot();
+		WorldEntity boat = plugin.getOwnBoat();
+		WorldEntityConfig hull = boat == null ? null : boat.getConfig();
+		if (spot == null || hull == null || top == null)
+		{
+			return null;
+		}
+
+		// On an oval round the boat, turning with it, round the middle of its hull (the outline Clear around boat leaves
+		// clear, already placed this frame when that is on): as long and wide as the hull, each plus the gap. Not drawn
+		// until the outline has been read, a tick or so after boarding.
+		WorldView deck = boat.getWorldView();
+		LocalPoint pivot = boat.getLocalLocation();
+		if (pivot == null || !clearing && (deck == null || !placeFootprint(top, boat, deck, hull)))
+		{
+			return null;
+		}
+
+		// Which way the bow points this frame: where two places a tile apart along the deck end up on the water, the
+		// bow being at the deck's low end (see readAnchors).
+		LocalPoint stern = boat.transformToMainWorld(new LocalPoint(0, Perspective.LOCAL_TILE_SIZE, deck));
+		LocalPoint bow = boat.transformToMainWorld(new LocalPoint(0, 0, deck));
+		if (stern == null || bow == null)
+		{
+			return null;
+		}
+		double headX = (bow.getX() - stern.getX()) / (double) Perspective.LOCAL_TILE_SIZE;
+		double headY = (bow.getY() - stern.getY()) / (double) Perspective.LOCAL_TILE_SIZE;
+		double head = Math.hypot(headX, headY);
+		if (head < 1e-6)
+		{
+			return null;
+		}
+		headX /= head;
+		headY /= head;
+
+		// How far the hull runs either way along and across that from the point the boat turns about, which needn't be
+		// its middle, and so where its middle is and how long and wide it is.
+		double pivotX = top.getBaseX() + (double) (pivot.getX() - Perspective.LOCAL_HALF_TILE_SIZE) / Perspective.LOCAL_TILE_SIZE;
+		double pivotY = top.getBaseY() + (double) (pivot.getY() - Perspective.LOCAL_HALF_TILE_SIZE) / Perspective.LOCAL_TILE_SIZE;
+		double backmost = Double.MAX_VALUE;
+		double foremost = -Double.MAX_VALUE;
+		double leftmost = Double.MAX_VALUE;
+		double rightmost = -Double.MAX_VALUE;
+		for (int k = 0; k < footprintCount; k++)
+		{
+			double offX = footX[k] - pivotX;
+			double offY = footY[k] - pivotY;
+			double along = offX * headX + offY * headY;
+			double sideways = offX * headY - offY * headX;
+			backmost = Math.min(backmost, along);
+			foremost = Math.max(foremost, along);
+			leftmost = Math.min(leftmost, sideways);
+			rightmost = Math.max(rightmost, sideways);
+		}
+		double middleAlong = (backmost + foremost) / 2;
+		double middleSideways = (leftmost + rightmost) / 2;
+		double fromX = pivotX + headX * middleAlong + headY * middleSideways;
+		double fromY = pivotY + headY * middleAlong - headX * middleSideways;
+		double hullAlong = (foremost - backmost) / 2;
+		double hullAcross = (rightmost - leftmost) / 2;
+
+		double dx = spot[0] - fromX;
+		double dy = spot[1] - fromY;
+		double across = Math.hypot(dx, dy);
+		if (across < 1e-6)
+		{
+			return null;
+		}
+		dx /= across;
+		dy /= across;
+
+		double length = spotArrowLength();
+		double gap = SPOT_ARROW_GAP_TILES;
+		// Shorter ahead than behind: the bow is pointed, so an oval as long both ways leaves more water off the bow.
+		double bowTrim = Math.min(hullAlong, SPOT_ARROW_BOW_TRIM_TILES);
+		double forward = dx * headX + dy * headY;
+		double along = forward / (hullAlong + gap - (forward > 0 ? bowTrim : 0));
+		double sideways = (dx * headY - dy * headX) / (hullAcross + gap);
+		double reach = 1 / Math.sqrt(along * along + sideways * sideways) + length / 2;
+
+
+		// Its tip at or beyond the spot's middle, as with the boat sat on the spot, puts it past the spot, pointing away.
+		spotArrowPast = reach + length / 2 >= across;
+		return new double[]{fromX + dx * reach, fromY + dy * reach, dx, dy};
+	}
+
+	/**
 	 * Marks where each shoal is on its route with an arrow pointing the way it's heading.
 	 */
 	private void drawShoalArrows(Graphics2D graphics, List<PlacedShoal> shoals, long now)
@@ -1875,6 +2104,15 @@ class TrawlingPlusOverlay extends Overlay
 		{
 			return facingArrowhead(view, x, y, dx, dy, halfLength, halfWidth, notch);
 		}
+		return flatArrowhead(view, x, y, dx, dy, halfLength, halfWidth, notch);
+	}
+
+	/**
+	 * The arrowhead lying flat on the water, whatever the arrow style. Four points placed.
+	 */
+	private Path2D flatArrowhead(WorldView view, double x, double y, double dx, double dy, double halfLength,
+		double halfWidth, double notch)
+	{
 		// Given up on at the first corner that can't be placed, rather than placing the rest for nothing.
 		Point tip = toCanvas(view, x + dx * halfLength, y + dy * halfLength);
 		Point left = tip == null ? null
@@ -2193,6 +2431,16 @@ class TrawlingPlusOverlay extends Overlay
 	private double shoalArrowLength()
 	{
 		return scaled(SHOAL_ARROW_LENGTH, config.shoalHeadingArrowScale());
+	}
+
+	/**
+	 * The length of the fishing spot arrow, in tiles: a quarter smaller than the shoal heading arrow, sitting right
+	 * beside the boat as it does, but never smaller than the heading arrow can be made.
+	 */
+	private double spotArrowLength()
+	{
+		return Math.max(shoalArrowLength() * SPOT_ARROW_SCALE,
+			SHOAL_ARROW_LENGTH * TrawlingPlusConfig.MIN_ARROW_SCALE / 100);
 	}
 
 	/**

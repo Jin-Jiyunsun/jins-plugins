@@ -41,6 +41,7 @@ import net.runelite.api.events.GameObjectSpawned;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.events.ItemContainerChanged;
+import net.runelite.api.events.NpcSpawned;
 import net.runelite.api.events.VarbitChanged;
 import net.runelite.api.events.WidgetClosed;
 import net.runelite.api.events.WidgetLoaded;
@@ -200,6 +201,19 @@ public class TrawlingPlusPlugin extends Plugin
 	};
 	private static final int SEA_AWAY_TICKS = 300;
 
+	// The six fishing spots at sea, and how near the boat one has to be, in tiles, to be the one being fished when
+	// sea spot fishing starts. The boat sits beside the spot it fishes, never this far off.
+	private static final Set<Integer> SEA_SPOTS = Set.of(NpcID.FISHING_BOAT_SALTFISH, NpcID.FISHING_BOAT_MEMBERFISH,
+		NpcID.FISHING_BOAT_RAREFISH, NpcID.FISHING_BOAT_KARAMBWANFISH, NpcID.FISHING_BOAT_PISCARILIUSFISH,
+		NpcID.FISHING_BOAT_MONKFISH);
+	private static final double SEA_SPOT_REACH_TILES = 20;
+	// How far, in tiles, the boat has to move after fishing for the arrow to show again.
+	private static final double SPOT_MOVED_TILES = 0.5;
+	// How often, in ticks, that and the 3 minute away timer are looked at, there being no hurry for either.
+	private static final int SPOT_MOVED_EVERY_TICKS = 5;
+	// How full the hold has to be, 90%, for a trip to count as one to bank, which hides the arrow to the spot.
+	private static final double SPOT_HOLD_FULL_SHARE = 0.9;
+
 	// The first line of the menu a net opens: "There are 46 fish across the two nets on the boat."
 	private static final Pattern NET_MENU = Pattern.compile("^There (?:is|are) (\\S+) fish");
 
@@ -253,9 +267,10 @@ public class TrawlingPlusPlugin extends Plugin
 	@Inject
 	private TrawlingPlusConfig config;
 
-	private RouteData routeData;
-	// What routes.json knows about each kind of shoal, by the name it is filed under.
-	private Map<String, RouteData.Species> speciesByName = Collections.emptyMap();
+	// The kinds of shoal, by the name routes.json files them under, that plain fish offcuts bait as well as fine ones.
+	// All that is kept of routes.json once the routes are built from it, which is read again if they need building
+	// again, so the file's own copy of every path isn't held for nothing.
+	private Set<String> plainBaitSpecies = Collections.emptySet();
 	private Shoal nearestShoal;
 
 	// Where the boat of the player is in world tiles, or null while they are not aboard one. Worked out
@@ -314,6 +329,9 @@ public class TrawlingPlusPlugin extends Plugin
 	// hold is opened with offcuts in it, or when a new session makes the count unknown.
 	private boolean ranOutOfBait;
 	private String baitedLabel = label(-1, false);
+	// The bait left and whether out of bait that baitedLabel says, so it is only made again when one changes.
+	private int labelLeft = -1;
+	private boolean labelOut;
 	// The shoal the last bait was laid on, until it next arrives at a stop; whether it was sitting at one
 	// on the last tick; and how many ticks ago the bait was laid.
 	private Shoal baitedShoal;
@@ -366,6 +384,20 @@ public class TrawlingPlusPlugin extends Plugin
 	// step off.
 	private int seaCatchTick = -1;
 	private boolean fishingSpot;
+	// Where each fishing spot at sea is, in world tiles, by NPC id, kept from when it was last seen, since the spots
+	// never move and stop being sent once out of sight; and the one being fished, or null.
+	private final Map<Integer, double[]> seaSpotPlaces = new HashMap<>();
+	private double[] fishedSpot;
+	// Whether fishing has hidden the arrow until the boat moves, and where the boat was then, or null until the next
+	// tick finds out.
+	private boolean spotPaused;
+	private double[] spotPausedAt;
+	// Whether the hold is that full, or warned full, and the hold, its number of changes and its warning that was
+	// worked out for.
+	private boolean spotHoldFull;
+	private CargoHold spotHoldChecked;
+	private int spotHoldChanges;
+	private boolean spotHoldWarned;
 	// The player's own boat while they are aboard it, whether or not the guides are showing, which the hold's display
 	// has nothing to do with.
 	private WorldEntity ownBoat;
@@ -385,16 +417,19 @@ public class TrawlingPlusPlugin extends Plugin
 	@Override
 	protected void startUp() throws IOException
 	{
-		routeData = ShoalRoute.read(gson);
+		RouteData routeData = ShoalRoute.read(gson);
 		routes = ShoalRoute.build(routeData, config.routeSmoothing());
 		readShownFish();
 		markDanger(routes);
-		Map<String, RouteData.Species> byName = new HashMap<>();
+		Set<String> plain = new HashSet<>();
 		for (RouteData.Species species : routeData.species)
 		{
-			byName.put(species.name, species);
+			if ("any".equals(species.bait))
+			{
+				plain.add(species.name);
+			}
 		}
-		speciesByName = byName;
+		plainBaitSpecies = plain;
 		clientThread.invoke(() ->
 		{
 			// Not logged in, or not aboard, and the nets are known to be empty: logging out and stepping off
@@ -416,6 +451,12 @@ public class TrawlingPlusPlugin extends Plugin
 			{
 				holds = holdsByAccount.computeIfAbsent(client.getAccountHash(), account -> new HashMap<>());
 				boatHold = null;
+				// Fishing spots already in sight won't be seen arriving.
+				WorldView top = client.getTopLevelWorldView();
+				for (NPC npc : top == null ? Collections.<NPC>emptyList() : top.npcs())
+				{
+					onNpcSpawned(new NpcSpawned(npc));
+				}
 			}
 		});
 		hideStopBar = config.showTimerBar();
@@ -458,9 +499,14 @@ public class TrawlingPlusPlugin extends Plugin
 			// Nothing is kept in memory while switched off: the routes and markers are built again on the next start.
 			ownBoat = null;
 			routes = Collections.emptyList();
-			routeData = null;
-			speciesByName = Collections.emptyMap();
+			plainBaitSpecies = Collections.emptySet();
 			dangerMarkers = Collections.emptyList();
+			seaSpotPlaces.clear();
+			fishedSpot = null;
+			spotPaused = false;
+			spotPausedAt = null;
+			spotHoldChecked = null;
+			spotHoldFull = false;
 			overlay.forget();
 		});
 		log.debug("Trawling Plus stopped");
@@ -780,9 +826,11 @@ public class TrawlingPlusPlugin extends Plugin
 		if (event.getGameState() == GameState.HOPPING || event.getGameState() == GameState.LOGIN_SCREEN)
 		{
 			clearShoals();
-			seaFishing = false;
 			fishingSpot = false;
 			ownBoat = null;
+			// Sea spot fishing outlasts a logout or disconnect, the way the hold does; only its away timer starts over,
+			// as the tick count needn't carry on from where it was.
+			awayFromSpotsTick = -1;
 		}
 
 		if (event.getGameState() == GameState.LOGIN_SCREEN)
@@ -792,6 +840,8 @@ public class TrawlingPlusPlugin extends Plugin
 			fineBait = -1;
 			ranOutOfBait = false;
 			baitedLabel = label(-1, false);
+			labelLeft = -1;
+			labelOut = false;
 			// Logging out empties the nets into the hold, throwing away whatever doesn't fit, so every
 			// session starts with them empty.
 			resetFish(0);
@@ -810,8 +860,12 @@ public class TrawlingPlusPlugin extends Plugin
 				hash -> new HashMap<>());
 			if (account != holds)
 			{
+				// Another account's holds, and none of its sea spot fishing.
 				holds = account;
 				boatHold = null;
+				seaFishing = false;
+				fishedSpot = null;
+				awayFromSpotsTick = -1;
 			}
 		}
 	}
@@ -931,15 +985,25 @@ public class TrawlingPlusPlugin extends Plugin
 
 		if (TrawlingPlusConfig.GROUP.equals(event.getGroup()) && TrawlingPlusConfig.SMOOTHING_KEY.equals(event.getKey()))
 		{
-			// Config changes arrive on the Swing thread; reshape the routes on the client thread, where
-			// shoals are matched to them and they're drawn.
-			clientThread.invoke(this::reshapeRoutes);
+			// Config changes arrive on the Swing thread, where routes.json is read again and the routes built from it,
+			// away from the client thread; they're swapped in on the client thread, where shoals are matched to them
+			// and they're drawn.
+			List<ShoalRoute> reshaped;
+			try
+			{
+				reshaped = ShoalRoute.build(ShoalRoute.read(gson), config.routeSmoothing());
+			}
+			catch (IOException e)
+			{
+				log.warn("Couldn't read the routes to reshape them", e);
+				return;
+			}
+			clientThread.invoke(() -> reshapeRoutes(reshaped));
 		}
 	}
 
-	private void reshapeRoutes()
+	private void reshapeRoutes(List<ShoalRoute> reshaped)
 	{
-		List<ShoalRoute> reshaped = ShoalRoute.build(routeData, config.routeSmoothing());
 		markDanger(reshaped);
 		for (Shoal shoal : shoals.values())
 		{
@@ -1041,6 +1105,16 @@ public class TrawlingPlusPlugin extends Plugin
 			boatHold = holds.get(boatHoldNumber);
 		}
 		checkNearSpots(own);
+		checkSpotPaused(own);
+		// Only worked out again when the hold, what it holds or its full warning has changed.
+		if (boatHold != spotHoldChecked || boatHold != null
+			&& (boatHold.changes() != spotHoldChanges || boatHold.fullWarning() != spotHoldWarned))
+		{
+			spotHoldChecked = boatHold;
+			spotHoldChanges = boatHold == null ? 0 : boatHold.changes();
+			spotHoldWarned = boatHold != null && boatHold.fullWarning();
+			spotHoldFull = boatHold != null && (spotHoldWarned || boatHold.fullTo(SPOT_HOLD_FULL_SHARE));
+		}
 
 		// A boat with no net fitted, which a raft always is since it can't take one, has nothing to show under Nets
 		// only, so nothing is worked out for it either: no shoals followed, no routes matched.
@@ -1457,12 +1531,110 @@ public class TrawlingPlusPlugin extends Plugin
 	}
 
 	/**
-	 * Whether the player is fishing a spot at sea, which shows the hold's display: since they started fishing one
-	 * aboard, until they step off or have been away from the spots for 3 minutes.
+	 * Whether the player is sea spot fishing, which shows the hold's display: since they started fishing one of the
+	 * spots aboard, until their boat has been away from the spots' regions, docks included, for 3 minutes. Stepping
+	 * off to bank, logging out or a disconnect doesn't end it.
 	 */
 	boolean isSeaFishing()
 	{
 		return seaFishing;
+	}
+
+	/**
+	 * Where the fishing spot at sea being fished is, in world tiles, for the arrow pointing to it: while sea spot
+	 * fishing, not while the hold is 90% full, when the trip is to bank rather than back to the spot, and not from
+	 * fishing until the boat moves off again. Null otherwise.
+	 */
+	double[] getFishedSpot()
+	{
+		return seaFishing && !spotHoldFull && !spotPaused ? fishedSpot : null;
+	}
+
+	/**
+	 * The fishing spot at sea last fished, in world tiles, whatever the arrow's rules say, so the arrow can fade out
+	 * where it was once they hide it. Null if none.
+	 */
+	double[] getRememberedSpot()
+	{
+		return fishedSpot;
+	}
+
+	/**
+	 * Ends the arrow's pause for fishing once the boat has moved SPOT_MOVED_TILES from where it was then. Only while
+	 * paused, and then every SPOT_MOVED_EVERY_TICKS, once where it was is known.
+	 */
+	private void checkSpotPaused(WorldEntity own)
+	{
+		if (!spotPaused || spotPausedAt != null && client.getTickCount() % SPOT_MOVED_EVERY_TICKS != 0)
+		{
+			return;
+		}
+		double[] boatAt = worldPlace(own.getLocalLocation());
+		if (boatAt == null)
+		{
+			return;
+		}
+		if (spotPausedAt == null)
+		{
+			spotPausedAt = boatAt;
+		}
+		else if (Math.hypot(boatAt[0] - spotPausedAt[0], boatAt[1] - spotPausedAt[1]) > SPOT_MOVED_TILES)
+		{
+			spotPaused = false;
+			spotPausedAt = null;
+		}
+	}
+
+	/**
+	 * Keeps where each fishing spot at sea is as it comes into sight. They never move, so where one was last seen is
+	 * where it still is once out of sight.
+	 */
+	@Subscribe
+	public void onNpcSpawned(NpcSpawned event)
+	{
+		NPC npc = event.getNpc();
+		if (SEA_SPOTS.contains(npc.getId()))
+		{
+			double[] place = worldPlace(npc.getLocalLocation());
+			if (place != null)
+			{
+				seaSpotPlaces.put(npc.getId(), place);
+			}
+		}
+	}
+
+	/**
+	 * Whether the boat is still close enough to the spot already found for it to be the one being fished.
+	 */
+	private boolean nearFishedSpot()
+	{
+		double[] boatAt = fishedSpot == null || ownBoat == null ? null : worldPlace(ownBoat.getLocalLocation());
+		return boatAt != null
+			&& Math.hypot(fishedSpot[0] - boatAt[0], fishedSpot[1] - boatAt[1]) <= SEA_SPOT_REACH_TILES;
+	}
+
+	/**
+	 * The fishing spot at sea nearest the boat, if one is close enough to be the one being fished, or null.
+	 */
+	private double[] nearestSeaSpot()
+	{
+		double[] boatAt = ownBoat == null ? null : worldPlace(ownBoat.getLocalLocation());
+		if (boatAt == null)
+		{
+			return null;
+		}
+		double[] nearest = null;
+		double nearestDistance = SEA_SPOT_REACH_TILES;
+		for (double[] place : seaSpotPlaces.values())
+		{
+			double distance = Math.hypot(place[0] - boatAt[0], place[1] - boatAt[1]);
+			if (distance <= nearestDistance)
+			{
+				nearest = place;
+				nearestDistance = distance;
+			}
+		}
+		return nearest;
 	}
 
 	/**
@@ -1475,6 +1647,11 @@ public class TrawlingPlusPlugin extends Plugin
 		if (!seaFishing)
 		{
 			awayFromSpotsTick = -1;
+			return;
+		}
+		// Every few ticks: a few seconds either way on 3 minutes doesn't matter.
+		if (client.getTickCount() % SPOT_MOVED_EVERY_TICKS != 0)
+		{
 			return;
 		}
 		double[] place = worldPlace(own.getLocalLocation());
@@ -1578,6 +1755,14 @@ public class TrawlingPlusPlugin extends Plugin
 				seaFishing = true;
 				fishingSpot = true;
 				awayFromSpotsTick = -1;
+				if (start && !nearFishedSpot())
+				{
+					// Only looked for again when fishing starts somewhere other than the spot already found.
+					fishedSpot = nearestSeaSpot();
+				}
+				// Fishing, so the arrow hides until the boat moves off again.
+				spotPaused = true;
+				spotPausedAt = null;
 				if (seaCatch)
 				{
 					// What it brings arrives in the inventory the same tick, which isn't taken out of the hold.
@@ -1719,8 +1904,9 @@ public class TrawlingPlusPlugin extends Plugin
 		int varbit = event.getVarbitId();
 		if (varbit == VarbitID.SAILING_PLAYER_IS_ON_PLAYER_BOAT && event.getValue() == 0)
 		{
+			// Sea spot fishing carries on: stepping off at a dock to bank comes back to it, and its away timer is what
+			// ends it, the docks being in the spots' regions.
 			resetFish(0);
-			seaFishing = false;
 			fishingSpot = false;
 		}
 		else if (varbit == VarbitID.SAILING_LAST_PERSONAL_BOAT_BOARDED && event.getValue() != boatHoldNumber)
@@ -2031,14 +2217,6 @@ public class TrawlingPlusPlugin extends Plugin
 		}
 	}
 
-	/**
-	 * What routes.json knows about the kind of shoal this is, or null for one it has no entry for.
-	 */
-	private RouteData.Species speciesOf(Shoal shoal)
-	{
-		String name = SPECIES_BY_CLICKBOX.get(shoal.getClickbox());
-		return speciesByName.get(name != null ? name : MIXED_BY_CLICKBOX.get(shoal.getClickbox()));
-	}
 
 	/**
 	 * Whether plain fish offcuts bait this shoal as well as fine ones. A kind with no entry is taken to
@@ -2046,13 +2224,22 @@ public class TrawlingPlusPlugin extends Plugin
 	 */
 	private boolean takesPlainOffcuts(Shoal shoal)
 	{
-		RouteData.Species species = speciesOf(shoal);
-		return species != null && "any".equals(species.bait);
+		String name = SPECIES_BY_CLICKBOX.get(shoal.getClickbox());
+		return plainBaitSpecies.contains(name != null ? name : MIXED_BY_CLICKBOX.get(shoal.getClickbox()));
 	}
 
 	private String baitLabel()
 	{
-		return label(baitLeft(), isOutOfBait());
+		// Asked every tick, but only made again when what it says has changed.
+		int left = baitLeft();
+		boolean out = isOutOfBait();
+		if (left != labelLeft || out != labelOut)
+		{
+			labelLeft = left;
+			labelOut = out;
+			return label(left, out);
+		}
+		return baitedLabel;
 	}
 
 	private static String label(int left, boolean outOfBait)

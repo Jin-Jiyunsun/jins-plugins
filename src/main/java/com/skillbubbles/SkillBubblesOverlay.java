@@ -140,6 +140,9 @@ class SkillBubblesOverlay extends Overlay
 	// The Gradient style's paint, built at the origin once per size; the gradient is computed in
 	// user space, so translating the graphics moves it along with the disc.
 	private final Map<Integer, Paint> gradientPaintCache = new HashMap<>();
+	// The Scale setting the size-keyed caches above currently hold entries for. A change empties
+	// them, so only one size's worth is ever kept rather than a copy per Scale value visited.
+	private int cachedScale = -1;
 
 	@Inject
 	private SkillBubblesOverlay(Client client, SkillBubblesPlugin plugin, SkillBubblesConfig config,
@@ -278,6 +281,11 @@ class SkillBubblesOverlay extends Overlay
 		}
 
 		int scalePercent = config.scale();
+		if (scalePercent != cachedScale)
+		{
+			clearScaledCaches();
+			cachedScale = scalePercent;
+		}
 		int bubbleSize = Math.round(BUBBLE_SIZE * scalePercent / 100f);
 
 		// getCanvasImageLocation centers sizingImage on the target point, i.e. it draws the
@@ -618,6 +626,17 @@ class SkillBubblesOverlay extends Overlay
 	{
 		skillIconCache.clear();
 		skillIconOverrides.clear();
+		clearScaledCaches();
+		cachedScale = -1;
+		classicBubbleMask = null;
+		sizingImage = null;
+		sizingImageScale = -1;
+		RscSprites.clearCache();
+	}
+
+	// Everything keyed by the bubble or icon size, which the Scale setting decides.
+	private void clearScaledCaches()
+	{
 		toolIconCenterCache.clear();
 		resizedIconCache.clear();
 		classicBubbleCache.clear();
@@ -625,10 +644,6 @@ class SkillBubblesOverlay extends Overlay
 		thoughtBubbleShapeCache.clear();
 		customRimShapeCache.clear();
 		gradientPaintCache.clear();
-		classicBubbleMask = null;
-		sizingImage = null;
-		sizingImageScale = -1;
-		RscSprites.clearCache();
 	}
 
 	private BufferedImage sizingImage(int size)

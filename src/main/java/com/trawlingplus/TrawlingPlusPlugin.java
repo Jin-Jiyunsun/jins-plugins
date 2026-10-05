@@ -209,15 +209,6 @@ public class TrawlingPlusPlugin extends Plugin
 		NpcID.FISHING_BOAT_RAREFISH, NpcID.FISHING_BOAT_KARAMBWANFISH, NpcID.FISHING_BOAT_PISCARILIUSFISH,
 		NpcID.FISHING_BOAT_MONKFISH);
 	private static final double SEA_SPOT_REACH_TILES = 20;
-	// Debug: the settings that tune the look of the fish at the spots, in the order SeaSpotFish's looks take them.
-	private static final String[] LOOK_KEYS = {"debugSpotFishRoll", "debugSpotFishTilt", "debugSpotFishSize",
-		"debugSpotFishSizeSpread", "debugSpotFishSink", "debugSpotFishBob", "debugSpotFishPivot", "debugSpotFishTurn",
-		"debugSpotFishSpin", "debugSpotFishRoom", "debugSpotFishRoomRange", "debugSpotFishRoomEase",
-		"debugSpotFishDipEvery", "debugSpotFishDipDepth", "debugSpotFishDipLength", "debugSpotFishLightest",
-		"debugSpotFishWag", "debugSpotFishTip"};
-	// Debug: the settings that tune the crowd of the spot being tuned, in the order SeaSpotFish's crowds take them.
-	private static final String[] CROWD_KEYS = {"debugSpotFishLanes", "debugSpotFishCount", "debugSpotFishLaneWidth",
-		"debugSpotFishShoalSize", "debugSpotFishSharkLanes", "debugSpotFishSharkGap", "debugSpotFishSharkWidth"};
 	// How far, in tiles, the boat has to move after fishing for the arrow to show again.
 	private static final double SPOT_MOVED_TILES = 0.5;
 	// How often, in ticks, that and the 3 minute away timer are looked at, there being no hurry for either.
@@ -279,9 +270,6 @@ public class TrawlingPlusPlugin extends Plugin
 
 	@Inject
 	private TrawlingPlusConfig config;
-
-	@Inject
-	private ConfigManager configManager;
 
 	// The kinds of shoal, by the name routes.json files them under, that plain fish offcuts bait as well as fine ones.
 	// All that is kept of routes.json once the routes are built from it, which is read again if they need building
@@ -447,8 +435,6 @@ public class TrawlingPlusPlugin extends Plugin
 		}
 		plainBaitSpecies = plain;
 		seaSpotFish = new SeaSpotFish(client);
-		loadTunedLook();
-		tuneSpotFish();
 		clientThread.invoke(() ->
 		{
 			// Not logged in, or not aboard, and the nets are known to be empty: logging out and stepping off
@@ -843,6 +829,15 @@ public class TrawlingPlusPlugin extends Plugin
 	@Subscribe
 	public void onGameStateChanged(GameStateChanged event)
 	{
+		// A map load drops the fish from the scene and may move where in it the spots are, without the spots
+		// themselves being seen to go and come again, so their fish are put back in once it's loaded, as they were.
+		if (event.getGameState() == GameState.LOGGED_IN)
+		{
+			WorldView top = client.getTopLevelWorldView();
+			seaSpotFish.reload(top == null ? Collections.<NPC>emptyList() : top.npcs());
+			addSpotFish();
+		}
+
 		if (event.getGameState() == GameState.HOPPING || event.getGameState() == GameState.LOGIN_SCREEN)
 		{
 			clearShoals();
@@ -978,17 +973,6 @@ public class TrawlingPlusPlugin extends Plugin
 		if (TrawlingPlusConfig.GROUP.equals(event.getGroup()) && TrawlingPlusConfig.TIMER_BAR_KEY.equals(event.getKey()))
 		{
 			hideStopBar = config.showTimerBar();
-		}
-
-		if (TrawlingPlusConfig.GROUP.equals(event.getGroup()) && event.getKey().startsWith("debugSpotFish"))
-		{
-			clientThread.invoke(() ->
-			{
-				if (tuneSpotFish())
-				{
-					showSpotFish();
-				}
-			});
 		}
 
 		if (TrawlingPlusConfig.GROUP.equals(event.getGroup()) && TrawlingPlusConfig.SPOT_FISH_KEY.equals(event.getKey()))
@@ -1586,15 +1570,6 @@ public class TrawlingPlusPlugin extends Plugin
 		return seaFishing && !spotHoldFull && !spotPaused ? fishedSpot : null;
 	}
 
-	/**
-	 * The fishing spot at sea last fished, in world tiles, whatever the arrow's rules say, so the arrow can fade out
-	 * where it was once they hide it. Null if none.
-	 */
-	SeaSpotFish getSeaSpotFish()
-	{
-		return seaSpotFish;
-	}
-
 	double[] getRememberedSpot()
 	{
 		return fishedSpot;
@@ -1661,52 +1636,19 @@ public class TrawlingPlusPlugin extends Plugin
 	}
 
 	/**
-	 * Debug: when the kinds of fish or the spot being tuned have changed since last started, puts their built-in
-	 * look and crowd into the debug settings, so tuning starts from them rather than from the last ones' values.
-	 */
-	private void loadTunedLook()
-	{
-		String kinds = SeaSpotFish.tuningKinds();
-		if (kinds.equals(configManager.getConfiguration(TrawlingPlusConfig.GROUP, "debugTuningKinds")))
-		{
-			return;
-		}
-		int[] look = SeaSpotFish.builtInLook();
-		for (int i = 0; i < LOOK_KEYS.length; i++)
-		{
-			configManager.setConfiguration(TrawlingPlusConfig.GROUP, LOOK_KEYS[i], look[i]);
-		}
-		int[] crowd = SeaSpotFish.builtInCrowd();
-		for (int i = 0; i < CROWD_KEYS.length; i++)
-		{
-			configManager.setConfiguration(TrawlingPlusConfig.GROUP, CROWD_KEYS[i], crowd[i]);
-		}
-		configManager.setConfiguration(TrawlingPlusConfig.GROUP, "debugTuningKinds", kinds);
-	}
-
-	/**
-	 * Debug: hands the debug settings' tuned values to the fish, saying whether they need making again.
-	 */
-	private boolean tuneSpotFish()
-	{
-		int[] look = {config.debugSpotFishRoll(), config.debugSpotFishTilt(), config.debugSpotFishSize(),
-			config.debugSpotFishSizeSpread(), config.debugSpotFishSink(), config.debugSpotFishBob(),
-			config.debugSpotFishPivot(), config.debugSpotFishTurn(), config.debugSpotFishSpin(),
-			config.debugSpotFishRoom(), config.debugSpotFishRoomRange(), config.debugSpotFishRoomEase(),
-			config.debugSpotFishDipEvery(), config.debugSpotFishDipDepth(), config.debugSpotFishDipLength(),
-			config.debugSpotFishLightest(), config.debugSpotFishWag(),
-			config.debugSpotFishTip()};
-		return seaSpotFish.tune(look, new int[]{config.debugSpotFishLanes(), config.debugSpotFishCount(),
-			config.debugSpotFishLaneWidth(), config.debugSpotFishShoalSize(), config.debugSpotFishSharkLanes(),
-			config.debugSpotFishSharkGap(), config.debugSpotFishSharkWidth()});
-	}
-
-	/**
 	 * Puts fish at the fishing spots at sea in sight, or takes them all away, as the setting is switched.
 	 */
 	private void showSpotFish()
 	{
 		seaSpotFish.clear();
+		addSpotFish();
+	}
+
+	/**
+	 * Puts fish at the fishing spots at sea in sight that have none, while the setting is on.
+	 */
+	private void addSpotFish()
+	{
 		WorldView top = client.getTopLevelWorldView();
 		if (!config.showSpotFish() || top == null)
 		{

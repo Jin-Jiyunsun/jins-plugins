@@ -58,6 +58,7 @@ Every route was recorded in-game and is accurate to the tile when no smoothing i
   is marked.
 - **Clear around boat**: hides the route line, direction arrows and stops under your boat, fading
   them out around its hull.
+- **Fishing spot fish**: shows or hides the fish swimming at the spots at sea.
 - Each part of the display is toggleable. The route line, direction arrows, stops, the shoal's
   heading arrow, the fishable area, the heads up display and the side panel have their own
   section in the config panel.
@@ -68,7 +69,6 @@ Every route was recorded in-game and is accurate to the tile when no smoothing i
   for instant changes.
 - **Cargo hold**: shows or hides the cargo hold display, in the heads up display section.
 - **Fishing spot arrow**: shows or hides the fishing spot arrow and sets its colour.
-- **Fishing spot fish**: shows or hides the fish swimming at the spots at sea.
 - **Arrow style**: arrows on the water can face the camera (the default), stand upright along the
   route, or lie flat on the water.
 - **Fish**: switch each fish on or off to focus on the ones you're after. A fish that's switched

@@ -144,14 +144,15 @@ final class RiverSpotFish
 	private static double INNER_LANE_SPEED = 0.4;
 	// A circling fish counts as in its lane within LANE_ARRIVED of it, in local units, and eases to its lane's speed
 	// over LANE_ARRIVING further out.
-	private static final double LANE_ARRIVED = 8;
+	private static final double LANE_ARRIVED = 16;
 	private static final double LANE_ARRIVING = 32;
 	// How far each circle's middle is from its spot, east and north, in local units.
 	private static int CIRCLE_OFFSET_X = 26;
 	private static int CIRCLE_OFFSET_Y = 0;
-	// Fish not circling a spot pass it this far outside its circle, at least, as far as the river allows, steering for
-	// that from twice that far off.
-	private static final double CIRCLE_CLEARANCE = 40;
+	// Fish not circling a spot pass it this far outside its circle, at least, in local units, as far as the river
+	// allows, steering for that from CLEAR_AHEAD further off.
+	private static double CIRCLE_CLEARANCE = 12;
+	private static final double CLEAR_AHEAD = 48;
 	// How far round the circle ahead, in local units, a circling fish steers for; and how much faster or slower, at
 	// most, it swims to even out its gaps to the fish ahead and behind it, and how strongly.
 	private static final double CIRCLE_LEAD = 40;
@@ -1241,6 +1242,7 @@ final class RiverSpotFish
 				item = kind.getKey();
 			}
 		}
+		log.debug("River catch: {} xp, item {}, fishing {}", xp, item, fishing == null ? null : fishing.getName());
 		if (fishing == null || item == null)
 		{
 			return;
@@ -1255,10 +1257,11 @@ final class RiverSpotFish
 				if (swimmer.circle != null && swimmer.circle.npc == fishing && swimmer.item == item && !swimmer.caught
 					&& swimmer.shrinkingSince < 0)
 				{
-					(inLane(swimmer) ? inLane : comingIn).add(swimmer);
+					(inLane(shoal.river, swimmer) ? inLane : comingIn).add(swimmer);
 				}
 			}
 			List<Swimmer> from = inLane.isEmpty() ? comingIn : inLane;
+			log.debug("River catch: {} in their lane, {} coming in", inLane.size(), comingIn.size());
 			if (!from.isEmpty())
 			{
 				from.get(ThreadLocalRandom.current().nextInt(from.size())).caught = true;
@@ -1270,11 +1273,23 @@ final class RiverSpotFish
 	/**
 	 * Whether a circling fish has reached its lane of its circle, within LANE_ARRIVED of it.
 	 */
-	private static boolean inLane(Swimmer swimmer)
+	private static boolean inLane(River river, Swimmer swimmer)
+	{
+		return offLane(river, swimmer) <= LANE_ARRIVED;
+	}
+
+	/**
+	 * How far a circling fish is from its lane of its circle, in local units: from the lane where it is, pulled in
+	 * from the bank there, at the fish's angle round the circle.
+	 */
+	private static double offLane(River river, Swimmer swimmer)
 	{
 		Circle circle = swimmer.circle;
-		return Math.abs(Math.hypot(swimmer.x - circle.x, swimmer.y - circle.y) - circle.lanes[swimmer.circleLane])
-			<= LANE_ARRIVED;
+		double angle = Math.atan2(swimmer.y - circle.y, swimmer.x - circle.x);
+		double[] lane = new double[2];
+		circlePoint(river, circle, circle.lanes[swimmer.circleLane], angle, lane);
+		double out = Math.hypot(lane[0] - circle.x, lane[1] - circle.y);
+		return Math.abs(Math.hypot(swimmer.x - circle.x, swimmer.y - circle.y) - out);
 	}
 
 	/**
@@ -1315,7 +1330,7 @@ final class RiverSpotFish
 			for (Circle circle : shoal.circles.values())
 			{
 				double apart = Math.hypot(swimmer.x - circle.x, swimmer.y - circle.y);
-				if (apart < 2 * (circle.radius + CIRCLE_CLEARANCE) && apart < nearestApart)
+				if (apart < circle.radius + CIRCLE_CLEARANCE + CLEAR_AHEAD && apart < nearestApart)
 				{
 					nearest = circle;
 					nearestApart = apart;
@@ -1421,7 +1436,7 @@ final class RiverSpotFish
 			Circle circle = swimmer.circle;
 			int lanes = circle.lanes.length;
 			double out = lanes > 1 ? swimmer.circleLane / (double) (lanes - 1) : 1;
-			double off = Math.abs(Math.hypot(swimmer.x - circle.x, swimmer.y - circle.y) - circle.lanes[swimmer.circleLane]);
+			double off = offLane(river, swimmer);
 			double in = Math.max(0, Math.min(1, 1 - (off - LANE_ARRIVED) / LANE_ARRIVING));
 			double lane = INNER_LANE_SPEED + (1 - INNER_LANE_SPEED) * out;
 			want *= (1 - in * (1 - lane)) * spacing(shoal, swimmer);
@@ -1481,7 +1496,7 @@ final class RiverSpotFish
 		swimmer.y = y;
 		swimmer.wag = (swimmer.wag + 2 * Math.PI * moved / WAG_DISTANCE) % (2 * Math.PI);
 		// Caught, it shrinks away once in its lane.
-		if (swimmer.caught && swimmer.shrinkingSince < 0 && swimmer.circle != null && inLane(swimmer))
+		if (swimmer.caught && swimmer.shrinkingSince < 0 && swimmer.circle != null && inLane(river, swimmer))
 		{
 			swimmer.shrinkingSince = cycle;
 		}
@@ -1637,6 +1652,7 @@ final class RiverSpotFish
 		CIRCLE_SIZE = config.debugRiverCircleSize();
 		CIRCLE_MOST = config.debugRiverCircleMost();
 		INNER_LANE_SPEED = config.debugRiverInnerLaneSpeed() / 100.0;
+		CIRCLE_CLEARANCE = config.debugRiverCircleClearance();
 		CIRCLE_OFFSET_X = config.debugRiverCircleOffsetX();
 		CIRCLE_OFFSET_Y = config.debugRiverCircleOffsetY();
 		TRAVEL_SPACING = config.debugRiverTravelSpacing();
@@ -1759,6 +1775,21 @@ final class RiverSpotFish
 						before = p;
 					}
 				}
+				// What passing fish keep outside of.
+				graphics.setColor(Color.RED);
+				Point ring = null;
+				for (int a = 0; a <= 32; a++)
+				{
+					double angle = 2 * Math.PI * a / 32;
+					double out = circle.radius + CIRCLE_CLEARANCE;
+					Point p = canvas(shoal, circle.x + out * Math.cos(angle), circle.y + out * Math.sin(angle));
+					if (p != null && ring != null)
+					{
+						graphics.drawLine(ring.getX(), ring.getY(), p.getX(), p.getY());
+					}
+					ring = p;
+				}
+				graphics.setColor(Color.GREEN);
 				Point middle = canvas(shoal, circle.x, circle.y);
 				if (middle != null)
 				{

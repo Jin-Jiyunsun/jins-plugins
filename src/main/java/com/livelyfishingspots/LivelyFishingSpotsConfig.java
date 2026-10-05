@@ -438,4 +438,17 @@ public interface LivelyFishingSpotsConfig extends Config
 	{
 		return 30;
 	}
+
+	@Range(min = 0, max = 500)
+	@ConfigItem(
+		keyName = "debugRiverCircleClearance",
+		name = "Spot avoid gap",
+		description = "How far outside a circle passing<br>fish keep, local units; drawn red",
+		section = debugRiverLanes,
+		position = 10
+	)
+	default int debugRiverCircleClearance()
+	{
+		return 12;
+	}
 }

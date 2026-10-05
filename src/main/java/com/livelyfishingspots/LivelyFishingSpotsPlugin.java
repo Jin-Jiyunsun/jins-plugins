@@ -32,8 +32,7 @@ import net.runelite.client.plugins.PluginManager;
 import net.runelite.client.ui.overlay.OverlayManager;
 
 /**
- * Shows the fish each fishing spot gives swimming around it. Only something to look at: the fish have no clickbox
- * and no menu option, and the spots themselves are left as the game draws them.
+ * Shows fish swimming at fishing spots. Visual only: no clickboxes or menu options, and the spots are untouched.
  */
 @Slf4j
 @PluginDescriptor(
@@ -43,9 +42,9 @@ import net.runelite.client.ui.overlay.OverlayManager;
 )
 public class LivelyFishingSpotsPlugin extends Plugin
 {
-	// The name of the 117 HD plugin, the one renderer that draws the water see-through.
+	// 117 HD, the only renderer with see-through water.
 	private static final String HD_PLUGIN = "117 HD";
-	// TEMPORARY, while tuning: where in Look's values each look spinner's value goes.
+	// TEMPORARY: the Look value each look spinner sets.
 	private static final int[] LOOK_PLACES = {4, 5, 0, 1, 2, 7, 15, 16, 17, 23, 24, 22, 6, 12, 13, 14};
 
 	@Inject
@@ -57,13 +56,13 @@ public class LivelyFishingSpotsPlugin extends Plugin
 	@Inject
 	private PluginManager pluginManager;
 
-	// The fish's models, and the fish swimming at the fishing spots, which need the client to be made.
+	// Created in startUp, as they need the client.
 	private FishModels fishModels;
 	private SeaSpotFish seaSpotFish;
 	private RiverSpotFish riverSpotFish;
-	// The player's Fishing experience as last seen, or -1 before it has been, so each catch's drop can be told.
+	// Last Fishing XP seen, or -1, to tell each catch's drop.
 	private int fishingXp = -1;
-	// TEMPORARY, while picking routes: the start picked, waiting for its end, or null.
+	// TEMPORARY: the picked route start awaiting its end, or null.
 	private WorldPoint pickedStart;
 
 	@Inject
@@ -115,11 +114,10 @@ public class LivelyFishingSpotsPlugin extends Plugin
 	@Subscribe
 	public void onGameStateChanged(GameStateChanged event)
 	{
-		// A map load drops the fish from the scene and may move where in it the spots are, without the spots
-		// themselves being seen to go and come again, so their fish are put back in once it's loaded, as they were.
+		// A map load drops the fish and can move the spots in the scene without despawning them.
 		if (event.getGameState() == GameState.LOGIN_SCREEN)
 		{
-			// Another account may log in next, so its experience starts afresh.
+			// Another account may log in next.
 			fishingXp = -1;
 		}
 		if (event.getGameState() == GameState.LOGGED_IN)
@@ -129,15 +127,14 @@ public class LivelyFishingSpotsPlugin extends Plugin
 			{
 				seaSpotFish.reload(top.npcs());
 			}
-			// The rivers are mapped in the scene, which a map load moves, so theirs are started again.
+			// River grids are in scene coordinates, which a map load moves.
 			riverSpotFish.clear();
 			addSpotFish();
 		}
 	}
 
 	/**
-	 * Remakes the fish at the spots as 117 HD is switched on or off, it alone drawing the water see-through, so fish
-	 * wholly under it are put in only where they can be seen.
+	 * Remakes the fish when 117 HD is toggled, as it decides whether under-water fish can be seen.
 	 */
 	@Subscribe
 	public void onPluginChanged(PluginChanged event)
@@ -157,8 +154,7 @@ public class LivelyFishingSpotsPlugin extends Plugin
 	}
 
 	/**
-	 * Whether the water is drawn see-through, which only 117 HD does: the game's own renderer and the GPU plugin draw
-	 * it solid.
+	 * Whether the water is see-through, which only 117 HD draws.
 	 */
 	private boolean seeThroughWater()
 	{
@@ -184,7 +180,7 @@ public class LivelyFishingSpotsPlugin extends Plugin
 	{
 		seaSpotFish.remove(event.getNpc());
 		riverSpotFish.remove(event.getNpc());
-		// The models of any kind no longer swimming anywhere in sight are let go, to be made again if it comes back.
+		// Free the models of kinds no longer in sight.
 		Set<Integer> swimming = new HashSet<>();
 		seaSpotFish.addKinds(swimming);
 		riverSpotFish.addKinds(swimming);
@@ -217,7 +213,7 @@ public class LivelyFishingSpotsPlugin extends Plugin
 				{
 					tuneLooks();
 				}
-				// Settings that shape a shoal, or its fish's looks, start the river shoals in sight again.
+				// Shape and look changes rebuild the river shoals.
 				if (look || LivelyFishingSpotsConfig.REBUILD.contains(key))
 				{
 					riverSpotFish.clear();
@@ -228,8 +224,7 @@ public class LivelyFishingSpotsPlugin extends Plugin
 	}
 
 	/**
-	 * Tells the river fish of each catch, by the Fishing experience it gave. The first seen, as the player logs in,
-	 * only sets where it starts from.
+	 * Passes each Fishing XP drop to the river fish; the first one after login only sets the baseline.
 	 */
 	@Subscribe
 	public void onStatChanged(StatChanged event)
@@ -247,8 +242,7 @@ public class LivelyFishingSpotsPlugin extends Plugin
 	}
 
 	/**
-	 * Notes which way of fishing the player chose on a river spot, so its circle draws the fish that way catches. Only
-	 * read: the click goes on to the game as it is.
+	 * Notes the option clicked on a river spot. Read only; the click is untouched.
 	 */
 	@Subscribe
 	public void onMenuOptionClicked(MenuOptionClicked event)
@@ -257,8 +251,7 @@ public class LivelyFishingSpotsPlugin extends Plugin
 	}
 
 	/**
-	 * TEMPORARY, while picking routes: adds River start and, once a start is picked, River end to the menu on a tile.
-	 * They only note the tile here; nothing is sent to the game.
+	 * TEMPORARY: adds River start and River end to the tile menu. Local only; nothing is sent to the game.
 	 */
 	@Subscribe
 	public void onMenuEntryAdded(MenuEntryAdded event)
@@ -290,7 +283,7 @@ public class LivelyFishingSpotsPlugin extends Plugin
 	}
 
 	/**
-	 * TEMPORARY, while tuning: sets the river fish's looks from the debug spinners.
+	 * TEMPORARY: sets the river fish's look from the spinners.
 	 */
 	private void tuneLooks()
 	{
@@ -301,7 +294,7 @@ public class LivelyFishingSpotsPlugin extends Plugin
 	}
 
 	/**
-	 * Puts fish at the fishing spots in sight that have none.
+	 * Adds fish at the spots in sight that have none.
 	 */
 	private void addSpotFish()
 	{

@@ -33,18 +33,15 @@ import net.runelite.api.gameval.ItemID;
 import net.runelite.api.gameval.NpcID;
 
 /**
- * Fish swimming down the rivers the river fishing spots are on, along routes picked by hand. Each route has one
- * shoal, fixed in place while the spots move about it: its fish grow in at the route's start, swim down the river,
- * keeping to the water, and shrink away at its end. While the player fishes a spot, some of those passing it break off
- * to circle it, and drift back downstream one by one once the player stops. Only something to look at, as the fish at
- * sea are.
+ * Fish swimming down rivers along hand-picked routes. One fixed shoal per route; fish grow in at the
+ * start and shrink away at the end. While the player fishes a spot, passing fish circle it.
  */
 @Slf4j
 final class RiverSpotFish
 {
-	// The fish the lure and bait spots give: trout, salmon and pike, evenly.
+	// Lure/bait spots: trout, salmon and pike.
 	private static final int[] LURE_FISH = {ItemID.RAW_TROUT, ItemID.RAW_SALMON, ItemID.RAW_PIKE};
-	// The river spots with fish, by their NPC: each spot's id is named for the map square it is in.
+	// River spots with fish, by NPC id.
 	private static final Map<Integer, int[]> SPOT_FISH = Map.ofEntries(
 		Map.entry(NpcID._0_26_57_FRESHFISH, LURE_FISH),
 		Map.entry(NpcID._0_37_53_FRESHFISH, LURE_FISH),
@@ -74,100 +71,85 @@ final class RiverSpotFish
 		Map.entry(NpcID._0_22_52_FRESHFISH, LURE_FISH),
 		Map.entry(NpcID._0_50_37_FRESHFISH, LURE_FISH),
 		Map.entry(NpcID._0_49_38_FRESHFISH, LURE_FISH));
-	// The fish each way of fishing a river spot catches, by its menu option, so only those are drawn to the circle; a
-	// spot fished some other way draws all its fish.
+	// Fish each menu option draws to the circle; other options draw all.
 	private static final Map<String, int[]> OPTION_FISH = Map.of(
 		"lure", new int[]{ItemID.RAW_TROUT, ItemID.RAW_SALMON},
 		"bait", new int[]{ItemID.RAW_PIKE});
-	// The Fishing experience each river fish gives as it is caught, so a catch can be told from its experience drop;
-	// one within CATCH_XP_SPREAD of it, as with the angler outfit's bonus, counts as it.
+	// Fishing XP per catch, to tell catches apart; within CATCH_XP_SPREAD counts (outfit bonuses).
 	private static final Map<Integer, Integer> CATCH_XP = Map.of(
 		ItemID.RAW_TROUT, 50, ItemID.RAW_PIKE, 60, ItemID.RAW_SALMON, 70);
 	private static final double CATCH_XP_SPREAD = 0.15;
-	// Each river's route, picked by hand in game: where its fish grow in, upstream, then where they shrink away,
-	// downstream. A spot near no route has no fish.
+	// Hand-picked routes, upstream start then downstream end. Spots near none get no fish.
 	private static final List<WorldPoint[]> ROUTES = List.<WorldPoint[]>of(
 		// Barbarian Village.
 		new WorldPoint[]{new WorldPoint(3104, 3443, 0), new WorldPoint(3105, 3417, 0)});
-	// How far, in tiles, a spot may be from a route's line, start to end, to take it; and how many tiles of water are
-	// mapped beyond the route's ends.
+	// Tiles a spot may be from a route's line to use it; tiles of water mapped past its ends.
 	private static final int ROUTE_REACH = 8;
 	private static final int ROUTE_MARGIN = 4;
-	// How long, in client ticks, a shoal stays with none of its spots in sight, so a spot moving, which takes it
-	// away and puts it back elsewhere, doesn't start its shoal again.
+	// Client ticks a shoal outlives its last spot, so a spot moving doesn't restart it.
 	private static final int LINGER = 500;
 
-	// The floor texture rivers are drawn with, as seen in game (RuneLite has no named ids for textures).
+	// Floor texture of river water, seen in game.
 	private static final int WATER_TEXTURE = 1;
-	// The grid a route's water is mapped on, CELL local units (128 to a tile) to a cell.
+	// Water grid cell size, local units.
 	private static final int CELL = 32;
-	// The path: how far apart its points are, in local units, and how many times it is smoothed.
+	// Path point spacing, local units, and smoothing passes.
 	private static final double PATH_STEP = 16;
 	private static final int SMOOTHING = 4;
-	// How far from the bank, in local units, a fish's middle keeps, for its width.
+	// Gap fish keep from the bank, local units.
 	private static final double BANK_GAP = 20;
 
-	// How fast fish swim down the river and round a circle, in local units a client tick (20 ms), before their look's
-	// speed; how far, in percent, each fish's own speed may differ from that; and how much faster and slower, as a
-	// share of its speed, it surges as it swims, before its look's surge, over SURGE_CYCLES client ticks.
+	// Speeds in local units per client tick, before the look's speed; per-fish spread (percent); surge
+	// (share of speed) and its period in client ticks.
 	private static final double TRAVEL_SPEED = 2.8;
 	private static final double CIRCLE_SPEED = 2.0;
 	private static final int SPEED_SPREAD = 30;
 	private static final double SURGE = 0.25;
 	private static final int SURGE_CYCLES = 300;
-	// How far, as a share of the gap between them, each fish grows in early or late, so they don't come evenly.
+	// How early or late each fish spawns, as a share of the gap.
 	private static final double SPAWN_STRAY = 0.25;
-	// How far ahead along its path, in local units, a fish steers for, and how fast it can turn, in radians a client
-	// tick.
+	// Steering: look-ahead along the path (local units) and turn rate (radians per client tick).
 	private static final double LOOK_AHEAD = 48;
 	private static final double TURN_RATE = 0.08;
-	// How far apart, on average, in local units, the fish swimming down the river are.
+	// Average gap between fish down the river, local units.
 	private static double TRAVEL_SPACING = 70;
-	// How far from the path, at most, each fish's own line across the river is, and how far it wanders either side
-	// of its own line, both as shares of the room there, together never past it: gliding to a new place picked at
-	// random, then another, each glide taking between these, in client ticks, so no two wander alike.
+	// Lane spread and wander, as shares of the room either side; wander glides between random points
+	// over this many client ticks.
 	private static double SPREAD = 0.4;
 	private static double WANDER = 0.25;
 	private static final int MIN_WANDER_CYCLES = 100;
 	private static final int MAX_WANDER_CYCLES = 300;
-	// How long, in client ticks, a fish takes to grow in and to shrink away, and in how many sizes, each a model.
+	// Client ticks to grow in or shrink away, and how many sizes that takes.
 	private static final int GROW_CYCLES = 50;
 	private static final int GROW_STEPS = 6;
 
-	// The circle at a spot: its outer lane's radius, how many lanes it has and how far apart, all in local units, and
-	// the most fish circling it.
+	// Circle: outer lane radius, lanes, lane spacing (local units), most fish.
 	private static double CIRCLE_SIZE = 58;
 	private static int CIRCLE_LANES = 2;
 	private static double CIRCLE_LANE_SPACING = 16;
 	private static int CIRCLE_MOST = 7;
-	// How fast a circle's innermost lane swims, as a share of the outermost's, the lanes between evenly between.
+	// Innermost lane speed as a share of the outermost's.
 	private static double INNER_LANE_SPEED = 0.4;
-	// A circling fish counts as in its lane within LANE_ARRIVED of it, in local units, and eases to its lane's speed
-	// over LANE_ARRIVING further out.
+	// Within LANE_ARRIVED of its lane a fish is in it; it eases to lane speed over LANE_ARRIVING.
 	private static final double LANE_ARRIVED = 16;
 	private static final double LANE_ARRIVING = 32;
-	// How far each circle's middle is from its spot, east and north, in local units.
+	// Circle centre offset from the spot, local units.
 	private static int CIRCLE_OFFSET_X = 26;
 	private static int CIRCLE_OFFSET_Y = 0;
-	// Fish not circling a spot pass it this far outside its circle, at least, in local units, as far as the river
-	// allows, steering for that from CLEAR_AHEAD further off.
+	// Gap passing fish keep outside a circle, and how much further off they start steering.
 	private static double CIRCLE_CLEARANCE = 12;
 	private static final double CLEAR_AHEAD = 48;
-	// How far round the circle ahead, in local units, a circling fish steers for; and how much faster or slower, at
-	// most, it swims to even out its gaps to the fish ahead and behind it, and how strongly.
+	// Circling: look-ahead round the lane (local units) and spacing adjustment limits.
 	private static final double CIRCLE_LEAD = 40;
 	private static final double SPACING_MOST = 0.5;
 	private static final double SPACING_PULL = 0.6;
-	// The chance, in percent, a fish passing a spot the player is fishing breaks off to circle it, and how far before
-	// the spot, along the path, in local units, it decides; and how long, on average, in client ticks, each circling
-	// fish stays once the player has stopped fishing.
+	// Join chance (percent), how far before the spot fish decide (local units), and average client
+	// ticks a circling fish stays once the player stops.
 	private static final int JOIN_CHANCE = 50;
 	private static final double JOIN_BEFORE = 256;
 	private static final double LEAVE_AFTER = 100;
 
-	// As at sea: how far each fish's tail wags either side, in the game's 2048ths of a turn, at REFERENCE_SPEED or
-	// faster, and how far it swims, in local units, for each wag there and back; how long each bob takes and holds
-	// still for after, in client ticks; and how far it tips, at most, in degrees, in a dip and in a bob.
+	// Wag, bob and tip, as at sea.
 	private static final int WAG = 20;
 	private static final double WAG_DISTANCE = 72;
 	private static final double REFERENCE_SPEED = 3.2;
@@ -177,26 +159,24 @@ final class RiverSpotFish
 	private static final double BOB_PITCH = 8;
 
 	/**
-	 * A route's water, on a grid of CELLs: which cells are the river's, how far each is from the bank, and the path
-	 * down the middle of the river that the fish swim, upstream first, with the room either side of it.
+	 * A route's water grid and the path down its middle.
 	 */
 	private static final class River
 	{
-		// The grid's south-west corner, in local units, and how many cells it is across.
+		// South-west corner (local units) and size in cells.
 		private final int x0;
 		private final int y0;
 		private final int size;
 		private final boolean[] water;
 		private final double[] clearance;
-		// The path's points, in local units, how far along it each is, and how far a fish may go either side of it,
-		// left and right as it faces downstream, to BANK_GAP from that bank.
+		// Path points, distance along, and room left and right (facing downstream).
 		private double[] pathX;
 		private double[] pathY;
 		private double[] along;
 		private double[] left;
 		private double[] right;
 		private double length;
-		// The cells along the banks, kept for drawing them while debugging.
+		// Bank cells, for debug drawing.
 		private final List<int[]> banks = new ArrayList<>();
 
 		private River(int x0, int y0, int size)
@@ -209,7 +189,7 @@ final class RiverSpotFish
 		}
 
 		/**
-		 * How far a place is from the bank, in local units; 0 off the water or the grid.
+		 * Distance to the bank, local units; 0 off the water.
 		 */
 		private double clearanceAt(double x, double y)
 		{
@@ -226,8 +206,7 @@ final class RiverSpotFish
 		}
 
 		/**
-		 * The path's point at a distance along it, held at its ends, and its way along there: x, y, the way's x and
-		 * y, and the room to its left and right.
+		 * Fills x, y, direction x, direction y, room left, room right at a distance along the path.
 		 */
 		private void at(double s, double[] into)
 		{
@@ -248,7 +227,7 @@ final class RiverSpotFish
 		}
 
 		/**
-		 * How far along the path its point nearest a place is.
+		 * Distance along the path of its nearest point.
 		 */
 		private double nearest(double x, double y)
 		{
@@ -256,13 +235,13 @@ final class RiverSpotFish
 		}
 
 		/**
-		 * How far along the path its point nearest a place is, of those between two distances along it.
+		 * As nearest, searching only between two distances along.
 		 */
 		private double nearest(double x, double y, double from, double to)
 		{
 			double best = Double.MAX_VALUE;
 			double s = from;
-			// The path's points are evenly spaced, so where to look is known without searching.
+			// Points are evenly spaced, so the range maps straight to indices.
 			double step = length / Math.max(1, pathX.length - 1);
 			int first = Math.max(0, (int) (from / step) - 1);
 			int last = Math.min(pathX.length - 1, (int) Math.ceil(to / step) + 1);
@@ -280,7 +259,7 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * One route's fish: its river, the circle at each of its spots in sight, and its fish.
+	 * One route's river, circles and fish.
 	 */
 	private static final class Shoal
 	{
@@ -294,7 +273,7 @@ final class RiverSpotFish
 		private final List<Swimmer> fish = new ArrayList<>();
 		private int nextSpawn;
 		private int movedAt;
-		// The client tick its last spot went out of sight at, or -1 while it has some.
+		// Client tick the last spot went, or -1.
 		private int emptySince = -1;
 
 		private Shoal(WorldPoint[] route, int plane, int worldView, River river, int[] kinds, int cycle)
@@ -310,22 +289,20 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * The circle at one spot, where its fish gather while the player fishes it.
+	 * The circle at one spot.
 	 */
 	private static final class Circle
 	{
 		private final NPC npc;
 		private final WorldPoint spot;
-		// Its middle and outer lane's radius, in local units, how far along the path it is, and which way round its
-		// fish swim, 1 or -1; how far out each of its lanes is, innermost first.
+		// Centre, outer radius, distance along the path, direction (1 or -1), lane radii.
 		private final double x;
 		private final double y;
 		private final double radius;
 		private final double along;
 		private final int way;
 		private final double[] lanes;
-		// How far across the river from the path its middle is, as fish are, in local units, left when more than 0,
-		// and the room to the path's left and right there.
+		// Centre's offset across the path (left positive) and room either side there.
 		private final double across;
 		private final double roomLeft;
 		private final double roomRight;
@@ -357,50 +334,44 @@ final class RiverSpotFish
 		private final RuneLiteObject fish;
 		private final int item;
 		private final Look look;
-		// Where it is, in local units, the way it faces, in radians from east towards north, and how far along the
-		// path it has got.
+		// Position, heading (radians), distance along the path.
 		private double x;
 		private double y;
 		private double facing;
 		private double s;
-		// The point it last steered for, kept for drawing while debugging.
+		// Last steering target, for debug drawing.
 		private double targetX;
 		private double targetY;
-		// The circle it is swimming round, and in which of its lanes, or null while it swims down the river; and the
-		// circles it has decided about joining, passing each.
+		// Circle and lane, or null; circles already decided about.
 		private Circle circle;
 		private int circleLane;
 		private final Set<Circle> decided = new HashSet<>();
-		// The circle it is passing, while near one and not circling it, and which side of it, across the river, 1 for
-		// left or -1; null and 0 while far from any.
+		// Circle being passed and side (1 left, -1 right), or null and 0.
 		private Circle passing;
 		private int passSide;
-		// Its own share of the speed, its place across the river, as a share of the room on that side, when its surge
-		// is, and how fast it is going now.
+		// Own speed share, lane across the river, surge phase.
 		private final double speed;
 		private final double across;
 		private final int surgePhase;
-		// Its wander: where it glides from and to, from -1 to 1, the client tick it set off at and how long it takes.
+		// Wander glide: from, to (-1 to 1), start tick, length.
 		private double wanderFrom;
 		private double wanderTo;
 		private int wanderSince;
 		private int wanderTakes = 1;
 		private double swimming;
-		// How far across the river from the path it steers now, in local units, left when more than 0.
+		// Current offset across the path, local units, left positive.
 		private double lateral;
-		// The client tick it started growing in at, and shrinking away at, or -1 while it isn't; the size step it
-		// shows and should show; how far its model is tipped, in PITCH_STEPs, nose up when more than 0; and the
-		// client tick it started dipping at, or -1 while it isn't.
+		// Grow/shrink start ticks (-1 if not), size steps, tip in PITCH_STEPs, dip start tick (-1 if not).
 		private int growingSince = -1;
 		private int shrinkingSince = -1;
 		private int step;
 		private int wantStep;
 		private int pitch;
 		private int dippingSince = -1;
-		// Whether it has been caught, and shrinks away once in its lane of its circle.
+		// Caught: shrinks away once in its lane.
 		private boolean caught;
 		private double wag;
-		// How far into its bobbing it is, in client ticks, which stands still while it dips, so the two never overlap.
+		// Bob timer, paused during dips so they never overlap.
 		private int bobClock;
 
 		private Swimmer(RuneLiteObject fish, int item, ThreadLocalRandom random)
@@ -420,13 +391,12 @@ final class RiverSpotFish
 	private final Client client;
 	private final FishModels models;
 	private final List<Shoal> shoals = new ArrayList<>();
-	// The spot the player last chose a way of fishing on, from the menu, and the fish that way catches, or null for
-	// all its fish.
+	// Spot whose menu option the player last chose, and the fish that option draws (null for all).
 	private NPC chosenSpot;
 	private int[] chosenFish;
-	// Routes picked in game while debugging, tried before the table's.
+	// Routes picked in game while debugging, checked first.
 	private final List<WorldPoint[]> picked = new ArrayList<>();
-	// Reused for the path's point at a place along it.
+	// Scratch for River.at.
 	private final double[] point = new double[6];
 
 	RiverSpotFish(Client client, FishModels models)
@@ -436,8 +406,7 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * Puts a river spot that has come into sight, or moved, on its route's shoal, starting the shoal if it has none
-	 * yet.
+	 * Adds a river spot to its route's shoal, starting the shoal if needed.
 	 */
 	void add(NPC spot)
 	{
@@ -467,8 +436,7 @@ final class RiverSpotFish
 		{
 			return;
 		}
-		// Every size each kind grows through, made now, so none waits; and, full grown, every tip it may come to, to be
-		// made a few at a time.
+		// Make the growing sizes now; queue the tipped full-size models.
 		for (int item : kinds)
 		{
 			for (int step = 1; step <= GROW_STEPS; step++)
@@ -492,7 +460,7 @@ final class RiverSpotFish
 			shoal.travelling);
 		attach(shoal, spot, at);
 		shoals.add(shoal);
-		// Fish already all along the river, evenly, each a little either way, so it isn't empty as it comes into sight.
+		// Start with fish spread evenly along the river.
 		ThreadLocalRandom random = ThreadLocalRandom.current();
 		for (int n = 0; n < shoal.travelling; n++)
 		{
@@ -518,8 +486,7 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * The route a spot takes, the picked ones first: the nearest whose line, start to end, it is within ROUTE_REACH
-	 * tiles of; null for none.
+	 * The nearest route within ROUTE_REACH tiles of a spot, picked routes first; null for none.
 	 */
 	private WorldPoint[] routeFor(WorldPoint spot)
 	{
@@ -550,7 +517,7 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * Gives a spot on a shoal its circle, on the spot, moved by the circle offset.
+	 * Gives a spot its circle.
 	 */
 	private void attach(Shoal shoal, NPC spot, LocalPoint at)
 	{
@@ -558,7 +525,7 @@ final class RiverSpotFish
 			ThreadLocalRandom.current().nextBoolean() ? 1 : -1);
 		shoal.circles.put(spot, circle);
 		shoal.emptySince = -1;
-		// Fish already past where they would have decided about it have missed their chance.
+		// Fish already past the decision point skip it.
 		for (Swimmer swimmer : shoal.fish)
 		{
 			if (swimmer.s > circle.along - JOIN_BEFORE)
@@ -569,8 +536,7 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * Maps the water along a route, from its start to its end and ROUTE_MARGIN tiles beyond, and the path down the
-	 * middle of the river between them; null, logged, if either end is out of sight, or they aren't in the same water.
+	 * Maps a route's water and lays its path; null (logged) if it can't.
 	 */
 	private River mapRoute(WorldView view, WorldPoint[] route, int plane)
 	{
@@ -595,7 +561,7 @@ final class RiverSpotFish
 			return null;
 		}
 		flood(river, wet, from);
-		// The end is taken to the nearest water joined to the start's, not just any water.
+		// The end must be in the start's water.
 		int to = nearestWater(river, end, river.water);
 		if (to < 0 || to == from)
 		{
@@ -607,7 +573,7 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * The cell nearest a place, within a tile of it, of those marked; -1 for none.
+	 * The nearest marked cell within a tile of a place, or -1.
 	 */
 	private static int nearestWater(River river, LocalPoint at, boolean[] marked)
 	{
@@ -629,8 +595,7 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * Which of a river grid's cells are water, from the floor's textures in the scene: under a bridge, from the
-	 * floor under it, which the scene keeps apart from the bridge.
+	 * Which grid cells are water, reading under bridges.
 	 */
 	private static boolean[] wet(Scene scene, int plane, River river)
 	{
@@ -670,7 +635,7 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * The texture of a shaped tile's face under a place, in local units; -1 for none.
+	 * Texture of a shaped tile's face under a place, or -1.
 	 */
 	private static int textureAt(SceneTileModel model, double x, double y)
 	{
@@ -705,8 +670,7 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * Marks as the river's water every wet cell joined to one, flooding out from it, then works out how far each is
-	 * from the bank, and where the banks are.
+	 * Floods the river's water from one cell, then works out bank distances and bank cells.
 	 */
 	private static void flood(River river, boolean[] wet, int start)
 	{
@@ -746,8 +710,7 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * How far each water cell is from the nearest cell that isn't, in local units, by two sweeps over the grid; the
-	 * grid's edges count as more water.
+	 * Distance from each water cell to the bank, by a two-pass chamfer transform.
 	 */
 	private static void clearances(River river)
 	{
@@ -804,7 +767,7 @@ final class RiverSpotFish
 				}
 			}
 		}
-		// Measured to the edge of the cell beside, not its middle.
+		// Measured to the cell edge, not its centre.
 		for (int c = 0; c < d.length; c++)
 		{
 			d[c] = river.water[c] ? Math.min(d[c], 1e6) - CELL / 2.0 : 0;
@@ -812,9 +775,7 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * Lays the path from one water cell, upstream, to another, down the middle of the river: the way through the
-	 * water keeping furthest from both banks, smoothed and laid out evenly; and, at each of its points, the room either
-	 * side, out to each bank, less BANK_GAP.
+	 * Lays the path down the middle of the river between two cells, with the room either side.
 	 */
 	private static void layPath(River river, int upstream, int downstream)
 	{
@@ -827,7 +788,7 @@ final class RiverSpotFish
 			cells.add(0, new double[]{river.x0 + (c % size + 0.5) * CELL, river.y0 + (c / size + 0.5) * CELL});
 		}
 		cells.add(0, new double[]{river.x0 + (upstream % size + 0.5) * CELL, river.y0 + (upstream / size + 0.5) * CELL});
-		// Smoothed, the ends held, then laid out evenly.
+		// Smooth, keeping the ends, then space evenly.
 		for (int pass = 0; pass < SMOOTHING; pass++)
 		{
 			List<double[]> smoothed = new ArrayList<>();
@@ -864,7 +825,7 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * Lays points out evenly along the line through them, PATH_STEP apart.
+	 * Respaces points evenly, PATH_STEP apart.
 	 */
 	private static double[][] even(List<double[]> line)
 	{
@@ -896,7 +857,7 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * The way straight across a path at one of its points, to its left as it runs downstream.
+	 * Unit vector to the path's left at a point.
 	 */
 	private static double[] across(double[][] path, int p)
 	{
@@ -909,7 +870,7 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * How far a line out from a place, a way, stays in the river's water, in local units.
+	 * How far a ray stays in the water, local units.
 	 */
 	private static double outTo(River river, double x, double y, double wayX, double wayY)
 	{
@@ -922,9 +883,8 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * The cheapest way through the water to each cell from one, each step costing more the nearer the bank it is, by
-	 * the square, so the cheapest way runs along the middle, as far from both banks as it can; noting in from the cell
-	 * each is reached from.
+	 * Cheapest paths through the water from one cell, costing 1 / clearance squared so they keep to the
+	 * middle; fills from.
 	 */
 	private static void search(River river, int start, int[] from)
 	{
@@ -969,7 +929,7 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * A kind's size at a step of growing in, in percent.
+	 * A kind's size, in percent, at a growing step.
 	 */
 	private static int size(int item, int step)
 	{
@@ -977,8 +937,7 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * How long, in client ticks, until the next fish grows in at a shoal's start: the time a fish takes to swim
-	 * TRAVEL_SPACING, give or take SPAWN_STRAY of it.
+	 * Client ticks until the next spawn.
 	 */
 	private static int spawnGap(ThreadLocalRandom random)
 	{
@@ -986,7 +945,7 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * Puts a new fish on a shoal's path, a distance along it, growing in or already grown.
+	 * Adds a fish at a distance along the path, growing in or full size.
 	 */
 	private void spawn(Shoal shoal, double s, boolean grow, int cycle, ThreadLocalRandom random)
 	{
@@ -1004,7 +963,7 @@ final class RiverSpotFish
 		swimmer.wantStep = step;
 		swimmer.s = s;
 		swimmer.growingSince = grow ? cycle : -1;
-		// Past a spot already, it has missed its chance to join it.
+		// Skip circles it's already past.
 		for (Circle circle : shoal.circles.values())
 		{
 			if (s > circle.along - JOIN_BEFORE)
@@ -1025,8 +984,7 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * How far across the river from the path a share of the room is, in local units, left when more than 0: of the
-	 * room to the left for a share above 0, of the room to the right below.
+	 * Converts a share of the room (-1 to 1) to an offset across the path, local units.
 	 */
 	private static double share(double share, double[] at)
 	{
@@ -1034,8 +992,7 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * Takes a spot that has gone out of sight off its shoal: the fish circling it carry on downstream, and the shoal
-	 * stays a while, in case the spot has only moved.
+	 * Removes a spot's circle; its fish swim on. The shoal lingers in case the spot only moved.
 	 */
 	void remove(NPC spot)
 	{
@@ -1059,7 +1016,7 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * Sends a circling fish back to the river where it leaves its circle, carrying on downstream.
+	 * Sends a circling fish back down the river.
 	 */
 	private static void leave(Shoal shoal, Swimmer swimmer)
 	{
@@ -1068,7 +1025,7 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * Adds the kinds swimming at the spots in sight.
+	 * Adds the kinds in sight, so their models are kept.
 	 */
 	void addKinds(Set<Integer> swimming)
 	{
@@ -1079,7 +1036,7 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * Moves every fish on, each client tick.
+	 * Moves every fish, each client tick.
 	 */
 	void swim()
 	{
@@ -1095,14 +1052,14 @@ final class RiverSpotFish
 		for (Iterator<Shoal> all = shoals.iterator(); all.hasNext(); )
 		{
 			Shoal shoal = all.next();
-			// Gone a while with none of its spots in sight.
+			// Drop shoals whose spots have been gone a while.
 			if (shoal.emptySince >= 0 && cycle - shoal.emptySince > LINGER)
 			{
 				shoal.fish.forEach(swimmer -> swimmer.fish.setActive(false));
 				all.remove();
 				continue;
 			}
-			// A spot that has moved is taken off and put back on where it now is.
+			// Re-add spots that moved.
 			for (Circle circle : shoal.circles.values())
 			{
 				if (!circle.npc.getWorldLocation().equals(circle.spot))
@@ -1129,7 +1086,7 @@ final class RiverSpotFish
 					travelling++;
 				}
 			}
-			// A steady flow, however many are swimming, so no gaps open; held back only if far too many have gathered.
+			// Spawn on a steady timer so no gaps open, capped at twice the target.
 			if (cycle >= shoal.nextSpawn)
 			{
 				if (travelling < 2 * shoal.travelling)
@@ -1164,8 +1121,7 @@ final class RiverSpotFish
 				{
 					leave(shoal, swimmer);
 				}
-				// Now and then it dips deeper, down and back up, as its kind does: only while resting between bobs, its
-				// bobbing standing still until the dip is over, so the two never overlap.
+				// Dips start only between bobs.
 				Look look = swimmer.look;
 				boolean resting = swimmer.bobClock % (BOB_CYCLES + BOB_REST_CYCLES) >= BOB_CYCLES;
 				if (swimmer.dippingSince >= 0 ? cycle - swimmer.dippingSince >= Math.max(1, look.dipMillis / 20)
@@ -1192,8 +1148,7 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * Notes the way of fishing the player chose on a spot's menu, read only, so the circle there draws only the fish
-	 * that way catches.
+	 * Notes the menu option chosen on a river spot (read only).
 	 */
 	void chose(NPC spot, String option)
 	{
@@ -1205,8 +1160,7 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * Whether a kind of fish is drawn to a circle: any, unless the player chose a way of fishing its spot that catches
-	 * only some.
+	 * Whether a kind is drawn to a circle, given the option chosen there.
 	 */
 	private boolean drawn(Circle circle, int item)
 	{
@@ -1225,9 +1179,7 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * Takes a fish the player has just caught, by the Fishing experience it gave, out of the circle at the spot they
-	 * are fishing: one of that kind circling it, at random, shrinks away there, and its place is left for another. An
-	 * experience drop matching no river fish, or a kind not circling, takes none.
+	 * Removes a fish of the caught kind from the circle being fished, picked from its Fishing XP.
 	 */
 	void caught(int xp)
 	{
@@ -1247,7 +1199,7 @@ final class RiverSpotFish
 		{
 			return;
 		}
-		// One already in its lane, if any, else one still on its way in, which shrinks away once there.
+		// Prefer one already in its lane; otherwise mark one still coming in.
 		for (Shoal shoal : shoals)
 		{
 			List<Swimmer> inLane = new ArrayList<>();
@@ -1271,7 +1223,7 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * Whether a circling fish has reached its lane of its circle, within LANE_ARRIVED of it.
+	 * Whether a circling fish has reached its lane.
 	 */
 	private static boolean inLane(River river, Swimmer swimmer)
 	{
@@ -1279,8 +1231,7 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * How far a circling fish is from its lane of its circle, in local units: from the lane where it is, pulled in
-	 * from the bank there, at the fish's angle round the circle.
+	 * How far a circling fish is from its lane, allowing for the lane pulled in from the bank.
 	 */
 	private static double offLane(River river, Swimmer swimmer)
 	{
@@ -1293,8 +1244,7 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * Whether a kind is one of the fewest circling a circle, of the kinds drawn to it, so the circle's kinds stay as
-	 * even as they can.
+	 * Whether a kind is among the fewest circling, to keep the kinds even.
 	 */
 	private boolean fewest(Shoal shoal, Circle circle, int item)
 	{
@@ -1317,9 +1267,7 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * Which circle a fish not circling is passing, the nearest it is near, and on which side, kept for the whole
-	 * pass: the side its own line is on, if the river has room to pass outside the circle there; otherwise the other,
-	 * if that has; and failing both, whichever has more. Sets none while it is far from every circle.
+	 * Picks the nearest circle a fish is passing and which side to pass on, kept for the pass.
 	 */
 	private static void pass(Shoal shoal, Swimmer swimmer)
 	{
@@ -1362,8 +1310,7 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * The lane of a circle with the fewest fish in it for its length, so the circle fills evenly; the outer of two as
-	 * full.
+	 * The circle lane with the fewest fish for its length.
 	 */
 	private static int roomiestLane(Shoal shoal, Circle circle)
 	{
@@ -1387,8 +1334,7 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * How much faster or slower a circling fish swims to even out its gaps round its lane of its circle: slower while
-	 * the fish ahead of it is nearer than the one behind, faster while the one behind is nearer.
+	 * Speed factor that evens out a circling fish's gaps to its neighbours in its lane.
 	 */
 	private static double spacing(Shoal shoal, Swimmer swimmer)
 	{
@@ -1418,9 +1364,7 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * Moves a fish on by some client ticks: down the path, or round its circle, steering for a point a little ahead
-	 * and turning towards it no faster than it can; never onto land. Says whether it is still there, not yet having
-	 * shrunk away at the path's end.
+	 * Moves a fish on by some client ticks. Returns false once it has shrunk away.
 	 */
 	private boolean move(Shoal shoal, Swimmer swimmer, int ticks, int cycle)
 	{
@@ -1431,8 +1375,7 @@ final class RiverSpotFish
 			* (1 + SURGE * look.surge / 100.0 * surging);
 		if (swimmer.circle != null)
 		{
-			// Slower the further in its lane is, once it is in it: on its way in it keeps the outermost's speed, easing
-			// to its lane's over the last LANE_ARRIVING local units.
+			// Inner lanes are slower, but only once the fish has reached its lane.
 			Circle circle = swimmer.circle;
 			int lanes = circle.lanes.length;
 			double out = lanes > 1 ? swimmer.circleLane / (double) (lanes - 1) : 1;
@@ -1456,22 +1399,20 @@ final class RiverSpotFish
 		}
 		else
 		{
-			// How far down the river it is, from where it really is, so on the inside of a bend, where it gets down
-			// the river quicker than it swims, it doesn't fall behind itself and turn back; looked for only near where
-			// it was, never back up the river.
+			// Track progress from the real position, so bends don't make it turn back.
 			swimmer.s = Math.max(swimmer.s, river.nearest(swimmer.x, swimmer.y, swimmer.s - LOOK_AHEAD,
 				swimmer.s + moved + LOOK_AHEAD));
 			double wander = WANDER * wander(swimmer, cycle);
 			river.at(swimmer.s + LOOK_AHEAD, point);
 			double offset = share(Math.max(-1, Math.min(1, swimmer.across + wander)), point);
-			// Near a circle, kept outside it on its side.
+			// Keep outside any circle being passed.
 			pass(shoal, swimmer);
 			if (swimmer.passing != null)
 			{
 				double edge = swimmer.passing.across + swimmer.passSide * (swimmer.passing.radius + CIRCLE_CLEARANCE);
 				offset = swimmer.passSide > 0 ? Math.max(offset, edge) : Math.min(offset, edge);
 			}
-			// Never past the room either side.
+			// Stay within the room.
 			offset = Math.max(-point[5], Math.min(point[4], offset));
 			swimmer.lateral = offset;
 			targetX = point[0] - point[3] * offset;
@@ -1487,7 +1428,7 @@ final class RiverSpotFish
 		double y = swimmer.y + Math.sin(swimmer.facing) * moved;
 		if (!river.isWater(x, y))
 		{
-			// About to touch the bank: straight for where it is going instead.
+			// Heading onto land: go straight for the target instead.
 			swimmer.facing = toward;
 			x = swimmer.x + Math.cos(toward) * moved;
 			y = swimmer.y + Math.sin(toward) * moved;
@@ -1495,12 +1436,12 @@ final class RiverSpotFish
 		swimmer.x = x;
 		swimmer.y = y;
 		swimmer.wag = (swimmer.wag + 2 * Math.PI * moved / WAG_DISTANCE) % (2 * Math.PI);
-		// Caught, it shrinks away once in its lane.
+		// Caught fish shrink once in their lane.
 		if (swimmer.caught && swimmer.shrinkingSince < 0 && swimmer.circle != null && inLane(river, swimmer))
 		{
 			swimmer.shrinkingSince = cycle;
 		}
-		// Shrinks away as it nears the path's end.
+		// Shrink near the path's end.
 		if (swimmer.circle == null && swimmer.shrinkingSince < 0
 			&& swimmer.s >= river.length - swimmer.swimming * GROW_CYCLES)
 		{
@@ -1528,8 +1469,7 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * Where a fish is in its wander, from -1 to 1: gliding smoothly from one place picked at random to the next, a
-	 * new one picked each time it gets there.
+	 * Wander position, -1 to 1, gliding between random points.
 	 */
 	private static double wander(Swimmer swimmer, int cycle)
 	{
@@ -1548,13 +1488,12 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * Puts a fish where it is, facing the way it swims, its tail wagging, bobbing down and back up and tipping as its
-	 * kind does.
+	 * Places a fish: heading, wag, bob, dip and tip.
 	 */
 	private void place(Shoal shoal, Swimmer swimmer, int cycle)
 	{
 		Look look = swimmer.look;
-		// 0 faces south, 512 west, 1024 north, in the game's 2048ths of a turn; it faces (cos, sin) of its facing.
+		// Game orientation: 0 south, 512 west, 1024 north.
 		int heading = (int) Math.round(Math.atan2(-Math.cos(swimmer.facing), -Math.sin(swimmer.facing))
 			* 2048 / (2 * Math.PI)) & 2047;
 		double pace = Math.min(1, swimmer.swimming / REFERENCE_SPEED);
@@ -1565,25 +1504,23 @@ final class RiverSpotFish
 			+ (look.pivot * (Perspective.COSINE[swung] - Perspective.COSINE[heading]) >> 16);
 		swimmer.fish.setX(x);
 		swimmer.fish.setY(y);
-		// A river fish's bob goes down from where it rests and back up, by its look's rise, then holds still a while.
+		// River bobs go down from rest and back.
 		int bobbing = swimmer.bobClock % (BOB_CYCLES + BOB_REST_CYCLES);
 		int bobAt = bobbing < BOB_CYCLES ? bobbing * 2048 / BOB_CYCLES : -1;
 		int bobbed = bobAt < 0 ? 0 : look.rise * (65536 - Perspective.COSINE[bobAt]) >> 17;
-		// A dip goes down and back up smoothly, only ever deeper.
+		// Dips only go deeper.
 		double through = swimmer.dippingSince < 0 ? 0
 			: Math.PI * (cycle - swimmer.dippingSince) / Math.max(1, look.dipMillis / 20.0);
 		double dip = Math.sin(through);
 		swimmer.fish.setZ(waterHeight(x, y, shoal.plane) + look.sink + bobbed
 			+ (int) Math.round(look.dipDepth * dip * dip));
-		// Tipped nose down while sinking and up while rising, the most where it moves fastest; only full grown, the
-		// sizes it grows through being made untipped.
+		// Tip with the bob and dip; only at full size.
 		double tip = look.tip / 100.0 * ((look.rise > 0 && bobAt >= 0 ? -BOB_PITCH * Perspective.SINE[bobAt] / 65536 : 0)
 			- (swimmer.dippingSince >= 0 && look.dipDepth > 0 ? DIP_PITCH * Math.sin(2 * through) : 0));
 		int pitch = swimmer.wantStep == GROW_STEPS ? (int) Math.round(tip / FishModels.PITCH_STEP) : 0;
 		if (pitch != swimmer.pitch || swimmer.wantStep != swimmer.step)
 		{
-			// Only a model already made: one not made yet is put first in line, and the fish keeps the one it has
-			// until it is, a tick or two at most.
+			// Use only made models; queue a missing one and keep the current model meanwhile.
 			int size = size(swimmer.item, swimmer.wantStep);
 			Model model = models.made(swimmer.item, size, pitch, 0);
 			if (model != null)
@@ -1600,8 +1537,7 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * The water's height at a place, in local units, between its tile's corners: as Perspective.getTileHeight works
-	 * it out, but always on the river's own plane, never lifted onto a bridge over it.
+	 * Water height at a place, ignoring bridges above it.
 	 */
 	private int waterHeight(int x, int y, int plane)
 	{
@@ -1623,8 +1559,7 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * A circle's point at an angle, so far out, pulled in towards its middle, where the bank is nearer than BANK_GAP
-	 * there, until it is that far, or at the middle.
+	 * A circle lane's point at an angle, pulled in from the bank.
 	 */
 	private static void circlePoint(River river, Circle circle, double out, double angle, double[] into)
 	{
@@ -1640,8 +1575,7 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * TEMPORARY, while tuning: takes the tunable river settings from the debug spinners. The settings it sets aren't
-	 * final for this.
+	 * TEMPORARY: reads the tuning spinners.
 	 */
 	static void tune(LivelyFishingSpotsConfig config)
 	{
@@ -1661,8 +1595,7 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * Adds a route picked in game while debugging, start then end, to try before the table's, and logs it for the
-	 * table.
+	 * Adds a route picked in game and logs it for the table.
 	 */
 	void pickRoute(WorldPoint start, WorldPoint end)
 	{
@@ -1672,8 +1605,7 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * Takes every fish away, as when switched off or after a map load, which moves the scene the rivers are mapped
-	 * in.
+	 * Removes every fish.
 	 */
 	void clear()
 	{
@@ -1690,7 +1622,7 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * Draws, while debugging, a line across the river's room at a distance along the path.
+	 * Debug: a line across the river at a distance along the path.
 	 */
 	private void acrossLine(Graphics2D graphics, Shoal shoal, double s, Color colour)
 	{
@@ -1707,7 +1639,7 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * Draws, while debugging, each shoal's banks, path and room, each spot's circle, and each fish's steering.
+	 * Debug: banks, path, room, circles and fish steering.
 	 */
 	void drawDebug(Graphics2D graphics)
 	{
@@ -1738,7 +1670,7 @@ final class RiverSpotFish
 			{
 				graphics.fillOval(last.getX() - 4, last.getY() - 4, 8, 8);
 			}
-			// The edges of the room the fish keep within, either side of the path.
+			// Room edges.
 			graphics.setColor(new Color(0, 160, 160, 140));
 			for (int side = -1; side <= 1; side += 2)
 			{
@@ -1757,7 +1689,7 @@ final class RiverSpotFish
 			}
 			for (Circle circle : shoal.circles.values())
 			{
-				// Across the river: where passing fish decide whether to join the circle, and level with it.
+				// Decision line and the circle's own line.
 				acrossLine(graphics, shoal, circle.along - JOIN_BEFORE, Color.MAGENTA);
 				acrossLine(graphics, shoal, circle.along, Color.GREEN);
 				graphics.setColor(Color.GREEN);
@@ -1775,7 +1707,7 @@ final class RiverSpotFish
 						before = p;
 					}
 				}
-				// What passing fish keep outside of.
+				// Avoided area.
 				graphics.setColor(Color.RED);
 				Point ring = null;
 				for (int a = 0; a <= 32; a++)
@@ -1805,8 +1737,7 @@ final class RiverSpotFish
 					graphics.drawString(text, label.getX() - graphics.getFontMetrics().stringWidth(text) / 2, label.getY());
 				}
 			}
-			// Each fish, to the point it steers for: white swimming down, green circling, yellow growing in, red
-			// shrinking away.
+			// Steering lines: white swimming, green circling, yellow growing, red shrinking.
 			for (Swimmer swimmer : shoal.fish)
 			{
 				Point from = canvas(shoal, swimmer.x, swimmer.y);

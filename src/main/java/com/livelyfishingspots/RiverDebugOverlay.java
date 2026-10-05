@@ -8,7 +8,7 @@ import net.runelite.client.ui.overlay.OverlayLayer;
 import net.runelite.client.ui.overlay.OverlayPosition;
 
 /**
- * While debugging, draws each river spot's banks, its fish's path and circle, and its id and flow.
+ * Debug drawing for the river fish.
  */
 class RiverDebugOverlay extends Overlay
 {

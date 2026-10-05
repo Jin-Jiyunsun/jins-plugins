@@ -20,13 +20,11 @@ import net.runelite.api.gameval.ItemID;
 import net.runelite.api.gameval.NpcID;
 
 /**
- * Fish each fishing spot at sea gives, a few of them circling the spot's middle together, as a shoal does. Only
- * something to look at: they have no clickbox and no menu option, and the spot itself is left as the game draws it.
- * They are shown while their spot is in sight and taken away as the spot goes.
+ * Fish circling each sea fishing spot, as a shoal. Visual only: no clickbox or menu options.
  */
 final class SeaSpotFish
 {
-	// The fish each spot shows, each of its fish picked at random from these: every fish it gives.
+	// Each spot's fish, by NPC id.
 	private static final Map<Integer, int[]> SPOT_FISH = Map.of(
 		NpcID.FISHING_BOAT_SALTFISH,
 		new int[]{ItemID.RAW_SHRIMP, ItemID.RAW_ANCHOVIES, ItemID.RAW_SARDINE, ItemID.RAW_HERRING},
@@ -36,32 +34,25 @@ final class SeaSpotFish
 		NpcID.FISHING_BOAT_KARAMBWANFISH, new int[]{ItemID.TBWT_RAW_KARAMBWAN},
 		NpcID.FISHING_BOAT_PISCARILIUSFISH, new int[]{ItemID.RAW_ANGLERFISH},
 		NpcID.FISHING_BOAT_MONKFISH, new int[]{ItemID.RAW_MONKFISH});
-	// How likely each of a spot's fish is, in the same order, out of their total, for the spots that aren't evenly
-	// shared out.
+	// Relative odds of each fish, for spots not split evenly.
 	private static final Map<Integer, int[]> SPOT_FISH_ODDS = Map.of(
 		NpcID.FISHING_BOAT_SALTFISH, new int[]{8, 8, 42, 42},
 		NpcID.FISHING_BOAT_RAREFISH, new int[]{30, 85, 85});
-	// How many of each of a spot's fish, in the same order, it always has at least, for the spots that keep some.
+	// Fewest of each fish a spot always has.
 	private static final Map<Integer, int[]> SPOT_FISH_LEAST = Map.of(
 		NpcID.FISHING_BOAT_RAREFISH, new int[]{5, 5, 5});
 
-	// The lane spacing, in local units (128 to a tile), that each spot's own is measured against: its fish keep gaps
-	// and make room in proportion to its spacing against this. SCALE sizes the speeds and the gaps the fish keep,
-	// against the size they were first set for.
+	// Reference lane spacing, local units: gaps and room scale with a spot's spacing against it. SCALE
+	// scales speeds and gaps from the size they were tuned at.
 	private static final double LANE_SPACING = 45;
 	private static final double SCALE = 256.0 / 352;
-	// How much of a lane each fish takes, in merging gaps, so a lane holds more the bigger round it is, with room to
-	// spare for others to join it; and how far either way a lane may stray from its even place, which keeps a clear
-	// gap to the next.
+	// Lane capacity, in merge gaps per fish; how far a lane may stray from even spacing.
 	private static final double LANE_ROOM = 1.5;
 	private static final double LANE_STRAY = 4 * SCALE;
 
 	/**
-	 * How crowded one spot's shoal is: how many lanes it has, how many fish, how far apart its lanes are, and how far
-	 * out its outermost lane is, in local units; and, for the kinds kept out, how far outside the shoal's outermost
-	 * lane its outer ring's first lane is, and how far apart the ring's lanes are, in local units. The gaps its
-	 * fish keep from each other, and how far they make room, are in proportion to its lane spacing against
-	 * LANE_SPACING, so small fish in narrow lanes keep small gaps.
+	 * A spot's shoal size: lanes, fish, lane spacing, outer radius (local units), and for kept-out kinds
+	 * the outer ring's gap and spacing. Gaps and room scale with spacing against LANE_SPACING.
 	 */
 	private static final class Crowd
 	{
@@ -83,8 +74,7 @@ final class SeaSpotFish
 		}
 	}
 
-	// Each spot's crowd, by its NPC, in the order of its values: lanes, count, spacing, radius, outerGap,
-	// outerSpacing. Every spot with fish has one.
+	// Each spot's crowd, by NPC id: lanes, count, spacing, radius, outerGap, outerSpacing.
 	private static final Map<Integer, Crowd> CROWDS = Map.of(
 		NpcID.FISHING_BOAT_SALTFISH, new Crowd(new int[]{10, 25, 45, 270, 64, 64}),
 		NpcID.FISHING_BOAT_MEMBERFISH, new Crowd(new int[]{7, 27, 39, 270, -76, 87}),
@@ -92,23 +82,19 @@ final class SeaSpotFish
 		NpcID.FISHING_BOAT_MONKFISH, new Crowd(new int[]{5, 14, 57, 308, 64, 64}),
 		NpcID.FISHING_BOAT_RAREFISH, new Crowd(new int[]{7, 23, 38, 294, 64, 64}),
 		NpcID.FISHING_BOAT_KARAMBWANFISH, new Crowd(new int[]{5, 12, 46, 287, 64, 64}));
-	// How far each fish sways in and out from its lane as it swims, in local units at most, from two slow swings
-	// over times picked at random between these, in client ticks, so it wanders a little without any pattern.
+	// Sway in and out of the lane, local units, from two swings with random periods (client ticks).
 	private static final double SWAY = 10 * SCALE;
 	private static final int MIN_SWAY_CYCLES = 120;
 	private static final int MAX_SWAY_CYCLES = 360;
-	// How far, at most, a fish turns in or out from the way round as it moves in or out, in radians (0.35 is about 20
-	// degrees), and how much of the way to that it turns each time it is placed, so it turns smoothly.
+	// Most a fish turns in or out while changing lanes (radians), and how quickly it eases there.
 	private static final double MAX_DRIFT = 0.35;
 	private static final double DRIFT_EASE = 0.1;
-	// How fast the fish swim, in local units a client tick (20 ms): REFERENCE_SPEED out at the middle lane, slower
-	// further in and faster further out, from INNER_SPEED to OUTER_SPEED of it; how far, in percent, each fish's own
-	// speed may differ from that; and how much faster or slower each surges as it swims, as a share of its speed,
-	// from INNER_SURGE in the innermost lane to OUTER_SURGE in the outermost, over a time picked at random between
-	// these, in client ticks.
+	// Speeds in local units per client tick: REFERENCE_SPEED at the middle lane, scaled from INNER_SPEED
+	// to OUTER_SPEED; per-fish spread (percent); surge from INNER_SURGE to OUTER_SURGE over a random
+	// period.
 	private static final double REFERENCE_SPEED = 2 * Math.PI / 1.4 * SCALE;
 	private static final double INNER_SPEED = 0.7;
-	// The innermost lane alone swims slower than that, at this share of the middle lane's speed.
+	// The innermost lane's speed, as a share of the middle lane's.
 	private static final double INNERMOST_SPEED = 0.4;
 	private static final double OUTER_SPEED = 1.3;
 	private static final int SPEED_SPREAD = 8;
@@ -116,100 +102,81 @@ final class SeaSpotFish
 	private static final double OUTER_SURGE = 0.3;
 	private static final int MIN_SURGE_CYCLES = 200;
 	private static final int MAX_SURGE_CYCLES = 400;
-	// How near, round its lane, a fish lets the one ahead of it get, in local units, before slowing to keep its
-	// distance.
+	// Distance round the lane at which a fish slows behind the one ahead, local units.
 	private static final double KEEP_GAP = 192 * SCALE;
-	// How many lengths of the two fish, on average, a fish keeps behind the one ahead, and needs clear to join a lane,
-	// at least, so big fish keep big gaps.
+	// Fish lengths kept behind the one ahead, and needed clear to join a lane.
 	private static final double FOLLOW_LENGTHS = 1.5;
-	// Changing lanes: how often a fish thinks about moving to the lane in or out from its own, picked at random
-	// between these, in client ticks; how much clear water, round the lane it moves to, it needs ahead of and behind
-	// where it would join, in local units; how long the move takes, in client ticks; and how long a fish whose lane
-	// another has just joined keeps looking for a gap to leave by, before staying put.
+	// Lane changes: think interval (client ticks), clear water needed (local units), move time, and how
+	// long a displaced fish looks for a gap to leave by.
 	private static final int MIN_THINK_CYCLES = 300;
 	private static final int MAX_THINK_CYCLES = 900;
 	private static final double MERGE_GAP = 192 * SCALE;
 	private static final int MERGE_CYCLES = 100;
 	private static final int LEAVE_CYCLES = 500;
-	// How much of the way from how fast a fish is swimming to how fast it has decided to it eases a client tick.
+	// How quickly a fish eases to its decided speed, per client tick.
 	private static final double SPEED_EASE = 0.05;
-	// How quick, a client tick, the spring a fish eases aside from others by is, at a room ease of 100%.
+	// Make-room spring strength per client tick at 100% room ease.
 	private static final double ROOM_SPRING = 0.35;
-	// The fish in a lane start evenly round it, each up to START_STRAY, in radians, from its even place.
+	// Random start offset round the lane, radians.
 	private static final double START_STRAY = 0.2;
-	// How many client ticks each fish takes to rise and settle again, and then holds still for before the next, each
-	// picked at random between these.
+	// Bob and rest durations, client ticks, random between these.
 	private static final int MIN_BOB_CYCLES = 70;
 	private static final int MAX_BOB_CYCLES = 150;
 	private static final int MIN_BOB_REST_CYCLES = 20;
 	private static final int MAX_BOB_REST_CYCLES = 60;
-	// How far each fish swings either side of the way it swims, as its tail wags, in the game's 2048ths of a turn
-	// (20 is about 3.5 degrees), at the middle lane's speed or faster, and less by the square of how much slower it
-	// is going, so slow fish barely wag; and how far it swims, in local units, for each swing there and back, so
-	// faster fish wag faster.
+	// Tail wag in 2048ths of a turn at middle-lane speed (less when slower), and local units swum per
+	// wag.
 	private static final int WAG = 20;
 	private static final double WAG_DISTANCE = 100 * SCALE;
-	// A fish tips nose down as it sinks and nose up as it rises: by up to DIP_PITCH degrees in a dip, at its
-	// steepest, and BOB_PITCH in its bob, its model made at each PITCH_STEP degrees of that, as needed.
+	// Most tip in degrees, in a dip and in a bob.
 	private static final double DIP_PITCH = 20;
 	private static final double BOB_PITCH = 8;
-	// How much smaller, in percent, each size of a kind of fish is than the last, up to its size spread.
+	// Percent smaller per size step, within a kind's size spread.
 	private static final int SIZE_STEP = 4;
-	// How many times a second the fish decide how fast to swim, how far to ease aside and whether to change lanes or
-	// dip, up to 50, one for each client tick; between, they carry on as last decided, still moved every tick.
+	// Decisions per second (speed, room, lane changes, dips); fish still move every tick.
 	private static final double DECISIONS_PER_SECOND = 20;
-	// The kinds that swim under the water, unseen where it isn't drawn see-through.
+	// Kinds that swim under the water, invisible unless it's see-through.
 	private static final Set<Integer> UNDER_WATER = Set.of(ItemID.RAW_LOBSTER, ItemID.RAW_SHRIMP,
 		ItemID.RAW_ANCHOVIES);
-	// The kinds kept out of a shoal's innermost lanes, too long to circle so tight: how many of them.
+	// Kinds kept out of the innermost lanes, and how many lanes.
 	private static final Map<Integer, Integer> KEPT_FROM_MIDDLE = Map.of(ItemID.RAW_SWORDFISH, 2,
 		ItemID.RAW_BASS, 1, ItemID.RAW_COD, 1);
-	// The kinds that give each other more room: how many, at most, share a lane, and how many lengths, rather than
-	// FOLLOW_LENGTHS, they keep from any fish ahead and need clear to join a lane.
+	// Kinds that give more room: most per lane, and lengths kept instead of FOLLOW_LENGTHS.
 	private static final Map<Integer, Integer> MOST_IN_LANE = Map.of(ItemID.RAW_SWORDFISH, 2);
 	private static final Map<Integer, Double> GAP_LENGTHS = Map.of(ItemID.RAW_SWORDFISH, 2.5, ItemID.RAW_SHARK, 4.0);
-	// The kinds swimming in a layer of their own, by its number, as lobsters do below the other fish.
+	// Kinds in their own layer, like lobsters below the rest.
 	private static final Map<Integer, Integer> LAYERS = Map.of(ItemID.RAW_LOBSTER, 1);
-	// The kinds every other fish makes room for, whatever its layer, while they make room only for their own layer.
+	// Kinds everyone makes room for; they make room only within their own layer.
 	private static final Set<Integer> GIVEN_ROOM = Set.of(ItemID.RAW_SHARK);
-	// How far, at most, a fish eases away from one of those, and from how far off, as a kind's room and room range
-	// are, in local units at LANE_SPACING.
+	// Room given to those, and from how far, in local units at LANE_SPACING.
 	private static final double SHARK_ROOM = 50;
 	private static final double SHARK_ROOM_RANGE = 160;
-	// How fast, at most, a fish eases aside, in local units a second: from other fish, and apart from that, from one
-	// of those, slower, so it drifts aside.
+	// Most room easing speed, local units a second: from other fish, and (slower) from given-room kinds.
 	private static final double MOST_ROOM_SPEED = 300;
 	private static final double SHARK_ROOM_SPEED = 60;
-	// The kinds with a depth range that keep this many of a spot's fish, at least, at their shallowest, no deeper
-	// than their sink.
+	// Kinds with a depth range that keep at least this many fish at their shallowest.
 	private static final Map<Integer, Integer> SHALLOW_LEAST = Map.of(
 		ItemID.TBWT_RAW_KARAMBWAN, 4, ItemID.RAW_MONKFISH, 7, ItemID.RAW_ANGLERFISH, 7);
-	// And how much deeper, at least, than their sink those not at their shallowest sit, in local units.
+	// Least extra depth for those not at their shallowest, local units.
 	private static final Map<Integer, Integer> LEAST_DEEPER = Map.of(
 		ItemID.TBWT_RAW_KARAMBWAN, 50, ItemID.RAW_MONKFISH, 50, ItemID.RAW_ANGLERFISH, 50);
-	// Whether fish of a kind vary in size, by its size spread, each size taking a set of models of its own. Off, to
-	// keep the models few; each kind keeps its spread for when it's wanted again.
+	// Size variation per fish; off to keep the model count down.
 	private static final boolean SIZE_VARIATION = false;
 
-	// The kinds kept few and in a ring of their own outside a shoal, never among the other fish, each always in the
-	// lane it starts in: how many of them in each of the ring's lanes, innermost first, the ring having as many lanes.
+	// Kinds kept apart in an outer ring, never changing lanes: how many per ring lane, innermost first.
 	private static final Map<Integer, int[]> KEPT_OUT = Map.of(
 		ItemID.RAW_SHARK, new int[]{1, 2});
-	// The most of all kinds kept out a spot can have, for keeping room for them.
+	// Most kept-out fish any spot has.
 	private static final int MOST_KEPT_OUT = KEPT_OUT.values().stream().flatMapToInt(Arrays::stream).sum();
 
 	private final Client client;
 	private final FishModels models;
 	private final Map<NPC, School> schools = new HashMap<>();
-	// Whether the water is drawn see-through, as 117 HD draws it, so fish under it can be seen; the game's own
-	// renderers draw it solid.
+	// Whether the water is see-through (117 HD), so fish under it can be seen.
 	private boolean seeThrough;
 
 	/**
-	 * The fish at one spot: where the spot is in the world, and its middle in the scene and the water's height there,
-	 * which a map load can move; how far out each of its lanes is, the
-	 * outermost's and innermost's even places, and its gaps against LANE_SPACING's; its fish, and the client tick they
-	 * were last moved on at.
+	 * The fish at one spot: its location, scene position and water height, lane radii, and its fish.
 	 */
 	private static final class School
 	{
@@ -218,24 +185,23 @@ final class SeaSpotFish
 		private int y;
 		private int z;
 		private final double[] lanes;
-		// How many of its lanes are its main ones, the rest being its outer ring's, for the kinds kept out.
+		// Main lanes; the rest are the outer ring's.
 		private final int mainLanes;
 		private final double outer;
 		private final double inner;
 		private final double gaps;
 		private final List<Swimmer> fish = new ArrayList<>();
-		// How fast each is swimming this tick, kept so a new list isn't made every tick.
+		// Reused each tick: decided speeds.
 		private final double[] speeds;
-		// And how far each wants to ease away from the fish near it this tick, and of that, from those every fish
-		// makes room for.
+		// Reused each tick: room wanted, and the part of it for given-room kinds.
 		private final double[] room;
 		private final double[] sharkRoom;
-		// And, reused each tick, each fish's speed before minding the fish ahead, and its place across the shoal.
+		// Reused each tick: speeds before following, and positions.
 		private final double[] own;
 		private final double[] placeX;
 		private final double[] placeY;
 		private int movedAt;
-		// The client tick its fish last decided at, and the one, or part of one, they next do at.
+		// Last and next decision ticks.
 		private int decidedAt;
 		private double decideDue;
 
@@ -247,7 +213,7 @@ final class SeaSpotFish
 			this.z = z;
 			mainLanes = crowd.lanes;
 			lanes = new double[crowd.lanes + ringLanes];
-			// Lanes too many or too wide to fit are drawn in closer, so the innermost stays clear of the middle.
+			// Lanes that don't fit are squeezed in, keeping the innermost clear of the middle.
 			outer = crowd.radius;
 			double spacing = Math.min(crowd.spacing, (outer - LANE_SPACING / 2) / (crowd.lanes - 1));
 			inner = outer - spacing * (crowd.lanes - 1);
@@ -271,69 +237,61 @@ final class SeaSpotFish
 	private static final class Swimmer
 	{
 		private final RuneLiteObject fish;
-		// Which kind it is, by its item.
 		private final int item;
-		// Its kind's look, its kind's layer, and how many lengths it keeps from others, kept as they never change, so
-		// they aren't looked up every tick.
+		// Cached per kind: look, layer and gap lengths.
 		private Look look;
 		private int layer;
-		// Whether every other fish makes room for it, its kind being one of GIVEN_ROOM.
+		// Whether others make room for it (GIVEN_ROOM).
 		private boolean givenRoom;
 		private double gapLengths;
-		// How far it swayed out from its lane at the last client tick it was moved, in local units.
+		// Last sway, local units.
 		private double swayed;
-		// Its size, in percent, and how far its model is tipped now, in PITCH_STEPs, nose up when more than 0.
+		// Size in percent; tip in PITCH_STEPs, nose up positive.
 		private final int size;
 		private int pitch;
-		// Which of its arms' wiggle frames it shows, and how far into its wiggle it starts, in client ticks.
+		// Wiggle frame shown and start offset, client ticks.
 		private int frame;
 		private int wiggleStart;
-		// Whether its arms wiggle at all, kept so it isn't worked out every tick.
+		// Whether its arms wiggle.
 		private boolean wiggles;
-		// How much deeper than its kind's sink it sits, picked for it and kept, in local units.
+		// Extra depth below its kind's sink, local units.
 		private int deeper;
-		// How long it is, nose to tail, in local units, as its model is made.
+		// Length nose to tail, local units.
 		private double length;
-		// Its own share of its lane's speed; how long it takes to surge and slacken off again, and where in that it
-		// starts; and the same for rising and falling. All picked at random, so fish in sight together don't move in
-		// step.
+		// Random speed share, surge and bob timings, so fish don't move in step.
 		private final double speed;
 		private final int surge;
 		private final int surgePhase;
 		private final int bob;
 		private final int bobRest;
 		private final int bobPhase;
-		// Its two sways in and out: how long each takes, and where in it it starts.
+		// The two sway periods and phases.
 		private final int swayA;
 		private final int swayAPhase;
 		private final int swayB;
 		private final int swayBPhase;
-		// The lane it is in, or moving to; how far round it is, in radians; how far out it is, and was as it started
-		// moving lanes, at the client tick it started, or -1 while it isn't; how far through a swing its tail is, in
-		// radians; when it next thinks about moving lanes; and until when it is looking for a gap to leave its lane
-		// by, as another has joined it, or -1 while it isn't.
+		// Lane, angle (radians), radius and lane-change start, tail wag phase, next think tick, and the
+		// deadline to leave a lane another has joined (-1 if not).
 		private int lane;
 		private double angle;
 		private double radius;
 		private double movedFrom;
 		private int movingSince = -1;
 		private double wag;
-		// Where in its spin it starts, in 2048ths of a turn, so fish that spin don't all face the same way.
+		// Spin start, 2048ths of a turn.
 		private final int spinPhase;
 		private int thinkAt;
 		private int leaveBy = -1;
-		// How far it has eased away from the fish near it, out from the middle, or in when less than 0, and of that,
-		// from those every fish makes room for, eased at its own speed.
+		// Room eased so far (out positive), and the part from given-room kinds.
 		private double eased;
 		private double sharkEased;
-		// How fast it is easing aside from other fish, in local units a client tick.
+		// Room easing speed, local units per client tick.
 		private double roomSpeed;
-		// How fast it is swimming, in local units a client tick, eased towards how fast it decided to, or -1 before
-		// its first move.
+		// Current speed, local units per client tick, or -1 before its first move.
 		private double swimming = -1;
-		// How far it is turned in or out from the way round, in radians, out when more than 0.
+		// Turn in or out from the circle, radians, out positive.
 		private double drift;
-		// The client tick it started dipping deeper at, or -1 while it isn't.
+		// Dip start tick, or -1.
 		private int dippingSince = -1;
 
 		private Swimmer(RuneLiteObject fish, int item, int size, int lane, double angle, double radius, int cycle,
@@ -368,8 +326,7 @@ final class SeaSpotFish
 	}
 
 	/**
-	 * Starts fish swimming at a spot that has come into sight, if it is one of the spots at sea: its crowd's count of
-	 * them shared out among the lanes around its middle.
+	 * Starts a shoal at a sea spot that came into sight, sharing its fish among its lanes.
 	 */
 	void add(NPC spot)
 	{
@@ -389,22 +346,20 @@ final class SeaSpotFish
 		ThreadLocalRandom random = ThreadLocalRandom.current();
 		int cycle = client.getGameCycle();
 		int plane = spot.getWorldLocation().getPlane();
-		// The outer ring has as many lanes as the kinds kept out at the spot fill, none without them.
+		// Ring lanes for kept-out kinds, if any.
 		int ringLanes = Arrays.stream(kinds).filter(KEPT_OUT::containsKey).map(item -> KEPT_OUT.get(item).length)
 			.max().orElse(0);
 		School school = new School(spot.getWorldLocation(), at.getX(), at.getY(),
 			Perspective.getTileHeight(client, at, plane), crowd, ringLanes, cycle);
 		int lanes = school.mainLanes;
-		// Each lane's distance out, and how many fish start in it: one each while there are enough, then the rest
-		// shared out at random among the lanes with room for another, more likely to those with more room left, so
-		// the bigger lanes take more.
+		// Lane radii, then fish per lane: one each first, the rest weighted by room left.
 		int[] chosen = chooseFish(kinds, odds, least, crowd.count, random);
 		int[] counts = new int[lanes];
 		for (int lane = 0; lane < lanes; lane++)
 		{
 			school.lanes[lane] = school.inner + school.spacing() * lane + random.nextDouble(-LANE_STRAY, LANE_STRAY);
 		}
-		// The outer ring's lanes, outside the main ones.
+		// Outer ring lanes.
 		for (int lane = lanes; lane < school.lanes.length; lane++)
 		{
 			school.lanes[lane] = school.outer + crowd.outerGap + crowd.outerSpacing * (lane - lanes);
@@ -438,11 +393,11 @@ final class SeaSpotFish
 				}
 			}
 		}
-		// From the outermost in, so the kinds kept out of the innermost lanes find room while it's still there.
+		// Outermost first, so kinds kept from the middle still find room.
 		for (int lane = lanes - 1; lane >= 0; lane--)
 		{
 			double turned = random.nextDouble(2 * Math.PI);
-			// Evenly round the lane; more may join it later, while it has room.
+			// Evenly round the lane.
 			int count = counts[lane];
 			for (int place = 0; place < count; place++)
 			{
@@ -455,9 +410,7 @@ final class SeaSpotFish
 				}
 			}
 		}
-		// Then each kind kept out, as many in each of the outer ring's lanes as it says, evenly round the lane, each
-		// lane further out turned on by half the gap between its fish, so those in lanes side by side don't start
-		// side by side.
+		// Kept-out kinds in the ring, each ring lane offset by half a gap.
 		for (int item : kinds)
 		{
 			int[] perLane = KEPT_OUT.get(item);
@@ -479,7 +432,7 @@ final class SeaSpotFish
 				}
 			}
 		}
-		// Kinds that keep some fish at their shallowest have that many of theirs, chosen at random, brought up to it.
+		// Bring enough of each depth-range kind up to their shallowest.
 		for (Map.Entry<Integer, Integer> shallow : SHALLOW_LEAST.entrySet())
 		{
 			List<Swimmer> deep = new ArrayList<>();
@@ -504,8 +457,7 @@ final class SeaSpotFish
 				deep.get(i).deeper = 0;
 			}
 		}
-		// Where the water hides what is under it, fish still deeper than their kind, once those kept at their
-		// shallowest are, are taken out, there being nothing of them to see.
+		// Without see-through water, drop fish that would be hidden.
 		if (!seeThrough)
 		{
 			school.fish.removeIf(swimmer -> swimmer.deeper > 0);
@@ -520,9 +472,7 @@ final class SeaSpotFish
 	}
 
 	/**
-	 * Decides which fish a spot's main lanes will have, before they are placed: how many of each of its kinds, in the
-	 * same order. First the fewest of each its spot keeps, then the rest by how likely each is; never a kind kept to
-	 * the outer ring.
+	 * How many of each kind a spot's main lanes get: the minimums first, then by odds.
 	 */
 	private static int[] chooseFish(int[] kinds, int[] odds, int[] least, int count, ThreadLocalRandom random)
 	{
@@ -551,8 +501,7 @@ final class SeaSpotFish
 	}
 
 	/**
-	 * Takes one of the fish chosen for a spot's main lanes for one of them, by how many of each are left, but none
-	 * kept out of that lane or already as many there as its kind allows; failing those, any kind that may swim there.
+	 * Takes one of the chosen fish allowed in a lane; failing that, any kind allowed there.
 	 */
 	private static int pickInner(int[] kinds, int[] chosen, int lane, School school, ThreadLocalRandom random)
 	{
@@ -585,8 +534,7 @@ final class SeaSpotFish
 	}
 
 	/**
-	 * Whether a kind may be put in one of the main lanes as the spot is laid out: not one kept to the outer ring, nor
-	 * kept out of that lane, nor already as many there as its kind allows.
+	 * Whether a kind may be placed in a main lane during layout.
 	 */
 	private static boolean mayJoin(int item, int lane, School school)
 	{
@@ -595,8 +543,7 @@ final class SeaSpotFish
 	}
 
 	/**
-	 * Whether a fish may move into a lane: one of the main lanes, never the outer ring's, and none of the innermost
-	 * its kind is kept from. The kinds kept out never move, so never ask.
+	 * Whether a fish may move into a lane.
 	 */
 	private static boolean allowed(int item, int lane, School school)
 	{
@@ -604,7 +551,7 @@ final class SeaSpotFish
 	}
 
 	/**
-	 * Picks one of a spot's fish, by how likely each is, or evenly without odds.
+	 * Picks a fish index by odds, or evenly.
 	 */
 	private static int pick(int[] odds, int count, ThreadLocalRandom random)
 	{
@@ -625,13 +572,12 @@ final class SeaSpotFish
 	}
 
 	/**
-	 * Adds a fish of a kind to a shoal, in a lane at an angle round it, at one of its kind's sizes, saying whether it
-	 * could; if not, its model couldn't be made, and the shoal's fish so far are taken away.
+	 * Adds a fish to a shoal. Returns false if its model couldn't be made.
 	 */
 	private boolean addFish(School school, int item, int lane, double angle, LocalPoint at, int plane, int cycle,
 		ThreadLocalRandom random)
 	{
-		// Smaller in SIZE_STEPs, so a kind has only a few sizes of model, while SIZE_VARIATION; otherwise all its size.
+		// Size steps only with SIZE_VARIATION.
 		int size = !SIZE_VARIATION ? FishModels.look(item).size
 			: FishModels.look(item).size * (100 - SIZE_STEP * random.nextInt(FishModels.look(item).sizeSpread / SIZE_STEP + 1)) / 100;
 		Model model = models.model(item, size, 0, 0);
@@ -640,8 +586,7 @@ final class SeaSpotFish
 			school.fish.forEach(swimmer -> swimmer.fish.setActive(false));
 			return false;
 		}
-		// Where the water hides what is under it, the kinds that swim under it aren't put in at all, there being
-		// nothing of them to see; fish put deeper than their kind are taken out once the shoal is laid out.
+		// Without see-through water, skip under-water kinds.
 		if (!seeThrough && UNDER_WATER.contains(item))
 		{
 			return true;
@@ -666,8 +611,7 @@ final class SeaSpotFish
 	}
 
 	/**
-	 * How much deeper than its kind's sink a new fish sits: a random depth within its kind's range, but never only a
-	 * little deeper, under the least its kind allows other than none, so none of it just pokes out of the water.
+	 * Random extra depth within a kind's range, never just barely below the surface.
 	 */
 	private int deeper(int item, ThreadLocalRandom random)
 	{
@@ -682,8 +626,7 @@ final class SeaSpotFish
 	}
 
 	/**
-	 * Queues every tip and frame a shoal's fish may come to need, beyond the upright ones they start with, to be made
-	 * a few at a time: as far as each kind tips at most, both ways, and each of its wiggle frames.
+	 * Queues every tip and wiggle frame a shoal's fish may need.
 	 */
 	private void queueAll(School school)
 	{
@@ -704,7 +647,7 @@ final class SeaSpotFish
 	}
 
 	/**
-	 * Takes away the fish at a spot that has gone out of sight.
+	 * Removes a spot's fish.
 	 */
 	void remove(NPC spot)
 	{
@@ -717,7 +660,7 @@ final class SeaSpotFish
 	}
 
 	/**
-	 * Adds the kinds swimming at the spots in sight.
+	 * Adds the kinds in sight, so their models are kept.
 	 */
 	void addKinds(Set<Integer> swimming)
 	{
@@ -728,7 +671,7 @@ final class SeaSpotFish
 	}
 
 	/**
-	 * Moves every fish on, each client tick.
+	 * Moves every fish, each client tick.
 	 */
 	void swim()
 	{
@@ -740,7 +683,7 @@ final class SeaSpotFish
 		ThreadLocalRandom random = ThreadLocalRandom.current();
 		for (School school : schools.values())
 		{
-			// However many ticks have gone by, but not so many that a fish jumps far after a stall.
+			// Cap ticks so a stall doesn't jump fish far.
 			int ticks = Math.min(10, cycle - school.movedAt);
 			school.movedAt = cycle;
 			if (ticks <= 0)
@@ -749,8 +692,7 @@ final class SeaSpotFish
 			}
 			int count = school.fish.size();
 			double[] speeds = school.speeds;
-			// DECISIONS_PER_SECOND times a second, at the client tick nearest each, the fish decide how fast to swim
-			// and how far to ease aside, the costly part, comparing every pair; every tick they move on as decided.
+			// Decide DECISIONS_PER_SECOND times a second (the costly all-pairs part); move every tick.
 			boolean deciding = cycle >= school.decideDue;
 			int decided = Math.min(10, cycle - school.decidedAt);
 			if (deciding)
@@ -770,9 +712,7 @@ final class SeaSpotFish
 				double was = swimmer.radius + swimmer.swayed + swimmer.eased;
 				double share = Math.min(1, swimmer.look.roomEase / 100.0 * ticks);
 				double fishEased = swimmer.eased - swimmer.sharkEased;
-				// Eased like a spring settling without overshooting, its kind's room ease setting how quick, so it
-				// gathers speed and slows into place rather than starting and stopping dead; never faster than the
-				// most room speed.
+				// Critically damped spring, capped at the most room speed.
 				double spring = swimmer.look.roomEase / 100.0 * ROOM_SPRING;
 				double most = MOST_ROOM_SPEED / 50;
 				for (int t = 0; t < ticks; t++)
@@ -796,8 +736,7 @@ final class SeaSpotFish
 						swimmer.movingSince = -1;
 					}
 				}
-				// Its speed eases towards the one decided, so it speeds up and slows down smoothly rather than in
-				// steps; a fish just made starts at it.
+				// Ease to the decided speed; new fish start at it.
 				swimmer.swimming = swimmer.swimming < 0 ? speeds[i]
 					: swimmer.swimming + (speeds[i] - swimmer.swimming) * Math.min(1, SPEED_EASE * ticks);
 				double moved = swimmer.swimming * ticks;
@@ -814,8 +753,7 @@ final class SeaSpotFish
 			for (Swimmer swimmer : school.fish)
 			{
 				think(school, swimmer, cycle, random, SHARK_ROOM_RANGE * school.gaps);
-				// Seconds are 50 client ticks, each 20 ms. A fish put deeper than its kind never dips, being hard to
-				// see moving down there.
+				// 50 client ticks a second. Fish below their kind's depth never dip.
 				Look look = swimmer.look;
 				if (swimmer.dippingSince >= 0 ? cycle - swimmer.dippingSince >= Math.max(1, look.dipMillis / 20)
 					: swimmer.deeper == 0 && random.nextDouble() < Math.max(1, decided) / (look.dipEvery * 50.0))
@@ -827,14 +765,13 @@ final class SeaSpotFish
 	}
 
 	/**
-	 * How fast a fish would swim now, in local units a client tick, before minding the fish ahead: its lane's speed at
-	 * how far out it is, its own share of that and its surge.
+	 * A fish's unhindered speed: its lane's, its own share and its surge.
 	 */
 	private double speed(School school, Swimmer swimmer, int cycle, double inner)
 	{
 		double out = (swimmer.radius - inner) / (school.outer - inner);
 		double surging = Math.sin(2 * Math.PI * ((cycle + swimmer.surgePhase) % swimmer.surge) / swimmer.surge);
-		// Evenly faster from the second lane out; the innermost slower still, easing up to the second's speed.
+		// Faster outward; the innermost lane slower still.
 		double second = 1.0 / (school.mainLanes - 1);
 		double lane = out >= second
 			? INNER_SPEED + (OUTER_SPEED - INNER_SPEED) * out
@@ -845,8 +782,7 @@ final class SeaSpotFish
 	}
 
 	/**
-	 * Slows each fish closing on the one ahead of it in its lane: nearer than the gap they keep, it swims no faster
-	 * than that one, less the nearer it is, so it can never close the gap, only drift back.
+	 * Slows each fish closing on the one ahead in its lane so it never closes the gap.
 	 */
 	private static void follow(School school)
 	{
@@ -887,13 +823,10 @@ final class SeaSpotFish
 	}
 
 	/**
-	 * Has a fish move to the lane in or out from its own, if it is time for it to think about it, or it is looking
-	 * to leave its lane, and there is clear water there to join it by. A fish already in that lane then looks to
-	 * leave it in turn. The kinds kept out never move.
+	 * Moves a fish to a neighbouring lane when due and clear; one already there then looks to leave.
 	 */
 	private static void think(School school, Swimmer swimmer, int cycle, ThreadLocalRandom random, double sharkRange)
 	{
-		// The kinds kept out keep the lane they start in.
 		if (swimmer.movingSince >= 0 || KEPT_OUT.containsKey(swimmer.item))
 		{
 			return;
@@ -931,9 +864,7 @@ final class SeaSpotFish
 	}
 
 	/**
-	 * Whether a fish could join a lane where it is: the lane has room for another, no fish in it, or still leaving
-	 * it, is within MERGE_GAP ahead or behind, and none every fish makes room for is within the range they make it
-	 * from. The kinds kept out never change lanes, so never ask.
+	 * Whether a fish can join a lane where it is: room, clear gaps, and no given-room kind nearby.
 	 */
 	private static boolean clear(School school, Swimmer swimmer, int lane, double sharkRange)
 	{
@@ -941,8 +872,7 @@ final class SeaSpotFish
 		double out = swimmer.radius + swimmer.eased;
 		for (Swimmer other : school.fish)
 		{
-			// Never while one every fish makes room for is near enough to push it aside, which would hold it off its
-			// new lane until that one had passed, then slide it over all at once.
+			// Not near a given-room kind, which would hold it off then shove it over.
 			if (other.givenRoom)
 			{
 				double otherOut = other.radius + other.eased;
@@ -971,9 +901,7 @@ final class SeaSpotFish
 	}
 
 	/**
-	 * Which layer of a shoal a kind swims in, the fish of different layers paying each other no mind: none following,
-	 * making room for or blocking a lane to one in another. The kinds kept out are a layer of their own, as are those
-	 * in LAYERS; the rest share layer 0.
+	 * A kind's layer; layers ignore each other. Kept-out kinds are -1, LAYERS as listed, the rest 0.
 	 */
 	private static int layer(int item)
 	{
@@ -981,7 +909,7 @@ final class SeaSpotFish
 	}
 
 	/**
-	 * How many fish of a kind are in a lane, or moving to it.
+	 * Fish of a kind in, or moving to, a lane.
 	 */
 	private static int inLane(School school, int item, int lane)
 	{
@@ -994,7 +922,7 @@ final class SeaSpotFish
 	}
 
 	/**
-	 * How many of their lengths, on average, two fish keep apart: the more of the two kinds' gaps.
+	 * Lengths two fish keep apart: the larger of their kinds' gaps.
 	 */
 	private static double lengths(Swimmer one, Swimmer other)
 	{
@@ -1002,7 +930,7 @@ final class SeaSpotFish
 	}
 
 	/**
-	 * How many fish a lane holds: as many as fit round it with LANE_ROOM merging gaps each, and always one.
+	 * How many fish a lane holds, at least one.
 	 */
 	private static int room(School school, int lane)
 	{
@@ -1011,9 +939,7 @@ final class SeaSpotFish
 	}
 
 	/**
-	 * Works out how far each fish wants to ease away from those near it, in or out from the middle: away from each
-	 * within its kind's range, more the nearer it is, and never more than its kind's room in all, both in proportion
-	 * to the spot's lanes.
+	 * Room each fish wants from those near it, in or out, scaled to the spot's lanes.
 	 */
 	private void makeRoom(School school)
 	{
@@ -1038,14 +964,12 @@ final class SeaSpotFish
 			for (int j = 0; j < count; j++)
 			{
 				Swimmer other = school.fish.get(j);
-				// Fish in different layers pay each other no mind, but for those every fish makes room for, as the
-				// sharks, which in turn make room only for their own layer.
+				// Different layers ignore each other, except given-room kinds.
 				if (j == i || other.layer != swimmer.layer && !(other.givenRoom && !swimmer.givenRoom))
 				{
 					continue;
 				}
-				// One every fish makes room for is given more of it, from further off. Squared distances first, so
-				// the square root is only taken for those near enough.
+				// Given-room kinds get more room from further off. Squared distances first.
 				boolean givingWay = other.givenRoom && !swimmer.givenRoom;
 				double range = givingWay ? SHARK_ROOM_RANGE * school.gaps : roomRange;
 				double dx = school.placeX[i] - school.placeX[j];
@@ -1058,7 +982,7 @@ final class SeaSpotFish
 				double apart = Math.sqrt(apartSquared);
 				double otherOut = other.radius + other.eased;
 				double give = givingWay ? SHARK_ROOM * school.gaps : room;
-				// Out if it is the further out of the two, in if not; two as far out as each other part by order.
+				// Out if further out; level fish part by order.
 				double way = Math.abs(out - otherOut) > 1 ? Math.signum(out - otherOut) : i < j ? -1 : 1;
 				if (givingWay)
 				{
@@ -1076,7 +1000,7 @@ final class SeaSpotFish
 	}
 
 	/**
-	 * How far a fish has swayed out from its lane at a client tick, in local units, in when less than 0.
+	 * Sway from the lane at a tick, local units, in negative.
 	 */
 	private static double sway(Swimmer swimmer, int cycle)
 	{
@@ -1086,8 +1010,7 @@ final class SeaSpotFish
 	}
 
 	/**
-	 * Puts a fish where it is, facing the way it swims, given how fast it is going on round and out, in local units a
-	 * client tick.
+	 * Places a fish given its speed round and out, local units per client tick.
 	 */
 	private void place(School school, Swimmer swimmer, double speed, double outward, int cycle)
 	{
@@ -1095,51 +1018,43 @@ final class SeaSpotFish
 		double out = swimmer.radius + swimmer.swayed + swimmer.eased;
 		double sine = Math.sin(swimmer.angle);
 		double cosine = Math.cos(swimmer.angle);
-		// Going round this way it heads a quarter turn on from where it is, turned in or out as it moves lanes: 0
-		// faces south, 512 west, 1024 north, in the game's 2048ths of a turn. The turn eases towards the way it is
-		// moving, and only so far, so quick nudges in or out don't swing it about.
+		// Heading: a quarter turn on from its angle, eased toward its drift. Game orientation: 0 south,
+		// 512 west, 1024 north.
 		double toward = speed > 0 ? Math.atan2(outward, speed) : 0;
 		swimmer.drift += (Math.max(-MAX_DRIFT, Math.min(MAX_DRIFT, toward)) - swimmer.drift) * DRIFT_EASE;
 		double drift = swimmer.drift;
 		int heading = (int) Math.round((swimmer.angle - drift) * 2048 / (2 * Math.PI)) + 1536 & 2047;
-		// Its tail wags less by the square of how much slower than the middle lane's speed it is going.
+		// Slower fish wag less.
 		double pace = Math.min(1, speed / REFERENCE_SPEED);
 		int swung = heading + (int) Math.round(WAG * look.wag / 100.0 * pace * pace * Math.sin(swimmer.wag)) & 2047;
-		// Spun round from where it started, at its kind's speed: 2048ths of a turn a second over 50 client ticks. A
-		// kind that doesn't spin isn't turned at all.
+		// Spin at the kind's rate, if any.
 		int spun = look.spin == 0 ? 0 : swimmer.spinPhase - (int) ((long) look.spin * 2048 / 360 * cycle / 50);
 		swimmer.fish.setOrientation(swung + look.turn * 2048 / 360 + spun & 2047);
-		// Swung about a point ahead of its middle, so the head stays nearly still and the tail sweeps: the same turn
-		// with the fish moved over by how far that point's turn carries its middle. It faces (-sine, -cosine).
+		// Wag about a point ahead of its middle, so the tail sweeps.
 		swimmer.fish.setX(school.x + (int) Math.round(out * sine)
 			+ (look.pivot * (Perspective.SINE[swung] - Perspective.SINE[heading]) >> 16));
 		swimmer.fish.setY(school.y + (int) Math.round(out * cosine)
 			+ (look.pivot * (Perspective.COSINE[swung] - Perspective.COSINE[heading]) >> 16));
-		// Higher is lower in the game's heights.
-		// A bob rises and settles back smoothly, then holds still at rest a while; -1 while holding, as a fish put
-		// deeper than its kind always is, being hard to see moving down there.
+		// Higher is lower in game heights. Bob, then rest; fish below their kind's depth don't bob.
 		int bobbing = (cycle + swimmer.bobPhase) % (swimmer.bob + swimmer.bobRest);
 		int bobAt = swimmer.deeper == 0 && bobbing < swimmer.bob ? bobbing * 2048 / swimmer.bob : -1;
 		int risen = bobAt < 0 ? 0 : look.rise * (65536 - Perspective.COSINE[bobAt]) >> 17;
-		// A dip goes down and back up smoothly, only ever deeper.
+		// Dips only go deeper.
 		double through = swimmer.dippingSince < 0 ? 0
 			: Math.PI * (cycle - swimmer.dippingSince) / Math.max(1, look.dipMillis / 20.0);
 		double dip = Math.sin(through);
 		swimmer.fish.setZ(school.z + look.sink + swimmer.deeper - risen
 			+ (int) Math.round(look.dipDepth * dip * dip));
-		// Tipped nose down while sinking and up while rising, the most where it moves fastest: its bob rises as the
-		// sine of its way through is above 0, its dip sinks as twice its way through's sine is. Level while holding.
-		// Only a kind that bobs or dips.
+		// Tip with the bob and dip; level while resting.
 		double tip = look.tip / 100.0 * ((look.rise > 0 && bobAt >= 0 ? BOB_PITCH * Perspective.SINE[bobAt] / 65536 : 0)
 			- (swimmer.dippingSince >= 0 && look.dipDepth > 0 ? DIP_PITCH * Math.sin(2 * through) : 0));
 		int pitch = (int) Math.round(tip / FishModels.PITCH_STEP);
-		// Arms that wiggle step through their frames at their kind's rate, a second being 50 client ticks.
+		// Wiggle frames at the kind's rate.
 		int frame = swimmer.wiggles
 			? (int) ((long) (cycle + swimmer.wiggleStart) * look.wiggleRate / 50 % FishModels.WIGGLE_FRAMES) : 0;
 		if (pitch != swimmer.pitch || frame != swimmer.frame)
 		{
-			// Only a model already made: one not made yet is put first in line, and the fish keeps the one it has
-			// until it is, a tick or two at most.
+			// Use only made models; queue a missing one and keep the current model meanwhile.
 			Model model = models.made(swimmer.item, swimmer.size, pitch, frame);
 			if (model != null)
 			{
@@ -1155,10 +1070,8 @@ final class SeaSpotFish
 	}
 
 	/**
-	 * After a map load, which drops the fish from the scene and may move where in it the spots are: puts each spot's
-	 * fish back, just as they were, about where the spot now is in the scene, matching spots to their fish by where
-	 * they are in the world; and takes away the fish of any spot no longer in sight. Spots with none are left for
-	 * adding as usual.
+	 * After a map load, puts each spot's fish back where the spot now is in the scene, matched by world
+	 * location, and drops spots no longer in sight.
 	 */
 	void reload(Iterable<? extends NPC> spots)
 	{
@@ -1208,7 +1121,7 @@ final class SeaSpotFish
 	}
 
 	/**
-	 * Says whether the water is drawn see-through, for the shoals made from now on.
+	 * Sets whether the water is see-through, for shoals made from now on.
 	 */
 	void setSeeThrough(boolean seeThrough)
 	{
@@ -1216,7 +1129,7 @@ final class SeaSpotFish
 	}
 
 	/**
-	 * Takes every fish away, as when switched off.
+	 * Removes every fish.
 	 */
 	void clear()
 	{

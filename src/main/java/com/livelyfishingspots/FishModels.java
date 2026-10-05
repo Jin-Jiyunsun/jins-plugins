@@ -15,86 +15,59 @@ import net.runelite.api.ModelData;
 import net.runelite.api.gameval.ItemID;
 
 /**
- * How each kind of fish looks, and its models: made from its item's model, reshaped, stood up, sized and lit as its
- * look says, each made once and kept while a fish of its kind is in sight.
+ * Fish looks and their models, built from item models, cached while a fish of the kind is in sight.
  */
 final class FishModels
 {
-	// Which way up a fish is stood, 1 or -1: an item's model lies on its side, as it does on the floor.
+	// 1 or -1: which way up an item model, lying on its side, is stood.
 	private static final int UPRIGHT = 1;
-	// A fish's model is made at each PITCH_STEP degrees it tips nose up or down, as needed, since a placed model can
-	// only be turned about upright, and swapped as it tips from one to the next.
+	// Tip step in degrees; a model is made per step, since placed models only turn about upright.
 	static final double PITCH_STEP = 5;
 
-	// How many slices a model is cut into along its length to straighten it.
+	// Slices used to straighten a model.
 	private static final int STRAIGHTEN_SLICES = 20;
-	// How many queued models are made each client tick, at most.
+	// Most queued models made per client tick.
 	private static final int MAKE_PER_TICK = 2;
 
-	// The kinds whose models are reshaped by their look's sweep, uncurl, straighten, joints, bends, tail size and
-	// stretch; the rest are left as their model is.
+	// Kinds whose models are reshaped by their look.
 	static final Set<Integer> RESHAPED = Set.of(ItemID.RAW_SWORDFISH, ItemID.TBWT_RAW_KARAMBWAN,
 		ItemID.RAW_SHARK);
-	// How many frames of their wiggle swept arms are made at, cycled through as they swim, and how many waves run
-	// along an arm at once.
+	// Wiggle frames made for swept arms, and waves along an arm.
 	static final int WIGGLE_FRAMES = 4;
 	private static final double WIGGLE_WAVES = 1.2;
-	// The kinds that keep the height they sit at untipped as they tip, rather than being sat back on the water by
-	// their lowest point, which would lift a long-nosed fish's nose far out as its tail dips.
+	// Kinds that keep their untipped height when tipped, so a long nose doesn't lift out.
 	private static final Set<Integer> KEEP_HEIGHT = Set.of(ItemID.RAW_SWORDFISH);
-	// The hues, of the game's 64 round from red, that count as green, and how saturated, of 8, a colour has to be, so
-	// none of them are lightened.
+	// Hue range (of 64) and least saturation (of 8) counted as green, never lightened.
 	private static final int[] GREEN_HUES = {14, 30};
 	private static final int GREEN_SATURATION = 2;
 
-	// How far either side of a joint, as a share of the fish's length, its bend eases in.
+	// Share of the length either side of a joint the bend eases over.
 	private static final double JOINT_EASE = 0.08;
-	// The kinds whose models are folded at their joint, as a V, and so bend about the fold itself.
+	// Kinds folded into a V at their joint, bending about the fold.
 	private static final Set<Integer> FOLDED = Set.of(ItemID.RAW_SHARK);
 
 	/**
-	 * How one kind of fish is shown and moves, each kind's model being its own shape and size:
+	 * How one kind looks and moves. Angles in degrees, distances in local units, shares in percent.
 	 * <ul>
-	 * <li>roll: how far it is rolled up off its side about its length, in degrees, 0 leaving it lying flat as an item
-	 * does and 90 standing it upright; tilt: how far it is then tilted head up, in degrees</li>
-	 * <li>size: how big it is, in percent of the item's own size; sizeSpread: how much smaller, in percent, each fish
-	 * may be</li>
-	 * <li>sink: how far below the water's height it sits; rise: how far above that it rises as it bobs; both in local
-	 * units</li>
-	 * <li>pivot: how far ahead of the model's middle, towards the head, it turns as it wags, in local units, so the
-	 * head stays nearly still and the tail sweeps</li>
-	 * <li>turn: how far it is turned to face the way it swims, in degrees, for a model whose head points some other
-	 * way; spin: how fast it spins round as it swims, in degrees a second, 0 for not at all</li>
-	 * <li>room, roomRange: how far at most it eases away from fish near it, and how near they have to be, in local
-	 * units, against LANE_SPACING's lanes; roomEase: how quickly it eases there, in percent, as the strength of the
-	 * spring it eases by</li>
-	 * <li>dipEvery, dipDepth, dipMillis: how often on average it dips deeper than its bob takes it, never higher, in
-	 * seconds; how much deeper at most, in local units; and how long a dip takes, down and back up, in
-	 * milliseconds</li>
-	 * <li>lightest: how light, at least, every face of it is, on the game's colour scale of 0 to 127, so none is
-	 * too dark however it is lit</li>
-	 * <li>straighten: how far a model bent along its length, as one drawn leaping, is straightened, in percent;
-	 * stretch: how long it is made along its length, in percent of how long it is; joint and bend: where along its
-	 * length, in percent, a model bent there is turned back straight, and by how many degrees, the shorter side of
-	 * the joint swinging round it; joint2 and bend2: a second such joint, turned after the first, as for a tail
-	 * still bent once its body is straight; tailSize: how big, in percent, the part beyond that second joint is
-	 * made, round the joint</li>
-	 * <li>tipPivot: how far ahead of its middle, towards its head, it tips about as it bobs and dips, in local
-	 * units</li>
-	 * <li>pace: how fast it swims round, in percent of its lane's speed; surge: how much it speeds up and slows down
-	 * as it swims, in percent of its lane's surge</li>
-	 * <li>sweep and sweepBody: how far, in percent, the arms of a model reaching out all round, as the karambwan's,
-	 * are swept back behind it, the tips the most, as an octopus's trail; and how much of its middle, in percent of
-	 * its reach, is the body they reach from, left as it is; wiggle and wiggleRate: how far its swept arms wave, in
-	 * percent of its reach, and how many of its WIGGLE_FRAMES it goes through a second</li>
-	 * <li>uncurl and curlCentre: how far, in percent, a model curled round in an arc, as the raw shark's, is unrolled
-	 * about the middle of its curl, and how far that middle is moved the way its arch bulges, in local units less
-	 * 50; finSize: how big, in percent, the pieces not joined to its body, as the side fins, are made as it is
-	 * unrolled, round the body point each is held to</li>
-	 * <li>depthRange: how much deeper, at most, each fish sits than its kind's sink, picked at random for it and kept,
-	 * in local units</li>
-	 * <li>wag: how far its tail wags, in percent of WAG, 0 for not at all; tip: how far it tips nose up and down as it
-	 * bobs and dips, in percent of BOB_PITCH and DIP_PITCH, 0 for staying level</li>
+	 * <li>roll, tilt: rolled up off its side (90 upright), then tilted head up</li>
+	 * <li>size, sizeSpread: percent of the item's size, and how much smaller a fish may be</li>
+	 * <li>sink, rise: depth below the water, and bob height</li>
+	 * <li>pivot: how far ahead of its middle it wags about</li>
+	 * <li>turn, spin: turn to face its way; spin in degrees a second (0 none)</li>
+	 * <li>room, roomRange, roomEase: room kept from nearby fish, from how far, and spring strength</li>
+	 * <li>dipEvery, dipDepth, dipMillis: seconds between dips on average, extra depth, duration</li>
+	 * <li>lightest: least face lightness, of 127</li>
+	 * <li>straighten, stretch: straightening of a bent model, and length</li>
+	 * <li>joint, bend, joint2, bend2, tailSize: two joints along the length, their bends, and the size
+	 * past the second</li>
+	 * <li>tipPivot: how far ahead of its middle it tips about</li>
+	 * <li>pace, surge: share of its lane's speed and surge</li>
+	 * <li>sweep, sweepBody, wiggle, wiggleRate: arms swept back, body share left alone, arm wave and
+	 * frames a second</li>
+	 * <li>uncurl, curlCentre, finSize: unrolling a curled model, its centre shift (less 50), loose
+	 * piece size</li>
+	 * <li>depthRange: most extra depth per fish</li>
+	 * <li>wag, tip: percent of WAG, and of BOB_PITCH and DIP_PITCH</li>
 	 * </ul>
 	 */
 	static final class Look
@@ -177,10 +150,7 @@ final class FishModels
 		}
 	}
 
-	// Each kind's look, by its item, in the order of Look's values: roll, tilt, size, sizeSpread, sink, rise, pivot,
-	// turn, spin, room, roomRange, roomEase, dipEvery, dipDepth, dipMillis, lightest, wag, tip, straighten, stretch,
-	// joint, bend, tipPivot, pace, surge, sweep, sweepBody, wiggle, wiggleRate, depthRange, uncurl, curlCentre,
-	// finSize, joint2, bend2, tailSize. Those not yet tuned look like the anglerfish, the first tuned.
+	// Each kind's look, values in Look's order. Untuned kinds use the anglerfish's.
 	private static final Look ANGLERFISH = new Look(new int[]{90, 46, 50, 17, 30, 8, 16, 0, 0, 40, 60, 30, 10, 10, 1500,
 		0, 100, 0, 0, 100, 50, 0, 0, 100, 100, 0, 35, 0, 6, 200, 0, 50, 100, 0, 0, 100});
 	private static final Look SHRIMP = new Look(new int[]{0, 5, 35, 17, 50, 20, 16, 126, 300, 40, 60, 30, 1, 10, 1500,
@@ -194,11 +164,11 @@ final class FishModels
 	private static final int[] COD_VALUES = {-90, 0, 35, 17, 12, 6, 16, -90, 0, 40, 60, 30, 10, 7, 1500,
 		50, 100, 100, 0, 100, 50, 0, 0, 100, 100, 0, 35, 0, 6, 0, 0, 50, 100, 0, 0, 100};
 	private static final Look COD = new Look(COD_VALUES);
-	// The river fish's, all three: the cod's, smaller and nearer the surface.
+	// Trout, salmon and pike: the cod's, smaller and shallower.
 	private static final int[] RIVER_VALUES = {-90, 0, 30, 17, 8, 3, 16, -90, 0, 40, 60, 30, 20, 7, 1500,
 		50, 100, 100, 0, 100, 50, 0, 0, 100, 100, 0, 35, 0, 6, 0, 0, 50, 100, 0, 0, 100};
 	private static final Look RIVER = new Look(RIVER_VALUES);
-	// TEMPORARY, while tuning: looks set from the debug spinners, by item, used before LOOKS.
+	// TEMPORARY: looks from the tuning spinners, by item, overriding LOOKS.
 	private static final Map<Integer, Look> TUNED = new HashMap<>();
 	private static final Map<Integer, Look> LOOKS = Map.ofEntries(
 		Map.entry(ItemID.RAW_ANGLERFISH, ANGLERFISH),
@@ -225,12 +195,10 @@ final class FishModels
 		Map.entry(ItemID.RAW_SHARK, new Look(new int[]{-90, 37, 67, 30, 29, 3, 45, -90, 0, 40, 60, 30, 3, 17, 2500,
 			10, 60, 0, 5, 85, 54, 98, 0, 40, 75, 0, 0, 0, 6, 0, 15, 81, 55, 80, 36, 200})));
 
-	// Each fish's model at each size, tip and frame, by its item, its size in percent, its tip in steps and its
-	// frame, loaded the first time it's needed.
+	// Made models, by item, size, tip and frame.
 	private final Map<Long, Model> models = new HashMap<>();
 
-	// Models still to make, a few each client tick, so a spot coming into sight doesn't make them all at once: each as
-	// its item, size, tip and frame, in the order wanted, and their keys in models, so none is queued twice.
+	// Models waiting to be made, and their keys, so none is queued twice.
 	private final Deque<int[]> toMake = new ArrayDeque<>();
 	private final Set<Long> queued = new HashSet<>();
 	private final Client client;
@@ -241,7 +209,7 @@ final class FishModels
 	}
 
 	/**
-	 * A kind's item's model, in its own colours: a copy, so the game's own model of the item is left as it is.
+	 * A recoloured copy of a kind's item model.
 	 */
 	private ModelData loadItem(int item)
 	{
@@ -252,10 +220,7 @@ final class FishModels
 	}
 
 	/**
-	 * Straightens a model bent along its length, its longest way, by a share of its bend: slices it along its length,
-	 * finds the middle of each slice the other two ways, halfway between its furthest points so fins sway it little,
-	 * and moves each slice that share of the way onto a straight line through the middle of the whole, spread out
-	 * along it by how far round the bend it was, so it keeps its length.
+	 * Straightens a model bent along its length by a share, keeping its length.
 	 */
 	private static void straighten(ModelData model, double share)
 	{
@@ -276,7 +241,7 @@ final class FishModels
 		}
 		double length = Math.max(1, max - min);
 		int[] others = longest == 0 ? new int[]{1, 2} : longest == 1 ? new int[]{0, 2} : new int[]{0, 1};
-		// The middle of each slice each other way, and of the whole.
+		// Each slice's middle across both other axes, and the whole model's.
 		double[][] middle = new double[2][];
 		double[] whole = new double[2];
 		for (int o = 0; o < 2; o++)
@@ -297,7 +262,7 @@ final class FishModels
 			{
 				middle[o][slice] = low[slice] <= high[slice] ? (low[slice] + high[slice]) / 2 : Double.NaN;
 			}
-			// A slice with nothing in it takes its nearest neighbour's middle.
+			// Empty slices take their nearest neighbour's.
 			double[] found = middle[o].clone();
 			for (int slice = 0; slice < STRAIGHTEN_SLICES; slice++)
 			{
@@ -322,7 +287,7 @@ final class FishModels
 			}
 			whole[o] = (lowest + highest) / 2;
 		}
-		// How far round the bend each slice's middle is from the first's, along the line through the middles.
+		// Arc length from the first slice to each.
 		double step = length / STRAIGHTEN_SLICES;
 		double[] round = new double[STRAIGHTEN_SLICES];
 		for (int slice = 1; slice < STRAIGHTEN_SLICES; slice++)
@@ -334,7 +299,7 @@ final class FishModels
 		double stretch = round[STRAIGHTEN_SLICES - 1] / Math.max(1, step * (STRAIGHTEN_SLICES - 1));
 		for (int i = 0; i < count; i++)
 		{
-			// Between the middles of the two slices nearest it, so the line through them bends smoothly.
+			// Interpolate between the two nearest slices.
 			double at = (along[i] - min) / length * STRAIGHTEN_SLICES - 0.5;
 			int below = Math.max(0, Math.min(STRAIGHTEN_SLICES - 1, (int) Math.floor(at)));
 			int above = Math.min(STRAIGHTEN_SLICES - 1, below + 1);
@@ -344,7 +309,7 @@ final class FishModels
 				double bend = middle[o][below] + (middle[o][above] - middle[o][below]) * through - whole[o];
 				ways[others[o]][i] = (float) (ways[others[o]][i] - bend * share);
 			}
-			// Along: as far round the bend as it was, about the middle of its length, by the share.
+			// Spread along by arc length.
 			double middleAlong = (min + max) / 2.0;
 			double straightened = middleAlong + (along[i] - middleAlong) * stretch;
 			along[i] = (float) (along[i] + (straightened - along[i]) * share);
@@ -357,10 +322,8 @@ final class FishModels
 	}
 
 	/**
-	 * Swings the part of a model beyond a joint along its length, the shorter side of it, round the joint by so many
-	 * degrees, within its flat side: the plane of its two longest ways, and sizes it by scale round the joint. Points
-	 * within JOINT_EASE of its length either side of the joint swing and size only part of the way, so it bends there
-	 * smoothly rather than tearing.
+	 * Bends the shorter side past a joint by some degrees in the model's flat plane, scaling it about the
+	 * joint; eased over JOINT_EASE so it doesn't tear.
 	 */
 	private static void bendTail(ModelData model, double joint, int degrees, boolean atFold, double scale)
 	{
@@ -386,12 +349,10 @@ final class FishModels
 		double length = Math.max(1, max - min);
 		double at = min + length * joint;
 		double middle = (acrossMin + acrossMax) / 2.0;
-		// The shorter side swings: beyond the joint towards whichever end is nearer.
+		// The shorter side swings.
 		int side = joint >= 0.5 ? 1 : -1;
 		double ease = length * JOINT_EASE;
-		// A model folded at the joint, as a V, swings about the fold itself: the middle of its body there, halfway
-		// between its furthest points across near the joint, rather than the middle of all of it, which a deep fold
-		// leaves out in the empty space inside the V.
+		// A V-folded model bends about the fold, not its overall middle.
 		if (atFold)
 		{
 			float low = Float.MAX_VALUE;
@@ -418,7 +379,7 @@ final class FishModels
 			}
 			double share = Math.min(1, (beyond + ease) / (2 * ease));
 			double turn = Math.toRadians(degrees) * share * side;
-			// Sized round the joint too, eased in the same as the turn so it stays joined on.
+			// Scale eased in with the turn.
 			double size = 1 + (scale - 1) * share;
 			double a = (along[i] - at) * size;
 			double b = (across[i] - middle) * size;
@@ -429,10 +390,8 @@ final class FishModels
 	}
 
 	/**
-	 * Sweeps the arms of a model reaching out all round back behind it, the way x grows, as an octopus trails its
-	 * arms: each point beyond the body, the middle body of its reach, turns about the model's middle a share of the
-	 * way from where it points to straight behind, more the further out it is, so each arm curves back; then waves
-	 * it up and down by wiggle of its reach, as it is at a frame of its wiggle.
+	 * Sweeps outreaching arms back behind the model (towards +x), more towards the tips, then waves them
+	 * for a wiggle frame.
 	 */
 	private static void sweep(ModelData model, double share, double body, double wiggle, int frame)
 	{
@@ -458,7 +417,7 @@ final class FishModels
 			{
 				continue;
 			}
-			// The angle from straight behind, (1, 0, 0), and the line it turns about, across both.
+			// Angle from straight behind, and the axis to turn about.
 			double angle = Math.acos(Math.max(-1, Math.min(1, dx / out)));
 			double ax = 0;
 			double ay = dz;
@@ -466,7 +425,7 @@ final class FishModels
 			double across = Math.hypot(ay, az);
 			if (across < 1e-6)
 			{
-				// Pointing straight ahead or behind: turned about the up line.
+				// Pointing straight along x: turn about the up axis.
 				ay = 1;
 				az = 0;
 				across = 1;
@@ -474,7 +433,7 @@ final class FishModels
 			ay /= across;
 			az /= across;
 			double turn = angle * share * (out - inner) / (reach - inner);
-			// Turned by Rodrigues' rule about the unit line (0, ay, az).
+			// Rodrigues' rotation about (0, ay, az).
 			double cos = Math.cos(turn);
 			double sin = Math.sin(turn);
 			double dot = ay * dy + az * dz;
@@ -484,8 +443,7 @@ final class FishModels
 			x[i] = (float) (middle[0] + dx * cos + cx * sin + ax * dot * (1 - cos));
 			y[i] = (float) (middle[1] + dy * cos + cy * sin + ay * dot * (1 - cos));
 			z[i] = (float) (middle[2] + dz * cos + cz * sin + az * dot * (1 - cos));
-			// Then waved up and down, more towards the tip, by a wave running out along the arm, each arm, by which
-			// way it reached, a little behind the next, so they don't wave together.
+			// Wave up and down, phase-shifted per arm.
 			double along = (out - inner) / (reach - inner);
 			double arm = Math.atan2(dz, dy) * 2;
 			y[i] += (float) (wiggle * reach * along
@@ -514,10 +472,8 @@ final class FishModels
 	}
 
 	/**
-	 * Unrolls a model curled round in an arc, as the raw shark's, by a share. Its curl lies across its two broadest
-	 * ways, its thinnest being its thickness side to side. The curl's middle is the middle of the circle best fitting
-	 * its body, the points at least half as far out to its sides as its sides are, which leaves its fins out; moved
-	 * by shift, in local units, the way its arch bulges. Each point is unrolled round it, as {@link #unroll} says.
+	 * Unrolls a model curled in an arc by a share, about the best-fit circle through its body (fins
+	 * excluded), shifted by shift towards the arch.
 	 */
 	private static void uncurl(ModelData model, double share, double shift, double finSize)
 	{
@@ -530,7 +486,7 @@ final class FishModels
 		float[] side = ways[order[2]];
 		double sideMiddle = (min(side, count) + max(side, count)) / 2.0;
 		double sideHalf = (max(side, count) - min(side, count)) / 2.0;
-		// The circle through the body, by least squares: x^2 + y^2 + D x + E y + F = 0.
+		// Least-squares circle: x^2 + y^2 + D x + E y + F = 0.
 		double[][] m = new double[3][4];
 		for (int i = 0; i < count; i++)
 		{
@@ -557,8 +513,7 @@ final class FishModels
 		double centreU = -solved[0] / 2;
 		double centreV = -solved[1] / 2;
 		double radius = Math.sqrt(Math.max(1, centreU * centreU + centreV * centreV - solved[2]));
-		// The way the arch bulges: the way, on average, its body's points lie from the middle, each counted the same
-		// however far out, so the two sides hanging down cancel and its top is left.
+		// Which way the arch bulges: the mean direction of the body's points from the centre.
 		double bulgeU = 0;
 		double bulgeV = 0;
 		for (int i = 0; i < count; i++)
@@ -570,15 +525,13 @@ final class FishModels
 				bulgeV += (v[i] - centreV) / out;
 			}
 		}
-		// Squared up to whichever of its two ways that is nearest, the item being drawn with its arch upright, as
-		// uneven numbers of points on the two sides would otherwise lean it.
+		// Snap to the nearest axis, as the item is drawn arch up.
 		boolean alongU = Math.abs(bulgeU) >= Math.abs(bulgeV);
 		bulgeU = alongU ? Math.signum(bulgeU) : 0;
 		bulgeV = alongU ? 0 : Math.signum(bulgeV);
 		centreU += bulgeU * shift;
 		centreV += bulgeV * shift;
-		// Pieces not joined to the body by any face, as the side fins, are moved whole, held to the body's point
-		// nearest them and turned with the body there, rather than point by point, which would stretch them along it.
+		// Loose pieces (fins) move rigidly with the nearest body point instead of stretching.
 		int[] piece = pieces(model);
 		int body = largest(piece);
 		Map<Integer, Integer> nearest = new HashMap<>();
@@ -622,8 +575,7 @@ final class FishModels
 				v[i] = (float) (v[i] + (centreV + unrolled[1] - v[i]) * share);
 				continue;
 			}
-			// The body point it is held to moved its share of the way, and the point turned round it by its share of
-			// the body's turn there, across and along the bulge.
+			// Move with its body point and turn by the body's turn there.
 			double offU = (u[i] - move[0]) * finSize;
 			double offV = (v[i] - move[1]) * finSize;
 			double out = offU * bulgeU + offV * bulgeV;
@@ -640,9 +592,8 @@ final class FishModels
 	}
 
 	/**
-	 * Where a point, given from the middle of a curl, lies once unrolled, from that middle, and its angle round it
-	 * from the way the arch bulges: the angle becomes how far along the straightened fish it is, at the curl's radius
-	 * out, and its distance from the middle how far it is from the spine, its outside, the arch's top, staying on top.
+	 * A point's position once unrolled, relative to the curl's centre: angle becomes length along the
+	 * fish, distance from the centre stays.
 	 */
 	private static double[] unroll(double a, double b, double bulgeU, double bulgeV, double radius)
 	{
@@ -653,8 +604,7 @@ final class FishModels
 	}
 
 	/**
-	 * Which piece each of a model's points belongs to, points sharing a face being in the same piece, by the piece's
-	 * lowest point.
+	 * Connected pieces of a model, labelled by each piece's lowest point.
 	 */
 	private static int[] pieces(ModelData model)
 	{
@@ -707,7 +657,7 @@ final class FishModels
 	}
 
 	/**
-	 * Solves three equations in three unknowns, each row its three weights then its total; null if they can't be.
+	 * Solves a 3x3 linear system given as rows of three weights and a total; null if singular.
 	 */
 	private static double[] solve(double[][] m)
 	{
@@ -741,7 +691,7 @@ final class FishModels
 	}
 
 	/**
-	 * Lengthens or shortens a model along its length, its longest way, about its middle, by a share.
+	 * Scales a model along its longest axis about its middle.
 	 */
 	private static void stretch(ModelData model, double share)
 	{
@@ -776,7 +726,7 @@ final class FishModels
 	}
 
 	/**
-	 * A kind of fish's model at a size and tipped nose up by a number of PITCH_STEPs, made the first time it's needed.
+	 * A model, made and cached on first use.
 	 */
 	Model model(int item, int size, int pitch, int frame)
 	{
@@ -784,7 +734,7 @@ final class FishModels
 	}
 
 	/**
-	 * Where a kind's model at a size, tip and frame is kept in models.
+	 * Cache key.
 	 */
 	private static long key(int item, int size, int pitch, int frame)
 	{
@@ -792,7 +742,7 @@ final class FishModels
 	}
 
 	/**
-	 * Which kind's model a key in models is, by its item.
+	 * The item in a cache key.
 	 */
 	private static int itemOf(long key)
 	{
@@ -800,8 +750,7 @@ final class FishModels
 	}
 
 	/**
-	 * Queues a model to be made, unless it is made or queued already: first in line if a fish is waiting for it, else
-	 * last.
+	 * Queues a model unless made or queued; at the front if a fish is waiting for it.
 	 */
 	void queue(int item, int size, int pitch, int frame, boolean waiting)
 	{
@@ -822,7 +771,7 @@ final class FishModels
 	}
 
 	/**
-	 * Makes up to MAKE_PER_TICK of the queued models.
+	 * Makes up to MAKE_PER_TICK queued models.
 	 */
 	void makeQueued()
 	{
@@ -847,7 +796,7 @@ final class FishModels
 		{
 			return null;
 		}
-		// Only the kinds that need it are reshaped.
+		// Only some kinds are reshaped.
 		boolean reshaped = RESHAPED.contains(item);
 		if (reshaped && look.sweep > 0)
 		{
@@ -874,14 +823,13 @@ final class FishModels
 		{
 			stretch(model, look.stretch / 100.0);
 		}
-		// Tipped about a point ahead of its middle, towards its head, by its kind's tip pivot at its size: its head
-		// faces (sine, -cosine) of its turn in its model's own ways.
+		// Tip about tipPivot, scaled to its size; its head faces (sin, -cos) of its turn.
 		double turn = Math.toRadians(look.turn);
 		standUp(model, look.roll, look.tilt, pitch * PITCH_STEP, look.tipPivot * 100.0 / size,
 			Math.sin(turn), -Math.cos(turn), KEEP_HEIGHT.contains(item));
 		int scale = size * 128 / 100;
 		model.scale(scale, scale, scale);
-		// Lit as the game lights any item; only its colours are lightened after, where its kind asks.
+		// Lit as any item, then lightened where its look asks.
 		Model lit = model.light();
 		if (look.lightest > 0 && lit != null)
 		{
@@ -891,10 +839,8 @@ final class FishModels
 	}
 
 	/**
-	 * Makes every face of a lit model at least so light, keeping its hue and saturation: both its colours as the
-	 * game has lit them and those it was lit from, which renderers that light models themselves, such as 117 HD,
-	 * start from. The game's colours keep hue in their top 6 bits, saturation in the next 3 and lightness in the
-	 * last 7.
+	 * Raises each face to at least a lightness, keeping hue and saturation, in both the lit and unlit
+	 * colours (117 HD lights from the unlit ones). Colours pack 6 bits hue, 3 saturation, 7 lightness.
 	 */
 	private static void lighten(Model model, int lightest)
 	{
@@ -902,7 +848,7 @@ final class FishModels
 		{
 			for (int i = 0; colours != null && i < colours.length; i++)
 			{
-				// Below 0 marks a face drawn flat, from its first colour alone, or not drawn.
+				// Below 0: flat-shaded or hidden face.
 				if (colours[i] >= 0 && (colours[i] & 127) < lightest && !green(colours[i]))
 				{
 					colours[i] = colours[i] & ~127 | lightest;
@@ -921,8 +867,7 @@ final class FishModels
 	}
 
 	/**
-	 * Whether a colour, in the game's packed hue, saturation and lightness, is a clear green, as the dark gills of a
-	 * tuna or bass, which lightening would turn a bright, glaring green, so are left dark.
+	 * Whether a packed colour is a clear green, like tuna and bass gills, so it's left dark.
 	 */
 	private static boolean green(int colour)
 	{
@@ -932,7 +877,7 @@ final class FishModels
 	}
 
 	/**
-	 * How a kind of fish is shown.
+	 * A kind's look.
 	 */
 	static Look look(int item)
 	{
@@ -941,8 +886,7 @@ final class FishModels
 	}
 
 	/**
-	 * TEMPORARY, while tuning: sets a kind's look from the river fish's, with these of its values, by their place in Look's
-	 * values, and lets its models go, to be made again.
+	 * TEMPORARY: sets a kind's look from the river look with some values replaced, and drops its models.
 	 */
 	void tuneLook(int item, int[] places, int[] values)
 	{
@@ -958,10 +902,8 @@ final class FishModels
 	}
 
 	/**
-	 * Rolls a fish lying on its side up about its length, which is the longer of its two flat sides, by roll degrees,
-	 * tilts it head up by tilt degrees, tips it head up by tip degrees more about a point pivot ahead of its middle,
-	 * its head being the way (headX, headZ) in its model, and sits its lowest point on the water: tipped, if it
-	 * keeps its height, as it lies untipped.
+	 * Rolls a side-lying model upright by roll, tilts it by tilt, tips it by tip about a pivot towards its
+	 * head (headX, headZ), then rests its lowest point on the water (its untipped one if keepHeight).
 	 */
 	private static void standUp(ModelData model, int roll, int tilt, double tip, double pivot, double headX,
 		double headZ, boolean keepHeight)
@@ -979,7 +921,7 @@ final class FishModels
 		double sin = Math.sin(Math.toRadians(tilt));
 		double tipCos = Math.cos(Math.toRadians(tip));
 		double tipSin = Math.sin(Math.toRadians(tip));
-		// The pivot along its length, on whichever side its head is.
+		// Pivot on the head's side.
 		double head = longX ? headX : headZ;
 		double about = pivot * (head < 0 ? -1 : 1);
 		float lowest = -Float.MAX_VALUE;
@@ -989,20 +931,19 @@ final class FishModels
 			float up = y[i];
 			y[i] = (float) (up * rollCos + across[i] * rollSin);
 			across[i] = (float) (across[i] * rollCos - up * rollSin);
-			// Then tilted about the line across the fish.
+			// Tilt.
 			float along = length[i];
 			length[i] = (float) (along * cos - y[i] * sin);
 			y[i] = (float) (along * sin + y[i] * cos);
 			lowest = Math.max(lowest, y[i]);
-			// Then tipped about the line across it through the pivot.
+			// Tip about the pivot.
 			double from = length[i] - about;
 			float height = y[i];
 			length[i] = (float) (about + from * tipCos - height * tipSin);
 			y[i] = (float) (from * tipSin + height * tipCos);
 			tipped = Math.max(tipped, y[i]);
 		}
-		// Its lowest point is the largest, higher being lower in the game's heights. Keeping its height, it sits as it
-		// lies untipped, so its tail dips as far as its nose lifts rather than lifting it all.
+		// Lowest point is the largest y. keepHeight rests it as untipped, so the tail dips as the nose lifts.
 		lowest = keepHeight ? lowest : tipped;
 		for (int i = 0; i < count; i++)
 		{
@@ -1023,7 +964,7 @@ final class FishModels
 	}
 
 	/**
-	 * A kind's model at a size, tip and frame, if it has been made yet; null if not.
+	 * A model if already made, else null; never makes one.
 	 */
 	Model made(int item, int size, int pitch, int frame)
 	{
@@ -1031,8 +972,7 @@ final class FishModels
 	}
 
 	/**
-	 * Lets go of the models of every kind but these, the kinds still swimming in sight, to be made again if they come
-	 * back.
+	 * Drops the models of every kind not in the set.
 	 */
 	void keepOnly(Set<Integer> swimming)
 	{
@@ -1042,7 +982,7 @@ final class FishModels
 	}
 
 	/**
-	 * Lets every model go, as when switched off.
+	 * Drops every model.
 	 */
 	void clear()
 	{

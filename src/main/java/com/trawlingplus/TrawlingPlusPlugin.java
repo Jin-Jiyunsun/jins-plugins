@@ -213,21 +213,6 @@ public class TrawlingPlusPlugin extends Plugin
 	private static final double SEA_SPOT_REACH_TILES = 20;
 	// The name of the 117 HD plugin, the one renderer that draws the water see-through.
 	private static final String HD_PLUGIN = "117 HD";
-	// Debug: the settings that tune the look of the fish at the spots, in the order SeaSpotFish's looks take them.
-	// Debug: the settings that tune the crowd of the spot being tuned, in its order.
-	private static final String[] CROWD_KEYS = {"debugSpotFishLanes", "debugSpotFishCount", "debugSpotFishLaneWidth",
-		"debugSpotFishShoalSize", "debugSpotFishSharkLanes", "debugSpotFishSharkGap", "debugSpotFishSharkWidth"};
-	private static final String[] LOOK_KEYS = {"debugSpotFishRoll", "debugSpotFishTilt", "debugSpotFishSize",
-		"debugSpotFishSizeSpread", "debugSpotFishSink", "debugSpotFishBob", "debugSpotFishPivot", "debugSpotFishTurn",
-		"debugSpotFishSpin", "debugSpotFishRoom", "debugSpotFishRoomRange", "debugSpotFishRoomEase",
-		"debugSpotFishDipEvery", "debugSpotFishDipDepth", "debugSpotFishDipLength", "debugSpotFishLightest",
-		"debugSpotFishWag", "debugSpotFishTip", "debugSpotFishStraighten",
-		"debugSpotFishStretch", "debugSpotFishJoint", "debugSpotFishBend",
-		"debugSpotFishTipPivot", "debugSpotFishPace", "debugSpotFishSurge",
-		"debugSpotFishSweep", "debugSpotFishSweepBody", "debugSpotFishWiggle",
-		"debugSpotFishWiggleRate", "debugSpotFishDepthRange", "debugSpotFishUncurl", "debugSpotFishCurlCentre",
-		"debugSpotFishFinSize", "debugSpotFishJoint2", "debugSpotFishBend2",
-		"debugSpotFishTailSize"};
 	// How far, in tiles, the boat has to move after fishing for the arrow to show again.
 	private static final double SPOT_MOVED_TILES = 0.5;
 	// How often, in ticks, that and the 3 minute away timer are looked at, there being no hurry for either.
@@ -292,9 +277,6 @@ public class TrawlingPlusPlugin extends Plugin
 
 	@Inject
 	private PluginManager pluginManager;
-
-	@Inject
-	private ConfigManager configManager;
 
 	// The kinds of shoal, by the name routes.json files them under, that plain fish offcuts bait as well as fine ones.
 	// All that is kept of routes.json once the routes are built from it, which is read again if they need building
@@ -461,9 +443,6 @@ public class TrawlingPlusPlugin extends Plugin
 		plainBaitSpecies = plain;
 		seaSpotFish = new SeaSpotFish(client);
 		seaSpotFish.setSeeThrough(seeThroughWater());
-		loadTunedLook();
-		loadTunedCrowd();
-		tuneSpotFish();
 		clientThread.invoke(() ->
 		{
 			// Not logged in, or not aboard, and the nets are known to be empty: logging out and stepping off
@@ -1036,17 +1015,6 @@ public class TrawlingPlusPlugin extends Plugin
 		if (TrawlingPlusConfig.GROUP.equals(event.getGroup()) && TrawlingPlusConfig.TIMER_BAR_KEY.equals(event.getKey()))
 		{
 			hideStopBar = config.showTimerBar();
-		}
-
-		if (TrawlingPlusConfig.GROUP.equals(event.getGroup()) && event.getKey().startsWith("debugSpotFish"))
-		{
-			clientThread.invoke(() ->
-			{
-				if (tuneSpotFish())
-				{
-					showSpotFish();
-				}
-			});
 		}
 
 		if (TrawlingPlusConfig.GROUP.equals(event.getGroup()) && TrawlingPlusConfig.SPOT_FISH_KEY.equals(event.getKey()))
@@ -1707,77 +1675,6 @@ public class TrawlingPlusPlugin extends Plugin
 	public void onClientTick(ClientTick event)
 	{
 		seaSpotFish.swim();
-	}
-
-	/**
-	 * Debug: when the kinds of fish being tuned have changed since last started, puts their built-in look into the
-	 * debug settings, so tuning starts from it rather than from the last kinds' values.
-	 */
-	private void loadTunedLook()
-	{
-		String kinds = SeaSpotFish.tuningKinds();
-		if (kinds.equals(configManager.getConfiguration(TrawlingPlusConfig.GROUP, "debugTuningKinds")))
-		{
-			return;
-		}
-		int[] look = SeaSpotFish.builtInLook();
-		for (int i = 0; i < LOOK_KEYS.length; i++)
-		{
-			configManager.setConfiguration(TrawlingPlusConfig.GROUP, LOOK_KEYS[i], look[i]);
-		}
-		configManager.setConfiguration(TrawlingPlusConfig.GROUP, "debugTuningKinds", kinds);
-	}
-
-	/**
-	 * Debug: when the spot being tuned has changed since last started, puts its built-in crowd into the debug
-	 * settings.
-	 */
-	private void loadTunedCrowd()
-	{
-		String spot = SeaSpotFish.tuningSpot();
-		if (spot.equals(configManager.getConfiguration(TrawlingPlusConfig.GROUP, "debugTuningSpot")))
-		{
-			return;
-		}
-		int[] crowd = SeaSpotFish.builtInCrowd();
-		for (int i = 0; i < CROWD_KEYS.length; i++)
-		{
-			configManager.setConfiguration(TrawlingPlusConfig.GROUP, CROWD_KEYS[i], crowd[i]);
-		}
-		configManager.setConfiguration(TrawlingPlusConfig.GROUP, "debugTuningSpot", spot);
-	}
-
-	/**
-	 * Debug: the fish at the fishing spots at sea, for the overlay to draw their marks.
-	 */
-	SeaSpotFish getSeaSpotFish()
-	{
-		return seaSpotFish;
-	}
-
-	/**
-	 * Debug: hands the debug settings' tuned look to the fish, saying whether they need making again.
-	 */
-	private boolean tuneSpotFish()
-	{
-		int[] values = {config.debugSpotFishRoll(), config.debugSpotFishTilt(), config.debugSpotFishSize(),
-			config.debugSpotFishSizeSpread(), config.debugSpotFishSink(), config.debugSpotFishBob(),
-			config.debugSpotFishPivot(), config.debugSpotFishTurn(), config.debugSpotFishSpin(),
-			config.debugSpotFishRoom(), config.debugSpotFishRoomRange(), config.debugSpotFishRoomEase(),
-			config.debugSpotFishDipEvery(), config.debugSpotFishDipDepth(), config.debugSpotFishDipLength(),
-			config.debugSpotFishLightest(), config.debugSpotFishWag(), config.debugSpotFishTip(),
-			config.debugSpotFishStraighten(), config.debugSpotFishStretch(), config.debugSpotFishJoint(),
-			config.debugSpotFishBend(), config.debugSpotFishTipPivot(), config.debugSpotFishPace(),
-			config.debugSpotFishSurge(), config.debugSpotFishSweep(), config.debugSpotFishSweepBody(),
-			config.debugSpotFishWiggle(), config.debugSpotFishWiggleRate(), config.debugSpotFishDepthRange(),
-			config.debugSpotFishUncurl(), config.debugSpotFishCurlCentre(), config.debugSpotFishFinSize(),
-			config.debugSpotFishJoint2(), config.debugSpotFishBend2(), config.debugSpotFishTailSize()};
-		seaSpotFish.setSharkRoom(config.debugSpotFishSharkRoom(), config.debugSpotFishSharkRoomRange(),
-			config.debugSpotFishRoomSpeed(), config.debugSpotFishSharkRoomSpeed());
-		boolean crowdChanged = seaSpotFish.tuneCrowd(new int[]{config.debugSpotFishLanes(), config.debugSpotFishCount(),
-			config.debugSpotFishLaneWidth(), config.debugSpotFishShoalSize(), config.debugSpotFishSharkLanes(),
-			config.debugSpotFishSharkGap(), config.debugSpotFishSharkWidth()});
-		return seaSpotFish.tune(values) || crowdChanged;
 	}
 
 	/**

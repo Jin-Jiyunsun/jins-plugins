@@ -452,13 +452,6 @@ class TrawlingPlusOverlay extends Overlay
 	{
 		WorldView top = client.getTopLevelWorldView();
 		frameBeyond = top == null ? 0 : tilesBeyondScene(top);
-		// Debug: the marks asked for over the fish at the spots.
-		if (config.debugMiddles() || config.debugLanes() || config.debugDots() || config.debugPivots()
-			|| config.debugTipPivots())
-		{
-			plugin.getSeaSpotFish().debugDraw(graphics, config.debugMiddles(), config.debugLanes(), config.debugDots(),
-				config.debugPivots(), config.debugTipPivots());
-		}
 		arrowStyle = config.arrowStyle();
 		if (arrowStyle == TrawlingPlusConfig.ArrowStyle.FACING)
 		{

@@ -1,7 +1,5 @@
 package com.trawlingplus;
 
-import java.awt.Color;
-import java.awt.Graphics2D;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -13,17 +11,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
-import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.ItemComposition;
 import net.runelite.api.Model;
 import net.runelite.api.ModelData;
 import net.runelite.api.NPC;
-import net.runelite.api.NPCComposition;
 import net.runelite.api.Perspective;
-import net.runelite.api.Point;
 import net.runelite.api.RuneLiteObject;
-import net.runelite.api.WorldView;
 import net.runelite.api.coords.LocalPoint;
 import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.gameval.ItemID;
@@ -34,11 +28,8 @@ import net.runelite.api.gameval.NpcID;
  * something to look at: they have no clickbox and no menu option, and the spot itself is left as the game draws it.
  * They are shown while their spot is in sight and taken away as the spot goes.
  */
-@Slf4j
 final class SeaSpotFish
 {
-	// Debug: whether the raw shark's model has been written to the log yet.
-	private static boolean sharkLogged;
 	// The fish each spot shows, each of its fish picked at random from these: every fish it gives.
 	private static final Map<Integer, int[]> SPOT_FISH = Map.of(
 		NpcID.FISHING_BOAT_SALTFISH,
@@ -58,27 +49,21 @@ final class SeaSpotFish
 	private static final Map<Integer, int[]> SPOT_FISH_LEAST = Map.of(
 		NpcID.FISHING_BOAT_RAREFISH, new int[]{5, 5, 5});
 
-	// How big the shoal is: how far its outermost lane is from the spot's middle, in local units (128 to a tile),
-	// well inside the spot's 5 by 5 tiles; and how far apart its lanes are, which stays the same whatever its size,
-	// the innermost lane coming in or going out to fit. SCALE sizes the speeds and the gaps the fish keep, against
-	// the size they were first set for.
-	private static final double SHOAL_RADIUS = 224;
+	// The lane spacing, in local units (128 to a tile), that each spot's own is measured against: its fish keep gaps
+	// and make room in proportion to its spacing against this. SCALE sizes the speeds and the gaps the fish keep,
+	// against the size they were first set for.
 	private static final double LANE_SPACING = 45;
 	private static final double SCALE = 256.0 / 352;
-	// How many lanes the fish swim round each spot in, so none from different lanes can swim into each other, and
-	// how much of a lane each fish takes, in merging gaps, so a lane holds more the bigger round it is, with room
-	// to spare for others to join it; how far out the outermost and innermost lanes are, the rest evenly between;
-	// and how far either way a lane may stray from its even place, which keeps a clear gap to the next.
-	private static final int LANES = 5;
+	// How much of a lane each fish takes, in merging gaps, so a lane holds more the bigger round it is, with room to
+	// spare for others to join it; and how far either way a lane may stray from its even place, which keeps a clear
+	// gap to the next.
 	private static final double LANE_ROOM = 1.5;
-	// How many fish each spot has, shared out among its lanes.
-	private static final int FISH_PER_SPOT = 8;
 	private static final double LANE_STRAY = 4 * SCALE;
 
 	/**
 	 * How crowded one spot's shoal is: how many lanes it has, how many fish, how far apart its lanes are, and how far
-	 * out its outermost lane is, in local units; and, for the kinds kept out, how many lanes its outer ring has, how
-	 * far outside the shoal's outermost lane its first is, and how far apart they are, in local units. The gaps its
+	 * out its outermost lane is, in local units; and, for the kinds kept out, how far outside the shoal's outermost
+	 * lane its outer ring's first lane is, and how far apart the ring's lanes are, in local units. The gaps its
 	 * fish keep from each other, and how far they make room, are in proportion to its lane spacing against
 	 * LANE_SPACING, so small fish in narrow lanes keep small gaps.
 	 */
@@ -88,7 +73,6 @@ final class SeaSpotFish
 		private final int count;
 		private final double spacing;
 		private final double radius;
-		private final int outerLanes;
 		private final double outerGap;
 		private final double outerSpacing;
 
@@ -98,29 +82,20 @@ final class SeaSpotFish
 			count = values[1];
 			spacing = values[2];
 			radius = values[3];
-			outerLanes = values[4];
-			outerGap = values[5];
-			outerSpacing = values[6];
-		}
-
-		// Debug: its values, in the order it takes them.
-		private int[] values()
-		{
-			return new int[]{lanes, count, (int) spacing, (int) radius, outerLanes, (int) outerGap, (int) outerSpacing};
+			outerGap = values[4];
+			outerSpacing = values[5];
 		}
 	}
 
-	// Each spot's crowd, by its NPC, the rest having CROWD.
-	// In the order of its values: lanes, count, spacing, radius, outerLanes, outerGap, outerSpacing.
-	private static final Crowd CROWD = new Crowd(
-		new int[]{LANES, FISH_PER_SPOT, (int) LANE_SPACING, (int) SHOAL_RADIUS, 1, 64, 64});
+	// Each spot's crowd, by its NPC, in the order of its values: lanes, count, spacing, radius, outerGap,
+	// outerSpacing. Every spot with fish has one.
 	private static final Map<Integer, Crowd> CROWDS = Map.of(
-		NpcID.FISHING_BOAT_SALTFISH, new Crowd(new int[]{10, 25, 45, 270, 1, 64, 64}),
-		NpcID.FISHING_BOAT_MEMBERFISH, new Crowd(new int[]{7, 27, 39, 270, 2, -76, 87}),
-		NpcID.FISHING_BOAT_PISCARILIUSFISH, new Crowd(new int[]{6, 13, 44, 275, 1, 64, 64}),
-		NpcID.FISHING_BOAT_MONKFISH, new Crowd(new int[]{5, 14, 57, 308, 1, 64, 64}),
-		NpcID.FISHING_BOAT_RAREFISH, new Crowd(new int[]{7, 23, 38, 294, 1, 64, 64}),
-		NpcID.FISHING_BOAT_KARAMBWANFISH, new Crowd(new int[]{5, 12, 46, 287, 1, 64, 64}));
+		NpcID.FISHING_BOAT_SALTFISH, new Crowd(new int[]{10, 25, 45, 270, 64, 64}),
+		NpcID.FISHING_BOAT_MEMBERFISH, new Crowd(new int[]{7, 27, 39, 270, -76, 87}),
+		NpcID.FISHING_BOAT_PISCARILIUSFISH, new Crowd(new int[]{6, 13, 44, 275, 64, 64}),
+		NpcID.FISHING_BOAT_MONKFISH, new Crowd(new int[]{5, 14, 57, 308, 64, 64}),
+		NpcID.FISHING_BOAT_RAREFISH, new Crowd(new int[]{7, 23, 38, 294, 64, 64}),
+		NpcID.FISHING_BOAT_KARAMBWANFISH, new Crowd(new int[]{5, 12, 46, 287, 64, 64}));
 	// How far each fish sways in and out from its lane as it swims, in local units at most, from two slow swings
 	// over times picked at random between these, in client ticks, so it wanders a little without any pattern.
 	private static final double SWAY = 10 * SCALE;
@@ -198,8 +173,8 @@ final class SeaSpotFish
 	// The kinds that swim under the water, unseen where it isn't drawn see-through.
 	private static final Set<Integer> UNDER_WATER = Set.of(ItemID.RAW_LOBSTER, ItemID.RAW_SHRIMP,
 		ItemID.RAW_ANCHOVIES);
-	// The kinds whose models are reshaped by their look's sweep, straighten, joint, bend and stretch; the rest are
-	// left as their model is.
+	// The kinds whose models are reshaped by their look's sweep, uncurl, straighten, joints, bends, tail size and
+	// stretch; the rest are left as their model is.
 	private static final Set<Integer> RESHAPED = Set.of(ItemID.RAW_SWORDFISH, ItemID.TBWT_RAW_KARAMBWAN,
 		ItemID.RAW_SHARK);
 	// How many frames of their wiggle swept arms are made at, cycled through as they swim, and how many waves run
@@ -224,6 +199,14 @@ final class SeaSpotFish
 	private static final Map<Integer, Integer> LAYERS = Map.of(ItemID.RAW_LOBSTER, 1);
 	// The kinds every other fish makes room for, whatever its layer, while they make room only for their own layer.
 	private static final Set<Integer> GIVEN_ROOM = Set.of(ItemID.RAW_SHARK);
+	// How far, at most, a fish eases away from one of those, and from how far off, as a kind's room and room range
+	// are, in local units at LANE_SPACING.
+	private static final double SHARK_ROOM = 50;
+	private static final double SHARK_ROOM_RANGE = 160;
+	// How fast, at most, a fish eases aside, in local units a second: from other fish, and apart from that, from one
+	// of those, slower, so it drifts aside.
+	private static final double MOST_ROOM_SPEED = 300;
+	private static final double SHARK_ROOM_SPEED = 60;
 	// The kinds with a depth range that keep this many of a spot's fish, at least, at their shallowest, no deeper
 	// than their sink.
 	private static final Map<Integer, Integer> SHALLOW_LEAST = Map.of(
@@ -253,8 +236,8 @@ final class SeaSpotFish
 	 * <li>turn: how far it is turned to face the way it swims, in degrees, for a model whose head points some other
 	 * way; spin: how fast it spins round as it swims, in degrees a second, 0 for not at all</li>
 	 * <li>room, roomRange: how far at most it eases away from fish near it, and how near they have to be, in local
-	 * units, against LANE_SPACING's lanes; roomEase: how much of the way there it eases each client tick, in
-	 * percent</li>
+	 * units, against LANE_SPACING's lanes; roomEase: how quickly it eases there, in percent, as the strength of the
+	 * spring it eases by</li>
 	 * <li>dipEvery, dipDepth, dipMillis: how often on average it dips deeper than its bob takes it, never higher, in
 	 * seconds; how much deeper at most, in local units; and how long a dip takes, down and back up, in
 	 * milliseconds</li>
@@ -362,21 +345,12 @@ final class SeaSpotFish
 			bend2 = values[34];
 			tailSize = values[35];
 		}
-
-		// Debug: its values, in the order it takes them.
-		private int[] values()
-		{
-			return new int[]{roll, tilt, size, sizeSpread, sink, rise, pivot, turn, spin, room, roomRange, roomEase,
-				dipEvery, dipDepth, dipMillis, lightest, wag, tip, straighten, stretch, joint, bend, tipPivot, pace,
-				surge, sweep, sweepBody, wiggle, wiggleRate, depthRange, uncurl, curlCentre, finSize,
-				joint2, bend2, tailSize};
-		}
 	}
 
 	// Each kind's look, by its item, in the order of Look's values: roll, tilt, size, sizeSpread, sink, rise, pivot,
 	// turn, spin, room, roomRange, roomEase, dipEvery, dipDepth, dipMillis, lightest, wag, tip, straighten, stretch,
-	// joint, bend, tipPivot, pace, surge, sweep, sweepBody, wiggle, wiggleRate, depthRange. Those not yet tuned look
-	// like the anglerfish, the first tuned.
+	// joint, bend, tipPivot, pace, surge, sweep, sweepBody, wiggle, wiggleRate, depthRange, uncurl, curlCentre,
+	// finSize, joint2, bend2, tailSize. Those not yet tuned look like the anglerfish, the first tuned.
 	private static final Look ANGLERFISH = new Look(new int[]{90, 46, 50, 17, 30, 8, 16, 0, 0, 40, 60, 30, 10, 10, 1500,
 		0, 100, 0, 0, 100, 50, 0, 0, 100, 100, 0, 35, 0, 6, 200, 0, 50, 100, 0, 0, 100});
 	private static final Look SHRIMP = new Look(new int[]{0, 5, 35, 17, 50, 20, 16, 126, 300, 40, 60, 30, 1, 10, 1500,
@@ -409,50 +383,23 @@ final class SeaSpotFish
 		Map.entry(ItemID.RAW_BASS, BASS),
 		Map.entry(ItemID.RAW_SHARK, new Look(new int[]{-90, 37, 67, 30, 29, 3, 45, -90, 0, 40, 60, 30, 3, 17, 2500,
 			10, 60, 0, 5, 85, 54, 98, 0, 40, 75, 0, 0, 0, 6, 0, 15, 81, 55, 80, 36, 200})));
-	// The kinds shown as a creature, still, rather than as their item, the raw shark's model looking wrong stood up:
-	// one of these creatures, picked at random for each fish, for variety. A creature is already shaped swimming, so
-	// its look leaves it unrolled.
-	private static final Map<Integer, int[]> CREATURES = Map.of();
-	// The kinds kept few and in a ring of their own outside a shoal, never among the other fish: how many, at least
-	// and at most, a spot with them has, and how many, at most, share one of the ring's lanes.
+	// The kinds kept few and in a ring of their own outside a shoal, never among the other fish, each always in the
+	// lane it starts in: how many of them in each of the ring's lanes, innermost first, the ring having as many lanes.
 	private static final Map<Integer, int[]> KEPT_OUT = Map.of(
-		ItemID.RAW_SHARK, new int[]{3, 3, 2});
+		ItemID.RAW_SHARK, new int[]{1, 2});
 	// The most of all kinds kept out a spot can have, for keeping room for them.
-	private static final int MOST_KEPT_OUT = KEPT_OUT.values().stream().mapToInt(kept -> kept[1]).sum();
+	private static final int MOST_KEPT_OUT = KEPT_OUT.values().stream().flatMapToInt(Arrays::stream).sum();
 
 	private final Client client;
 	private final Map<NPC, School> schools = new HashMap<>();
-	// Each fish's model at each size, tip and look, by its item, its size in percent, its tip in steps and which of
-	// its kind's creatures it is, loaded the first time it's needed.
+	// Each fish's model at each size, tip and frame, by its item, its size in percent, its tip in steps and its
+	// frame, loaded the first time it's needed.
 	private final Map<Long, Model> models = new HashMap<>();
 	// Whether the water is drawn see-through, as 117 HD draws it, so fish under it can be seen; the game's own
 	// renderers draw it solid.
 	private boolean seeThrough;
-	// Debug: how far, at most, a fish eases away from one of the kinds every fish makes room for, and from how far
-	// off, as a kind's room and room range are.
-	private int sharkRoom = 50;
-	private int sharkRoomRange = 160;
-	// Debug: how fast, at most, a fish eases aside making room, in local units a second, so a sudden change in which
-	// way it is pushed, as one moving lanes past it, slides it over rather than jumping it.
-	private int mostRoomSpeed = 300;
-	// Debug: and, apart from that, how fast it eases aside for one every fish makes room for.
-	private int sharkRoomSpeed = 60;
-	// Debug: the kinds the debug settings tune, which share one look, and that look.
-	private static final Set<Integer> TUNING = Set.of(ItemID.RAW_MACKEREL);
-	// Debug: spots showing another spot's fish, so one can be tuned without sailing to it: the anglerfish spot as the
-	// big net spot.
-	// Debug: the spot whose crowd the debug settings tune, by its NPC, and that crowd.
-	private static final int TUNING_SPOT = NpcID.FISHING_BOAT_MEMBERFISH;
-	private Crowd tunedCrowd = CROWDS.getOrDefault(TUNING_SPOT, CROWD);
-	private static final Map<Integer, Integer> SPOT_AS = Map.of(
-		NpcID.FISHING_BOAT_PISCARILIUSFISH, NpcID.FISHING_BOAT_MEMBERFISH);
-	// Debug: which of a look's values, by their place in it, only change how its fish move, so take effect without
-	// making them again: sink, rise, pivot, spin, room, roomRange, roomEase, dipEvery, dipMillis, wag, pace, surge,
-	// wiggleRate.
-	private static final Set<Integer> LIVE = Set.of(4, 5, 6, 8, 9, 10, 11, 12, 14, 16, 23, 24, 28);
-	private Look tuned = LOOKS.getOrDefault(TUNING.iterator().next(), ANGLERFISH);
 	// Models still to make, a few each client tick, so a spot coming into sight doesn't make them all at once: each as
-	// its item, size, tip, look and frame, in the order wanted, and their keys in models, so none is queued twice.
+	// its item, size, tip and frame, in the order wanted, and their keys in models, so none is queued twice.
 	private final Deque<int[]> toMake = new ArrayDeque<>();
 	private final Set<Long> queued = new HashSet<>();
 
@@ -490,14 +437,14 @@ final class SeaSpotFish
 		private int decidedAt;
 		private double decideDue;
 
-		private School(WorldPoint spot, int x, int y, int z, Crowd crowd, boolean keepsOut, int cycle)
+		private School(WorldPoint spot, int x, int y, int z, Crowd crowd, int ringLanes, int cycle)
 		{
 			this.spot = spot;
 			this.x = x;
 			this.y = y;
 			this.z = z;
 			mainLanes = crowd.lanes;
-			lanes = new double[crowd.lanes + (keepsOut ? crowd.outerLanes : 0)];
+			lanes = new double[crowd.lanes + ringLanes];
 			// Lanes too many or too wide to fit are drawn in closer, so the innermost stays clear of the middle.
 			outer = crowd.radius;
 			double spacing = Math.min(crowd.spacing, (outer - LANE_SPACING / 2) / (crowd.lanes - 1));
@@ -536,8 +483,6 @@ final class SeaSpotFish
 		// Its size, in percent, and how far its model is tipped now, in PITCH_STEPs, nose up when more than 0.
 		private final int size;
 		private int pitch;
-		// Which of its kind's creatures it looks like, for a kind shown as one, else 0.
-		private int variant;
 		// Which of its arms' wiggle frames it shows, and how far into its wiggle it starts, in client ticks.
 		private int frame;
 		private int wiggleStart;
@@ -545,8 +490,6 @@ final class SeaSpotFish
 		private boolean wiggles;
 		// How much deeper than its kind's sink it sits, picked for it and kept, in local units.
 		private int deeper;
-		// Debug: which way it was last turned, in the game's 2048ths of a turn, wag and all.
-		private int swung;
 		// How long it is, nose to tail, in local units, as its model is made.
 		private double length;
 		// Its own share of its lane's speed; how long it takes to surge and slacken off again, and where in that it
@@ -622,37 +565,28 @@ final class SeaSpotFish
 	}
 
 	/**
-	 * How crowded a spot's shoal is: the debug settings' for the spot being tuned, its own for the rest.
-	 */
-	private Crowd crowd(int spot)
-	{
-		return spot == TUNING_SPOT ? tunedCrowd : CROWDS.getOrDefault(spot, CROWD);
-	}
-
-	/**
 	 * Starts fish swimming at a spot that has come into sight, if it is one of the spots at sea: its crowd's count of
 	 * them shared out among the lanes around its middle.
 	 */
 	void add(NPC spot)
 	{
-		// Debug: a spot standing in for another shows that one's fish.
-		int as = SPOT_AS.getOrDefault(spot.getId(), spot.getId());
-		int[] kinds = SPOT_FISH.get(as);
-		int[] odds = SPOT_FISH_ODDS.get(as);
-		int[] least = SPOT_FISH_LEAST.get(as);
+		int[] kinds = SPOT_FISH.get(spot.getId());
+		int[] odds = SPOT_FISH_ODDS.get(spot.getId());
+		int[] least = SPOT_FISH_LEAST.get(spot.getId());
+		Crowd crowd = CROWDS.get(spot.getId());
 		LocalPoint at = spot.getLocalLocation();
-		if (kinds == null || at == null || schools.containsKey(spot))
+		if (kinds == null || crowd == null || at == null || schools.containsKey(spot))
 		{
 			return;
 		}
 		ThreadLocalRandom random = ThreadLocalRandom.current();
 		int cycle = client.getGameCycle();
-		Crowd crowd = crowd(as);
 		int plane = spot.getWorldLocation().getPlane();
-		int[] spotKinds = kinds;
-		boolean keepsOut = Arrays.stream(spotKinds).anyMatch(KEPT_OUT::containsKey);
+		// The outer ring has as many lanes as the kinds kept out at the spot fill, none without them.
+		int ringLanes = Arrays.stream(kinds).filter(KEPT_OUT::containsKey).map(item -> KEPT_OUT.get(item).length)
+			.max().orElse(0);
 		School school = new School(spot.getWorldLocation(), at.getX(), at.getY(),
-			Perspective.getTileHeight(client, at, plane), crowd, keepsOut, cycle);
+			Perspective.getTileHeight(client, at, plane), crowd, ringLanes, cycle);
 		int lanes = school.mainLanes;
 		// Each lane's distance out, and how many fish start in it: one each while there are enough, then the rest
 		// shared out at random among the lanes with room for another, more likely to those with more room left, so
@@ -700,7 +634,6 @@ final class SeaSpotFish
 		// From the outermost in, so the kinds kept out of the innermost lanes find room while it's still there.
 		for (int lane = lanes - 1; lane >= 0; lane--)
 		{
-			double radius = school.lanes[lane];
 			double turned = random.nextDouble(2 * Math.PI);
 			// Evenly round the lane; more may join it later, while it has room.
 			int count = counts[lane];
@@ -715,43 +648,27 @@ final class SeaSpotFish
 				}
 			}
 		}
-		// Then each kind kept out, between its fewest and most, spread round the outer ring's lanes at random.
-		for (int item : spotKinds)
+		// Then each kind kept out, as many in each of the outer ring's lanes as it says, evenly round the lane, each
+		// lane further out turned on by half the gap between its fish, so those in lanes side by side don't start
+		// side by side.
+		for (int item : kinds)
 		{
-			int[] kept = KEPT_OUT.get(item);
-			if (kept == null || school.lanes.length == lanes)
+			int[] perLane = KEPT_OUT.get(item);
+			if (perLane == null)
 			{
 				continue;
 			}
-			int count = random.nextInt(kept[0], kept[1] + 1);
 			double turned = random.nextDouble(2 * Math.PI);
-			for (int place = 0; place < count; place++)
+			for (int ring = 0; ring < perLane.length; ring++)
 			{
-				// The outermost of the ring's lanes not yet as full as the kind allows, so the outer lanes fill first,
-				// or none left to put it in.
-				int lane = -1;
-				int already = 0;
-				for (int ringLane = school.lanes.length - 1; ringLane >= lanes && lane < 0; ringLane--)
+				for (int place = 0; place < perLane[ring]; place++)
 				{
-					int each = ringLane;
-					already = (int) school.fish.stream().filter(swimmer -> swimmer.lane == each).count();
-					if (already < kept[2])
+					double angle = turned + (place + ring / 2.0) * 2 * Math.PI / perLane[ring]
+						+ random.nextDouble(-START_STRAY, START_STRAY);
+					if (!addFish(school, item, lanes + ring, angle, at, plane, cycle, random))
 					{
-						lane = ringLane;
+						return;
 					}
-				}
-				if (lane < 0)
-				{
-					break;
-				}
-				// Evenly round its lane from the others in it, each lane further in turned on by half that, so the
-				// ones in the lanes next to each other don't start side by side.
-				double angle = turned + already * 2 * Math.PI / kept[2]
-					+ (school.lanes.length - 1 - lane) * Math.PI / kept[2]
-					+ random.nextDouble(-START_STRAY, START_STRAY);
-				if (!addFish(school, item, lane, angle, at, plane, cycle, random))
-				{
-					return;
 				}
 			}
 		}
@@ -802,52 +719,8 @@ final class SeaSpotFish
 	{
 		ItemComposition fish = client.getItemDefinition(item);
 		ModelData model = client.loadModelData(fish.getInventoryModel());
-		// Debug: the raw shark's model as it comes, once, to see how it is curled.
-		if (item == ItemID.RAW_SHARK && model != null && !sharkLogged)
-		{
-			sharkLogged = true;
-			StringBuilder points = new StringBuilder();
-			for (int i = 0; i < model.getVerticesCount(); i++)
-			{
-				points.append(Math.round(model.getVerticesX()[i])).append(',')
-					.append(Math.round(model.getVerticesY()[i])).append(',')
-					.append(Math.round(model.getVerticesZ()[i])).append(';');
-			}
-			StringBuilder faces = new StringBuilder();
-			for (int f = 0; f < model.getFaceCount(); f++)
-			{
-				faces.append(model.getFaceIndices1()[f]).append(',').append(model.getFaceIndices2()[f]).append(',')
-					.append(model.getFaceIndices3()[f]).append(';');
-			}
-			log.info("SHARKMODEL points {}", points);
-			log.info("SHARKMODEL faces {}", faces);
-		}
 		return model == null ? null : recolor(model.cloneVertices().cloneColors(), fish.getColorToReplace(),
 			fish.getColorToReplaceWith());
-	}
-
-	/**
-	 * A creature's model, all its parts together in its own colours.
-	 */
-	private ModelData loadCreature(int npc)
-	{
-		NPCComposition creature = client.getNpcDefinition(npc);
-		int[] parts = creature.getModels();
-		if (parts == null)
-		{
-			return null;
-		}
-		ModelData[] loaded = new ModelData[parts.length];
-		for (int i = 0; i < parts.length; i++)
-		{
-			loaded[i] = client.loadModelData(parts[i]);
-			if (loaded[i] == null)
-			{
-				return null;
-			}
-		}
-		return recolor(client.mergeModels(loaded).cloneVertices().cloneColors(), creature.getColorToReplace(),
-			creature.getColorToReplaceWith());
 	}
 
 	/**
@@ -957,8 +830,9 @@ final class SeaSpotFish
 
 	/**
 	 * Swings the part of a model beyond a joint along its length, the shorter side of it, round the joint by so many
-	 * degrees, within its flat side: the plane of its two longest ways. Points within JOINT_EASE of its length either
-	 * side of the joint swing only part of the way, so it bends there smoothly rather than tearing.
+	 * degrees, within its flat side: the plane of its two longest ways, and sizes it by scale round the joint. Points
+	 * within JOINT_EASE of its length either side of the joint swing and size only part of the way, so it bends there
+	 * smoothly rather than tearing.
 	 */
 	private static void bendTail(ModelData model, double joint, int degrees, boolean atFold, double scale)
 	{
@@ -1449,12 +1323,12 @@ final class SeaSpotFish
 	}
 
 	/**
-	 * Whether a kind may swim in a lane: those kept out only in the outer ring's lanes, the rest only in the main
-	 * lanes, and none in the innermost lanes it is kept from.
+	 * Whether a fish may move into a lane: one of the main lanes, never the outer ring's, and none of the innermost
+	 * its kind is kept from. The kinds kept out never move, so never ask.
 	 */
 	private static boolean allowed(int item, int lane, School school)
 	{
-		return KEPT_OUT.containsKey(item) == lane >= school.mainLanes && lane >= KEPT_FROM_MIDDLE.getOrDefault(item, 0);
+		return lane < school.mainLanes && lane >= KEPT_FROM_MIDDLE.getOrDefault(item, 0);
 	}
 
 	/**
@@ -1488,9 +1362,7 @@ final class SeaSpotFish
 		// Smaller in SIZE_STEPs, so a kind has only a few sizes of model, while SIZE_VARIATION; otherwise all its size.
 		int size = !SIZE_VARIATION ? look(item).size
 			: look(item).size * (100 - SIZE_STEP * random.nextInt(look(item).sizeSpread / SIZE_STEP + 1)) / 100;
-		int[] creatures = CREATURES.get(item);
-		int variant = creatures == null ? 0 : random.nextInt(creatures.length);
-		Model model = model(item, size, 0, variant, 0);
+		Model model = model(item, size, 0, 0);
 		if (model == null)
 		{
 			school.fish.forEach(swimmer -> swimmer.fish.setActive(false));
@@ -1507,7 +1379,6 @@ final class SeaSpotFish
 		fish.setModel(model);
 		fish.setLocation(at, plane);
 		Swimmer swimmer = new Swimmer(fish, item, size, lane, angle, school.lanes[lane], cycle, random);
-		swimmer.variant = variant;
 		swimmer.look = look(item);
 		swimmer.layer = layer(item);
 		swimmer.givenRoom = GIVEN_ROOM.contains(item);
@@ -1541,32 +1412,39 @@ final class SeaSpotFish
 	/**
 	 * A kind of fish's model at a size and tipped nose up by a number of PITCH_STEPs, made the first time it's needed.
 	 */
-	private Model model(int item, int size, int pitch, int variant, int frame)
+	private Model model(int item, int size, int pitch, int frame)
 	{
-		return models.computeIfAbsent(key(item, size, pitch, variant, frame),
-			key -> load(item, size, pitch, variant, frame));
+		return models.computeIfAbsent(key(item, size, pitch, frame), key -> load(item, size, pitch, frame));
 	}
 
 	/**
-	 * Where a kind's model at a size, tip, look and frame is kept in models.
+	 * Where a kind's model at a size, tip and frame is kept in models.
 	 */
-	private static long key(int item, int size, int pitch, int variant, int frame)
+	private static long key(int item, int size, int pitch, int frame)
 	{
-		return (((item * 1000L + size) * 64 + pitch + 32) * 8 + variant) * 8 + frame;
+		return ((item * 1000L + size) * 64 + pitch + 32) * 8 + frame;
+	}
+
+	/**
+	 * Which kind's model a key in models is, by its item.
+	 */
+	private static int itemOf(long key)
+	{
+		return (int) (key / 8 / 64 / 1000);
 	}
 
 	/**
 	 * Queues a model to be made, unless it is made or queued already: first in line if a fish is waiting for it, else
 	 * last.
 	 */
-	private void queue(int item, int size, int pitch, int variant, int frame, boolean waiting)
+	private void queue(int item, int size, int pitch, int frame, boolean waiting)
 	{
-		long key = key(item, size, pitch, variant, frame);
+		long key = key(item, size, pitch, frame);
 		if (models.containsKey(key) || !queued.add(key))
 		{
 			return;
 		}
-		int[] wanted = {item, size, pitch, variant, frame};
+		int[] wanted = {item, size, pitch, frame};
 		if (waiting)
 		{
 			toMake.addFirst(wanted);
@@ -1593,7 +1471,7 @@ final class SeaSpotFish
 			{
 				for (int frame = 0; frame < frames; frame++)
 				{
-					queue(swimmer.item, swimmer.size, pitch, swimmer.variant, frame, false);
+					queue(swimmer.item, swimmer.size, pitch, frame, false);
 				}
 			}
 		}
@@ -1607,62 +1485,63 @@ final class SeaSpotFish
 		for (int made = 0; made < MAKE_PER_TICK && !toMake.isEmpty(); )
 		{
 			int[] wanted = toMake.pollFirst();
-			long key = key(wanted[0], wanted[1], wanted[2], wanted[3], wanted[4]);
+			long key = key(wanted[0], wanted[1], wanted[2], wanted[3]);
 			queued.remove(key);
 			if (!models.containsKey(key))
 			{
-				model(wanted[0], wanted[1], wanted[2], wanted[3], wanted[4]);
+				model(wanted[0], wanted[1], wanted[2], wanted[3]);
 				made++;
 			}
 		}
 	}
 
-	private Model load(int item, int size, int pitch, int variant, int frame)
+	private Model load(int item, int size, int pitch, int frame)
 	{
-		ModelData model = CREATURES.containsKey(item) ? loadCreature(CREATURES.get(item)[variant]) : loadItem(item);
+		ModelData model = loadItem(item);
+		Look look = look(item);
 		if (model == null)
 		{
 			return null;
 		}
 		// Only the kinds that need it are reshaped.
 		boolean reshaped = RESHAPED.contains(item);
-		if (reshaped && look(item).sweep > 0)
+		if (reshaped && look.sweep > 0)
 		{
-			sweep(model, look(item).sweep / 100.0, look(item).sweepBody / 100.0, look(item).wiggle / 100.0, frame);
+			sweep(model, look.sweep / 100.0, look.sweepBody / 100.0, look.wiggle / 100.0, frame);
 		}
-		if (reshaped && look(item).uncurl > 0)
+		if (reshaped && look.uncurl > 0)
 		{
-			uncurl(model, look(item).uncurl / 100.0, look(item).curlCentre - 50, look(item).finSize / 100.0);
+			uncurl(model, look.uncurl / 100.0, look.curlCentre - 50, look.finSize / 100.0);
 		}
-		if (reshaped && look(item).straighten > 0)
+		if (reshaped && look.straighten > 0)
 		{
-			straighten(model, look(item).straighten / 100.0);
+			straighten(model, look.straighten / 100.0);
 		}
-		if (reshaped && look(item).bend != 0)
+		if (reshaped && look.bend != 0)
 		{
-			bendTail(model, look(item).joint / 100.0, look(item).bend, FOLDED.contains(item), 1);
+			bendTail(model, look.joint / 100.0, look.bend, FOLDED.contains(item), 1);
 		}
-		if (reshaped && (look(item).bend2 != 0 || look(item).tailSize != 100))
+		if (reshaped && (look.bend2 != 0 || look.tailSize != 100))
 		{
-			bendTail(model, look(item).joint2 / 100.0, look(item).bend2, FOLDED.contains(item),
-				look(item).tailSize / 100.0);
+			bendTail(model, look.joint2 / 100.0, look.bend2, FOLDED.contains(item),
+				look.tailSize / 100.0);
 		}
-		if (reshaped && look(item).stretch != 100)
+		if (reshaped && look.stretch != 100)
 		{
-			stretch(model, look(item).stretch / 100.0);
+			stretch(model, look.stretch / 100.0);
 		}
 		// Tipped about a point ahead of its middle, towards its head, by its kind's tip pivot at its size: its head
 		// faces (sine, -cosine) of its turn in its model's own ways.
-		double turn = Math.toRadians(look(item).turn);
-		standUp(model, look(item).roll, look(item).tilt, pitch * PITCH_STEP, look(item).tipPivot * 100.0 / size,
+		double turn = Math.toRadians(look.turn);
+		standUp(model, look.roll, look.tilt, pitch * PITCH_STEP, look.tipPivot * 100.0 / size,
 			Math.sin(turn), -Math.cos(turn), KEEP_HEIGHT.contains(item));
 		int scale = size * 128 / 100;
 		model.scale(scale, scale, scale);
 		// Lit as the game lights any item; only its colours are lightened after, where its kind asks.
 		Model lit = model.light();
-		if (look(item).lightest > 0 && lit != null)
+		if (look.lightest > 0 && lit != null)
 		{
-			lighten(lit, look(item).lightest);
+			lighten(lit, look.lightest);
 		}
 		return lit;
 	}
@@ -1713,7 +1592,7 @@ final class SeaSpotFish
 	 */
 	private Look look(int item)
 	{
-		return TUNING.contains(item) ? tuned : LOOKS.getOrDefault(item, ANGLERFISH);
+		return LOOKS.getOrDefault(item, ANGLERFISH);
 	}
 
 	/**
@@ -1798,9 +1677,9 @@ final class SeaSpotFish
 		{
 			other.fish.forEach(swimmer -> swimming.add(swimmer.item));
 		}
-		models.keySet().removeIf(key -> !swimming.contains((int) (key / 8 / 8 / 64 / 1000)));
+		models.keySet().removeIf(key -> !swimming.contains(itemOf(key)));
 		toMake.removeIf(wanted -> !swimming.contains(wanted[0]));
-		queued.removeIf(key -> !swimming.contains((int) (key / 8 / 8 / 64 / 1000)));
+		queued.removeIf(key -> !swimming.contains(itemOf(key)));
 	}
 
 	/**
@@ -1851,7 +1730,7 @@ final class SeaSpotFish
 				// gathers speed and slows into place rather than starting and stopping dead; never faster than the
 				// most room speed.
 				double spring = swimmer.look.roomEase / 100.0 * ROOM_SPRING;
-				double most = mostRoomSpeed / 50.0;
+				double most = MOST_ROOM_SPEED / 50;
 				for (int t = 0; t < ticks; t++)
 				{
 					swimmer.roomSpeed += spring * spring * (school.room[i] - fishEased)
@@ -1859,7 +1738,7 @@ final class SeaSpotFish
 					swimmer.roomSpeed = Math.max(-most, Math.min(most, swimmer.roomSpeed));
 					fishEased += swimmer.roomSpeed;
 				}
-				double mostShark = sharkRoomSpeed / 50.0 * ticks;
+				double mostShark = SHARK_ROOM_SPEED / 50 * ticks;
 				swimmer.sharkEased += Math.max(-mostShark,
 					Math.min(mostShark, (school.sharkRoom[i] - swimmer.sharkEased) * share));
 				swimmer.eased = fishEased + swimmer.sharkEased;
@@ -1890,7 +1769,7 @@ final class SeaSpotFish
 			}
 			for (Swimmer swimmer : school.fish)
 			{
-				think(school, swimmer, cycle, random, sharkRoomRange * school.gaps);
+				think(school, swimmer, cycle, random, SHARK_ROOM_RANGE * school.gaps);
 				// Seconds are 50 client ticks, each 20 ms. A fish put deeper than its kind never dips, being hard to
 				// see moving down there.
 				Look look = swimmer.look;
@@ -2008,9 +1887,9 @@ final class SeaSpotFish
 	}
 
 	/**
-	 * Whether a fish could join a lane where it is: the lane has room for another, no more than its kind allows in
-	 * one lane if it is kept out, and no fish in it, or still leaving it, is within MERGE_GAP ahead or behind; nor,
-	 * for the rest, is one every fish makes room for within the range they make it from.
+	 * Whether a fish could join a lane where it is: the lane has room for another, no fish in it, or still leaving
+	 * it, is within MERGE_GAP ahead or behind, and none every fish makes room for is within the range they make it
+	 * from. The kinds kept out never change lanes, so never ask.
 	 */
 	private static boolean clear(School school, Swimmer swimmer, int lane, double sharkRange)
 	{
@@ -2020,7 +1899,7 @@ final class SeaSpotFish
 		{
 			// Never while one every fish makes room for is near enough to push it aside, which would hold it off its
 			// new lane until that one had passed, then slide it over all at once.
-			if (other.givenRoom && !swimmer.givenRoom)
+			if (other.givenRoom)
 			{
 				double otherOut = other.radius + other.eased;
 				if (Math.hypot(out * Math.sin(swimmer.angle) - otherOut * Math.sin(other.angle),
@@ -2043,8 +1922,7 @@ final class SeaSpotFish
 				return false;
 			}
 		}
-		int[] kept = KEPT_OUT.get(swimmer.item);
-		return in < (kept == null ? room(school, lane) : Math.min(kept[2], room(school, lane)))
+		return in < room(school, lane)
 			&& inLane(school, swimmer.item, lane) < MOST_IN_LANE.getOrDefault(swimmer.item, Integer.MAX_VALUE);
 	}
 
@@ -2118,20 +1996,24 @@ final class SeaSpotFish
 				Swimmer other = school.fish.get(j);
 				// Fish in different layers pay each other no mind, but for those every fish makes room for, as the
 				// sharks, which in turn make room only for their own layer.
-				if (other.layer != swimmer.layer && !(other.givenRoom && !swimmer.givenRoom))
+				if (j == i || other.layer != swimmer.layer && !(other.givenRoom && !swimmer.givenRoom))
 				{
 					continue;
 				}
-				double otherOut = other.radius + other.eased;
-				double apart = Math.hypot(school.placeX[i] - school.placeX[j], school.placeY[i] - school.placeY[j]);
-				// One every fish makes room for is given more of it, from further off.
+				// One every fish makes room for is given more of it, from further off. Squared distances first, so
+				// the square root is only taken for those near enough.
 				boolean givingWay = other.givenRoom && !swimmer.givenRoom;
-				double range = givingWay ? sharkRoomRange * school.gaps : roomRange;
-				double give = givingWay ? sharkRoom * school.gaps : room;
-				if (j == i || apart >= range)
+				double range = givingWay ? SHARK_ROOM_RANGE * school.gaps : roomRange;
+				double dx = school.placeX[i] - school.placeX[j];
+				double dy = school.placeY[i] - school.placeY[j];
+				double apartSquared = dx * dx + dy * dy;
+				if (apartSquared >= range * range)
 				{
 					continue;
 				}
+				double apart = Math.sqrt(apartSquared);
+				double otherOut = other.radius + other.eased;
+				double give = givingWay ? SHARK_ROOM * school.gaps : room;
 				// Out if it is the further out of the two, in if not; two as far out as each other part by order.
 				double way = Math.abs(out - otherOut) > 1 ? Math.signum(out - otherOut) : i < j ? -1 : 1;
 				if (givingWay)
@@ -2183,7 +2065,6 @@ final class SeaSpotFish
 		// kind that doesn't spin isn't turned at all.
 		int spun = look.spin == 0 ? 0 : swimmer.spinPhase - (int) ((long) look.spin * 2048 / 360 * cycle / 50);
 		swimmer.fish.setOrientation(swung + look.turn * 2048 / 360 + spun & 2047);
-		swimmer.swung = swung;
 		// Swung about a point ahead of its middle, so the head stays nearly still and the tail sweeps: the same turn
 		// with the fish moved over by how far that point's turn carries its middle. It faces (-sine, -cosine).
 		swimmer.fish.setX(school.x + (int) Math.round(out * sine)
@@ -2215,7 +2096,7 @@ final class SeaSpotFish
 		{
 			// Only a model already made: one not made yet is put first in line, and the fish keeps the one it has
 			// until it is, a tick or two at most.
-			Model model = models.get(key(swimmer.item, swimmer.size, pitch, swimmer.variant, frame));
+			Model model = models.get(key(swimmer.item, swimmer.size, pitch, frame));
 			if (model != null)
 			{
 				swimmer.fish.setModel(model);
@@ -2224,7 +2105,7 @@ final class SeaSpotFish
 			}
 			else
 			{
-				queue(swimmer.item, swimmer.size, pitch, swimmer.variant, frame, true);
+				queue(swimmer.item, swimmer.size, pitch, frame, true);
 			}
 		}
 	}
@@ -2283,199 +2164,11 @@ final class SeaSpotFish
 	}
 
 	/**
-	 * Debug: takes the tuned look from the debug settings for the kinds being tuned, handing it to their fish now
-	 * swimming, and says whether the fish need making again, as their models have changed.
-	 */
-	boolean tune(int[] values)
-	{
-		Look was = tuned;
-		tuned = new Look(values);
-		for (School school : schools.values())
-		{
-			for (Swimmer swimmer : school.fish)
-			{
-				if (TUNING.contains(swimmer.item))
-				{
-					swimmer.look = tuned;
-				}
-			}
-		}
-		// Only a change to how its models are made, or to what each fish is given as it is made, needs them made
-		// again; how it moves is picked up as it swims.
-		int[] before = was.values();
-		int[] after = tuned.values();
-		for (int i = 0; i < before.length; i++)
-		{
-			if (before[i] != after[i] && !LIVE.contains(i))
-			{
-				return true;
-			}
-		}
-		return false;
-	}
-
-	/**
-	 * Debug: which kinds are being tuned, by item, and their built-in look's values, for putting into the debug
-	 * settings when the kinds being tuned change.
-	 */
-	static String tuningKinds()
-	{
-		return TUNING.stream().sorted().map(String::valueOf).reduce((a, b) -> a + "," + b).orElse("") + " v3";
-	}
-
-	static int[] builtInLook()
-	{
-		return LOOKS.getOrDefault(TUNING.iterator().next(), ANGLERFISH).values();
-	}
-
-	/**
-	 * Debug: takes the tuned crowd from the debug settings for the spot being tuned, saying whether it changed, its
-	 * shoals then needing laying out again.
-	 */
-	boolean tuneCrowd(int[] values)
-	{
-		boolean changed = !Arrays.equals(values, tunedCrowd.values());
-		tunedCrowd = new Crowd(values);
-		return changed;
-	}
-
-	/**
-	 * Debug: which spot's crowd is being tuned, and its built-in crowd's values, for putting into the debug settings
-	 * when the spot being tuned changes.
-	 */
-	static String tuningSpot()
-	{
-		return TUNING_SPOT + " v1";
-	}
-
-	static int[] builtInCrowd()
-	{
-		return CROWDS.getOrDefault(TUNING_SPOT, CROWD).values();
-	}
-
-	/**
 	 * Says whether the water is drawn see-through, for the shoals made from now on.
 	 */
-	/**
-	 * Debug: draws the marks asked for, on the water: each spot's middle; each of its lanes, as a ring; each fish,
-	 * as a dot, green, or red while it is changing lanes, ringed in yellow while making room for another and further
-	 * out in blue while dipping; the point each fish wags about, as a line from its middle; and the point it tips
-	 * about.
-	 */
-	void debugDraw(Graphics2D graphics, boolean middles, boolean lanes, boolean dots, boolean pivots,
-		boolean tipPivots)
-	{
-		for (Map.Entry<NPC, School> entry : schools.entrySet())
-		{
-			School school = entry.getValue();
-			WorldView view = entry.getKey().getWorldView();
-			int plane = entry.getKey().getWorldLocation().getPlane();
-			if (middles)
-			{
-				Point at = Perspective.localToCanvas(client, new LocalPoint(school.x, school.y, view), plane);
-				if (at != null)
-				{
-					graphics.setColor(Color.MAGENTA);
-					graphics.fillOval(at.getX() - 4, at.getY() - 4, 8, 8);
-					graphics.drawLine(at.getX() - 10, at.getY(), at.getX() + 10, at.getY());
-					graphics.drawLine(at.getX(), at.getY() - 10, at.getX(), at.getY() + 10);
-				}
-			}
-			if (lanes)
-			{
-				for (int lane = 0; lane < school.lanes.length; lane++)
-				{
-					double radius = school.lanes[lane];
-					graphics.setColor(lane < school.mainLanes ? Color.CYAN : Color.BLUE);
-					Point last = null;
-					for (int step = 0; step <= 48; step++)
-					{
-						double turn = step * 2 * Math.PI / 48;
-						LocalPoint on = new LocalPoint(school.x + (int) Math.round(radius * Math.sin(turn)),
-							school.y + (int) Math.round(radius * Math.cos(turn)), view);
-						Point next = Perspective.localToCanvas(client, on, plane);
-						if (last != null && next != null)
-						{
-							graphics.drawLine(last.getX(), last.getY(), next.getX(), next.getY());
-						}
-						last = next;
-					}
-				}
-			}
-			for (int i = 0; i < school.fish.size(); i++)
-			{
-				Swimmer swimmer = school.fish.get(i);
-				Point dot = Perspective.localToCanvas(client,
-					new LocalPoint(swimmer.fish.getX(), swimmer.fish.getY(), view), plane);
-				if (dot == null)
-				{
-					continue;
-				}
-				if (pivots)
-				{
-					// Ahead of its middle the way it faces, (-sine, -cosine) of where it is turned.
-					int pivot = swimmer.look.pivot;
-					LocalPoint about = new LocalPoint(
-						swimmer.fish.getX() - (pivot * Perspective.SINE[swimmer.swung] >> 16),
-						swimmer.fish.getY() - (pivot * Perspective.COSINE[swimmer.swung] >> 16), view);
-					Point point = Perspective.localToCanvas(client, about, plane);
-					if (point != null)
-					{
-						graphics.setColor(Color.ORANGE);
-						graphics.drawLine(dot.getX(), dot.getY(), point.getX(), point.getY());
-						graphics.fillOval(point.getX() - 2, point.getY() - 2, 4, 4);
-					}
-				}
-				if (tipPivots)
-				{
-					// Ahead of its middle the way it faces, (-sine, -cosine) of where it is turned.
-					int pivot = swimmer.look.tipPivot;
-					LocalPoint about = new LocalPoint(
-						swimmer.fish.getX() - (pivot * Perspective.SINE[swimmer.swung] >> 16),
-						swimmer.fish.getY() - (pivot * Perspective.COSINE[swimmer.swung] >> 16), view);
-					Point point = Perspective.localToCanvas(client, about, plane);
-					if (point != null)
-					{
-						graphics.setColor(Color.MAGENTA);
-						graphics.drawLine(dot.getX(), dot.getY(), point.getX(), point.getY());
-						graphics.fillOval(point.getX() - 3, point.getY() - 3, 6, 6);
-					}
-				}
-				if (dots)
-				{
-					graphics.setColor(swimmer.movingSince >= 0 ? Color.RED : Color.GREEN);
-					graphics.fillOval(dot.getX() - 3, dot.getY() - 3, 6, 6);
-					if (school.room[i] != 0 || school.sharkRoom[i] != 0)
-					{
-						graphics.setColor(Color.YELLOW);
-						graphics.drawOval(dot.getX() - 5, dot.getY() - 5, 10, 10);
-					}
-					if (swimmer.dippingSince >= 0)
-					{
-						graphics.setColor(Color.BLUE);
-						graphics.drawOval(dot.getX() - 7, dot.getY() - 7, 14, 14);
-					}
-				}
-			}
-		}
-	}
-
 	void setSeeThrough(boolean seeThrough)
 	{
 		this.seeThrough = seeThrough;
-	}
-
-	/**
-	 * Debug: how far, at most, a fish eases away from one of the kinds every fish makes room for, and from how far
-	 * off, in local units at the spot's lane spacing; and how fast, at most, any fish eases aside, in local units a
-	 * second, for other fish and for those.
-	 */
-	void setSharkRoom(int room, int range, int speed, int sharkSpeed)
-	{
-		sharkRoom = room;
-		sharkRoomRange = range;
-		mostRoomSpeed = speed;
-		sharkRoomSpeed = sharkSpeed;
 	}
 
 	/**

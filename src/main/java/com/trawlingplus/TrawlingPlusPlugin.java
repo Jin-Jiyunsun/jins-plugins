@@ -68,8 +68,10 @@ import net.runelite.client.callback.RenderCallbackManager;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.events.ConfigChanged;
+import net.runelite.client.events.PluginChanged;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
+import net.runelite.client.plugins.PluginManager;
 import net.runelite.client.ui.overlay.OverlayManager;
 import net.runelite.client.ui.overlay.worldmap.WorldMapPoint;
 import net.runelite.client.ui.overlay.worldmap.WorldMapPointManager;
@@ -209,6 +211,8 @@ public class TrawlingPlusPlugin extends Plugin
 		NpcID.FISHING_BOAT_RAREFISH, NpcID.FISHING_BOAT_KARAMBWANFISH, NpcID.FISHING_BOAT_PISCARILIUSFISH,
 		NpcID.FISHING_BOAT_MONKFISH);
 	private static final double SEA_SPOT_REACH_TILES = 20;
+	// The name of the 117 HD plugin, the one renderer that draws the water see-through.
+	private static final String HD_PLUGIN = "117 HD";
 	// How far, in tiles, the boat has to move after fishing for the arrow to show again.
 	private static final double SPOT_MOVED_TILES = 0.5;
 	// How often, in ticks, that and the 3 minute away timer are looked at, there being no hurry for either.
@@ -270,6 +274,9 @@ public class TrawlingPlusPlugin extends Plugin
 
 	@Inject
 	private TrawlingPlusConfig config;
+
+	@Inject
+	private PluginManager pluginManager;
 
 	// The kinds of shoal, by the name routes.json files them under, that plain fish offcuts bait as well as fine ones.
 	// All that is kept of routes.json once the routes are built from it, which is read again if they need building
@@ -435,6 +442,7 @@ public class TrawlingPlusPlugin extends Plugin
 		}
 		plainBaitSpecies = plain;
 		seaSpotFish = new SeaSpotFish(client);
+		seaSpotFish.setSeeThrough(seeThroughWater());
 		clientThread.invoke(() ->
 		{
 			// Not logged in, or not aboard, and the nets are known to be empty: logging out and stepping off
@@ -965,6 +973,40 @@ public class TrawlingPlusPlugin extends Plugin
 			return -1;
 		}
 		return Integer.parseInt(text);
+	}
+
+	/**
+	 * Remakes the fish at the spots as 117 HD is switched on or off, it alone drawing the water see-through, so fish
+	 * wholly under it are put in only where they can be seen.
+	 */
+	@Subscribe
+	public void onPluginChanged(PluginChanged event)
+	{
+		if (HD_PLUGIN.equals(event.getPlugin().getName()))
+		{
+			boolean on = event.isLoaded();
+			clientThread.invoke(() ->
+			{
+				seaSpotFish.setSeeThrough(on);
+				showSpotFish();
+			});
+		}
+	}
+
+	/**
+	 * Whether the water is drawn see-through, which only 117 HD does: the game's own renderer and the GPU plugin draw
+	 * it solid.
+	 */
+	private boolean seeThroughWater()
+	{
+		for (Plugin plugin : pluginManager.getPlugins())
+		{
+			if (HD_PLUGIN.equals(plugin.getName()) && pluginManager.isPluginActive(plugin))
+			{
+				return true;
+			}
+		}
+		return false;
 	}
 
 	@Subscribe

@@ -1,7 +1,9 @@
 package com.trawlingplus;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Deque;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -170,6 +172,14 @@ final class SeaSpotFish
 	private static final int SIZE_STEP = 4;
 	// How many slices a model is cut into along its length to straighten it.
 	private static final int STRAIGHTEN_SLICES = 20;
+	// How many queued models are made each client tick, at most.
+	private static final int MAKE_PER_TICK = 2;
+	// How many times a second the fish decide how fast to swim, how far to ease aside and whether to change lanes or
+	// dip, up to 50, one for each client tick; between, they carry on as last decided, still moved every tick.
+	private static final double DECISIONS_PER_SECOND = 20;
+	// The kinds that swim under the water, unseen where it isn't drawn see-through.
+	private static final Set<Integer> UNDER_WATER = Set.of(ItemID.RAW_SHARK, ItemID.RAW_LOBSTER, ItemID.RAW_SHRIMP,
+		ItemID.RAW_ANCHOVIES);
 	// The kinds whose models are reshaped by their look's sweep, straighten, joint, bend and stretch; the rest are
 	// left as their model is.
 	private static final Set<Integer> RESHAPED = Set.of(ItemID.RAW_SWORDFISH, ItemID.TBWT_RAW_KARAMBWAN);
@@ -362,6 +372,13 @@ final class SeaSpotFish
 	// Each fish's model at each size, tip and look, by its item, its size in percent, its tip in steps and which of
 	// its kind's creatures it is, loaded the first time it's needed.
 	private final Map<Long, Model> models = new HashMap<>();
+	// Whether the water is drawn see-through, as 117 HD draws it, so fish under it can be seen; the game's own
+	// renderers draw it solid.
+	private boolean seeThrough;
+	// Models still to make, a few each client tick, so a spot coming into sight doesn't make them all at once: each as
+	// its item, size, tip, look and frame, in the order wanted, and their keys in models, so none is queued twice.
+	private final Deque<int[]> toMake = new ArrayDeque<>();
+	private final Set<Long> queued = new HashSet<>();
 
 	/**
 	 * The fish at one spot: where the spot is in the world, and its middle in the scene and the water's height there,
@@ -389,7 +406,14 @@ final class SeaSpotFish
 		private final double[] speeds;
 		// And how far each wants to ease away from the fish near it this tick.
 		private final double[] room;
+		// And, reused each tick, each fish's speed before minding the fish ahead, and its place across the shoal.
+		private final double[] own;
+		private final double[] placeX;
+		private final double[] placeY;
 		private int movedAt;
+		// The client tick its fish last decided at, and the one, or part of one, they next do at.
+		private int decidedAt;
+		private double decideDue;
 
 		private School(WorldPoint spot, int x, int y, int z, Crowd crowd, boolean keepsOut, int cycle)
 		{
@@ -407,7 +431,11 @@ final class SeaSpotFish
 			outerGaps = crowd.outerSpacing / LANE_SPACING;
 			speeds = new double[crowd.count + MOST_KEPT_OUT];
 			room = new double[crowd.count + MOST_KEPT_OUT];
+			own = new double[room.length];
+			placeX = new double[room.length];
+			placeY = new double[room.length];
 			movedAt = cycle;
+			decidedAt = cycle;
 		}
 
 		private double spacing()
@@ -429,6 +457,13 @@ final class SeaSpotFish
 		private final RuneLiteObject fish;
 		// Which kind it is, by its item.
 		private final int item;
+		// Its kind's look, its kind's layer, and how many lengths it keeps from others, kept as they never change, so
+		// they aren't looked up every tick.
+		private Look look;
+		private int layer;
+		private double gapLengths;
+		// How far it swayed out from its lane at the last client tick it was moved, in local units.
+		private double swayed;
 		// Its size, in percent, and how far its model is tipped now, in PITCH_STEPs, nose up when more than 0.
 		private final int size;
 		private int pitch;
@@ -437,6 +472,8 @@ final class SeaSpotFish
 		// Which of its arms' wiggle frames it shows, and how far into its wiggle it starts, in client ticks.
 		private int frame;
 		private int wiggleStart;
+		// Whether its arms wiggle at all, kept so it isn't worked out every tick.
+		private boolean wiggles;
 		// How much deeper than its kind's sink it sits, picked for it and kept, in local units.
 		private int deeper;
 		// How long it is, nose to tail, in local units, as its model is made.
@@ -658,12 +695,19 @@ final class SeaSpotFish
 				deep.get(i).deeper = 0;
 			}
 		}
+		// Where the water hides what is under it, fish still deeper than their kind, once those kept at their
+		// shallowest are, are taken out, there being nothing of them to see.
+		if (!seeThrough)
+		{
+			school.fish.removeIf(swimmer -> swimmer.deeper > 0);
+		}
 		for (Swimmer swimmer : school.fish)
 		{
 			place(school, swimmer, 0, 0, cycle);
 			swimmer.fish.setActive(true);
 		}
 		schools.put(spot, school);
+		queueAll(school);
 	}
 
 	/**
@@ -1095,13 +1139,25 @@ final class SeaSpotFish
 			school.fish.forEach(swimmer -> swimmer.fish.setActive(false));
 			return false;
 		}
+		// Where the water hides what is under it, the kinds that swim under it aren't put in at all, there being
+		// nothing of them to see; fish put deeper than their kind are taken out once the shoal is laid out.
+		if (!seeThrough && UNDER_WATER.contains(item))
+		{
+			return true;
+		}
+		int deeper = deeper(item, random);
 		RuneLiteObject fish = client.createRuneLiteObject();
 		fish.setModel(model);
 		fish.setLocation(at, plane);
 		Swimmer swimmer = new Swimmer(fish, item, size, lane, angle, school.lanes[lane], cycle, random);
 		swimmer.variant = variant;
+		swimmer.look = look(item);
+		swimmer.layer = layer(item);
+		swimmer.gapLengths = GAP_LENGTHS.getOrDefault(item, FOLLOW_LENGTHS);
+		swimmer.swayed = sway(swimmer, cycle);
 		swimmer.wiggleStart = random.nextInt(50 * WIGGLE_FRAMES);
-		swimmer.deeper = deeper(item, random);
+		swimmer.wiggles = RESHAPED.contains(item) && swimmer.look.wiggle > 0 && swimmer.look.sweep > 0;
+		swimmer.deeper = deeper;
 		int points = model.getVerticesCount();
 		swimmer.length = Math.max(spread(model.getVerticesX(), points), spread(model.getVerticesZ(), points));
 		school.fish.add(swimmer);
@@ -1129,8 +1185,78 @@ final class SeaSpotFish
 	 */
 	private Model model(int item, int size, int pitch, int variant, int frame)
 	{
-		return models.computeIfAbsent((((item * 1000L + size) * 64 + pitch + 32) * 8 + variant) * 8 + frame,
+		return models.computeIfAbsent(key(item, size, pitch, variant, frame),
 			key -> load(item, size, pitch, variant, frame));
+	}
+
+	/**
+	 * Where a kind's model at a size, tip, look and frame is kept in models.
+	 */
+	private static long key(int item, int size, int pitch, int variant, int frame)
+	{
+		return (((item * 1000L + size) * 64 + pitch + 32) * 8 + variant) * 8 + frame;
+	}
+
+	/**
+	 * Queues a model to be made, unless it is made or queued already: first in line if a fish is waiting for it, else
+	 * last.
+	 */
+	private void queue(int item, int size, int pitch, int variant, int frame, boolean waiting)
+	{
+		long key = key(item, size, pitch, variant, frame);
+		if (models.containsKey(key) || !queued.add(key))
+		{
+			return;
+		}
+		int[] wanted = {item, size, pitch, variant, frame};
+		if (waiting)
+		{
+			toMake.addFirst(wanted);
+		}
+		else
+		{
+			toMake.addLast(wanted);
+		}
+	}
+
+	/**
+	 * Queues every tip and frame a shoal's fish may come to need, beyond the upright ones they start with, to be made
+	 * a few at a time: as far as each kind tips at most, both ways, and each of its wiggle frames.
+	 */
+	private void queueAll(School school)
+	{
+		for (Swimmer swimmer : school.fish)
+		{
+			Look look = swimmer.look;
+			double most = look.tip / 100.0 * ((look.rise > 0 ? BOB_PITCH : 0) + (look.dipDepth > 0 ? DIP_PITCH : 0));
+			int steps = (int) Math.ceil(most / PITCH_STEP);
+			int frames = swimmer.wiggles ? WIGGLE_FRAMES : 1;
+			for (int pitch = -steps; pitch <= steps; pitch++)
+			{
+				for (int frame = 0; frame < frames; frame++)
+				{
+					queue(swimmer.item, swimmer.size, pitch, swimmer.variant, frame, false);
+				}
+			}
+		}
+	}
+
+	/**
+	 * Makes up to MAKE_PER_TICK of the queued models.
+	 */
+	private void makeQueued()
+	{
+		for (int made = 0; made < MAKE_PER_TICK && !toMake.isEmpty(); )
+		{
+			int[] wanted = toMake.pollFirst();
+			long key = key(wanted[0], wanted[1], wanted[2], wanted[3], wanted[4]);
+			queued.remove(key);
+			if (!models.containsKey(key))
+			{
+				model(wanted[0], wanted[1], wanted[2], wanted[3], wanted[4]);
+				made++;
+			}
+		}
 	}
 
 	private Model load(int item, int size, int pitch, int variant, int frame)
@@ -1295,6 +1421,8 @@ final class SeaSpotFish
 			other.fish.forEach(swimmer -> swimming.add(swimmer.item));
 		}
 		models.keySet().removeIf(key -> !swimming.contains((int) (key / 8 / 8 / 64 / 1000)));
+		toMake.removeIf(wanted -> !swimming.contains(wanted[0]));
+		queued.removeIf(key -> !swimming.contains((int) (key / 8 / 8 / 64 / 1000)));
 	}
 
 	/**
@@ -1306,6 +1434,7 @@ final class SeaSpotFish
 		{
 			return;
 		}
+		makeQueued();
 		int cycle = client.getGameCycle();
 		ThreadLocalRandom random = ThreadLocalRandom.current();
 		for (School school : schools.values())
@@ -1319,18 +1448,26 @@ final class SeaSpotFish
 			}
 			int count = school.fish.size();
 			double[] speeds = school.speeds;
-			for (int i = 0; i < count; i++)
+			// DECISIONS_PER_SECOND times a second, at the client tick nearest each, the fish decide how fast to swim
+			// and how far to ease aside, the costly part, comparing every pair; every tick they move on as decided.
+			boolean deciding = cycle >= school.decideDue;
+			int decided = Math.min(10, cycle - school.decidedAt);
+			if (deciding)
 			{
-				speeds[i] = speed(school, school.fish.get(i), cycle, school.inner);
+				school.decideDue = Math.max(school.decideDue + 50.0 / DECISIONS_PER_SECOND, cycle);
+				school.decidedAt = cycle;
+				for (int i = 0; i < count; i++)
+				{
+					speeds[i] = speed(school, school.fish.get(i), cycle, school.inner);
+				}
+				follow(school);
+				makeRoom(school);
 			}
-			follow(school);
-			makeRoom(school);
 			for (int i = 0; i < count; i++)
 			{
 				Swimmer swimmer = school.fish.get(i);
-				double was = swimmer.radius + sway(swimmer, cycle - ticks) + swimmer.eased;
-				swimmer.eased += (school.room[i] - swimmer.eased)
-					* Math.min(1, look(swimmer.item).roomEase / 100.0 * ticks);
+				double was = swimmer.radius + swimmer.swayed + swimmer.eased;
+				swimmer.eased += (school.room[i] - swimmer.eased) * Math.min(1, swimmer.look.roomEase / 100.0 * ticks);
 				if (swimmer.movingSince >= 0)
 				{
 					double through = Math.min(1, (cycle - swimmer.movingSince) / (double) MERGE_CYCLES);
@@ -1344,16 +1481,22 @@ final class SeaSpotFish
 				double moved = speeds[i] * ticks;
 				swimmer.angle = (swimmer.angle + moved / swimmer.radius) % (2 * Math.PI);
 				swimmer.wag = (swimmer.wag + 2 * Math.PI * moved / WAG_DISTANCE) % (2 * Math.PI);
-				double outward = (swimmer.radius + sway(swimmer, cycle) + swimmer.eased - was) / ticks;
+				swimmer.swayed = sway(swimmer, cycle);
+				double outward = (swimmer.radius + swimmer.swayed + swimmer.eased - was) / ticks;
 				place(school, swimmer, speeds[i], outward, cycle);
+			}
+			if (!deciding)
+			{
+				continue;
 			}
 			for (Swimmer swimmer : school.fish)
 			{
 				think(school, swimmer, cycle, random);
-				// Seconds are 50 client ticks, each 20 ms.
-				Look look = look(swimmer.item);
+				// Seconds are 50 client ticks, each 20 ms. A fish put deeper than its kind never dips, being hard to see
+				// moving down there.
+				Look look = swimmer.look;
 				if (swimmer.dippingSince >= 0 ? cycle - swimmer.dippingSince >= Math.max(1, look.dipMillis / 20)
-					: random.nextDouble() < ticks / (look.dipEvery * 50.0))
+					: swimmer.deeper == 0 && random.nextDouble() < Math.max(1, decided) / (look.dipEvery * 50.0))
 				{
 					swimmer.dippingSince = swimmer.dippingSince >= 0 ? -1 : cycle;
 				}
@@ -1374,8 +1517,8 @@ final class SeaSpotFish
 		double lane = out >= second
 			? INNER_SPEED + (OUTER_SPEED - INNER_SPEED) * out
 			: INNERMOST_SPEED + (INNER_SPEED + (OUTER_SPEED - INNER_SPEED) * second - INNERMOST_SPEED) * out / second;
-		double speed = REFERENCE_SPEED * lane * swimmer.speed * look(swimmer.item).pace / 100.0
-			* (1 + (INNER_SURGE + (OUTER_SURGE - INNER_SURGE) * out) * look(swimmer.item).surge / 100.0 * surging);
+		double speed = REFERENCE_SPEED * lane * swimmer.speed * swimmer.look.pace / 100.0
+			* (1 + (INNER_SURGE + (OUTER_SURGE - INNER_SURGE) * out) * swimmer.look.surge / 100.0 * surging);
 		return speed;
 	}
 
@@ -1386,7 +1529,8 @@ final class SeaSpotFish
 	private static void follow(School school)
 	{
 		int count = school.fish.size();
-		double[] own = Arrays.copyOf(school.speeds, count);
+		double[] own = school.own;
+		System.arraycopy(school.speeds, 0, own, 0, count);
 		for (int i = 0; i < count; i++)
 		{
 			Swimmer swimmer = school.fish.get(i);
@@ -1395,7 +1539,7 @@ final class SeaSpotFish
 			for (int j = 0; j < count; j++)
 			{
 				Swimmer other = school.fish.get(j);
-				if (j != i && other.lane == swimmer.lane && layer(other.item) == layer(swimmer.item))
+				if (j != i && other.lane == swimmer.lane && other.layer == swimmer.layer)
 				{
 					double turn = other.angle - swimmer.angle;
 					turn = turn < 0 ? turn + 2 * Math.PI : turn;
@@ -1474,7 +1618,7 @@ final class SeaSpotFish
 		{
 			boolean there = other.lane == lane;
 			boolean leaving = other.movingSince >= 0 && other.movedFrom == school.lanes[lane];
-			if (other == swimmer || !there && !leaving || layer(other.item) != layer(swimmer.item))
+			if (other == swimmer || !there && !leaving || other.layer != swimmer.layer)
 			{
 				continue;
 			}
@@ -1519,8 +1663,7 @@ final class SeaSpotFish
 	 */
 	private static double lengths(Swimmer one, Swimmer other)
 	{
-		return Math.max(GAP_LENGTHS.getOrDefault(one.item, FOLLOW_LENGTHS),
-			GAP_LENGTHS.getOrDefault(other.item, FOLLOW_LENGTHS));
+		return Math.max(one.gapLengths, other.gapLengths);
 	}
 
 	/**
@@ -1543,7 +1686,14 @@ final class SeaSpotFish
 		for (int i = 0; i < count; i++)
 		{
 			Swimmer swimmer = school.fish.get(i);
-			Look look = look(swimmer.item);
+			double out = swimmer.radius + swimmer.eased;
+			school.placeX[i] = out * Math.sin(swimmer.angle);
+			school.placeY[i] = out * Math.cos(swimmer.angle);
+		}
+		for (int i = 0; i < count; i++)
+		{
+			Swimmer swimmer = school.fish.get(i);
+			Look look = swimmer.look;
 			double roomRange = look.roomRange * school.gaps(swimmer.lane);
 			double room = look.room * school.gaps(swimmer.lane);
 			double out = swimmer.radius + swimmer.eased;
@@ -1552,13 +1702,12 @@ final class SeaSpotFish
 			{
 				Swimmer other = school.fish.get(j);
 				// Fish in different layers pay each other no mind.
-				if (layer(other.item) != layer(swimmer.item))
+				if (other.layer != swimmer.layer)
 				{
 					continue;
 				}
 				double otherOut = other.radius + other.eased;
-				double apart = Math.hypot(out * Math.sin(swimmer.angle) - otherOut * Math.sin(other.angle),
-					out * Math.cos(swimmer.angle) - otherOut * Math.cos(other.angle));
+				double apart = Math.hypot(school.placeX[i] - school.placeX[j], school.placeY[i] - school.placeY[j]);
 				if (j == i || apart >= roomRange)
 				{
 					continue;
@@ -1587,8 +1736,8 @@ final class SeaSpotFish
 	 */
 	private void place(School school, Swimmer swimmer, double speed, double outward, int cycle)
 	{
-		Look look = look(swimmer.item);
-		double out = swimmer.radius + sway(swimmer, cycle) + swimmer.eased;
+		Look look = swimmer.look;
+		double out = swimmer.radius + swimmer.swayed + swimmer.eased;
 		double sine = Math.sin(swimmer.angle);
 		double cosine = Math.cos(swimmer.angle);
 		// Going round this way it heads a quarter turn on from where it is, turned in or out as it moves lanes: 0
@@ -1612,9 +1761,10 @@ final class SeaSpotFish
 		swimmer.fish.setY(school.y + (int) Math.round(out * cosine)
 			+ (look.pivot * (Perspective.COSINE[swung] - Perspective.COSINE[heading]) >> 16));
 		// Higher is lower in the game's heights.
-		// A bob rises and settles back smoothly, then holds still at rest a while; -1 while holding.
+		// A bob rises and settles back smoothly, then holds still at rest a while; -1 while holding, as a fish put
+		// deeper than its kind always is, being hard to see moving down there.
 		int bobbing = (cycle + swimmer.bobPhase) % (swimmer.bob + swimmer.bobRest);
-		int bobAt = bobbing < swimmer.bob ? bobbing * 2048 / swimmer.bob : -1;
+		int bobAt = swimmer.deeper == 0 && bobbing < swimmer.bob ? bobbing * 2048 / swimmer.bob : -1;
 		int risen = bobAt < 0 ? 0 : look.rise * (65536 - Perspective.COSINE[bobAt]) >> 17;
 		// A dip goes down and back up smoothly, only ever deeper.
 		double through = swimmer.dippingSince < 0 ? 0
@@ -1629,16 +1779,22 @@ final class SeaSpotFish
 			- (swimmer.dippingSince >= 0 && look.dipDepth > 0 ? DIP_PITCH * Math.sin(2 * through) : 0));
 		int pitch = (int) Math.round(tip / PITCH_STEP);
 		// Arms that wiggle step through their frames at their kind's rate, a second being 50 client ticks.
-		int frame = RESHAPED.contains(swimmer.item) && look.wiggle > 0 && look.sweep > 0
+		int frame = swimmer.wiggles
 			? (int) ((long) (cycle + swimmer.wiggleStart) * look.wiggleRate / 50 % WIGGLE_FRAMES) : 0;
 		if (pitch != swimmer.pitch || frame != swimmer.frame)
 		{
-			Model model = model(swimmer.item, swimmer.size, pitch, swimmer.variant, frame);
+			// Only a model already made: one not made yet is put first in line, and the fish keeps the one it has
+			// until it is, a tick or two at most.
+			Model model = models.get(key(swimmer.item, swimmer.size, pitch, swimmer.variant, frame));
 			if (model != null)
 			{
 				swimmer.fish.setModel(model);
 				swimmer.pitch = pitch;
 				swimmer.frame = frame;
+			}
+			else
+			{
+				queue(swimmer.item, swimmer.size, pitch, swimmer.variant, frame, true);
 			}
 		}
 	}
@@ -1697,6 +1853,14 @@ final class SeaSpotFish
 	}
 
 	/**
+	 * Says whether the water is drawn see-through, for the shoals made from now on.
+	 */
+	void setSeeThrough(boolean seeThrough)
+	{
+		this.seeThrough = seeThrough;
+	}
+
+	/**
 	 * Takes every fish away and lets the models go, as when switched off.
 	 */
 	void clear()
@@ -1707,5 +1871,7 @@ final class SeaSpotFish
 		}
 		schools.clear();
 		models.clear();
+		toMake.clear();
+		queued.clear();
 	}
 }

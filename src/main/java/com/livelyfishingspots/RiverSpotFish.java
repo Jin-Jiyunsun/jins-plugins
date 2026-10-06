@@ -1164,14 +1164,15 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * Removes a spot's circle; its fish swim on. The shoal lingers in case the spot only moved.
+	 * Removes a spot's circle; its fish swim on. The shoal lingers in case the spot only moved. Returns whether it
+	 * was a spot here.
 	 */
-	void remove(NPC spot)
+	boolean remove(NPC spot)
 	{
 		Shoal shoal = shoalOf(spot);
 		if (shoal == null)
 		{
-			return;
+			return false;
 		}
 		Circle circle = shoal.circles.remove(spot);
 		for (Swimmer swimmer : shoal.fish)
@@ -1185,6 +1186,7 @@ final class RiverSpotFish
 		{
 			shoal.emptySince = client.getGameCycle();
 		}
+		return true;
 	}
 
 	/**
@@ -1618,9 +1620,11 @@ final class RiverSpotFish
 		// got, 0 at APPROACH_RANGE or further, 1 at its lane: it slows to circling speed as it nears.
 		double in = 0;
 		double near = 0;
+		// Worked out once a tick: how far a circling fish is from its lane.
+		double off = Double.MAX_VALUE;
 		if (swimmer.circle != null)
 		{
-			double off = offLane(river, swimmer);
+			off = offLane(river, swimmer);
 			in = Math.max(0, Math.min(1, 1 - (off - LANE_ARRIVED) / LANE_ARRIVING));
 			near = Math.max(0, Math.min(1, 1 - (off - LANE_ARRIVED) / APPROACH_RANGE));
 		}
@@ -1711,7 +1715,7 @@ final class RiverSpotFish
 		{
 			// Swimming in to the circle: curve round to it; once in its lane, follow it closely.
 			double from = Double.isNaN(swimmer.steer) ? swimmer.facing : swimmer.steer;
-			swimmer.steer = inLane(river, swimmer) ? toward
+			swimmer.steer = off <= LANE_ARRIVED ? toward
 				: from + Math.IEEEremainder(toward - from, 2 * Math.PI)
 				* Math.min(1, (JOIN_STEER_EASE + (STEER_EASE - JOIN_STEER_EASE) * near) * ticks);
 			toward = swimmer.steer;
@@ -1734,7 +1738,7 @@ final class RiverSpotFish
 		// Deep while swimming down the river, up at the surface to circle.
 		swimmer.depthNow += ((swimmer.circle != null ? 0 : swimmer.deep) - swimmer.depthNow) * Math.min(1, DEPTH_EASE * ticks);
 		// Caught fish shrink once in their lane.
-		if (swimmer.caught && swimmer.shrinkingSince < 0 && swimmer.circle != null && inLane(river, swimmer))
+		if (swimmer.caught && swimmer.shrinkingSince < 0 && swimmer.circle != null && off <= LANE_ARRIVED)
 		{
 			swimmer.shrinkingSince = cycle;
 		}

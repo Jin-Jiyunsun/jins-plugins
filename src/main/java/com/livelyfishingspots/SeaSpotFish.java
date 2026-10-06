@@ -649,14 +649,15 @@ final class SeaSpotFish
 	/**
 	 * Removes a spot's fish.
 	 */
-	void remove(NPC spot)
+	boolean remove(NPC spot)
 	{
 		School school = schools.remove(spot);
 		if (school == null)
 		{
-			return;
+			return false;
 		}
 		school.fish.forEach(swimmer -> swimmer.fish.setActive(false));
+		return true;
 	}
 
 	/**

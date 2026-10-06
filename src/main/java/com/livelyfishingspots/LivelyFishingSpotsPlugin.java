@@ -181,9 +181,12 @@ public class LivelyFishingSpotsPlugin extends Plugin
 	@Subscribe
 	public void onNpcDespawned(NpcDespawned event)
 	{
-		seaSpotFish.remove(event.getNpc());
-		riverSpotFish.remove(event.getNpc());
-		// Free the models of kinds no longer in sight.
+		// Only a fishing spot going can leave a kind out of sight; then free its models.
+		boolean sea = seaSpotFish.remove(event.getNpc());
+		if (!riverSpotFish.remove(event.getNpc()) && !sea)
+		{
+			return;
+		}
 		Set<Integer> swimming = new HashSet<>();
 		seaSpotFish.addKinds(swimming);
 		riverSpotFish.addKinds(swimming);

@@ -16,6 +16,17 @@ public interface LivelyFishingSpotsConfig extends Config
 	Set<String> REBUILD = Set.of("debugRiverCircleLanes", "debugRiverCircleLaneSpacing", "debugRiverCircleSize", "debugRiverCircleMost", "debugRiverTravelSpacing", "debugRiverSpread", "debugRiverCircleOffsetX",
 		"debugRiverCircleOffsetY");
 
+	@ConfigItem(
+		keyName = "riverSwimming",
+		name = "River fish",
+		description = "How river fish swim down the river:<br>Schooled in groups, or Random,<br>each on its own",
+		position = 0
+	)
+	default RiverSwimming riverSwimming()
+	{
+		return RiverSwimming.SCHOOLED;
+	}
+
 	@ConfigSection(
 		name = "Debug: rivers",
 		description = "Temporary settings for setting up the river spots",
@@ -450,5 +461,19 @@ public interface LivelyFishingSpotsConfig extends Config
 	default int debugRiverCircleClearance()
 	{
 		return 12;
+	}
+
+	@Range(min = 1, max = 3600)
+	@Units(Units.SECONDS)
+	@ConfigItem(
+		keyName = "debugRiverScatterSeconds",
+		name = "Scatter every",
+		description = "How long, on average, a big group<br>swims before it scatters",
+		section = debugRiverLanes,
+		position = 12
+	)
+	default int debugRiverScatterSeconds()
+	{
+		return 40;
 	}
 }

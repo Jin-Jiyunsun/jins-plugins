@@ -33,8 +33,9 @@ import net.runelite.api.gameval.ItemID;
 import net.runelite.api.gameval.NpcID;
 
 /**
- * Fish swimming down rivers along hand-picked routes. One fixed shoal per route; fish grow in at the
- * start and shrink away at the end. While the player fishes a spot, passing fish circle it.
+ * Fish swimming down rivers along hand-picked routes, in small groups that keep apart, line up and stay
+ * together (Couzin's zones). One fixed shoal per route; fish grow in at the start and shrink away at the
+ * end. While the player fishes a spot, passing fish circle it.
  */
 @Slf4j
 final class RiverSpotFish
@@ -119,6 +120,61 @@ final class RiverSpotFish
 	private static double WANDER = 0.25;
 	private static final int MIN_WANDER_CYCLES = 100;
 	private static final int MAX_WANDER_CYCLES = 300;
+	// Groups: fewest and most fish in one, the radius of the round group they hold places in (local units), and
+	// how much of each member's own speed variation it keeps.
+	private static final int GROUP_LEAST = 2;
+	private static final int GROUP_MOST = 6;
+	private static final double GROUP_RADIUS = 32;
+	private static final double GROUP_LENGTH = 2 * GROUP_RADIUS;
+	// Chance a group is flat, spread across the river and short along it; the rest are round, give or take.
+	private static final double FLAT_CHANCE = 0.2;
+	private static final int FLAT_MOST = 3;
+	private static final double OWN_SPEED = 0.15;
+	// Single fish on their own come on top of the groups, one per this many fish's spacing.
+	private static final double SOLO_EVERY = 2;
+	// Couzin's zones: steer away from any fish within REPEL_RANGE; line up with groupmates within ALIGN_RANGE;
+	// steer back towards the group's middle when further than COHESION_RANGE. Weights are against the pull
+	// towards the path, 1.
+	private static final double REPEL_RANGE = 26;
+	private static final double REPEL = 1.0;
+	// Groupmates keep their spacing more firmly, from further.
+	private static final double GROUP_REPEL_RANGE = 28;
+	private static final double GROUP_REPEL = 1.2;
+	// Share per client tick each repulsion eases towards what it should be: slower between groups, so they
+	// steer round each other smoothly, quicker within one, so it keeps its spacing.
+	private static final double REPEL_EASE = 0.08;
+	private static final double GROUP_REPEL_EASE = 0.12;
+	// With see-through water (117 HD), fish swimming down the river sit this much deeper, picked at random per fish
+	// (local units), rising to the surface to circle a spot; share per client tick they ease up or down.
+	private static final int DEEP_LEAST = 16;
+	private static final int DEEP_MOST = 64;
+	private static final double DEPTH_EASE = 0.03;
+	// Groups at least this big may scatter: chance per client tick, the burst's speed (as a share) and length
+	// (client ticks), and the push outwards from the group's middle.
+	private static final int SCATTER_LEAST = 5;
+	private static double SCATTER_RATE = 1.0 / 2000;
+	private static final double BURST_SPEED = 1.8;
+	private static final int BURST_CYCLES = 40;
+	private static final double SCATTER_PUSH = 2;
+	// Pushes fade at this share of the speed they build up at, so a pushed fish drifts back, not springs back.
+	private static final double REPEL_FADE = 0.5;
+	// Share per client tick a fish's intended heading eases towards where it wants to go, so shoves and recoveries
+	// curve smoothly.
+	private static final double STEER_EASE = 0.12;
+	// The same, slower, for a fish swimming in to join a circle, so it peels off the river in a curve.
+	private static final double JOIN_STEER_EASE = 0.02;
+	// And its turn rate when furthest, as a share of TURN_RATE, tightening to the full rate as it nears its lane.
+	private static final double JOIN_TURN = 0.4;
+	// A fish swimming in slows from river to circling speed over this far from its lane, local units.
+	private static final double APPROACH_RANGE = 256;
+	private static final double ALIGN_RANGE = 96;
+	private static final double ALIGN = 0.6;
+	private static final double COHESION_RANGE = 40;
+	private static final double COHESION = 0.5;
+	// Speed-up or slow-down, as a share, to keep level with the group's middle, reached this far (local units)
+	// ahead or behind it.
+	private static final double CATCH_UP = 0.3;
+	private static final double CATCH_UP_RANGE = 96;
 	// Client ticks to grow in or shrink away, and how many sizes that takes.
 	private static final int GROW_CYCLES = 50;
 	private static final int GROW_STEPS = 6;
@@ -272,6 +328,7 @@ final class RiverSpotFish
 		private final Map<NPC, Circle> circles = new HashMap<>();
 		private final List<Swimmer> fish = new ArrayList<>();
 		private int nextSpawn;
+		private int nextSolo;
 		private int movedAt;
 		// Client tick the last spot went, or -1.
 		private int emptySince = -1;
@@ -285,6 +342,58 @@ final class RiverSpotFish
 			this.kinds = kinds;
 			travelling = Math.max(1, (int) Math.round(river.length / TRAVEL_SPACING));
 			movedAt = cycle;
+		}
+	}
+
+	/**
+	 * A glide between random points from -1 to 1, each taking a random time.
+	 */
+	private static final class Glide
+	{
+		private double from;
+		private double to;
+		private int since;
+		private int takes = 1;
+
+		private Glide(ThreadLocalRandom random)
+		{
+			to = random.nextDouble(-1, 1);
+		}
+
+		private double at(int cycle)
+		{
+			double through = (cycle - since) / (double) takes;
+			if (through >= 1)
+			{
+				ThreadLocalRandom random = ThreadLocalRandom.current();
+				from = to;
+				to = random.nextDouble(-1, 1);
+				since = cycle;
+				takes = random.nextInt(MIN_WANDER_CYCLES, MAX_WANDER_CYCLES + 1);
+				through = 0;
+			}
+			double eased = through * through * (3 - 2 * through);
+			return from + (to - from) * eased;
+		}
+	}
+
+	/**
+	 * Fish swimming down the river together: their shared lane, wander, speed and surge.
+	 */
+	private static final class Group
+	{
+		private final double across;
+		private final double speed;
+		private final int surgePhase;
+		private final Glide wander;
+		private final List<Swimmer> members = new ArrayList<>();
+
+		private Group(ThreadLocalRandom random)
+		{
+			across = random.nextDouble(-1, 1) * SPREAD;
+			speed = (100 + random.nextInt(-SPEED_SPREAD, SPEED_SPREAD + 1)) / 100.0;
+			surgePhase = random.nextInt(SURGE_CYCLES);
+			wander = new Glide(random);
 		}
 	}
 
@@ -350,14 +459,28 @@ final class RiverSpotFish
 		private Circle passing;
 		private int passSide;
 		// Own speed share, lane across the river, surge phase.
-		private final double speed;
-		private final double across;
+		private double speed;
+		private double across;
+		// Client tick a scatter burst ends, or -1.
+		private int burstUntil = -1;
 		private final int surgePhase;
-		// Wander glide: from, to (-1 to 1), start tick, length.
-		private double wanderFrom;
-		private double wanderTo;
-		private int wanderSince;
-		private int wanderTakes = 1;
+		// Own wander, used when not in a group.
+		private final Glide wander;
+		// Its group, or null, and its place across the group, local units.
+		private Group group;
+		private double slot;
+		// And its place along the group, ahead when more than 0, local units.
+		private double slotAlong;
+		// Repulsion from nearby fish, eased: from other fish, and from groupmates.
+		private double repelX;
+		private double repelY;
+		private double groupRepelX;
+		private double groupRepelY;
+		// Extra depth while swimming down the river (0 without see-through water), and how deep it is now.
+		private int deep;
+		private double depthNow;
+		// Intended heading, eased; NaN until first set.
+		private double steer = Double.NaN;
 		private double swimming;
 		// Current offset across the path, local units, left positive.
 		private double lateral;
@@ -381,7 +504,7 @@ final class RiverSpotFish
 			look = FishModels.look(item);
 			speed = (100 + random.nextInt(-SPEED_SPREAD, SPEED_SPREAD + 1)) / 100.0;
 			across = random.nextDouble(-1, 1) * SPREAD;
-			wanderTo = random.nextDouble(-1, 1);
+			wander = new Glide(random);
 			surgePhase = random.nextInt(SURGE_CYCLES);
 			wag = random.nextDouble(2 * Math.PI);
 			bobClock = random.nextInt(BOB_CYCLES + BOB_REST_CYCLES);
@@ -396,6 +519,10 @@ final class RiverSpotFish
 	private int[] chosenFish;
 	// Routes picked in game while debugging, checked first.
 	private final List<WorldPoint[]> picked = new ArrayList<>();
+	// Whether fish swim in groups (schooled) or each on its own (random).
+	private boolean schooled = true;
+	// Whether the water is see-through (117 HD), so fish can swim deep.
+	private boolean seeThrough;
 	// Scratch for River.at.
 	private final double[] point = new double[6];
 
@@ -460,14 +587,21 @@ final class RiverSpotFish
 			shoal.travelling);
 		attach(shoal, spot, at);
 		shoals.add(shoal);
-		// Start with fish spread evenly along the river.
+		// Start with groups spread evenly along the river.
 		ThreadLocalRandom random = ThreadLocalRandom.current();
-		for (int n = 0; n < shoal.travelling; n++)
+		double gap = river.length / shoal.travelling;
+		for (double along = gap * random.nextDouble(); along < river.length - GROUP_LENGTH; )
 		{
-			double gap = river.length / shoal.travelling;
-			spawn(shoal, (n + 0.5 + random.nextDouble(-SPAWN_STRAY, SPAWN_STRAY)) * gap, false, cycle, random);
+			along += gap * spawnGroup(shoal, along, false, cycle, random) * (1 + random.nextDouble(-SPAWN_STRAY, SPAWN_STRAY));
+		}
+		// And single fish on their own between them, when schooled.
+		for (double along = gap * SOLO_EVERY * random.nextDouble(); schooled && along < river.length; )
+		{
+			spawn(shoal, along, false, cycle, random, null, 0);
+			along += gap * SOLO_EVERY * (1 + random.nextDouble(-SPAWN_STRAY, SPAWN_STRAY));
 		}
 		shoal.nextSpawn = cycle + spawnGap(random);
+		shoal.nextSolo = cycle + (int) (spawnGap(random) * SOLO_EVERY);
 	}
 
 	/**
@@ -945,9 +1079,39 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * Adds a fish at a distance along the path, growing in or full size.
+	 * Adds a group of fish from a distance along the path, growing in or full size. Returns how many.
 	 */
-	private void spawn(Shoal shoal, double s, boolean grow, int cycle, ThreadLocalRandom random)
+	private int spawnGroup(Shoal shoal, double s, boolean grow, int cycle, ThreadLocalRandom random)
+	{
+		if (!schooled)
+		{
+			spawn(shoal, s, grow, cycle, random, null, 0);
+			return 1;
+		}
+		Group group = new Group(random);
+		// Mostly round, a little oval either way; sometimes flat, and then small.
+		boolean flat = random.nextDouble() < FLAT_CHANCE;
+		int count = random.nextInt(GROUP_LEAST, (flat ? FLAT_MOST : GROUP_MOST) + 1);
+		double wide = flat ? 1.6 : random.nextDouble(0.85, 1.2);
+		double deep = flat ? 0.35 : random.nextDouble(0.85, 1.2);
+		for (int n = 0; n < count; n++)
+		{
+			// A random place in the group's oval.
+			double angle = random.nextDouble(2 * Math.PI);
+			double out = GROUP_RADIUS * Math.sqrt(random.nextDouble());
+			double ahead = out * Math.sin(angle) * deep;
+			double along = Math.max(0, Math.min(shoal.river.length, s + GROUP_RADIUS + ahead));
+			spawn(shoal, along, grow, cycle, random, group, out * Math.cos(angle) * wide);
+			group.members.get(group.members.size() - 1).slotAlong = ahead;
+		}
+		return count;
+	}
+
+	/**
+	 * Adds a fish at a distance along the path, growing in or full size, in a group (or null) at a place across it.
+	 */
+	private void spawn(Shoal shoal, double s, boolean grow, int cycle, ThreadLocalRandom random, Group group,
+		double slot)
 	{
 		int item = shoal.kinds[random.nextInt(shoal.kinds.length)];
 		int step = grow ? 1 : GROW_STEPS;
@@ -971,8 +1135,16 @@ final class RiverSpotFish
 				swimmer.decided.add(circle);
 			}
 		}
+		swimmer.group = group;
+		swimmer.slot = slot;
+		swimmer.deep = seeThrough ? random.nextInt(DEEP_LEAST, DEEP_MOST + 1) : 0;
+		swimmer.depthNow = swimmer.deep;
+		if (group != null)
+		{
+			group.members.add(swimmer);
+		}
 		shoal.river.at(s, point);
-		double offset = share(swimmer.across, point);
+		double offset = group != null ? share(group.across, point) + slot : share(swimmer.across, point);
 		swimmer.x = point[0] - point[3] * offset;
 		swimmer.y = point[1] + point[2] * offset;
 		swimmer.facing = Math.atan2(point[3], point[2]);
@@ -1012,6 +1184,62 @@ final class RiverSpotFish
 		if (shoal.circles.isEmpty())
 		{
 			shoal.emptySince = client.getGameCycle();
+		}
+	}
+
+	/**
+	 * Now and then breaks up a big group: each fish darts outwards from its middle at a burst of speed, then swims on
+	 * alone in a lane of its own.
+	 */
+	private static void scatter(Shoal shoal, int ticks, int cycle, ThreadLocalRandom random)
+	{
+		Set<Group> groups = new HashSet<>();
+		for (Swimmer swimmer : shoal.fish)
+		{
+			if (swimmer.group != null && swimmer.group.members.size() >= SCATTER_LEAST)
+			{
+				groups.add(swimmer.group);
+			}
+		}
+		for (Group group : groups)
+		{
+			if (random.nextDouble() >= ticks * SCATTER_RATE)
+			{
+				continue;
+			}
+			double middleX = 0;
+			double middleY = 0;
+			for (Swimmer member : group.members)
+			{
+				middleX += member.x / group.members.size();
+				middleY += member.y / group.members.size();
+			}
+			for (Swimmer member : new ArrayList<>(group.members))
+			{
+				ungroup(member);
+				member.across = random.nextDouble(-1, 1) * SPREAD;
+				member.burstUntil = cycle + BURST_CYCLES;
+				double dx = member.x - middleX;
+				double dy = member.y - middleY;
+				double apart = Math.hypot(dx, dy);
+				double angle = apart > 1 ? Math.atan2(dy, dx) : random.nextDouble(2 * Math.PI);
+				member.repelX += SCATTER_PUSH * Math.cos(angle);
+				member.repelY += SCATTER_PUSH * Math.sin(angle);
+			}
+		}
+	}
+
+	/**
+	 * Takes a fish out of its group, if any.
+	 */
+	private static void ungroup(Swimmer swimmer)
+	{
+		if (swimmer.group != null)
+		{
+			// Keep the speed it had in the group.
+			swimmer.speed = swimmer.group.speed * (1 + (swimmer.speed - 1) * OWN_SPEED);
+			swimmer.group.members.remove(swimmer);
+			swimmer.group = null;
 		}
 	}
 
@@ -1089,11 +1317,20 @@ final class RiverSpotFish
 			// Spawn on a steady timer so no gaps open, capped at twice the target.
 			if (cycle >= shoal.nextSpawn)
 			{
-				if (travelling < 2 * shoal.travelling)
+				int count = travelling < 3 * shoal.travelling ? spawnGroup(shoal, 0, true, cycle, random) : 1;
+				shoal.nextSpawn = Math.max(shoal.nextSpawn + spawnGap(random) * count, cycle);
+			}
+			if (schooled && cycle >= shoal.nextSolo)
+			{
+				if (travelling < 3 * shoal.travelling)
 				{
-					spawn(shoal, 0, true, cycle, random);
+					spawn(shoal, 0, true, cycle, random, null, 0);
 				}
-				shoal.nextSpawn = Math.max(shoal.nextSpawn + spawnGap(random), cycle);
+				shoal.nextSolo = Math.max(shoal.nextSolo + (int) (spawnGap(random) * SOLO_EVERY), cycle);
+			}
+			if (schooled)
+			{
+				scatter(shoal, ticks, cycle, random);
 			}
 			for (Iterator<Swimmer> it = shoal.fish.iterator(); it.hasNext(); )
 			{
@@ -1111,6 +1348,7 @@ final class RiverSpotFish
 							{
 								swimmer.circle = circle;
 								swimmer.circleLane = roomiestLane(shoal, circle);
+								ungroup(swimmer);
 								circling.merge(circle, 1, Integer::sum);
 							}
 						}
@@ -1135,6 +1373,7 @@ final class RiverSpotFish
 				}
 				if (!move(shoal, swimmer, ticks, cycle))
 				{
+					ungroup(swimmer);
 					swimmer.fish.setActive(false);
 					it.remove();
 				}
@@ -1370,21 +1609,57 @@ final class RiverSpotFish
 	{
 		River river = shoal.river;
 		Look look = swimmer.look;
-		double surging = Math.sin(2 * Math.PI * ((cycle + swimmer.surgePhase) % SURGE_CYCLES) / SURGE_CYCLES);
-		double want = (swimmer.circle != null ? CIRCLE_SPEED : TRAVEL_SPEED) * swimmer.speed * look.pace / 100.0
-			* (1 + SURGE * look.surge / 100.0 * surging);
+		Group group = swimmer.circle == null ? swimmer.group : null;
+		int surgePhase = group != null ? group.surgePhase : swimmer.surgePhase;
+		double surging = Math.sin(2 * Math.PI * ((cycle + surgePhase) % SURGE_CYCLES) / SURGE_CYCLES);
+		// In a group, mostly the group's speed, a little its own.
+		double own = group != null ? group.speed * (1 + (swimmer.speed - 1) * OWN_SPEED) : swimmer.speed;
+		// How far into its lane a circling fish is, 0 while still swimming in, 1 once there; and how near it has
+		// got, 0 at APPROACH_RANGE or further, 1 at its lane: it slows to circling speed as it nears.
+		double in = 0;
+		double near = 0;
 		if (swimmer.circle != null)
 		{
-			// Inner lanes are slower, but only once the fish has reached its lane.
+			double off = offLane(river, swimmer);
+			in = Math.max(0, Math.min(1, 1 - (off - LANE_ARRIVED) / LANE_ARRIVING));
+			near = Math.max(0, Math.min(1, 1 - (off - LANE_ARRIVED) / APPROACH_RANGE));
+		}
+		double base = swimmer.circle != null ? TRAVEL_SPEED + (CIRCLE_SPEED - TRAVEL_SPEED) * near : TRAVEL_SPEED;
+		double want = base * own * look.pace / 100.0 * (1 + SURGE * look.surge / 100.0 * surging);
+		if (swimmer.burstUntil >= 0)
+		{
+			want *= cycle < swimmer.burstUntil ? BURST_SPEED : 1;
+			swimmer.burstUntil = cycle < swimmer.burstUntil ? swimmer.burstUntil : -1;
+		}
+		// Keep to its place along the group: speed up behind it, ease off ahead.
+		double middleX = 0;
+		double middleY = 0;
+		double middleS = Double.NaN;
+		if (group != null && group.members.size() > 1)
+		{
+			middleS = 0;
+			for (Swimmer member : group.members)
+			{
+				middleS += member.s;
+				middleX += member.x;
+				middleY += member.y;
+			}
+			middleS /= group.members.size();
+			middleX /= group.members.size();
+			middleY /= group.members.size();
+			want *= 1 + CATCH_UP * Math.max(-1, Math.min(1, (middleS + swimmer.slotAlong - swimmer.s) / CATCH_UP_RANGE));
+		}
+		if (swimmer.circle != null)
+		{
+			// Inner lanes are slower, and gaps are evened out, but only once the fish has reached its lane.
 			Circle circle = swimmer.circle;
 			int lanes = circle.lanes.length;
 			double out = lanes > 1 ? swimmer.circleLane / (double) (lanes - 1) : 1;
-			double off = offLane(river, swimmer);
-			double in = Math.max(0, Math.min(1, 1 - (off - LANE_ARRIVED) / LANE_ARRIVING));
 			double lane = INNER_LANE_SPEED + (1 - INNER_LANE_SPEED) * out;
-			want *= (1 - in * (1 - lane)) * spacing(shoal, swimmer);
+			want *= (1 - in * (1 - lane)) * (1 + in * (spacing(shoal, swimmer) - 1));
 		}
-		swimmer.swimming += (want - swimmer.swimming) * Math.min(1, 0.05 * ticks);
+		// Circling fish change speed more gently once in their lane.
+		swimmer.swimming += (want - swimmer.swimming) * Math.min(1, (in >= 1 ? 0.02 : 0.05) * ticks);
 		double moved = swimmer.swimming * ticks;
 		double targetX;
 		double targetY;
@@ -1402,9 +1677,12 @@ final class RiverSpotFish
 			// Track progress from the real position, so bends don't make it turn back.
 			swimmer.s = Math.max(swimmer.s, river.nearest(swimmer.x, swimmer.y, swimmer.s - LOOK_AHEAD,
 				swimmer.s + moved + LOOK_AHEAD));
-			double wander = WANDER * wander(swimmer, cycle);
-			river.at(swimmer.s + LOOK_AHEAD, point);
-			double offset = share(Math.max(-1, Math.min(1, swimmer.across + wander)), point);
+			double wander = WANDER * (group != null ? group.wander : swimmer.wander).at(cycle);
+			// In a group, steer for its own place along it, so the group keeps its shape.
+			double aim = Double.isNaN(middleS) ? swimmer.s : Math.max(swimmer.s - LOOK_AHEAD, middleS + swimmer.slotAlong);
+			river.at(aim + LOOK_AHEAD, point);
+			double across = group != null ? group.across : swimmer.across;
+			double offset = share(Math.max(-1, Math.min(1, across + wander)), point) + (group != null ? swimmer.slot : 0);
 			// Keep outside any circle being passed.
 			pass(shoal, swimmer);
 			if (swimmer.passing != null)
@@ -1421,21 +1699,40 @@ final class RiverSpotFish
 		swimmer.targetX = targetX;
 		swimmer.targetY = targetY;
 		double toward = Math.atan2(targetY - swimmer.y, targetX - swimmer.x);
+		if (schooled && swimmer.circle == null)
+		{
+			toward = flock(shoal, swimmer, group, toward, middleX, middleY);
+			// Ease the intended heading, so being shoved and coming back both curve smoothly.
+			swimmer.steer = Double.isNaN(swimmer.steer) ? toward
+				: swimmer.steer + Math.IEEEremainder(toward - swimmer.steer, 2 * Math.PI) * Math.min(1, STEER_EASE * ticks);
+			toward = swimmer.steer;
+		}
+		else if (swimmer.circle != null)
+		{
+			// Swimming in to the circle: curve round to it; once in its lane, follow it closely.
+			double from = Double.isNaN(swimmer.steer) ? swimmer.facing : swimmer.steer;
+			swimmer.steer = inLane(river, swimmer) ? toward
+				: from + Math.IEEEremainder(toward - from, 2 * Math.PI)
+				* Math.min(1, (JOIN_STEER_EASE + (STEER_EASE - JOIN_STEER_EASE) * near) * ticks);
+			toward = swimmer.steer;
+		}
 		double turn = Math.IEEEremainder(toward - swimmer.facing, 2 * Math.PI);
-		double most = TURN_RATE * ticks;
+		// Swimming in, it turns gently while far and tightens as it nears.
+		double most = TURN_RATE * ticks * (swimmer.circle != null ? JOIN_TURN + (1 - JOIN_TURN) * near : 1);
 		swimmer.facing += Math.max(-most, Math.min(most, turn));
 		double x = swimmer.x + Math.cos(swimmer.facing) * moved;
 		double y = swimmer.y + Math.sin(swimmer.facing) * moved;
 		if (!river.isWater(x, y))
 		{
-			// Heading onto land: go straight for the target instead.
-			swimmer.facing = toward;
+			// Heading onto land: step straight for the target instead, still turning smoothly.
 			x = swimmer.x + Math.cos(toward) * moved;
 			y = swimmer.y + Math.sin(toward) * moved;
 		}
 		swimmer.x = x;
 		swimmer.y = y;
 		swimmer.wag = (swimmer.wag + 2 * Math.PI * moved / WAG_DISTANCE) % (2 * Math.PI);
+		// Deep while swimming down the river, up at the surface to circle.
+		swimmer.depthNow += ((swimmer.circle != null ? 0 : swimmer.deep) - swimmer.depthNow) * Math.min(1, DEPTH_EASE * ticks);
 		// Caught fish shrink once in their lane.
 		if (swimmer.caught && swimmer.shrinkingSince < 0 && swimmer.circle != null && inLane(river, swimmer))
 		{
@@ -1469,22 +1766,83 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * Wander position, -1 to 1, gliding between random points.
+	 * Eases a push towards what it should be: at the given share per tick while growing, slower while fading.
 	 */
-	private static double wander(Swimmer swimmer, int cycle)
+	private static double ease(double now, double wanted, double share)
 	{
-		double through = (cycle - swimmer.wanderSince) / (double) swimmer.wanderTakes;
-		if (through >= 1)
+		boolean fading = Math.abs(wanted) < Math.abs(now);
+		return now + (wanted - now) * (fading ? share * REPEL_FADE : share);
+	}
+
+	/**
+	 * Couzin's zones on top of the pull towards the path: away from any fish too close, lined up with groupmates
+	 * near enough, and back towards the group's middle when strayed. Returns the heading to steer for.
+	 */
+	private static double flock(Shoal shoal, Swimmer swimmer, Group group, double toward, double middleX,
+		double middleY)
+	{
+		double x = Math.cos(toward);
+		double y = Math.sin(toward);
+		double repelX = 0;
+		double repelY = 0;
+		double groupRepelX = 0;
+		double groupRepelY = 0;
+		for (Swimmer other : shoal.fish)
 		{
-			ThreadLocalRandom random = ThreadLocalRandom.current();
-			swimmer.wanderFrom = swimmer.wanderTo;
-			swimmer.wanderTo = random.nextDouble(-1, 1);
-			swimmer.wanderSince = cycle;
-			swimmer.wanderTakes = random.nextInt(MIN_WANDER_CYCLES, MAX_WANDER_CYCLES + 1);
-			through = 0;
+			boolean mate = group != null && other.group == group;
+			double range = mate ? GROUP_REPEL_RANGE : REPEL_RANGE;
+			double dx = swimmer.x - other.x;
+			double dy = swimmer.y - other.y;
+			double apartSquared = dx * dx + dy * dy;
+			if (other == swimmer || other.circle != null || apartSquared >= range * range || apartSquared < 0.01)
+			{
+				continue;
+			}
+			double apart = Math.sqrt(apartSquared);
+			double push = 1 - apart / range;
+			if (mate)
+			{
+				groupRepelX += dx / apart * push;
+				groupRepelY += dy / apart * push;
+			}
+			else
+			{
+				repelX += dx / apart * push;
+				repelY += dy / apart * push;
+			}
 		}
-		double eased = through * through * (3 - 2 * through);
-		return swimmer.wanderFrom + (swimmer.wanderTo - swimmer.wanderFrom) * eased;
+		swimmer.repelX = ease(swimmer.repelX, repelX, REPEL_EASE);
+		swimmer.repelY = ease(swimmer.repelY, repelY, REPEL_EASE);
+		swimmer.groupRepelX = ease(swimmer.groupRepelX, groupRepelX, GROUP_REPEL_EASE);
+		swimmer.groupRepelY = ease(swimmer.groupRepelY, groupRepelY, GROUP_REPEL_EASE);
+		x += REPEL * swimmer.repelX + GROUP_REPEL * swimmer.groupRepelX;
+		y += REPEL * swimmer.repelY + GROUP_REPEL * swimmer.groupRepelY;
+		if (group != null && group.members.size() > 1)
+		{
+			double alignX = 0;
+			double alignY = 0;
+			for (Swimmer member : group.members)
+			{
+				if (member != swimmer && Math.hypot(member.x - swimmer.x, member.y - swimmer.y) < ALIGN_RANGE)
+				{
+					alignX += Math.cos(member.facing);
+					alignY += Math.sin(member.facing);
+				}
+			}
+			double align = Math.hypot(alignX, alignY);
+			if (align > 0)
+			{
+				x += ALIGN * alignX / align;
+				y += ALIGN * alignY / align;
+			}
+			double apart = Math.hypot(middleX - swimmer.x, middleY - swimmer.y);
+			if (apart > COHESION_RANGE)
+			{
+				x += COHESION * (middleX - swimmer.x) / apart;
+				y += COHESION * (middleY - swimmer.y) / apart;
+			}
+		}
+		return Math.atan2(y, x);
 	}
 
 	/**
@@ -1513,7 +1871,7 @@ final class RiverSpotFish
 			: Math.PI * (cycle - swimmer.dippingSince) / Math.max(1, look.dipMillis / 20.0);
 		double dip = Math.sin(through);
 		swimmer.fish.setZ(waterHeight(x, y, shoal.plane) + look.sink + bobbed
-			+ (int) Math.round(look.dipDepth * dip * dip));
+			+ (int) Math.round(look.dipDepth * dip * dip + swimmer.depthNow));
 		// Tip with the bob and dip; only at full size.
 		double tip = look.tip / 100.0 * ((look.rise > 0 && bobAt >= 0 ? -BOB_PITCH * Perspective.SINE[bobAt] / 65536 : 0)
 			- (swimmer.dippingSince >= 0 && look.dipDepth > 0 ? DIP_PITCH * Math.sin(2 * through) : 0));
@@ -1577,6 +1935,22 @@ final class RiverSpotFish
 	/**
 	 * TEMPORARY: reads the tuning spinners.
 	 */
+	/**
+	 * Sets whether the water is see-through (117 HD), for fish made from now on.
+	 */
+	void setSeeThrough(boolean seeThrough)
+	{
+		this.seeThrough = seeThrough;
+	}
+
+	/**
+	 * Sets whether fish swim in groups or each on its own, for shoals made from now on.
+	 */
+	void setSchooled(boolean schooled)
+	{
+		this.schooled = schooled;
+	}
+
 	static void tune(LivelyFishingSpotsConfig config)
 	{
 		BOB_CYCLES = config.debugRiverBobCycles();
@@ -1587,6 +1961,7 @@ final class RiverSpotFish
 		CIRCLE_MOST = config.debugRiverCircleMost();
 		INNER_LANE_SPEED = config.debugRiverInnerLaneSpeed() / 100.0;
 		CIRCLE_CLEARANCE = config.debugRiverCircleClearance();
+		SCATTER_RATE = 1.0 / (config.debugRiverScatterSeconds() * 50.0);
 		CIRCLE_OFFSET_X = config.debugRiverCircleOffsetX();
 		CIRCLE_OFFSET_Y = config.debugRiverCircleOffsetY();
 		TRAVEL_SPACING = config.debugRiverTravelSpacing();

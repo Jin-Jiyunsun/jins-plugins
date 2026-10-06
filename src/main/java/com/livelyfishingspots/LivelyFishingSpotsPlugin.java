@@ -86,11 +86,13 @@ public class LivelyFishingSpotsPlugin extends Plugin
 		fishModels = new FishModels(client);
 		seaSpotFish = new SeaSpotFish(client, fishModels);
 		riverSpotFish = new RiverSpotFish(client, fishModels);
+		riverSpotFish.setSchooled(config.riverSwimming() == RiverSwimming.SCHOOLED);
 		RiverSpotFish.tune(config);
 		tuneLooks();
 		riverDebugOverlay.setRivers(riverSpotFish);
 		overlayManager.add(riverDebugOverlay);
 		seaSpotFish.setSeeThrough(seeThroughWater());
+		riverSpotFish.setSeeThrough(seeThroughWater());
 		clientThread.invoke(this::addSpotFish);
 		log.debug("Lively Fishing Spots started");
 	}
@@ -145,6 +147,7 @@ public class LivelyFishingSpotsPlugin extends Plugin
 			clientThread.invoke(() ->
 			{
 				seaSpotFish.setSeeThrough(on);
+				riverSpotFish.setSeeThrough(on);
 				seaSpotFish.clear();
 				riverSpotFish.clear();
 				fishModels.clear();
@@ -203,6 +206,16 @@ public class LivelyFishingSpotsPlugin extends Plugin
 			return;
 		}
 		String key = event.getKey();
+		if ("riverSwimming".equals(key))
+		{
+			clientThread.invoke(() ->
+			{
+				riverSpotFish.setSchooled(config.riverSwimming() == RiverSwimming.SCHOOLED);
+				riverSpotFish.clear();
+				addSpotFish();
+			});
+			return;
+		}
 		boolean look = key.startsWith("debugLook");
 		if (look || key.startsWith("debugRiver"))
 		{

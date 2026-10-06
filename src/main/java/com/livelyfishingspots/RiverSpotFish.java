@@ -19,6 +19,7 @@ import net.runelite.api.Client;
 import net.runelite.api.ItemContainer;
 import net.runelite.api.GameObject;
 import net.runelite.api.Model;
+import net.runelite.api.ModelData;
 import net.runelite.api.NPC;
 import net.runelite.api.Perspective;
 import net.runelite.api.Player;
@@ -225,6 +226,19 @@ final class RiverSpotFish
 	// Client ticks away from a circle after which fishing it again starts its wait afresh.
 	private static final int REFILL_BREAK = 50;
 
+	// Dead bodies: now and then one drifts down a river, on average every BODY_EVERY client ticks (tuning
+	// spinner), at a share of fish speed, sunk and bobbing (local units, client ticks), turning slowly (radians
+	// per client tick at most). Fish and bodies pass through each other.
+	// The model of object SAILING_CHARTING_GENERIC_CORPSE_LUMBRIDGE_BASIN; there are no gamevals for models.
+	private static final int BODY_MODEL = 57609;
+	private static double BODY_EVERY = 180 * 60 * 50;
+	private static final double BODY_SPEED = 0.45;
+	private static final int BODY_SINK = 22;
+	private static final int BODY_BOB = 4;
+	private static final int BODY_BOB_CYCLES = 200;
+	private static final double BODY_TURN = 0.002;
+	private static final double BODY_WANDER = 0.3;
+
 	// Wag, bob and tip, as at sea.
 	private static final int WAG = 20;
 	private static final double WAG_DISTANCE = 72;
@@ -354,6 +368,9 @@ final class RiverSpotFish
 		private int movedAt;
 		// Client tick the last spot went, or -1.
 		private int emptySince = -1;
+		// The body drifting down, or null, and when the next may come.
+		private Body body;
+		private int nextBody;
 		// Whether its fish are shrinking away, the shoal going once they have.
 		private boolean leaving;
 
@@ -472,6 +489,30 @@ final class RiverSpotFish
 		}
 	}
 
+	private static final class Body
+	{
+		private final RuneLiteObject object;
+		// Distance along the path, place across it (a share of the room), heading and its turn per client tick.
+		private double s;
+		private final double across;
+		private double facing;
+		private final double turn;
+		private final int bobPhase;
+		private int growingSince;
+		private int shrinkingSince = -1;
+		private int step;
+
+		private Body(RuneLiteObject object, int cycle, ThreadLocalRandom random)
+		{
+			this.object = object;
+			across = random.nextDouble(-BODY_WANDER, BODY_WANDER);
+			facing = random.nextDouble(2 * Math.PI);
+			turn = random.nextDouble(-BODY_TURN, BODY_TURN);
+			bobPhase = random.nextInt(BODY_BOB_CYCLES);
+			growingSince = cycle;
+		}
+	}
+
 	private static final class Swimmer
 	{
 		private final RuneLiteObject fish;
@@ -573,6 +614,8 @@ final class RiverSpotFish
 	// Reused each tick: spots that moved, and fish circling each circle.
 	private final List<NPC> moved = new ArrayList<>();
 	private final Map<Circle, Integer> circling = new HashMap<>();
+	// The body model at each grow step, made when first needed.
+	private final Model[] bodyModels = new Model[GROW_STEPS + 1];
 	// Scratch for offLane, used on the client thread only.
 	private static final double[] LANE = new double[2];
 	// Scratch for River.at.
@@ -656,6 +699,7 @@ final class RiverSpotFish
 		stagger = false;
 		shoal.nextSpawn = cycle + spawnGap(random);
 		shoal.nextSolo = cycle + (int) (spawnGap(random) * SOLO_EVERY);
+		shoal.nextBody = cycle + bodyGap(random);
 	}
 
 	/**
@@ -1468,6 +1512,10 @@ final class RiverSpotFish
 			}
 			if (shoal.leaving && shoal.fish.isEmpty())
 			{
+				if (shoal.body != null)
+				{
+					shoal.body.object.setActive(false);
+				}
 				all.remove();
 				continue;
 			}
@@ -1518,6 +1566,7 @@ final class RiverSpotFish
 				}
 				shoal.nextSolo = Math.max(shoal.nextSolo + (int) (spawnGap(random) * SOLO_EVERY), cycle);
 			}
+			drift(shoal, ticks, cycle, random);
 			if (!shoal.leaving && fishing != null)
 			{
 				refill(shoal, fishing, cycle, random);
@@ -1694,6 +1743,107 @@ final class RiverSpotFish
 		circlePoint(river, circle, circle.lanes[swimmer.circleLane], angle, lane);
 		double out = Math.hypot(lane[0] - circle.x, lane[1] - circle.y);
 		return Math.abs(Math.hypot(swimmer.x - circle.x, swimmer.y - circle.y) - out);
+	}
+
+	/**
+	 * Client ticks until the next body, at random around BODY_EVERY.
+	 */
+	private static int bodyGap(ThreadLocalRandom random)
+	{
+		return (int) Math.min(Integer.MAX_VALUE / 2, -BODY_EVERY * Math.log(1 - random.nextDouble()));
+	}
+
+	/**
+	 * Starts a body drifting down now and then, and moves it.
+	 */
+	private void drift(Shoal shoal, int ticks, int cycle, ThreadLocalRandom random)
+	{
+		Model model = shoal.body == null && !shoal.leaving && cycle >= shoal.nextBody ? bodyModel(1) : null;
+		if (model != null)
+		{
+			RuneLiteObject object = client.createRuneLiteObject();
+			object.setModel(model);
+			shoal.body = new Body(object, cycle, random);
+			shoal.body.step = 1;
+		}
+		if (shoal.body != null && !moveBody(shoal, shoal.body, ticks, cycle))
+		{
+			shoal.body.object.setActive(false);
+			shoal.body = null;
+			shoal.nextBody = cycle + bodyGap(random);
+		}
+	}
+
+	/**
+	 * Moves a body: growing in at the start, shrinking away at the end. Returns false once it has gone.
+	 */
+	private boolean moveBody(Shoal shoal, Body body, int ticks, int cycle)
+	{
+		River river = shoal.river;
+		body.s += TRAVEL_SPEED * BODY_SPEED * ticks;
+		body.facing += body.turn * ticks;
+		if (body.shrinkingSince < 0 && (shoal.leaving || body.s >= river.length - TRAVEL_SPEED * BODY_SPEED * GROW_CYCLES))
+		{
+			body.shrinkingSince = cycle;
+		}
+		int step = GROW_STEPS;
+		if (body.shrinkingSince >= 0)
+		{
+			double through = (cycle - body.shrinkingSince) / (double) GROW_CYCLES;
+			if (through >= 1)
+			{
+				return false;
+			}
+			step = Math.max(1, (int) Math.ceil(GROW_STEPS * (1 - through)));
+		}
+		else if (body.growingSince >= 0)
+		{
+			double through = (cycle - body.growingSince) / (double) GROW_CYCLES;
+			step = Math.max(1, Math.min(GROW_STEPS, (int) Math.ceil(GROW_STEPS * through)));
+			body.growingSince = through >= 1 ? -1 : body.growingSince;
+		}
+		if (step != body.step)
+		{
+			Model model = bodyModel(step);
+			if (model != null)
+			{
+				body.object.setModel(model);
+				body.step = step;
+			}
+		}
+		river.at(Math.min(body.s, river.length), point);
+		double offset = share(body.across, point);
+		int x = (int) Math.round(point[0] - point[3] * offset);
+		int y = (int) Math.round(point[1] + point[2] * offset);
+		body.object.setLocation(new LocalPoint(x, y, shoal.worldView), shoal.plane);
+		int bob = BODY_BOB * Perspective.SINE[(cycle + body.bobPhase) % BODY_BOB_CYCLES * 2048 / BODY_BOB_CYCLES] >> 16;
+		body.object.setZ(waterHeight(x, y, shoal.plane) + BODY_SINK + bob);
+		body.object.setOrientation((int) Math.round(body.facing * 2048 / (2 * Math.PI)) & 2047);
+		if (!body.object.isActive())
+		{
+			body.object.setActive(true);
+		}
+		return true;
+	}
+
+	/**
+	 * The body model at a grow step, lit as its object is.
+	 */
+	private Model bodyModel(int step)
+	{
+		if (bodyModels[step] == null)
+		{
+			ModelData data = client.loadModelData(BODY_MODEL);
+			if (data == null)
+			{
+				return null;
+			}
+			int scale = 128 * step / GROW_STEPS;
+			bodyModels[step] = data.shallowCopy().cloneVertices().scale(scale, scale, scale)
+				.light(ModelData.DEFAULT_AMBIENT + 15, ModelData.DEFAULT_CONTRAST + 625, ModelData.DEFAULT_X,
+					ModelData.DEFAULT_Y, ModelData.DEFAULT_Z);
+		}
+		return bodyModels[step];
 	}
 
 	/**
@@ -2269,6 +2419,7 @@ final class RiverSpotFish
 		WEIGHTS.put(ItemID.RAW_SALMON, config.debugRiverShareSalmon());
 		WEIGHTS.put(ItemID.RAW_PIKE, config.debugRiverSharePike());
 		RAINBOW_SHARE = config.debugRiverShareRainbow() / 100.0;
+		BODY_EVERY = config.debugRiverBodyMinutes() * 60 * 50.0;
 		BOB_CYCLES = config.debugRiverBobCycles();
 		BOB_REST_CYCLES = config.debugRiverBobRestCycles();
 		CIRCLE_LANES = config.debugRiverCircleLanes();
@@ -2303,6 +2454,10 @@ final class RiverSpotFish
 		for (Shoal shoal : shoals)
 		{
 			shoal.fish.forEach(swimmer -> swimmer.fish.setActive(false));
+			if (shoal.body != null)
+			{
+				shoal.body.object.setActive(false);
+			}
 		}
 		shoals.clear();
 	}

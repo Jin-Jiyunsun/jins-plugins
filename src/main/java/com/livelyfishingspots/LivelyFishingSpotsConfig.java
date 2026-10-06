@@ -14,7 +14,7 @@ public interface LivelyFishingSpotsConfig extends Config
 	String GROUP = "lively-fishing-spots";
 	// The keys of the river settings whose change starts the river shoals in sight again, while tuning.
 	Set<String> REBUILD = Set.of("debugRiverCircleLanes", "debugRiverCircleLaneSpacing", "debugRiverCircleSize", "debugRiverCircleMost", "debugRiverTravelSpacing", "debugRiverSpread", "debugRiverCircleOffsetX",
-		"debugRiverCircleOffsetY");
+		"debugRiverCircleOffsetY", "debugRiverBodyMinutes");
 
 	@ConfigItem(
 		keyName = "riverSwimming",
@@ -1222,5 +1222,19 @@ public interface LivelyFishingSpotsConfig extends Config
 	default int debugRiverShareRainbow()
 	{
 		return 7;
+	}
+
+	@Range(min = 1, max = 600)
+	@Units(Units.MINUTES)
+	@ConfigItem(
+		keyName = "debugRiverBodyMinutes",
+		name = "Dead body every",
+		description = "How long, on average, between<br>dead bodies drifting down a river",
+		section = debugRiverShares,
+		position = 4
+	)
+	default int debugRiverBodyMinutes()
+	{
+		return 180;
 	}
 }

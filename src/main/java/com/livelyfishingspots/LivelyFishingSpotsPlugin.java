@@ -89,6 +89,8 @@ public class LivelyFishingSpotsPlugin extends Plugin
 		seaSpotFish = new SeaSpotFish(client, fishModels);
 		riverSpotFish = new RiverSpotFish(client, fishModels);
 		riverSpotFish.setSchooled(config.riverSwimming() == RiverSwimming.SCHOOLED);
+		riverSpotFish.setAmount(config.riverFishAmount());
+		riverSpotFish.setDeep(config.riverDeep());
 		debugPick = config.debugPick();
 		RiverSpotFish.tune(config);
 		tuneLooks();
@@ -217,11 +219,13 @@ public class LivelyFishingSpotsPlugin extends Plugin
 			debugPick = config.debugPick();
 			return;
 		}
-		if ("riverSwimming".equals(key))
+		if ("riverSwimming".equals(key) || "riverFishAmount".equals(key) || "riverDeep".equals(key))
 		{
 			clientThread.invoke(() ->
 			{
 				riverSpotFish.setSchooled(config.riverSwimming() == RiverSwimming.SCHOOLED);
+				riverSpotFish.setAmount(config.riverFishAmount());
+				riverSpotFish.setDeep(config.riverDeep());
 				riverSpotFish.clear();
 				addSpotFish();
 			});
@@ -307,14 +311,16 @@ public class LivelyFishingSpotsPlugin extends Plugin
 	}
 
 	/**
-	 * TEMPORARY: sets the river fish's look from the spinners.
+	 * TEMPORARY: sets each river fish's look from the spinners.
 	 */
 	private void tuneLooks()
 	{
-		int[] values = {config.debugLookRiverSink(), config.debugLookRiverRise(), config.debugLookRiverRoll(), config.debugLookRiverTilt(), config.debugLookRiverSize(), config.debugLookRiverTurn(), config.debugLookRiverLightest(), config.debugLookRiverWag(), config.debugLookRiverTip(), config.debugLookRiverPace(), config.debugLookRiverSurge(), config.debugLookRiverTipPivot(), config.debugLookRiverPivot(), config.debugLookRiverDipEvery(), config.debugLookRiverDipDepth(), config.debugLookRiverDipMillis()};
-		fishModels.tuneLook(ItemID.RAW_TROUT, LOOK_PLACES, values);
-		fishModels.tuneLook(ItemID.RAW_SALMON, LOOK_PLACES, values);
-		fishModels.tuneLook(ItemID.RAW_PIKE, LOOK_PLACES, values);
+		fishModels.tuneLook(ItemID.RAW_TROUT, LOOK_PLACES, new int[]{config.debugLookTroutSink(), config.debugLookTroutRise(), config.debugLookTroutRoll(), config.debugLookTroutTilt(), config.debugLookTroutSize(), config.debugLookTroutTurn(), config.debugLookTroutLightest(), config.debugLookTroutWag(), config.debugLookTroutTip(), config.debugLookTroutPace(), config.debugLookTroutSurge(), config.debugLookTroutTipPivot(), config.debugLookTroutPivot(), config.debugLookTroutDipEvery(), config.debugLookTroutDipDepth(), config.debugLookTroutDipMillis()});
+		fishModels.tuneLook(ItemID.RAW_SALMON, LOOK_PLACES, new int[]{config.debugLookSalmonSink(), config.debugLookSalmonRise(), config.debugLookSalmonRoll(), config.debugLookSalmonTilt(), config.debugLookSalmonSize(), config.debugLookSalmonTurn(), config.debugLookSalmonLightest(), config.debugLookSalmonWag(), config.debugLookSalmonTip(), config.debugLookSalmonPace(), config.debugLookSalmonSurge(), config.debugLookSalmonTipPivot(), config.debugLookSalmonPivot(), config.debugLookSalmonDipEvery(), config.debugLookSalmonDipDepth(), config.debugLookSalmonDipMillis()});
+		fishModels.tuneLook(ItemID.RAW_PIKE, LOOK_PLACES, new int[]{config.debugLookPikeSink(), config.debugLookPikeRise(), config.debugLookPikeRoll(), config.debugLookPikeTilt(), config.debugLookPikeSize(), config.debugLookPikeTurn(), config.debugLookPikeLightest(), config.debugLookPikeWag(), config.debugLookPikeTip(), config.debugLookPikePace(), config.debugLookPikeSurge(), config.debugLookPikeTipPivot(), config.debugLookPikePivot(), config.debugLookPikeDipEvery(), config.debugLookPikeDipDepth(), config.debugLookPikeDipMillis()});
+		int[] rainbow = {config.debugLookRainbowSink(), config.debugLookRainbowRise(), config.debugLookRainbowRoll(), config.debugLookRainbowTilt(), config.debugLookRainbowSize(), config.debugLookRainbowTurn(), config.debugLookRainbowLightest(), config.debugLookRainbowWag(), config.debugLookRainbowTip(), config.debugLookRainbowPace(), config.debugLookRainbowSurge(), config.debugLookRainbowTipPivot(), config.debugLookRainbowPivot(), config.debugLookRainbowDipEvery(), config.debugLookRainbowDipDepth(), config.debugLookRainbowDipMillis()};
+		FishModels.oneSidedDepth = config.debugLookRainbowThickness();
+		fishModels.tuneLook(ItemID.HUNTING_RAW_FISH_SPECIAL, LOOK_PLACES, rainbow);
 	}
 
 	/**

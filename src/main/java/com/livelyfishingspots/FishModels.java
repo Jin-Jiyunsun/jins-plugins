@@ -35,6 +35,10 @@ final class FishModels
 	// Wiggle frames made for swept arms, and waves along an arm.
 	static final int WIGGLE_FRAMES = 4;
 	private static final double WIGGLE_WAVES = 1.2;
+	// Kinds whose item model is a relief facing one way, given a mirrored back.
+	private static final Set<Integer> ONE_SIDED = Set.of(ItemID.HUNTING_RAW_FISH_SPECIAL);
+	// TEMPORARY: their depth from the back, percent (tuning spinner).
+	static int oneSidedDepth = 50;
 	// Kinds that keep their untipped height when tipped, so a long nose doesn't lift out.
 	private static final Set<Integer> KEEP_HEIGHT = Set.of(ItemID.RAW_SWORDFISH);
 	// Hue range (of 64) and least saturation (of 8) counted as green, never lightened.
@@ -168,6 +172,9 @@ final class FishModels
 	private static final int[] RIVER_VALUES = {-90, 0, 30, 17, 8, 3, 16, -90, 0, 40, 60, 30, 20, 7, 1500,
 		50, 100, 100, 0, 100, 50, 0, 0, 100, 100, 0, 35, 0, 6, 0, 0, 50, 100, 0, 0, 100};
 	private static final Look RIVER = new Look(RIVER_VALUES);
+	// Rainbow fish: smaller, nearer the surface.
+	private static final Look RAINBOW = new Look(new int[]{-90, 0, 17, 17, 6, 3, 16, -90, 0, 40, 60, 30, 20, 7, 1500,
+		7, 100, 100, 0, 100, 50, 0, 0, 100, 100, 0, 35, 0, 6, 0, 0, 50, 100, 0, 0, 100});
 	// TEMPORARY: looks from the tuning spinners, by item, overriding LOOKS.
 	private static final Map<Integer, Look> TUNED = new HashMap<>();
 	private static final Map<Integer, Look> LOOKS = Map.ofEntries(
@@ -186,6 +193,7 @@ final class FishModels
 		Map.entry(ItemID.RAW_TROUT, RIVER),
 		Map.entry(ItemID.RAW_SALMON, RIVER),
 		Map.entry(ItemID.RAW_PIKE, RIVER),
+		Map.entry(ItemID.HUNTING_RAW_FISH_SPECIAL, RAINBOW),
 		Map.entry(ItemID.RAW_LOBSTER, new Look(new int[]{0, 0, 45, 17, 30, 5, 0, -90, 0, 40, 60, 30, 3, 0, 1500,
 			35, 0, 100, 0, 100, 50, 0, 0, 50, 50, 0, 35, 0, 6, 0, 0, 50, 100, 0, 0, 100})),
 		Map.entry(ItemID.RAW_TUNA, BASS),
@@ -215,8 +223,71 @@ final class FishModels
 	{
 		ItemComposition fish = client.getItemDefinition(item);
 		ModelData model = client.loadModelData(fish.getInventoryModel());
+		if (model != null && ONE_SIDED.contains(item))
+		{
+			model = bothSides(model);
+		}
 		return model == null ? null : recolor(model.cloneVertices().cloneColors(), fish.getColorToReplace(),
 			fish.getColorToReplaceWith());
+	}
+
+	/**
+	 * The model with a copy mirrored across its back, so a one-way relief shows from both sides.
+	 */
+	private ModelData bothSides(ModelData model)
+	{
+		int vertices = model.getVerticesCount();
+		int faces = model.getFaceCount();
+		float[][] ways = {model.getVerticesX(), model.getVerticesY(), model.getVerticesZ()};
+		int thin = 0;
+		for (int way = 1; way < 3; way++)
+		{
+			if (max(ways[way], vertices) - min(ways[way], vertices) < max(ways[thin], vertices) - min(ways[thin], vertices))
+			{
+				thin = way;
+			}
+		}
+		// Which way the faces look along the thin axis; the back is the other side.
+		int[] first = model.getFaceIndices1();
+		int[] second = model.getFaceIndices2();
+		int[] third = model.getFaceIndices3();
+		int next = (thin + 1) % 3;
+		int last = (thin + 2) % 3;
+		double facing = 0;
+		for (int face = 0; face < faces; face++)
+		{
+			int a = first[face];
+			int b = second[face];
+			int c = third[face];
+			facing += (ways[next][b] - ways[next][a]) * (ways[last][c] - ways[last][a])
+				- (ways[last][b] - ways[last][a]) * (ways[next][c] - ways[next][a]);
+		}
+		double back = facing < 0 ? max(ways[thin], vertices) : min(ways[thin], vertices);
+		ModelData front = model.shallowCopy().cloneVertices();
+		ModelData copy = model.shallowCopy().cloneVertices();
+		float[] squashed = axis(front, thin);
+		float[] mirrored = axis(copy, thin);
+		for (int vertex = 0; vertex < vertices; vertex++)
+		{
+			squashed[vertex] = (float) (back + (squashed[vertex] - back) * oneSidedDepth / 100.0);
+			mirrored[vertex] = (float) (2 * back - squashed[vertex]);
+		}
+		ModelData both = client.mergeModels(front, copy);
+		// Mirroring turns the copy's faces inside out; swap two corners to turn them back.
+		int[] bothSecond = both.getFaceIndices2();
+		int[] bothThird = both.getFaceIndices3();
+		for (int face = faces; face < both.getFaceCount(); face++)
+		{
+			int swap = bothSecond[face];
+			bothSecond[face] = bothThird[face];
+			bothThird[face] = swap;
+		}
+		return both;
+	}
+
+	private static float[] axis(ModelData model, int way)
+	{
+		return way == 0 ? model.getVerticesX() : way == 1 ? model.getVerticesY() : model.getVerticesZ();
 	}
 
 	/**

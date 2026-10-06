@@ -16,6 +16,7 @@ import java.util.concurrent.ThreadLocalRandom;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Actor;
 import net.runelite.api.Client;
+import net.runelite.api.ItemContainer;
 import net.runelite.api.GameObject;
 import net.runelite.api.Model;
 import net.runelite.api.NPC;
@@ -30,6 +31,7 @@ import net.runelite.api.Tile;
 import net.runelite.api.WorldView;
 import net.runelite.api.coords.LocalPoint;
 import net.runelite.api.coords.WorldPoint;
+import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.gameval.ItemID;
 import net.runelite.api.gameval.NpcID;
 
@@ -41,8 +43,13 @@ import net.runelite.api.gameval.NpcID;
 @Slf4j
 final class RiverSpotFish
 {
-	// Lure/bait spots: trout, salmon and pike.
-	private static final int[] LURE_FISH = {ItemID.RAW_TROUT, ItemID.RAW_SALMON, ItemID.RAW_PIKE};
+	// Rainbow fish: the odd group (never solo), drawn to a circle only by lure with stripy feathers.
+	private static final int RAINBOW = ItemID.HUNTING_RAW_FISH_SPECIAL;
+	// Share of groups that are rainbow fish, and the other kinds' weights against each other (tuning spinners).
+	private static double RAINBOW_SHARE = 0.07;
+	private static final Map<Integer, Integer> WEIGHTS = new HashMap<>();
+	// Lure/bait spots: trout, salmon, pike and the odd rainbow fish.
+	private static final int[] LURE_FISH = {ItemID.RAW_TROUT, ItemID.RAW_SALMON, ItemID.RAW_PIKE, RAINBOW};
 	// River spots with fish, by NPC id.
 	private static final Map<Integer, int[]> SPOT_FISH = Map.ofEntries(
 		Map.entry(NpcID._0_26_57_FRESHFISH, LURE_FISH),
@@ -77,9 +84,10 @@ final class RiverSpotFish
 	private static final Map<String, int[]> OPTION_FISH = Map.of(
 		"lure", new int[]{ItemID.RAW_TROUT, ItemID.RAW_SALMON},
 		"bait", new int[]{ItemID.RAW_PIKE});
+	private static final int[] STRIPY_FISH = {RAINBOW};
 	// Fishing XP per catch, to tell catches apart; within CATCH_XP_SPREAD counts (outfit bonuses).
 	private static final Map<Integer, Integer> CATCH_XP = Map.of(
-		ItemID.RAW_TROUT, 50, ItemID.RAW_PIKE, 60, ItemID.RAW_SALMON, 70);
+		ItemID.RAW_TROUT, 50, ItemID.RAW_PIKE, 60, ItemID.RAW_SALMON, 70, RAINBOW, 80);
 	private static final double CATCH_XP_SPREAD = 0.15;
 	// Hand-picked routes, upstream start then downstream end. Spots near none get no fish.
 	private static final List<WorldPoint[]> ROUTES = List.<WorldPoint[]>of(
@@ -155,8 +163,8 @@ final class RiverSpotFish
 	private static final double DEPTH_EASE = 0.03;
 	// Groups at least this big may scatter: chance per client tick, the burst's speed (as a share) and length
 	// (client ticks), and the push outwards from the group's middle.
-	private static final int SCATTER_LEAST = 5;
-	private static double SCATTER_RATE = 1.0 / 2000;
+	private static final int SCATTER_LEAST = 4;
+	private static double SCATTER_RATE = 1.0 / 2650;
 	private static final double BURST_SPEED = 1.8;
 	private static final int BURST_CYCLES = 40;
 	private static final double SCATTER_PUSH = 2;
@@ -208,6 +216,14 @@ final class RiverSpotFish
 	private static final int JOIN_CHANCE = 50;
 	private static final double JOIN_BEFORE = 256;
 	private static final double LEAVE_AFTER = 100;
+	// A fished circle not full and joined by no passing fish for this many client ticks gets filler fish, grown in
+	// this far upstream (local units) every so many client ticks at random, until one joins or it's full.
+	private static final int REFILL_AFTER = 500;
+	private static final double REFILL_BEHIND = 768;
+	private static final int REFILL_GAP_LEAST = 100;
+	private static final int REFILL_GAP_MOST = 300;
+	// Client ticks away from a circle after which fishing it again starts its wait afresh.
+	private static final int REFILL_BREAK = 50;
 
 	// Wag, bob and tip, as at sea.
 	private static final int WAG = 20;
@@ -341,14 +357,14 @@ final class RiverSpotFish
 		// Whether its fish are shrinking away, the shoal going once they have.
 		private boolean leaving;
 
-		private Shoal(WorldPoint[] route, int plane, int worldView, River river, int[] kinds, int cycle)
+		private Shoal(WorldPoint[] route, int plane, int worldView, River river, int[] kinds, int cycle, double spacing)
 		{
 			this.route = route;
 			this.plane = plane;
 			this.worldView = worldView;
 			this.river = river;
 			this.kinds = kinds;
-			travelling = Math.max(1, (int) Math.round(river.length / TRAVEL_SPACING));
+			travelling = Math.max(1, (int) Math.round(river.length / spacing));
 			movedAt = cycle;
 		}
 	}
@@ -428,6 +444,11 @@ final class RiverSpotFish
 		private final double across;
 		private final double roomLeft;
 		private final double roomRight;
+		// Client tick it started waiting for a passing fish while fished and not full, or -1; the next filler
+		// fish's client tick once it's waited too long, or -1; and the client tick it was last fished.
+		private int waitingSince = -1;
+		private int nextFill = -1;
+		private int fishedAt = -1;
 
 		private Circle(NPC npc, River river, double x, double y, int way)
 		{
@@ -468,6 +489,8 @@ final class RiverSpotFish
 		private Circle circle;
 		private int circleLane;
 		private final Set<Circle> decided = new HashSet<>();
+		// A filler fish's circle, joined when it gets there, or null.
+		private Circle bound;
 		// Circle being passed and side (1 left, -1 right), or null and 0.
 		private Circle passing;
 		private int passSide;
@@ -484,6 +507,8 @@ final class RiverSpotFish
 		private double slot;
 		// And its place along the group, ahead when more than 0, local units.
 		private double slotAlong;
+		// Its size against a trout's, scaling the room it keeps.
+		private double scale = 1;
 		// Its place in the shoal's byAlong this tick.
 		private int order;
 		// Repulsion from nearby fish, eased: from other fish, and from groupmates.
@@ -536,11 +561,15 @@ final class RiverSpotFish
 	private final List<WorldPoint[]> picked = new ArrayList<>();
 	// Whether fish swim in groups (schooled) or each on its own (random).
 	private boolean schooled = true;
+	// Fish spacing times this, from the player's River fish amount.
+	private double spacingScale = 1;
 	// While a shoal comes into sight: start each fish growing up to GROW_STAGGER client ticks late.
 	private boolean stagger;
 	private static final int GROW_STAGGER = 25;
 	// Whether the water is see-through (117 HD), so fish can swim deep.
 	private boolean seeThrough;
+	// Whether, with see-through water, fish swim deeper (player setting).
+	private boolean deep = true;
 	// Reused each tick: spots that moved, and fish circling each circle.
 	private final List<NPC> moved = new ArrayList<>();
 	private final Map<Circle, Integer> circling = new HashMap<>();
@@ -605,7 +634,7 @@ final class RiverSpotFish
 			}
 		}
 		int cycle = client.getGameCycle();
-		Shoal shoal = new Shoal(route, plane, view.getId(), river, kinds, cycle);
+		Shoal shoal = new Shoal(route, plane, view.getId(), river, kinds, cycle, TRAVEL_SPACING * spacingScale);
 		log.debug("River route {} to {}: path {} long, {} fish", route[0], route[1], (int) river.length,
 			shoal.travelling);
 		attach(shoal, spot, at);
@@ -621,7 +650,7 @@ final class RiverSpotFish
 		// And single fish on their own between them, when schooled.
 		for (double along = gap * SOLO_EVERY * random.nextDouble(); schooled && along < river.length; )
 		{
-			spawn(shoal, along, true, cycle, random, null, 0);
+			spawn(shoal, along, true, cycle, random, kind(shoal.kinds, random, false), null, 0);
 			along += gap * SOLO_EVERY * (1 + random.nextDouble(-SPAWN_STRAY, SPAWN_STRAY));
 		}
 		stagger = false;
@@ -1141,9 +1170,9 @@ final class RiverSpotFish
 	/**
 	 * Client ticks until the next spawn.
 	 */
-	private static int spawnGap(ThreadLocalRandom random)
+	private int spawnGap(ThreadLocalRandom random)
 	{
-		return (int) Math.max(1, TRAVEL_SPACING / TRAVEL_SPEED * (1 + random.nextDouble(-SPAWN_STRAY, SPAWN_STRAY)));
+		return (int) Math.max(1, TRAVEL_SPACING * spacingScale / TRAVEL_SPEED * (1 + random.nextDouble(-SPAWN_STRAY, SPAWN_STRAY)));
 	}
 
 	/**
@@ -1153,10 +1182,13 @@ final class RiverSpotFish
 	{
 		if (!schooled)
 		{
-			spawn(shoal, s, grow, cycle, random, null, 0);
+			spawn(shoal, s, grow, cycle, random, kind(shoal.kinds, random, rainbow(shoal.kinds, random)), null, 0);
 			return 1;
 		}
 		Group group = new Group(random);
+		// A rainbow fish group is all rainbow fish, and tighter, being smaller.
+		boolean rainbow = rainbow(shoal.kinds, random);
+		double radius = GROUP_RADIUS * scale(kind(shoal.kinds, random, rainbow));
 		// Mostly round, a little oval either way; sometimes flat, and then small.
 		boolean flat = random.nextDouble() < FLAT_CHANCE;
 		int count = random.nextInt(GROUP_LEAST, (flat ? FLAT_MOST : GROUP_MOST) + 1);
@@ -1166,27 +1198,98 @@ final class RiverSpotFish
 		{
 			// A random place in the group's oval.
 			double angle = random.nextDouble(2 * Math.PI);
-			double out = GROUP_RADIUS * Math.sqrt(random.nextDouble());
+			double out = radius * Math.sqrt(random.nextDouble());
 			double ahead = out * Math.sin(angle) * deep;
-			double along = Math.max(0, Math.min(shoal.river.length, s + GROUP_RADIUS + ahead));
-			spawn(shoal, along, grow, cycle, random, group, out * Math.cos(angle) * wide);
+			double along = Math.max(0, Math.min(shoal.river.length, s + radius + ahead));
+			spawn(shoal, along, grow, cycle, random, kind(shoal.kinds, random, rainbow), group,
+				out * Math.cos(angle) * wide);
 			group.members.get(group.members.size() - 1).slotAlong = ahead;
 		}
 		return count;
 	}
 
 	/**
-	 * Adds a fish at a distance along the path, growing in or full size, in a group (or null) at a place across it.
+	 * A kind's size against a trout's, 0.3 to 1, for how close it keeps to others.
 	 */
-	private void spawn(Shoal shoal, double s, boolean grow, int cycle, ThreadLocalRandom random, Group group,
-		double slot)
+	private static double scale(int item)
 	{
-		int item = shoal.kinds[random.nextInt(shoal.kinds.length)];
+		return Math.max(0.3, Math.min(1, FishModels.look(item).size / (double) FishModels.look(ItemID.RAW_TROUT).size));
+	}
+
+	/**
+	 * Whether a new group (or fish, swimming randomly) is rainbow fish, now and then.
+	 */
+	private static boolean rainbow(int[] kinds, ThreadLocalRandom random)
+	{
+		return has(kinds, RAINBOW) && random.nextDouble() < RAINBOW_SHARE;
+	}
+
+	/**
+	 * A rainbow fish, or a random other kind.
+	 */
+	private static int kind(int[] kinds, ThreadLocalRandom random, boolean rainbow)
+	{
+		if (rainbow)
+		{
+			return RAINBOW;
+		}
+		int total = 0;
+		for (int kind : kinds)
+		{
+			total += weight(kind);
+		}
+		if (total <= 0)
+		{
+			// All weights 0: evenly.
+			int item;
+			do
+			{
+				item = kinds[random.nextInt(kinds.length)];
+			}
+			while (item == RAINBOW);
+			return item;
+		}
+		int pick = random.nextInt(total);
+		for (int kind : kinds)
+		{
+			pick -= weight(kind);
+			if (pick < 0)
+			{
+				return kind;
+			}
+		}
+		return kinds[0];
+	}
+
+	private static int weight(int kind)
+	{
+		return kind == RAINBOW ? 0 : WEIGHTS.getOrDefault(kind, 1);
+	}
+
+	private static boolean has(int[] kinds, int item)
+	{
+		for (int kind : kinds)
+		{
+			if (kind == item)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Adds a fish at a distance along the path, growing in or full size, in a group (or null) at a place across it.
+	 * Returns it, or null if its model isn't made yet.
+	 */
+	private Swimmer spawn(Shoal shoal, double s, boolean grow, int cycle, ThreadLocalRandom random, int item,
+		Group group, double slot)
+	{
 		int step = grow ? 1 : GROW_STEPS;
 		Model model = models.model(item, size(item, step), 0, 0);
 		if (model == null)
 		{
-			return;
+			return null;
 		}
 		RuneLiteObject fish = client.createRuneLiteObject();
 		fish.setModel(model);
@@ -1205,7 +1308,8 @@ final class RiverSpotFish
 		}
 		swimmer.group = group;
 		swimmer.slot = slot;
-		swimmer.deep = seeThrough ? random.nextInt(DEEP_LEAST, DEEP_MOST + 1) : 0;
+		swimmer.scale = scale(item);
+		swimmer.deep = seeThrough && deep ? random.nextInt(DEEP_LEAST, DEEP_MOST + 1) : 0;
 		swimmer.depthNow = swimmer.deep;
 		if (group != null)
 		{
@@ -1221,6 +1325,7 @@ final class RiverSpotFish
 		place(shoal, swimmer, cycle);
 		fish.setActive(true);
 		shoal.fish.add(swimmer);
+		return swimmer;
 	}
 
 	/**
@@ -1389,6 +1494,11 @@ final class RiverSpotFish
 				{
 					circling.merge(swimmer.circle, 1, Integer::sum);
 				}
+				else if (swimmer.bound != null && swimmer.shrinkingSince < 0)
+				{
+					// Filler fish on the way hold their place.
+					circling.merge(swimmer.bound, 1, Integer::sum);
+				}
 				else if (swimmer.shrinkingSince < 0)
 				{
 					travelling++;
@@ -1404,9 +1514,13 @@ final class RiverSpotFish
 			{
 				if (travelling < 3 * shoal.travelling)
 				{
-					spawn(shoal, 0, true, cycle, random, null, 0);
+					spawn(shoal, 0, true, cycle, random, kind(shoal.kinds, random, false), null, 0);
 				}
 				shoal.nextSolo = Math.max(shoal.nextSolo + (int) (spawnGap(random) * SOLO_EVERY), cycle);
+			}
+			if (!shoal.leaving && fishing != null)
+			{
+				refill(shoal, fishing, cycle, random);
 			}
 			if (schooled)
 			{
@@ -1431,13 +1545,24 @@ final class RiverSpotFish
 							&& swimmer.s >= circle.along - JOIN_BEFORE)
 						{
 							swimmer.decided.add(circle);
-							if (fishing == circle.npc && drawn(circle, swimmer.item) && fewest(shoal, circle, swimmer.item)
+							if (swimmer.bound == circle)
+							{
+								swimmer.bound = null;
+								if (fishing == circle.npc && drawn(circle, swimmer.item))
+								{
+									swimmer.circle = circle;
+									swimmer.circleLane = roomiestLane(shoal, circle);
+								}
+							}
+							else if (fishing == circle.npc && drawn(circle, swimmer.item) && fewest(shoal, circle, swimmer.item)
 								&& circling.getOrDefault(circle, 0) < CIRCLE_MOST && random.nextInt(100) < JOIN_CHANCE)
 							{
 								swimmer.circle = circle;
 								swimmer.circleLane = roomiestLane(shoal, circle);
 								ungroup(swimmer);
 								circling.merge(circle, 1, Integer::sum);
+								circle.waitingSince = cycle;
+								circle.nextFill = -1;
 							}
 						}
 					}
@@ -1483,6 +1608,14 @@ final class RiverSpotFish
 		{
 			chosenSpot = spot;
 			chosenFish = option == null ? null : OPTION_FISH.get(option.toLowerCase());
+			if ("lure".equalsIgnoreCase(option))
+			{
+				ItemContainer inventory = client.getItemContainer(InventoryID.INV);
+				if (inventory != null && inventory.contains(ItemID.HUNTING_STRIPY_BIRD_FEATHER))
+				{
+					chosenFish = STRIPY_FISH;
+				}
+			}
 		}
 	}
 
@@ -1493,16 +1626,9 @@ final class RiverSpotFish
 	{
 		if (circle.npc != chosenSpot || chosenFish == null)
 		{
-			return true;
+			return item != RAINBOW;
 		}
-		for (int kind : chosenFish)
-		{
-			if (kind == item)
-			{
-				return true;
-			}
-		}
-		return false;
+		return has(chosenFish, item);
 	}
 
 	/**
@@ -1571,6 +1697,61 @@ final class RiverSpotFish
 	}
 
 	/**
+	 * Failsafe: sends filler fish from upstream to a fished circle that's waited too long for a passing one.
+	 */
+	private void refill(Shoal shoal, Actor fishing, int cycle, ThreadLocalRandom random)
+	{
+		for (Circle circle : shoal.circles.values())
+		{
+			if (fishing != circle.npc)
+			{
+				continue;
+			}
+			// Fished again after a break, or full: start waiting afresh.
+			boolean back = cycle - circle.fishedAt > REFILL_BREAK;
+			boolean full = circling.getOrDefault(circle, 0) >= CIRCLE_MOST;
+			circle.fishedAt = cycle;
+			if (back || full)
+			{
+				circle.waitingSince = -1;
+				circle.nextFill = -1;
+			}
+			if (full)
+			{
+				continue;
+			}
+			if (circle.waitingSince < 0)
+			{
+				circle.waitingSince = cycle;
+			}
+			if (cycle - circle.waitingSince < REFILL_AFTER || cycle < circle.nextFill)
+			{
+				continue;
+			}
+			circle.nextFill = cycle + random.nextInt(REFILL_GAP_LEAST, REFILL_GAP_MOST + 1);
+			List<Integer> wanted = new ArrayList<>();
+			for (int kind : shoal.kinds)
+			{
+				if (drawn(circle, kind) && fewest(shoal, circle, kind))
+				{
+					wanted.add(kind);
+				}
+			}
+			if (wanted.isEmpty())
+			{
+				continue;
+			}
+			double s = Math.max(0, circle.along - REFILL_BEHIND);
+			Swimmer swimmer = spawn(shoal, s, true, cycle, random, wanted.get(random.nextInt(wanted.size())), null, 0);
+			if (swimmer != null)
+			{
+				swimmer.bound = circle;
+				circling.merge(circle, 1, Integer::sum);
+			}
+		}
+	}
+
+	/**
 	 * Whether a kind is among the fewest circling, to keep the kinds even.
 	 */
 	private boolean fewest(Shoal shoal, Circle circle, int item)
@@ -1585,7 +1766,8 @@ final class RiverSpotFish
 		}
 		for (Swimmer swimmer : shoal.fish)
 		{
-			if (swimmer.circle == circle && swimmer.shrinkingSince < 0 && counts.containsKey(swimmer.item))
+			if ((swimmer.circle == circle || swimmer.bound == circle) && swimmer.shrinkingSince < 0
+				&& counts.containsKey(swimmer.item))
 			{
 				counts.merge(swimmer.item, 1, Integer::sum);
 			}
@@ -1904,7 +2086,7 @@ final class RiverSpotFish
 		{
 			Swimmer other = byAlong.get(n);
 			boolean mate = group != null && other.group == group;
-			double range = mate ? GROUP_REPEL_RANGE : REPEL_RANGE;
+			double range = (mate ? GROUP_REPEL_RANGE : REPEL_RANGE) * (swimmer.scale + other.scale) / 2;
 			double dx = swimmer.x - other.x;
 			double dy = swimmer.y - other.y;
 			double apartSquared = dx * dx + dy * dy;
@@ -1950,7 +2132,7 @@ final class RiverSpotFish
 				y += ALIGN * alignY / align;
 			}
 			double apart = Math.hypot(middleX - swimmer.x, middleY - swimmer.y);
-			if (apart > COHESION_RANGE)
+			if (apart > COHESION_RANGE * swimmer.scale)
 			{
 				x += COHESION * (middleX - swimmer.x) / apart;
 				y += COHESION * (middleY - swimmer.y) / apart;
@@ -2047,14 +2229,19 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * TEMPORARY: reads the tuning spinners.
-	 */
-	/**
 	 * Sets whether the water is see-through (117 HD), for fish made from now on.
 	 */
 	void setSeeThrough(boolean seeThrough)
 	{
 		this.seeThrough = seeThrough;
+	}
+
+	/**
+	 * Sets whether fish swim deeper with see-through water, for fish made from now on.
+	 */
+	void setDeep(boolean deep)
+	{
+		this.deep = deep;
 	}
 
 	/**
@@ -2065,8 +2252,23 @@ final class RiverSpotFish
 		this.schooled = schooled;
 	}
 
+	/**
+	 * Sets how many river fish there are, 25-100%: 50% gives twice the spacing, so half the fish.
+	 */
+	void setAmount(int percent)
+	{
+		spacingScale = 100.0 / percent;
+	}
+
+	/**
+	 * TEMPORARY: reads the tuning spinners.
+	 */
 	static void tune(LivelyFishingSpotsConfig config)
 	{
+		WEIGHTS.put(ItemID.RAW_TROUT, config.debugRiverShareTrout());
+		WEIGHTS.put(ItemID.RAW_SALMON, config.debugRiverShareSalmon());
+		WEIGHTS.put(ItemID.RAW_PIKE, config.debugRiverSharePike());
+		RAINBOW_SHARE = config.debugRiverShareRainbow() / 100.0;
 		BOB_CYCLES = config.debugRiverBobCycles();
 		BOB_REST_CYCLES = config.debugRiverBobRestCycles();
 		CIRCLE_LANES = config.debugRiverCircleLanes();

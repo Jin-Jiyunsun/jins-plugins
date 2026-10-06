@@ -172,9 +172,9 @@ final class FishModels
 	private static final int[] RIVER_VALUES = {-90, 0, 30, 17, 8, 3, 16, -90, 0, 40, 60, 30, 20, 7, 1500,
 		50, 100, 100, 0, 100, 50, 0, 0, 100, 100, 0, 35, 0, 6, 0, 0, 50, 100, 0, 0, 100};
 	private static final Look RIVER = new Look(RIVER_VALUES);
-	// Rainbow fish: smaller, nearer the surface.
-	private static final Look RAINBOW = new Look(new int[]{-90, 0, 17, 17, 6, 3, 16, -90, 0, 40, 60, 30, 20, 7, 1500,
-		7, 100, 100, 0, 100, 50, 0, 0, 100, 100, 0, 35, 0, 6, 0, 0, 50, 100, 0, 0, 100});
+	// Rainbow fish: smaller, nearer the surface, stretched longer.
+	private static final Look RAINBOW = new Look(new int[]{-90, 0, 17, 17, 6, 3, 16, -90, 0, 40, 60, 30, 3, 7, 1500,
+		7, 100, 100, 0, 150, 50, 0, 0, 100, 100, 0, 35, 0, 6, 0, 0, 50, 100, 0, 0, 100});
 	// TEMPORARY: looks from the tuning spinners, by item, overriding LOOKS.
 	private static final Map<Integer, Look> TUNED = new HashMap<>();
 	private static final Map<Integer, Look> LOOKS = Map.ofEntries(
@@ -890,7 +890,8 @@ final class FishModels
 			bendTail(model, look.joint2 / 100.0, look.bend2, FOLDED.contains(item),
 				look.tailSize / 100.0);
 		}
-		if (reshaped && look.stretch != 100)
+		// Any kind may be stretched along its length.
+		if (look.stretch != 100)
 		{
 			stretch(model, look.stretch / 100.0);
 		}

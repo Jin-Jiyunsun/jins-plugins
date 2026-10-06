@@ -13,8 +13,8 @@ public interface LivelyFishingSpotsConfig extends Config
 {
 	String GROUP = "lively-fishing-spots";
 	// The keys of the river settings whose change starts the river shoals in sight again, while tuning.
-	Set<String> REBUILD = Set.of("debugRiverCircleLanes", "debugRiverCircleLaneSpacing", "debugRiverCircleSize", "debugRiverCircleMost", "debugRiverTravelSpacing", "debugRiverSpread", "debugRiverCircleOffsetX",
-		"debugRiverCircleOffsetY", "debugRiverBodyMinutes");
+	Set<String> REBUILD = Set.of("debugRiverCircleLanes", "debugRiverCircleLaneSpacing", "debugRiverCircleSize", "debugRiverCircleMost", "debugRiverTravelSpacing", "debugRiverSpread", "debugRiverCircleOffset",
+		"debugRiverBodyMinutes", "debugRiverDeepLeast", "debugRiverDeepMost");
 
 	@ConfigItem(
 		keyName = "riverSwimming",
@@ -40,11 +40,24 @@ public interface LivelyFishingSpotsConfig extends Config
 		return 100;
 	}
 
+	@Range(min = 25, max = 100)
+	@Units(Units.PERCENT)
+	@ConfigItem(
+		keyName = "lakeFishAmount",
+		name = "Lake fish amount",
+		description = "How many fish swim in the lakes",
+		position = 2
+	)
+	default int lakeFishAmount()
+	{
+		return 100;
+	}
+
 	@ConfigItem(
 		keyName = "riverDeep",
 		name = "Deep river fish (117 HD)",
 		description = "With 117 HD's see-through water,<br>river fish swim deeper and rise<br>to circle the spot being fished",
-		position = 2
+		position = 3
 	)
 	default boolean riverDeep()
 	{
@@ -61,8 +74,8 @@ public interface LivelyFishingSpotsConfig extends Config
 
 	@ConfigItem(
 		keyName = "debugDraw",
-		name = "Show water and path",
-		description = "Draws the river's banks, the fish's path,<br>the circle and each spot's id",
+		name = "Show debug drawing",
+		description = "Draws the parts of the river and<br>lake debug ticked below",
 		section = debugRivers,
 		position = 0
 	)
@@ -72,11 +85,143 @@ public interface LivelyFishingSpotsConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = "debugPick",
-		name = "Pick routes",
-		description = "Adds River start and River end<br>to the right-click menu on tiles;<br>each route picked is logged",
+		keyName = "debugRiverDrawBanks",
+		name = "Draw banks",
+		description = "Orange dots along the banks",
 		section = debugRivers,
 		position = 1
+	)
+	default boolean debugRiverDrawBanks()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "debugRiverDrawPath",
+		name = "Draw path",
+		description = "Cyan line the river fish follow,<br>with a dot at its end",
+		section = debugRivers,
+		position = 2
+	)
+	default boolean debugRiverDrawPath()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "debugRiverDrawRoom",
+		name = "Draw room",
+		description = "Teal lines: the room either side<br>of a river's path",
+		section = debugRivers,
+		position = 3
+	)
+	default boolean debugRiverDrawRoom()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "debugRiverDrawSpawns",
+		name = "Draw lake spawns",
+		description = "Yellow rings at a lake's<br>spawn points",
+		section = debugRivers,
+		position = 4
+	)
+	default boolean debugRiverDrawSpawns()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "debugRiverDrawRings",
+		name = "Draw rings",
+		description = "Green lanes and middle of<br>each spot's ring",
+		section = debugRivers,
+		position = 5
+	)
+	default boolean debugRiverDrawRings()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "debugRiverDrawDecisions",
+		name = "Draw join lines",
+		description = "Rivers: magenta line where passing<br>fish decide to join a ring, and a<br>green line through the ring",
+		section = debugRivers,
+		position = 6
+	)
+	default boolean debugRiverDrawDecisions()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "debugRiverDrawKeepOut",
+		name = "Draw keep-out",
+		description = "Red ring that fish not joining<br>stay outside",
+		section = debugRivers,
+		position = 7
+	)
+	default boolean debugRiverDrawKeepOut()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "debugRiverDrawSpotIds",
+		name = "Draw spot ids",
+		description = "Each fishing spot's NPC id",
+		section = debugRivers,
+		position = 8
+	)
+	default boolean debugRiverDrawSpotIds()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "debugRiverDrawFish",
+		name = "Draw fish steering",
+		description = "Arrow from each fish to where it's<br>steering: white swimming, green<br>circling, yellow growing, red shrinking",
+		section = debugRivers,
+		position = 9
+	)
+	default boolean debugRiverDrawFish()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "debugRiverDrawSchools",
+		name = "Draw school headings",
+		description = "Blue arrow from each school's<br>middle along its heading",
+		section = debugRivers,
+		position = 10
+	)
+	default boolean debugRiverDrawSchools()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "debugRiverDrawBounds",
+		name = "Draw school bounds",
+		description = "Blue outline round each school",
+		section = debugRivers,
+		position = 11
+	)
+	default boolean debugRiverDrawBounds()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "debugPick",
+		name = "Pick routes",
+		description = "Adds River start, River end,<br>Lake spawn and Clear lake to the<br>right-click menu on tiles;<br>each pick is logged",
+		section = debugRivers,
+		position = 12
 	)
 	default boolean debugPick()
 	{
@@ -124,7 +269,7 @@ public interface LivelyFishingSpotsConfig extends Config
 	String debugLookRainbow = "debugLookRainbow";
 
 	@ConfigSection(
-		name = "Debug: river bobs",
+		name = "Debug: river bobs and depth",
 		description = "Temporary tuning of bob timing, all river fish",
 		position = 104,
 		closedByDefault = true
@@ -206,28 +351,15 @@ public interface LivelyFishingSpotsConfig extends Config
 
 	@Range(min = -512, max = 512)
 	@ConfigItem(
-		keyName = "debugRiverCircleOffsetX",
-		name = "Circle offset east",
-		description = "How far each circle's middle is<br>east of its spot, local units;<br>west when less than 0",
+		keyName = "debugRiverCircleOffset",
+		name = "Circle offset",
+		description = "How far each circle's middle is<br>from its spot, away from the<br>nearest bank, local units",
 		section = debugRiverLanes,
 		position = 5
 	)
-	default int debugRiverCircleOffsetX()
+	default int debugRiverCircleOffset()
 	{
-		return 26;
-	}
-
-	@Range(min = -512, max = 512)
-	@ConfigItem(
-		keyName = "debugRiverCircleOffsetY",
-		name = "Circle offset north",
-		description = "How far each circle's middle is<br>north of its spot, local units;<br>south when less than 0",
-		section = debugRiverLanes,
-		position = 6
-	)
-	default int debugRiverCircleOffsetY()
-	{
-		return 0;
+		return 28;
 	}
 
 	@Range(min = 1, max = 200)
@@ -308,7 +440,7 @@ public interface LivelyFishingSpotsConfig extends Config
 	)
 	default int debugRiverCircleClearance()
 	{
-		return 12;
+		return 11;
 	}
 
 	@Range(min = 1, max = 3600)
@@ -322,7 +454,7 @@ public interface LivelyFishingSpotsConfig extends Config
 	)
 	default int debugRiverScatterSeconds()
 	{
-		return 53;
+		return 66;
 	}
 
 	@Range(min = -500, max = 500)
@@ -504,7 +636,7 @@ public interface LivelyFishingSpotsConfig extends Config
 	)
 	default int debugLookRainbowDipEvery()
 	{
-		return 20;
+		return 3;
 	}
 
 	@Range(min = 0, max = 500)
@@ -1236,5 +1368,73 @@ public interface LivelyFishingSpotsConfig extends Config
 	default int debugRiverBodyMinutes()
 	{
 		return 180;
+	}
+
+	@Range(min = 10, max = 200)
+	@Units(Units.PERCENT)
+	@ConfigItem(
+		keyName = "debugRiverLakeSpeed",
+		name = "Lake speed",
+		description = "How fast lake fish cruise,<br>of river fish speed",
+		section = debugRiverLanes,
+		position = 13
+	)
+	default int debugRiverLakeSpeed()
+	{
+		return 65;
+	}
+
+	@Range(min = 0, max = 100)
+	@Units(Units.PERCENT)
+	@ConfigItem(
+		keyName = "debugRiverLakeJoinChance",
+		name = "Lake join chance",
+		description = "Chance a lake fish passing a spot<br>being fished joins its ring;<br>rivers stay at 50%",
+		section = debugRiverLanes,
+		position = 14
+	)
+	default int debugRiverLakeJoinChance()
+	{
+		return 70;
+	}
+
+	@Range(min = 0, max = 400)
+	@ConfigItem(
+		keyName = "debugRiverDeepLeast",
+		name = "Least depth (117 HD)",
+		description = "Shallowest a fish swims under the<br>surface with 117 HD, local units",
+		section = debugRiverDips,
+		position = 5
+	)
+	default int debugRiverDeepLeast()
+	{
+		return 12;
+	}
+
+	@Range(min = 0, max = 400)
+	@ConfigItem(
+		keyName = "debugRiverDeepMost",
+		name = "Most depth (117 HD)",
+		description = "Deepest a river fish swims under the<br>surface with 117 HD, local units;<br>each fish picks a depth between",
+		section = debugRiverDips,
+		position = 6
+	)
+	default int debugRiverDeepMost()
+	{
+		return 96;
+	}
+
+	@Range(min = 50, max = 200)
+	@Units(Units.PERCENT)
+	@ConfigItem(
+		keyName = "debugLookRainbowStretch",
+		name = "Fish stretch",
+		description = "How long the rainbow fish is,<br>of its model's length",
+		section = debugLookRainbow,
+		position = 31
+	)
+	default int debugLookRainbowStretch()
+	{
+		return 150;
 	}
 }

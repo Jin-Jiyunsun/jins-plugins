@@ -1,6 +1,7 @@
 package com.livelyfishingspots;
 
 import com.google.inject.Provides;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
 import javax.inject.Inject;
@@ -90,6 +91,7 @@ public class LivelyFishingSpotsPlugin extends Plugin
 		riverSpotFish = new RiverSpotFish(client, fishModels);
 		riverSpotFish.setSchooled(config.riverSwimming() == RiverSwimming.SCHOOLED);
 		riverSpotFish.setAmount(config.riverFishAmount());
+		riverSpotFish.setLakeAmount(config.lakeFishAmount());
 		riverSpotFish.setDeep(config.riverDeep());
 		debugPick = config.debugPick();
 		RiverSpotFish.tune(config);
@@ -219,12 +221,14 @@ public class LivelyFishingSpotsPlugin extends Plugin
 			debugPick = config.debugPick();
 			return;
 		}
-		if ("riverSwimming".equals(key) || "riverFishAmount".equals(key) || "riverDeep".equals(key))
+		if ("riverSwimming".equals(key) || "riverFishAmount".equals(key) || "lakeFishAmount".equals(key)
+			|| "riverDeep".equals(key))
 		{
 			clientThread.invoke(() ->
 			{
 				riverSpotFish.setSchooled(config.riverSwimming() == RiverSwimming.SCHOOLED);
 				riverSpotFish.setAmount(config.riverFishAmount());
+				riverSpotFish.setLakeAmount(config.lakeFishAmount());
 				riverSpotFish.setDeep(config.riverDeep());
 				riverSpotFish.clear();
 				addSpotFish();
@@ -279,7 +283,7 @@ public class LivelyFishingSpotsPlugin extends Plugin
 	}
 
 	/**
-	 * TEMPORARY: adds River start and River end to the tile menu. Local only; nothing is sent to the game.
+	 * TEMPORARY: adds River start, River end and Lake spawn to the tile menu. Local only; nothing is sent to the game.
 	 */
 	@Subscribe
 	public void onMenuEntryAdded(MenuEntryAdded event)
@@ -308,6 +312,22 @@ public class LivelyFishingSpotsPlugin extends Plugin
 		}
 		client.getMenu().createMenuEntry(-1).setOption("River start").setTarget("").setType(MenuAction.RUNELITE)
 			.onClick(entry -> pickedStart = at);
+		client.getMenu().createMenuEntry(-1).setOption("Clear lake").setTarget("").setType(MenuAction.RUNELITE)
+			.onClick(entry ->
+			{
+				if (riverSpotFish.clearPickedLake())
+				{
+					riverSpotFish.clear();
+					addSpotFish();
+				}
+			});
+		client.getMenu().createMenuEntry(-1).setOption("Lake spawn").setTarget("").setType(MenuAction.RUNELITE)
+			.onClick(entry ->
+			{
+				riverSpotFish.pickLake(at);
+				riverSpotFish.clear();
+				addSpotFish();
+			});
 	}
 
 	/**
@@ -320,7 +340,12 @@ public class LivelyFishingSpotsPlugin extends Plugin
 		fishModels.tuneLook(ItemID.RAW_PIKE, LOOK_PLACES, new int[]{config.debugLookPikeSink(), config.debugLookPikeRise(), config.debugLookPikeRoll(), config.debugLookPikeTilt(), config.debugLookPikeSize(), config.debugLookPikeTurn(), config.debugLookPikeLightest(), config.debugLookPikeWag(), config.debugLookPikeTip(), config.debugLookPikePace(), config.debugLookPikeSurge(), config.debugLookPikeTipPivot(), config.debugLookPikePivot(), config.debugLookPikeDipEvery(), config.debugLookPikeDipDepth(), config.debugLookPikeDipMillis()});
 		int[] rainbow = {config.debugLookRainbowSink(), config.debugLookRainbowRise(), config.debugLookRainbowRoll(), config.debugLookRainbowTilt(), config.debugLookRainbowSize(), config.debugLookRainbowTurn(), config.debugLookRainbowLightest(), config.debugLookRainbowWag(), config.debugLookRainbowTip(), config.debugLookRainbowPace(), config.debugLookRainbowSurge(), config.debugLookRainbowTipPivot(), config.debugLookRainbowPivot(), config.debugLookRainbowDipEvery(), config.debugLookRainbowDipDepth(), config.debugLookRainbowDipMillis()};
 		FishModels.oneSidedDepth = config.debugLookRainbowThickness();
-		fishModels.tuneLook(ItemID.HUNTING_RAW_FISH_SPECIAL, LOOK_PLACES, rainbow);
+		// Rainbow fish are stretched too, look place 19.
+		int[] places = Arrays.copyOf(LOOK_PLACES, LOOK_PLACES.length + 1);
+		places[LOOK_PLACES.length] = 19;
+		int[] values = Arrays.copyOf(rainbow, rainbow.length + 1);
+		values[rainbow.length] = config.debugLookRainbowStretch();
+		fishModels.tuneLook(ItemID.HUNTING_RAW_FISH_SPECIAL, places, values);
 	}
 
 	/**

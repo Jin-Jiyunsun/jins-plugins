@@ -139,6 +139,9 @@ final class RiverSpotFish
 	private static final double REPEL = 1.0;
 	// Groupmates keep their spacing more firmly, from further.
 	private static final double GROUP_REPEL_RANGE = 28;
+	// How far along the river either side a fish looks for others to keep from: the widest repel range, plus room
+	// for bends, where fish can be nearer than their distance along the path.
+	private static final double REPEL_WINDOW = Math.max(REPEL_RANGE, GROUP_REPEL_RANGE) + 32;
 	private static final double GROUP_REPEL = 1.2;
 	// Share per client tick each repulsion eases towards what it should be: slower between groups, so they
 	// steer round each other smoothly, quicker within one, so it keeps its spacing.
@@ -327,11 +330,15 @@ final class RiverSpotFish
 		private final int travelling;
 		private final Map<NPC, Circle> circles = new HashMap<>();
 		private final List<Swimmer> fish = new ArrayList<>();
+		// Its fish in order down the river, rebuilt each tick, so each looks only at those near it along it.
+		private final List<Swimmer> byAlong = new ArrayList<>();
 		private int nextSpawn;
 		private int nextSolo;
 		private int movedAt;
 		// Client tick the last spot went, or -1.
 		private int emptySince = -1;
+		// Whether its fish are shrinking away, the shoal going once they have.
+		private boolean leaving;
 
 		private Shoal(WorldPoint[] route, int plane, int worldView, River river, int[] kinds, int cycle)
 		{
@@ -387,6 +394,11 @@ final class RiverSpotFish
 		private final int surgePhase;
 		private final Glide wander;
 		private final List<Swimmer> members = new ArrayList<>();
+		// Its middle, along the path and in the scene, worked out once a tick.
+		private double middleS;
+		private double middleX;
+		private double middleY;
+		private int middleAt = -1;
 
 		private Group(ThreadLocalRandom random)
 		{
@@ -471,6 +483,8 @@ final class RiverSpotFish
 		private double slot;
 		// And its place along the group, ahead when more than 0, local units.
 		private double slotAlong;
+		// Its place in the shoal's byAlong this tick.
+		private int order;
 		// Repulsion from nearby fish, eased: from other fish, and from groupmates.
 		private double repelX;
 		private double repelY;
@@ -521,8 +535,16 @@ final class RiverSpotFish
 	private final List<WorldPoint[]> picked = new ArrayList<>();
 	// Whether fish swim in groups (schooled) or each on its own (random).
 	private boolean schooled = true;
+	// While a shoal comes into sight: start each fish growing up to GROW_STAGGER client ticks late.
+	private boolean stagger;
+	private static final int GROW_STAGGER = 25;
 	// Whether the water is see-through (117 HD), so fish can swim deep.
 	private boolean seeThrough;
+	// Reused each tick: spots that moved, and fish circling each circle.
+	private final List<NPC> moved = new ArrayList<>();
+	private final Map<Circle, Integer> circling = new HashMap<>();
+	// Scratch for offLane, used on the client thread only.
+	private static final double[] LANE = new double[2];
 	// Scratch for River.at.
 	private final double[] point = new double[6];
 
@@ -587,19 +609,21 @@ final class RiverSpotFish
 			shoal.travelling);
 		attach(shoal, spot, at);
 		shoals.add(shoal);
-		// Start with groups spread evenly along the river.
+		// Start with groups spread evenly along the river, growing in, a little out of step.
+		stagger = true;
 		ThreadLocalRandom random = ThreadLocalRandom.current();
 		double gap = river.length / shoal.travelling;
 		for (double along = gap * random.nextDouble(); along < river.length - GROUP_LENGTH; )
 		{
-			along += gap * spawnGroup(shoal, along, false, cycle, random) * (1 + random.nextDouble(-SPAWN_STRAY, SPAWN_STRAY));
+			along += gap * spawnGroup(shoal, along, true, cycle, random) * (1 + random.nextDouble(-SPAWN_STRAY, SPAWN_STRAY));
 		}
 		// And single fish on their own between them, when schooled.
 		for (double along = gap * SOLO_EVERY * random.nextDouble(); schooled && along < river.length; )
 		{
-			spawn(shoal, along, false, cycle, random, null, 0);
+			spawn(shoal, along, true, cycle, random, null, 0);
 			along += gap * SOLO_EVERY * (1 + random.nextDouble(-SPAWN_STRAY, SPAWN_STRAY));
 		}
+		stagger = false;
 		shoal.nextSpawn = cycle + spawnGap(random);
 		shoal.nextSolo = cycle + (int) (spawnGap(random) * SOLO_EVERY);
 	}
@@ -659,6 +683,7 @@ final class RiverSpotFish
 			ThreadLocalRandom.current().nextBoolean() ? 1 : -1);
 		shoal.circles.put(spot, circle);
 		shoal.emptySince = -1;
+		shoal.leaving = false;
 		// Fish already past the decision point skip it.
 		for (Swimmer swimmer : shoal.fish)
 		{
@@ -1126,7 +1151,7 @@ final class RiverSpotFish
 		swimmer.step = step;
 		swimmer.wantStep = step;
 		swimmer.s = s;
-		swimmer.growingSince = grow ? cycle : -1;
+		swimmer.growingSince = grow ? cycle + (stagger ? random.nextInt(GROW_STAGGER + 1) : 0) : -1;
 		// Skip circles it's already past.
 		for (Circle circle : shoal.circles.values())
 		{
@@ -1278,14 +1303,23 @@ final class RiverSpotFish
 		ThreadLocalRandom random = ThreadLocalRandom.current();
 		Player player = client.getLocalPlayer();
 		Actor fishing = player == null ? null : player.getInteracting();
-		List<NPC> moved = new ArrayList<>();
+		List<NPC> moved = this.moved;
+		moved.clear();
 		for (Iterator<Shoal> all = shoals.iterator(); all.hasNext(); )
 		{
 			Shoal shoal = all.next();
 			// Drop shoals whose spots have been gone a while.
-			if (shoal.emptySince >= 0 && cycle - shoal.emptySince > LINGER)
+			// Shoals whose spots have been gone a while shrink their fish away, then go.
+			if (shoal.emptySince >= 0 && cycle - shoal.emptySince > LINGER && !shoal.leaving)
 			{
-				shoal.fish.forEach(swimmer -> swimmer.fish.setActive(false));
+				shoal.leaving = true;
+				for (Swimmer swimmer : shoal.fish)
+				{
+					swimmer.shrinkingSince = swimmer.shrinkingSince >= 0 ? swimmer.shrinkingSince : cycle;
+				}
+			}
+			if (shoal.leaving && shoal.fish.isEmpty())
+			{
 				all.remove();
 				continue;
 			}
@@ -1304,7 +1338,8 @@ final class RiverSpotFish
 				continue;
 			}
 			int travelling = 0;
-			Map<Circle, Integer> circling = new HashMap<>();
+			Map<Circle, Integer> circling = this.circling;
+			circling.clear();
 			for (Swimmer swimmer : shoal.fish)
 			{
 				if (swimmer.circle != null && swimmer.shrinkingSince < 0)
@@ -1317,12 +1352,12 @@ final class RiverSpotFish
 				}
 			}
 			// Spawn on a steady timer so no gaps open, capped at twice the target.
-			if (cycle >= shoal.nextSpawn)
+			if (!shoal.leaving && cycle >= shoal.nextSpawn)
 			{
 				int count = travelling < 3 * shoal.travelling ? spawnGroup(shoal, 0, true, cycle, random) : 1;
 				shoal.nextSpawn = Math.max(shoal.nextSpawn + spawnGap(random) * count, cycle);
 			}
-			if (schooled && cycle >= shoal.nextSolo)
+			if (!shoal.leaving && schooled && cycle >= shoal.nextSolo)
 			{
 				if (travelling < 3 * shoal.travelling)
 				{
@@ -1333,6 +1368,14 @@ final class RiverSpotFish
 			if (schooled)
 			{
 				scatter(shoal, ticks, cycle, random);
+				// Order the fish down the river; they barely change order, so this is quick.
+				shoal.byAlong.clear();
+				shoal.byAlong.addAll(shoal.fish);
+				shoal.byAlong.sort((a, b) -> Double.compare(a.s, b.s));
+				for (int n = 0; n < shoal.byAlong.size(); n++)
+				{
+					shoal.byAlong.get(n).order = n;
+				}
 			}
 			for (Iterator<Swimmer> it = shoal.fish.iterator(); it.hasNext(); )
 			{
@@ -1478,7 +1521,7 @@ final class RiverSpotFish
 	{
 		Circle circle = swimmer.circle;
 		double angle = Math.atan2(swimmer.y - circle.y, swimmer.x - circle.x);
-		double[] lane = new double[2];
+		double[] lane = LANE;
 		circlePoint(river, circle, circle.lanes[swimmer.circleLane], angle, lane);
 		double out = Math.hypot(lane[0] - circle.x, lane[1] - circle.y);
 		return Math.abs(Math.hypot(swimmer.x - circle.x, swimmer.y - circle.y) - out);
@@ -1641,16 +1684,26 @@ final class RiverSpotFish
 		double middleS = Double.NaN;
 		if (group != null && group.members.size() > 1)
 		{
-			middleS = 0;
-			for (Swimmer member : group.members)
+			// Once a tick for the whole group.
+			if (group.middleAt != cycle)
 			{
-				middleS += member.s;
-				middleX += member.x;
-				middleY += member.y;
+				group.middleAt = cycle;
+				group.middleS = 0;
+				group.middleX = 0;
+				group.middleY = 0;
+				for (Swimmer member : group.members)
+				{
+					group.middleS += member.s;
+					group.middleX += member.x;
+					group.middleY += member.y;
+				}
+				group.middleS /= group.members.size();
+				group.middleX /= group.members.size();
+				group.middleY /= group.members.size();
 			}
-			middleS /= group.members.size();
-			middleX /= group.members.size();
-			middleY /= group.members.size();
+			middleS = group.middleS;
+			middleX = group.middleX;
+			middleY = group.middleY;
 			want *= 1 + CATCH_UP * Math.max(-1, Math.min(1, (middleS + swimmer.slotAlong - swimmer.s) / CATCH_UP_RANGE));
 		}
 		if (swimmer.circle != null)
@@ -1791,8 +1844,22 @@ final class RiverSpotFish
 		double repelY = 0;
 		double groupRepelX = 0;
 		double groupRepelY = 0;
-		for (Swimmer other : shoal.fish)
+		// Only fish near it along the river: walk out both ways from its place in the order.
+		List<Swimmer> byAlong = shoal.byAlong;
+		int at = swimmer.order < byAlong.size() && byAlong.get(swimmer.order) == swimmer ? swimmer.order : -1;
+		int first = at;
+		int last = at;
+		while (at >= 0 && first > 0 && swimmer.s - byAlong.get(first - 1).s <= REPEL_WINDOW)
 		{
+			first--;
+		}
+		while (at >= 0 && last < byAlong.size() - 1 && byAlong.get(last + 1).s - swimmer.s <= REPEL_WINDOW)
+		{
+			last++;
+		}
+		for (int n = first; at >= 0 && n <= last; n++)
+		{
+			Swimmer other = byAlong.get(n);
 			boolean mate = group != null && other.group == group;
 			double range = mate ? GROUP_REPEL_RANGE : REPEL_RANGE;
 			double dx = swimmer.x - other.x;

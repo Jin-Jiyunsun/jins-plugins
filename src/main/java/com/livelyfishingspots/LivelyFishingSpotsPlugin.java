@@ -62,7 +62,9 @@ public class LivelyFishingSpotsPlugin extends Plugin
 	private RiverSpotFish riverSpotFish;
 	// Last Fishing XP seen, or -1, to tell each catch's drop.
 	private int fishingXp = -1;
-	// TEMPORARY: the picked route start awaiting its end, or null.
+	// TEMPORARY: whether Pick routes is on, kept so menu building doesn't look it up each entry; the picked route
+	// start awaiting its end, or null.
+	private boolean debugPick;
 	private WorldPoint pickedStart;
 
 	@Inject
@@ -87,6 +89,7 @@ public class LivelyFishingSpotsPlugin extends Plugin
 		seaSpotFish = new SeaSpotFish(client, fishModels);
 		riverSpotFish = new RiverSpotFish(client, fishModels);
 		riverSpotFish.setSchooled(config.riverSwimming() == RiverSwimming.SCHOOLED);
+		debugPick = config.debugPick();
 		RiverSpotFish.tune(config);
 		tuneLooks();
 		riverDebugOverlay.setRivers(riverSpotFish);
@@ -209,6 +212,11 @@ public class LivelyFishingSpotsPlugin extends Plugin
 			return;
 		}
 		String key = event.getKey();
+		if ("debugPick".equals(key))
+		{
+			debugPick = config.debugPick();
+			return;
+		}
 		if ("riverSwimming".equals(key))
 		{
 			clientThread.invoke(() ->
@@ -272,7 +280,7 @@ public class LivelyFishingSpotsPlugin extends Plugin
 	@Subscribe
 	public void onMenuEntryAdded(MenuEntryAdded event)
 	{
-		if (!config.debugPick() || event.getType() != MenuAction.WALK.getId())
+		if (!debugPick || event.getType() != MenuAction.WALK.getId())
 		{
 			return;
 		}

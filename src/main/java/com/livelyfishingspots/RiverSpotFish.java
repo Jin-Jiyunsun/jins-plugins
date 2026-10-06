@@ -16,6 +16,7 @@ import java.util.concurrent.ThreadLocalRandom;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Actor;
 import net.runelite.api.Client;
+import net.runelite.api.GameObject;
 import net.runelite.api.Model;
 import net.runelite.api.NPC;
 import net.runelite.api.Perspective;
@@ -788,9 +789,51 @@ final class RiverSpotFish
 							: model != null && textureAt(model, x, y) == WATER_TEXTURE;
 					}
 				}
+				// Objects standing in the water, as rocks and posts, aren't water: their whole footprint.
+				for (GameObject object : tile.getGameObjects())
+				{
+					if (object != null)
+					{
+						block(wet, river, object.getSceneMinLocation(), object.getSceneMaxLocation());
+					}
+				}
 			}
 		}
 		return wet;
+	}
+
+	/**
+	 * Marks the grid cells under tiles from one scene corner to another, inclusive, as not water.
+	 */
+	private static void block(boolean[] wet, River river, Point min, Point max)
+	{
+		if (min == null || max == null)
+		{
+			return;
+		}
+		int perTile = 128 / CELL;
+		int tileX0 = Math.floorDiv(river.x0, 128);
+		int tileY0 = Math.floorDiv(river.y0, 128);
+		for (int sy = min.getY(); sy <= max.getY(); sy++)
+		{
+			for (int sx = min.getX(); sx <= max.getX(); sx++)
+			{
+				int tx = sx - tileX0;
+				int ty = sy - tileY0;
+				for (int cy = 0; cy < perTile; cy++)
+				{
+					for (int cx = 0; cx < perTile; cx++)
+					{
+						int i = tx * perTile + cx;
+						int j = ty * perTile + cy;
+						if (i >= 0 && j >= 0 && i < river.size && j < river.size)
+						{
+							wet[j * river.size + i] = false;
+						}
+					}
+				}
+			}
+		}
 	}
 
 	/**
@@ -2062,9 +2105,12 @@ final class RiverSpotFish
 		shoals.clear();
 	}
 
+	/**
+	 * Debug: a place on the water to the screen, at the water's own height, so it isn't lifted onto bridges.
+	 */
 	private Point canvas(Shoal shoal, double x, double y)
 	{
-		return Perspective.localToCanvas(client, new LocalPoint((int) x, (int) y, shoal.worldView), shoal.plane);
+		return Perspective.localToCanvas(client, (int) x, (int) y, waterHeight((int) x, (int) y, shoal.plane));
 	}
 
 	/**

@@ -232,7 +232,7 @@ public interface LivelyFishingSpotsConfig extends Config
 	@ConfigItem(
 		keyName = "debugRiverDrawCount",
 		name = "Draw fish count",
-		description = "A panel at the top left counting<br>the fish loaded: sea, each river<br>and lake, and models made",
+		description = "A panel at the top left counting<br>the fish loaded: sea, each river<br>and lake, and models made; and<br>the latest river mapping timings",
 		section = debugRivers,
 		position = 13
 	)
@@ -256,13 +256,37 @@ public interface LivelyFishingSpotsConfig extends Config
 	@ConfigItem(
 		keyName = "debugRiverDrawBoxes",
 		name = "Draw map boxes",
-		description = "Purple outline round the tiles mapped<br>for each river and lake: a band along<br>the route, or round the spawn points",
+		description = "Purple outline round the box of tiles<br>mapped for each river and lake",
 		section = debugRivers,
 		position = 15
 	)
 	default boolean debugRiverDrawBoxes()
 	{
 		return true;
+	}
+
+	@ConfigItem(
+		keyName = "debugRiverDrawRange",
+		name = "Draw mapping range",
+		description = "Cyan square round you: rivers are<br>mapped only inside it (fish range<br>plus 4 tiles, within the scene)",
+		section = debugRivers,
+		position = 18
+	)
+	default boolean debugRiverDrawRange()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "debugRiverBake",
+		name = "Bake rivers",
+		description = "Records the water round you near<br>each river and lake as you walk;<br>turning it off saves them to<br>.runelite/lively-fishing-spots/baked.<br>Only baked rivers and lakes have fish",
+		section = debugRivers,
+		position = 17
+	)
+	default boolean debugRiverBake()
+	{
+		return false;
 	}
 
 	@ConfigItem(

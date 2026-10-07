@@ -8,7 +8,7 @@ import net.runelite.client.ui.overlay.OverlayPosition;
 import net.runelite.client.ui.overlay.components.LineComponent;
 
 /**
- * TEMPORARY: debug panel counting the fish loaded, by sea, river and lake.
+ * TEMPORARY: debug panel counting the fish loaded, by sea, river and lake, and timing river mapping.
  */
 class FishCountOverlay extends OverlayPanel
 {
@@ -22,7 +22,7 @@ class FishCountOverlay extends OverlayPanel
 	{
 		this.config = config;
 		setPosition(OverlayPosition.TOP_LEFT);
-		panelComponent.setPreferredSize(new Dimension(170, 0));
+		panelComponent.setPreferredSize(new Dimension(220, 0));
 	}
 
 	void setSources(SeaSpotFish sea, RiverSpotFish rivers, FishModels models)
@@ -54,6 +54,16 @@ class FishCountOverlay extends OverlayPanel
 		}
 		panelComponent.getChildren().add(LineComponent.builder().left("Models").right(String.valueOf(models.count()))
 			.build());
+		for (String[] timing : rivers.timings())
+		{
+			panelComponent.getChildren().add(LineComponent.builder().left(timing[0]).right(timing[1]).build());
+		}
+		// Each part a client tick, over the last second.
+		panelComponent.getChildren().add(LineComponent.builder().left("Per tick, ms").right("avg / worst").build());
+		for (String[] part : TickTimes.rows())
+		{
+			panelComponent.getChildren().add(LineComponent.builder().left(part[0]).right(part[1]).build());
+		}
 		return super.render(graphics);
 	}
 }

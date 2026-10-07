@@ -14,6 +14,7 @@ class RiverDebugOverlay extends Overlay
 {
 	private final LivelyFishingSpotsConfig config;
 	private RiverSpotFish rivers;
+	private RiverBaker baker;
 
 	@Inject
 	RiverDebugOverlay(LivelyFishingSpotsConfig config)
@@ -23,9 +24,10 @@ class RiverDebugOverlay extends Overlay
 		setLayer(OverlayLayer.ABOVE_SCENE);
 	}
 
-	void setRivers(RiverSpotFish rivers)
+	void setRivers(RiverSpotFish rivers, RiverBaker baker)
 	{
 		this.rivers = rivers;
+		this.baker = baker;
 	}
 
 	@Override
@@ -33,7 +35,13 @@ class RiverDebugOverlay extends Overlay
 	{
 		if (config.debugDraw() && rivers != null)
 		{
+			long started = System.nanoTime();
 			rivers.drawDebug(graphics);
+			if (baker != null && config.debugRiverDrawBlockers())
+			{
+				baker.drawBlockers(graphics);
+			}
+			TickTimes.add("Debug drawing", started);
 		}
 		return null;
 	}

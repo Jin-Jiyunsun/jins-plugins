@@ -1,11 +1,17 @@
 package com.livelyfishingspots;
 
 import com.google.inject.Provides;
+import java.io.File;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ScheduledExecutorService;
 import javax.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
@@ -25,6 +31,7 @@ import net.runelite.api.events.NpcDespawned;
 import net.runelite.api.events.NpcSpawned;
 import net.runelite.api.events.StatChanged;
 import net.runelite.api.gameval.ItemID;
+import net.runelite.client.RuneLite;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
@@ -60,6 +67,9 @@ public class LivelyFishingSpotsPlugin extends Plugin
 	@Inject
 	private PluginManager pluginManager;
 
+	@Inject
+	private ScheduledExecutorService executor;
+
 	// Created in startUp, as they need the client.
 	private FishModels fishModels;
 	private SeaSpotFish seaSpotFish;
@@ -69,6 +79,9 @@ public class LivelyFishingSpotsPlugin extends Plugin
 	// TEMPORARY: whether Pick routes is on, kept so menu building doesn't look it up each entry; the picked route
 	// start awaiting its end, or null.
 	private boolean debugPick;
+	// TEMPORARY: whether Bake rivers is on, and the baker recording while it is.
+	private boolean debugBake;
+	private RiverBaker riverBaker;
 	private WorldPoint pickedStart;
 	private final List<WorldPoint> pickedWays = new ArrayList<>();
 
@@ -101,9 +114,11 @@ public class LivelyFishingSpotsPlugin extends Plugin
 		riverSpotFish.setLakeAmount(config.lakeFishAmount());
 		riverSpotFish.setDeep(config.riverDeep());
 		debugPick = config.debugPick();
+		debugBake = config.debugRiverBake();
+		riverBaker = new RiverBaker(client, riverSpotFish);
 		RiverSpotFish.tune(config);
 		tuneLooks();
-		riverDebugOverlay.setRivers(riverSpotFish);
+		riverDebugOverlay.setRivers(riverSpotFish, riverBaker);
 		overlayManager.add(riverDebugOverlay);
 		fishCountOverlay.setSources(seaSpotFish, riverSpotFish, fishModels);
 		overlayManager.add(fishCountOverlay);
@@ -126,6 +141,7 @@ public class LivelyFishingSpotsPlugin extends Plugin
 			fish.clear();
 			riverFish.clear();
 			models.clear();
+			TickTimes.clear();
 		});
 		log.debug("Lively Fishing Spots stopped");
 	}
@@ -222,15 +238,26 @@ public class LivelyFishingSpotsPlugin extends Plugin
 	@Subscribe
 	public void onGameTick(GameTick event)
 	{
+		long started = System.nanoTime();
 		riverSpotFish.activate();
+		if (debugBake)
+		{
+			riverBaker.record();
+		}
+		TickTimes.add("River: activate", started);
 	}
 
 	@Subscribe
 	public void onClientTick(ClientTick event)
 	{
+		long started = System.nanoTime();
 		fishModels.makeQueued();
+		started = TickTimes.add("Models", started);
 		seaSpotFish.swim();
+		started = TickTimes.add("Sea fish", started);
 		riverSpotFish.swim();
+		TickTimes.add("River fish (all)", started);
+		TickTimes.endTick();
 	}
 
 	@Subscribe
@@ -265,6 +292,11 @@ public class LivelyFishingSpotsPlugin extends Plugin
 		{
 			clientThread.invoke(() ->
 			{
+				if ("debugRiverBake".equals(key) && !config.debugRiverBake())
+				{
+					saveBaked(riverBaker.save());
+				}
+				debugBake = config.debugRiverBake();
 				RiverSpotFish.tune(config);
 				if (look)
 				{
@@ -278,6 +310,34 @@ public class LivelyFishingSpotsPlugin extends Plugin
 				}
 			});
 		}
+	}
+
+	/**
+	 * TEMPORARY: writes baked rivers and lakes to .runelite/lively-fishing-spots/baked, off the client thread.
+	 */
+	private void saveBaked(Map<String, String> files)
+	{
+		executor.execute(() ->
+		{
+			File folder = new File(RuneLite.RUNELITE_DIR, "lively-fishing-spots/baked");
+			if (!folder.mkdirs() && !folder.isDirectory())
+			{
+				log.warn("Couldn't make {}", folder);
+				return;
+			}
+			for (Map.Entry<String, String> file : files.entrySet())
+			{
+				try
+				{
+					Files.write(new File(folder, file.getKey()).toPath(), file.getValue().getBytes(StandardCharsets.UTF_8));
+					log.debug("Baked {}", new File(folder, file.getKey()));
+				}
+				catch (IOException e)
+				{
+					log.warn("Couldn't save {}", file.getKey(), e);
+				}
+			}
+		});
 	}
 
 	/**
@@ -358,23 +418,23 @@ public class LivelyFishingSpotsPlugin extends Plugin
 				pickedWays.clear();
 				riverSpotFish.setPicking(List.of(at));
 			});
-		if (riverSpotFish.isBlocker(at))
+		if (riverBaker.isBlocker(at))
 		{
 			client.getMenu().createMenuEntry(-1).setOption("Remove fish blocker").setTarget("")
-				.setType(MenuAction.RUNELITE).onClick(entry -> riverSpotFish.toggleBlocker(at, RiverSpotFish.Half.WHOLE));
+				.setType(MenuAction.RUNELITE).onClick(entry -> riverBaker.toggleBlocker(at, RiverBaker.Half.WHOLE));
 		}
 		else
 		{
 			client.getMenu().createMenuEntry(-1).setOption("Fish blocker (west half)").setTarget("")
-				.setType(MenuAction.RUNELITE).onClick(entry -> riverSpotFish.toggleBlocker(at, RiverSpotFish.Half.WEST));
+				.setType(MenuAction.RUNELITE).onClick(entry -> riverBaker.toggleBlocker(at, RiverBaker.Half.WEST));
 			client.getMenu().createMenuEntry(-1).setOption("Fish blocker (east half)").setTarget("")
-				.setType(MenuAction.RUNELITE).onClick(entry -> riverSpotFish.toggleBlocker(at, RiverSpotFish.Half.EAST));
+				.setType(MenuAction.RUNELITE).onClick(entry -> riverBaker.toggleBlocker(at, RiverBaker.Half.EAST));
 			client.getMenu().createMenuEntry(-1).setOption("Fish blocker (south half)").setTarget("")
-				.setType(MenuAction.RUNELITE).onClick(entry -> riverSpotFish.toggleBlocker(at, RiverSpotFish.Half.SOUTH));
+				.setType(MenuAction.RUNELITE).onClick(entry -> riverBaker.toggleBlocker(at, RiverBaker.Half.SOUTH));
 			client.getMenu().createMenuEntry(-1).setOption("Fish blocker (north half)").setTarget("")
-				.setType(MenuAction.RUNELITE).onClick(entry -> riverSpotFish.toggleBlocker(at, RiverSpotFish.Half.NORTH));
+				.setType(MenuAction.RUNELITE).onClick(entry -> riverBaker.toggleBlocker(at, RiverBaker.Half.NORTH));
 			client.getMenu().createMenuEntry(-1).setOption("Fish blocker").setTarget("")
-				.setType(MenuAction.RUNELITE).onClick(entry -> riverSpotFish.toggleBlocker(at, RiverSpotFish.Half.WHOLE));
+				.setType(MenuAction.RUNELITE).onClick(entry -> riverBaker.toggleBlocker(at, RiverBaker.Half.WHOLE));
 		}
 		client.getMenu().createMenuEntry(-1).setOption("Clear lake").setTarget("").setType(MenuAction.RUNELITE)
 			.onClick(entry ->

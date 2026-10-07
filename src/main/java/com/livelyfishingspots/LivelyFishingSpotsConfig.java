@@ -14,7 +14,8 @@ public interface LivelyFishingSpotsConfig extends Config
 	String GROUP = "lively-fishing-spots";
 	// The keys of the river settings whose change starts the river shoals in sight again, while tuning.
 	Set<String> REBUILD = Set.of("debugRiverCircleLanes", "debugRiverCircleLaneSpacing", "debugRiverCircleSize", "debugRiverCircleMost", "debugRiverTravelSpacing", "debugRiverSpread", "debugRiverCircleOffset",
-		"debugRiverBodyMinutes", "debugRiverDeepLeast", "debugRiverDeepMost");
+		"debugRiverBodyMinutes", "debugRiverDeepLeast", "debugRiverDeepMost", "debugRiverRingManual",
+		"debugRiverRingEast", "debugRiverRingNorth");
 
 	@ConfigItem(
 		keyName = "riverSwimming",
@@ -217,11 +218,59 @@ public interface LivelyFishingSpotsConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = "debugPick",
-		name = "Pick routes",
-		description = "Adds River start, River end,<br>Lake spawn and Clear lake to the<br>right-click menu on tiles;<br>each pick is logged",
+		keyName = "debugRiverDrawPoints",
+		name = "Draw route points",
+		description = "Yellow tiles numbered in order: each<br>route's start, waypoints and end;<br>magenta while picking one",
 		section = debugRivers,
 		position = 12
+	)
+	default boolean debugRiverDrawPoints()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "debugRiverDrawCount",
+		name = "Draw fish count",
+		description = "A panel at the top left counting<br>the fish loaded: sea, each river<br>and lake, and models made",
+		section = debugRivers,
+		position = 13
+	)
+	default boolean debugRiverDrawCount()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "debugRiverDrawBlockers",
+		name = "Draw fish blockers",
+		description = "Red outlines on the tiles fish<br>treat as land by hand",
+		section = debugRivers,
+		position = 14
+	)
+	default boolean debugRiverDrawBlockers()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "debugRiverDrawBoxes",
+		name = "Draw map boxes",
+		description = "Purple outline round the tiles mapped<br>for each river and lake: a band along<br>the route, or round the spawn points",
+		section = debugRivers,
+		position = 15
+	)
+	default boolean debugRiverDrawBoxes()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "debugPick",
+		name = "Pick routes",
+		description = "Adds River start, waypoints and end,<br>Lake spawn, Clear lake and Fish blocker<br>to the right-click menu on tiles;<br>each pick is logged",
+		section = debugRivers,
+		position = 16
 	)
 	default boolean debugPick()
 	{
@@ -346,7 +395,7 @@ public interface LivelyFishingSpotsConfig extends Config
 	)
 	default int debugRiverTravelSpacing()
 	{
-		return 70;
+		return 100;
 	}
 
 	@Range(min = -512, max = 512)
@@ -1436,5 +1485,56 @@ public interface LivelyFishingSpotsConfig extends Config
 	default int debugLookRainbowStretch()
 	{
 		return 150;
+	}
+
+	@ConfigItem(
+		keyName = "debugRiverRingManual",
+		name = "Manual ring offset",
+		description = "Every ring uses the offset below<br>instead of moving away from the bank;<br>each is logged to lock in per place",
+		section = debugRiverLanes,
+		position = 15
+	)
+	default boolean debugRiverRingManual()
+	{
+		return false;
+	}
+
+	@Range(min = -512, max = 512)
+	@ConfigItem(
+		keyName = "debugRiverRingEast",
+		name = "Ring offset east",
+		description = "How far each ring's middle is east<br>of its spot, local units;<br>west when less than 0",
+		section = debugRiverLanes,
+		position = 16
+	)
+	default int debugRiverRingEast()
+	{
+		return 0;
+	}
+
+	@Range(min = -512, max = 512)
+	@ConfigItem(
+		keyName = "debugRiverRingNorth",
+		name = "Ring offset north",
+		description = "How far each ring's middle is north<br>of its spot, local units;<br>south when less than 0",
+		section = debugRiverLanes,
+		position = 17
+	)
+	default int debugRiverRingNorth()
+	{
+		return 0;
+	}
+
+	@Range(min = 12, max = 60)
+	@ConfigItem(
+		keyName = "debugRiverFishRange",
+		name = "Fish range",
+		description = "Tiles along a river either side of you<br>that keep fish; rivers and lakes start<br>4 tiles further out, and go 16 further",
+		section = debugRiverLanes,
+		position = 18
+	)
+	default int debugRiverFishRange()
+	{
+		return 28;
 	}
 }

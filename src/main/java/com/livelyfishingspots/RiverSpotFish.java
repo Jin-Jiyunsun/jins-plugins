@@ -3,21 +3,26 @@ package com.livelyfishingspots;
 import com.livelyfishingspots.FishModels.Look;
 import java.awt.Color;
 import java.awt.Graphics2D;
+import java.awt.Polygon;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.PriorityQueue;
 import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Actor;
 import net.runelite.api.Client;
-import net.runelite.api.ItemContainer;
+import net.runelite.api.CollisionData;
+import net.runelite.api.CollisionDataFlag;
 import net.runelite.api.GameObject;
+import net.runelite.api.ItemContainer;
 import net.runelite.api.Model;
 import net.runelite.api.ModelData;
 import net.runelite.api.NPC;
@@ -35,6 +40,7 @@ import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.gameval.ItemID;
 import net.runelite.api.gameval.NpcID;
+import net.runelite.api.gameval.ObjectID;
 
 /**
  * Fish swimming down rivers along hand-picked routes, in small groups that keep apart, line up and stay
@@ -51,6 +57,8 @@ final class RiverSpotFish
 	private static final Map<Integer, Integer> WEIGHTS = new HashMap<>();
 	// Lure/bait spots: trout, salmon, pike and the odd rainbow fish.
 	private static final int[] LURE_FISH = {ItemID.RAW_TROUT, ItemID.RAW_SALMON, ItemID.RAW_PIKE, RAINBOW};
+	// Fish in every river and lake, for now all lure/bait.
+	private static final int[] ROUTE_FISH = LURE_FISH;
 	// River spots with fish, by NPC id.
 	private static final Map<Integer, int[]> SPOT_FISH = Map.ofEntries(
 		Map.entry(NpcID._0_26_57_FRESHFISH, LURE_FISH),
@@ -90,25 +98,68 @@ final class RiverSpotFish
 	private static final Map<Integer, Integer> CATCH_XP = Map.of(
 		ItemID.RAW_TROUT, 50, ItemID.RAW_PIKE, 60, ItemID.RAW_SALMON, 70, RAINBOW, 80);
 	private static final double CATCH_XP_SPREAD = 0.15;
-	// Hand-picked routes, upstream start then downstream end. Spots near none get no fish.
+	// Hand-picked routes: upstream start, any waypoints the river bends round, then the downstream end. Spots near
+	// none get no fish.
 	private static final List<WorldPoint[]> ROUTES = List.<WorldPoint[]>of(
-		// Barbarian Village.
-		new WorldPoint[]{new WorldPoint(3104, 3443, 0), new WorldPoint(3105, 3417, 0)},
-		// Lumbridge, the River Lum east of the castle.
-		new WorldPoint[]{new WorldPoint(3229, 3275, 0), new WorldPoint(3244, 3231, 0)});
+		// The River Lum, from north of Edgeville past Barbarian Village and Lumbridge.
+		new WorldPoint[]{
+			new WorldPoint(3109, 3551, 0), new WorldPoint(3122, 3534, 0), new WorldPoint(3127, 3523, 0),
+			new WorldPoint(3131, 3520, 0), new WorldPoint(3131, 3513, 0), new WorldPoint(3126, 3502, 0),
+			new WorldPoint(3119, 3496, 0), new WorldPoint(3110, 3489, 0), new WorldPoint(3106, 3481, 0),
+			new WorldPoint(3102, 3471, 0), new WorldPoint(3102, 3458, 0), new WorldPoint(3103, 3449, 0),
+			new WorldPoint(3105, 3441, 0), new WorldPoint(3112, 3433, 0), new WorldPoint(3105, 3424, 0),
+			new WorldPoint(3105, 3417, 0), new WorldPoint(3110, 3405, 0), new WorldPoint(3115, 3394, 0),
+			new WorldPoint(3124, 3389, 0), new WorldPoint(3138, 3387, 0), new WorldPoint(3146, 3381, 0),
+			new WorldPoint(3151, 3366, 0), new WorldPoint(3161, 3350, 0), new WorldPoint(3171, 3345, 0),
+			new WorldPoint(3182, 3347, 0), new WorldPoint(3196, 3341, 0), new WorldPoint(3213, 3319, 0),
+			new WorldPoint(3216, 3307, 0), new WorldPoint(3218, 3292, 0), new WorldPoint(3223, 3280, 0),
+			new WorldPoint(3234, 3265, 0), new WorldPoint(3237, 3249, 0), new WorldPoint(3240, 3233, 0),
+			new WorldPoint(3246, 3221, 0), new WorldPoint(3259, 3213, 0), new WorldPoint(3260, 3199, 0),
+			new WorldPoint(3256, 3185, 0), new WorldPoint(3251, 3170, 0), new WorldPoint(3252, 3154, 0)},
+		// Shilo Village.
+		new WorldPoint[]{new WorldPoint(2832, 2973, 0), new WorldPoint(2880, 2974, 0)});
+	// Hand-placed tiles, or halves of them, fish treat as land, where the water map gets it wrong.
+	private static final Map<WorldPoint, Half> BLOCKERS = Map.ofEntries();
+
+	/**
+	 * How much of a tile a fish blocker covers.
+	 */
+	enum Half
+	{
+		WHOLE,
+		NORTH,
+		SOUTH,
+		EAST,
+		WEST
+	}
+	// Objects in the water that block movement but not fish: invisible blockers keeping ducks to a pond, waterfall
+	// foam, and the parts of water wheels in the water.
+	private static final Set<Integer> NOT_BLOCKING = Set.of(ObjectID.DUCKBLOCKER, ObjectID.WATERFALL_FOAM,
+		ObjectID.WATERWHEEL_CENTRE, ObjectID.WATERWHEEL_LEFT, ObjectID.WATERWHEEL_RIGHT, ObjectID.WATERWHEEL_DRIP,
+		ObjectID.KASTORI_WATERWHEEL_CENTRE, ObjectID.KASTORI_WATERWHEEL_LEFT, ObjectID.KASTORI_WATERWHEEL_RIGHT);
 	// Hand-picked lakes: spawn points spread over each, where new fish come in.
 	private static final List<WorldPoint[]> LAKES = List.<WorldPoint[]>of(
 		// Between Seers' Village and Sinclair Mansion.
 		new WorldPoint[]{new WorldPoint(2713, 3531, 0), new WorldPoint(2727, 3522, 0), new WorldPoint(2718, 3526, 0),
-			new WorldPoint(2721, 3524, 0)});
+			new WorldPoint(2721, 3524, 0)},
+		// South-western Tree Gnome Stronghold.
+		new WorldPoint[]{new WorldPoint(2388, 3420, 0), new WorldPoint(2388, 3410, 0), new WorldPoint(2385, 3415, 0),
+			new WorldPoint(2393, 3413, 0)});
+	// Fixed ring offsets (east, north, local units) for rivers and lakes where the automatic one, away from the
+	// nearest bank, mangles the rings; by the route's start or the lake's first spawn point.
+	private static final Map<WorldPoint, int[]> RING_OFFSETS = Map.of();
+	// Lakes with fewer fish than their water would give, as a share, by the lake's first spawn point.
+	private static final Map<WorldPoint, Double> LAKE_FISH_SHARE = Map.of(
+		// Tree Gnome Stronghold: a small lake.
+		new WorldPoint(2388, 3420, 0), 0.5);
 	// A lake is the connected water within LAKE_RADIUS tiles of its spawn points, mapped LAKE_MARGIN tiles past
 	// them; a spot uses it within LAKE_REACH tiles of one, and a pick adds to it within LAKE_PICK_REACH of the first.
 	private static final int LAKE_RADIUS = 6;
 	private static final int LAKE_MARGIN = 7;
 	private static final int LAKE_REACH = 36;
 	private static final int LAKE_PICK_REACH = 48;
-	// Lake water per fish at full amount, against the fish spacing (local units).
-	private static final double LAKE_ROOM = 512;
+	// Lake water per fish at full amount, square local units (about 2.2 tiles).
+	private static final double LAKE_ROOM = 512 * 70;
 	// Lake goals: least room round one and on the way there, how near counts as there, and least distance to the
 	// next (local units); of a few such places anywhere on the lake, the one with the fewest fish per water cell
 	// within LAKE_CROWD_RANGE is picked, as is the emptiest spawn point for new fish, so the fish stay spread out.
@@ -165,8 +216,39 @@ final class RiverSpotFish
 	// Tiles a spot may be from a route's line to use it; tiles of water mapped past its ends.
 	private static final int ROUTE_REACH = 8;
 	private static final int ROUTE_MARGIN = 4;
-	// Client ticks a shoal outlives its last spot, so a spot moving doesn't restart it.
+	// Tiles of map round a route's points, for its banks; wide enough for its widest water, round islands too.
+	private static final int BOX_MARGIN = 8;
+	// How far inside an object's rough outline a cell's middle must be to count as blocked, local units.
+	private static final double OBJECT_INSET = 16;
+	// How far a waypoint may move to the most open water near it, local units.
+	private static final int WAYPOINT_SNAP = 256;
+	// Fish range, tiles (tuning spinner): rivers keep fish only within this far along the path either side of the
+	// player's nearest point; a river or lake starts within this plus ACTIVE_MORE tiles of the player, and goes LINGER
+	// client ticks after they're more than this plus LEAVE_MORE away.
+	private static int FISH_RANGE = 28;
+	private static final int ACTIVE_MORE = 4;
+	private static final int LEAVE_MORE = 16;
 	private static final int LINGER = 500;
+	// The window is worked out every WINDOW_EVERY client ticks (a game tick): fish grow in at its upstream edge and
+	// shrink at its downstream one, those left more than WINDOW_SLACK upstream of it shrink away, and stretches it
+	// newly takes in are filled only within HIDDEN_EDGE tiles of its edges, out of sight.
+	private static final int WINDOW_EVERY = 30;
+	// Fish decide (where to aim, steering round each other, which circles to join, the water's height) every this many
+	// client ticks, all a shoal's on the same tick; they move every tick.
+	private static final int DECIDE_EVERY = 2;
+	// A new river or lake fills over several ticks, not all in one frame: rivers a stretch this long (local units)
+	// a tick, nearest the player first; lakes up to this many fish a tick.
+	private static final double FILL_STRETCH = 8 * 128;
+	private static final int LAKE_FILL_PER_TICK = 15;
+	private static final double WINDOW_SLACK = 256;
+	private static final int HIDDEN_EDGE = 8;
+	// Rivers are mapped only within the fish range plus MAP_MORE tiles of the player, and mapped again round them,
+	// keeping the fish, once the window comes within REMAP_EDGE tiles of a cut end and they've moved REMAP_MOVE tiles.
+	private static final int MAP_MORE = 4;
+	private static final int REMAP_EDGE = 2;
+	private static final int REMAP_MOVE = 3;
+	// Spacings between fish along a river that count as an empty stretch to fill: more than a school and its room.
+	private static final double EMPTY_GAP = 8;
 
 	// Floor texture of river water, seen in game.
 	private static final int WATER_TEXTURE = 1;
@@ -191,7 +273,7 @@ final class RiverSpotFish
 	private static final double LOOK_AHEAD = 48;
 	private static final double TURN_RATE = 0.08;
 	// Average gap between fish down the river, local units.
-	private static double TRAVEL_SPACING = 70;
+	private static double TRAVEL_SPACING = 100;
 	// Lane spread and wander, as shares of the room either side; wander glides between random points
 	// over this many client ticks.
 	private static double SPREAD = 0.4;
@@ -279,7 +361,17 @@ final class RiverSpotFish
 	// Circle centre offset from the spot away from the nearest bank, and how far round the spot the water is
 	// sampled to find which way that is (local units).
 	private static int CIRCLE_OFFSET = 28;
+	// TEMPORARY: a fixed ring offset for every ring, from the tuning spinners, east and north (local units).
+	private static boolean RING_MANUAL;
+	private static int RING_EAST;
+	private static int RING_NORTH;
 	private static final double OFFSET_LOOK = 192;
+	// Making rings round: points checked round the outer lane, step and most steps (local units), and how far from
+	// where it started a ring may move.
+	private static final int ROUND_POINTS = 32;
+	private static final double ROUND_STEP = 8;
+	private static final int ROUND_STEPS = 48;
+	private static final double ROUND_MOST = 384;
 	// Gap passing fish keep outside a circle, and how much further off they start steering.
 	private static double CIRCLE_CLEARANCE = 11;
 	private static final double CLEAR_AHEAD = 48;
@@ -326,14 +418,55 @@ final class RiverSpotFish
 	/**
 	 * A route's water grid and the path down its middle.
 	 */
+	/**
+	 * Working arrays for mapping, kept from one map to the next so mapping again makes none; grown when a bigger map
+	 * needs more, and cleared as far as each map uses. Only the client thread maps, one map at a time.
+	 */
+	private static final class Scratch
+	{
+		private boolean[] water = new boolean[0];
+		private boolean[] wet = new boolean[0];
+		private boolean[] wetTile = new boolean[0];
+		private boolean[] solid = new boolean[0];
+		private int[] stack = new int[0];
+		private int[] distances = new int[0];
+		private int[] from = new int[0];
+		private float[] best = new float[0];
+		private int[] reachedOn = new int[0];
+		// Path search legs so far, so cells reached on older legs, or older maps, count as unreached.
+		private int leg;
+
+		private static boolean[] cleared(boolean[] array, int length)
+		{
+			if (array.length < length)
+			{
+				return new boolean[length];
+			}
+			Arrays.fill(array, 0, length, false);
+			return array;
+		}
+
+		private static int[] atLeast(int[] array, int length)
+		{
+			return array.length < length ? new int[length] : array;
+		}
+	}
+
+	private static final Scratch SCRATCH = new Scratch();
+
 	private static final class River
 	{
-		// South-west corner (local units) and size in cells.
-		private final int x0;
-		private final int y0;
-		private final int size;
-		private final boolean[] water;
-		private final double[] clearance;
+		// South-west corner (local units, moved by a map load) and size in cells, across and up.
+		private int x0;
+		private int y0;
+		private final int width;
+		private final int height;
+		// Which cells are water, while mapping; dropped after, as a water cell is any with room.
+		private boolean[] water;
+		// The tiles of its box it maps, a band along the route or round the lake's spawn points; the rest count as land.
+		private boolean[] reach;
+		// Distance from each cell to the bank, local units; 0 off the water.
+		private final short[] clearance;
 		// Path points, distance along, and room left and right (facing downstream).
 		private double[] pathX;
 		private double[] pathY;
@@ -341,21 +474,26 @@ final class RiverSpotFish
 		private double[] left;
 		private double[] right;
 		private double length;
-		// Bank cells, for debug drawing.
-		private final List<int[]> banks = new ArrayList<>();
-		// Lakes only (no path): water cells, those roomy enough to head for, and running totals of water cells
-		// (a summed-area table) for counting the water round a place.
+		// Bank cells' middles, x then y, for debug drawing; worked out when first drawn.
+		private int[] banks;
+		// Whether its route's start and end were cut, to the loaded scene or the player's reach, so more may be mapped.
+		private boolean cutStart;
+		private boolean cutEnd;
+		// Lakes only (no path): water cells, those roomy enough to head for, and running totals of water cells per
+		// tile (a summed-area table) for counting the water round a place.
 		private int waterCells;
 		private int[] open;
-		private int[] waterSum;
+		private int[] tileWater;
 
-		private River(int x0, int y0, int size)
+		private River(int x0, int y0, int width, int height)
 		{
 			this.x0 = x0;
 			this.y0 = y0;
-			this.size = size;
-			water = new boolean[size * size];
-			clearance = new double[size * size];
+			this.width = width;
+			this.height = height;
+			SCRATCH.water = Scratch.cleared(SCRATCH.water, width * height);
+			water = SCRATCH.water;
+			clearance = new short[width * height];
 		}
 
 		/**
@@ -365,24 +503,27 @@ final class RiverSpotFish
 		{
 			int i = (int) Math.floor((x - x0) / CELL);
 			int j = (int) Math.floor((y - y0) / CELL);
-			return i >= 0 && j >= 0 && i < size && j < size ? clearance[j * size + i] : 0;
+			return i >= 0 && j >= 0 && i < width && j < height ? clearance[j * width + i] : 0;
 		}
 
 		/**
-		 * Lakes: water cells in the square reaching a range either side of a place.
+		 * Lakes: water cells in the tiles reaching a range either side of a place.
 		 */
 		private int waterNear(double x, double y, double range)
 		{
-			int i0 = Math.max(0, (int) Math.floor((x - range - x0) / CELL));
-			int j0 = Math.max(0, (int) Math.floor((y - range - y0) / CELL));
-			int i1 = Math.min(size, (int) Math.floor((x + range - x0) / CELL) + 1);
-			int j1 = Math.min(size, (int) Math.floor((y + range - y0) / CELL) + 1);
+			int tilesX = width / (128 / CELL);
+			int tilesY = height / (128 / CELL);
+			int i0 = Math.max(0, (int) Math.floor((x - range - x0) / 128));
+			int j0 = Math.max(0, (int) Math.floor((y - range - y0) / 128));
+			int i1 = Math.min(tilesX, (int) Math.floor((x + range - x0) / 128) + 1);
+			int j1 = Math.min(tilesY, (int) Math.floor((y + range - y0) / 128) + 1);
 			if (i0 >= i1 || j0 >= j1)
 			{
 				return 0;
 			}
-			int row = size + 1;
-			return waterSum[j1 * row + i1] - waterSum[j0 * row + i1] - waterSum[j1 * row + i0] + waterSum[j0 * row + i0];
+			int row = tilesX + 1;
+			return tileWater[j1 * row + i1] - tileWater[j0 * row + i1] - tileWater[j1 * row + i0]
+				+ tileWater[j0 * row + i0];
 		}
 
 		/**
@@ -402,14 +543,14 @@ final class RiverSpotFish
 
 		private double cell(int i, int j)
 		{
-			return i >= 0 && j >= 0 && i < size && j < size ? clearance[j * size + i] : 0;
+			return i >= 0 && j >= 0 && i < width && j < height ? clearance[j * width + i] : 0;
 		}
 
 		private boolean isWater(double x, double y)
 		{
 			int i = (int) Math.floor((x - x0) / CELL);
 			int j = (int) Math.floor((y - y0) / CELL);
-			return i >= 0 && j >= 0 && i < size && j < size && water[j * size + i];
+			return i >= 0 && j >= 0 && i < width && j < height && clearance[j * width + i] > 0;
 		}
 
 		/**
@@ -473,9 +614,10 @@ final class RiverSpotFish
 		private final WorldPoint[] route;
 		private final int plane;
 		private final int worldView;
-		private final River river;
+		// Its map, and how many fish it keeps; both change when a map load maps it again.
+		private River river;
 		private final int[] kinds;
-		private final int travelling;
+		private int travelling;
 		private final Map<NPC, Circle> circles = new HashMap<>();
 		private final List<Swimmer> fish = new ArrayList<>();
 		// Its fish in order down the river, rebuilt each tick, so each looks only at those near it along it.
@@ -483,19 +625,37 @@ final class RiverSpotFish
 		private int nextSpawn;
 		private int nextSolo;
 		private int movedAt;
-		// Client tick the last spot went, or -1.
-		private int emptySince = -1;
+		// Client tick the player went out of reach, or -1.
+		private int farSince = -1;
+		// Rivers: where the player was when it was last mapped.
+		private WorldPoint mappedAround;
+		// Stretches of river (from, to) still to fill, nearest the player first; and whether a lake is still filling.
+		private final Deque<double[]> toFill = new ArrayDeque<>();
+		private boolean lakeFilling;
+		// Whether its fish decide this tick, and the client tick they next do.
+		private boolean deciding = true;
+		private int nextDecision;
+		// Rivers: the gap between fish along the path; the stretch with fish (distances along) round the player's
+		// place along it; and the client tick it's next worked out.
+		private double spacing;
+		private double windowFrom;
+		private double windowTo;
+		private double playerAt;
+		private int nextWindow;
 		// The body drifting down, or null, and when the next may come.
 		private Body body;
 		private int nextBody;
 		// Lakes: the client tick of the next check for too many fish.
 		private int nextTrim;
+		// The loaded scene's south-west corner (world tiles) its coordinates are for.
+		private int baseX;
+		private int baseY;
 		// Whether its fish are shrinking away, the shoal going once they have.
 		private boolean leaving;
 
 		// A lake (no path), and its spawn points.
 		private final boolean lake;
-		private final double[][] spawns;
+		private double[][] spawns;
 
 		private Shoal(WorldPoint[] route, int plane, int worldView, River river, int[] kinds, int cycle, int travelling,
 			double[][] spawns)
@@ -563,6 +723,8 @@ final class RiverSpotFish
 		private double goalX = Double.NaN;
 		private double goalY;
 		private int decidedAt = -1;
+		// The client tick it last rolled to scatter.
+		private int rolledAt = -1;
 
 		private Group(ThreadLocalRandom random)
 		{
@@ -580,9 +742,9 @@ final class RiverSpotFish
 	{
 		private final NPC npc;
 		private final WorldPoint spot;
-		// Centre, outer radius, distance along the path, direction (1 or -1), lane radii.
-		private final double x;
-		private final double y;
+		// Centre (moved by a map load), outer radius, distance along the path, direction (1 or -1), lane radii.
+		private double x;
+		private double y;
 		private final double radius;
 		private final double along;
 		private final int way;
@@ -709,6 +871,11 @@ final class RiverSpotFish
 		private double depthNow;
 		// Intended heading, eased; NaN until first set.
 		private double steer = Double.NaN;
+		// The heading it last decided to aim for, and the water's height under it then (or MIN_VALUE to read again);
+		// circling, how much faster or slower it goes to even out the gaps in its lane, decided then too.
+		private double aim = Double.NaN;
+		private double evening = 1;
+		private int surface = Integer.MIN_VALUE;
 		private double swimming;
 		// Current offset across the path, local units, left positive.
 		private double lateral;
@@ -747,8 +914,17 @@ final class RiverSpotFish
 	private int[] chosenFish;
 	// Routes picked in game while debugging, checked first.
 	private final List<WorldPoint[]> picked = new ArrayList<>();
-	// TEMPORARY: the spawn points of the lake being picked, or null.
+	// TEMPORARY: the spawn points of the lake being picked, or null; and the route being picked, for drawing.
 	private WorldPoint[] pickedLake;
+	private List<WorldPoint> picking = List.of();
+	// Kept between gap checks, for the fish's places along the river.
+	private double[] gapsAlong = new double[0];
+	// Kept between game ticks, for every river and lake to check.
+	private final List<WorldPoint[]> everyRoute = new ArrayList<>();
+	// Rivers and lakes that couldn't be mapped since the last map load.
+	private final Set<WorldPoint[]> unmappable = new HashSet<>();
+	// TEMPORARY: fish blockers placed this session, on top of BLOCKERS.
+	private final Map<WorldPoint, Half> placedBlockers = new HashMap<>();
 	// Whether fish swim in groups (schooled) or each on its own (random).
 	private boolean schooled = true;
 	// Fish spacing times this, from the player's River fish amount.
@@ -781,12 +957,11 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * Adds a river spot to its route's shoal, starting the shoal if needed.
+	 * Adds a river spot's circle to its route's shoal, starting the shoal if needed.
 	 */
 	void add(NPC spot)
 	{
-		int[] kinds = SPOT_FISH.get(spot.getId());
-		if (kinds == null || shoalOf(spot) != null)
+		if (!SPOT_FISH.containsKey(spot.getId()) || shoalOf(spot) != null)
 		{
 			return;
 		}
@@ -797,31 +972,159 @@ final class RiverSpotFish
 		{
 			return;
 		}
+		Shoal shoal = shoalFor(route);
+		shoal = shoal != null ? shoal : open(view, route, spot.getWorldLocation().getPlane());
+		// A lake spot must be on its water.
+		if (shoal != null && (!shoal.lake || onWater(shoal.river, at)))
+		{
+			attach(shoal, spot, at);
+		}
+	}
+
+	private Shoal shoalFor(WorldPoint[] route)
+	{
 		for (Shoal shoal : shoals)
 		{
 			if (shoal.route == route)
 			{
-				attach(shoal, spot, at);
-				return;
+				return shoal;
 			}
 		}
-		int plane = spot.getWorldLocation().getPlane();
-		boolean lake = isLake(route);
-		List<double[]> spawns = new ArrayList<>();
-		River river = lake ? mapLake(view, route, plane, spawns) : mapRoute(view, route, plane);
-		if (river == null || lake && nearestWater(river, at, river.water) < 0)
+		return null;
+	}
+
+	/**
+	 * Whether a place is on the water or within a tile of it.
+	 */
+	private static boolean onWater(River river, LocalPoint at)
+	{
+		for (int dx = -128; dx <= 128; dx += 128)
+		{
+			for (int dy = -128; dy <= 128; dy += 128)
+			{
+				if (river.isWater(at.getX() + dx, at.getY() + dy))
+				{
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Starts the river or lake near the player: rivers and lakes within FISH_RANGE + ACTIVE_MORE tiles open, and those
+	 * beyond FISH_RANGE + LEAVE_MORE start going. Once a game tick; a route that can't be mapped isn't tried again until the next map
+	 * load.
+	 */
+	void activate()
+	{
+		Player player = client.getLocalPlayer();
+		WorldView view = client.getTopLevelWorldView();
+		if (player == null || view == null)
 		{
 			return;
 		}
-		// Make the growing sizes now; queue the tipped full-size models.
+		WorldPoint me = player.getWorldLocation();
+		int cycle = client.getGameCycle();
+		List<WorldPoint[]> all = everyRoute;
+		all.clear();
+		all.addAll(picked);
+		all.addAll(ROUTES);
+		if (pickedLake != null)
+		{
+			all.add(pickedLake);
+		}
+		all.addAll(LAKES);
+		for (WorldPoint[] route : all)
+		{
+			double apart = reachTo(route, me);
+			Shoal shoal = shoalFor(route);
+			if (shoal == null)
+			{
+				if (apart <= FISH_RANGE + ACTIVE_MORE && !unmappable.contains(route))
+				{
+					open(view, route, me.getPlane());
+				}
+			}
+			else if (apart > FISH_RANGE + LEAVE_MORE)
+			{
+				shoal.farSince = shoal.farSince >= 0 ? shoal.farSince : cycle;
+			}
+			else
+			{
+				shoal.farSince = -1;
+			}
+		}
+	}
+
+	/**
+	 * Tiles from a place to a route's line through its waypoints, or to a lake's water round its spawn points;
+	 * endless on another plane.
+	 */
+	private double reachTo(WorldPoint[] route, WorldPoint me)
+	{
+		if (route[0].getPlane() != me.getPlane())
+		{
+			return Double.MAX_VALUE;
+		}
+		double nearest = Double.MAX_VALUE;
+		if (isLake(route))
+		{
+			for (WorldPoint spawn : route)
+			{
+				nearest = Math.min(nearest, Math.max(0, Math.hypot(spawn.getX() - me.getX(), spawn.getY() - me.getY())
+					- LAKE_RADIUS));
+			}
+			return nearest;
+		}
+		for (int k = 0; k + 1 < route.length; k++)
+		{
+			double ax = route[k].getX();
+			double ay = route[k].getY();
+			double bx = route[k + 1].getX() - ax;
+			double by = route[k + 1].getY() - ay;
+			double t = Math.max(0, Math.min(1, ((me.getX() - ax) * bx + (me.getY() - ay) * by)
+				/ Math.max(1, bx * bx + by * by)));
+			nearest = Math.min(nearest, Math.hypot(me.getX() - ax - bx * t, me.getY() - ay - by * t));
+		}
+		return nearest;
+	}
+
+	/**
+	 * Maps a river or lake and fills it with fish; null if it can't be mapped.
+	 */
+	private Shoal open(WorldView view, WorldPoint[] route, int plane)
+	{
+		long started = System.nanoTime();
+		Shoal shoal = openTimed(view, route, plane);
+		log.debug("River timing: {} {} started in {} ms", isLake(route) ? "lake" : "river", route[0],
+			(System.nanoTime() - started) / 100_000 / 10.0);
+		return shoal;
+	}
+
+	private Shoal openTimed(WorldView view, WorldPoint[] route, int plane)
+	{
+		boolean lake = isLake(route);
+		List<double[]> spawns = new ArrayList<>();
+		River river = lake ? mapLake(view, route, plane, spawns) : mapRoute(view, route, plane);
+		if (river == null)
+		{
+			unmappable.add(route);
+			return null;
+		}
+		river.water = null;
+		int[] kinds = ROUTE_FISH;
+		// Make the smallest size now, as new fish start at it; queue the rest, and the tipped full-size ones, to be
+		// made a couple a tick rather than all in one frame.
 		for (int item : kinds)
 		{
-			for (int step = 1; step <= GROW_STEPS; step++)
+			if (models.model(item, size(item, 1), 0, 0) == null)
 			{
-				if (models.model(item, size(item, step), 0, 0) == null)
-				{
-					return;
-				}
+				return null;
+			}
+			for (int step = 2; step <= GROW_STEPS; step++)
+			{
+				models.queue(item, size(item, step), 0, 0, true);
 			}
 			Look look = FishModels.look(item);
 			double most = look.tip / 100.0 * ((look.rise > 0 ? BOB_PITCH : 0) + (look.dipDepth > 0 ? DIP_PITCH : 0));
@@ -832,52 +1135,210 @@ final class RiverSpotFish
 			}
 		}
 		int cycle = client.getGameCycle();
-		double spacing = TRAVEL_SPACING * (lake ? lakeSpacingScale : spacingScale);
-		int travelling = Math.max(1, (int) Math.round(lake ? river.waterCells * CELL * CELL / (LAKE_ROOM * spacing)
-			: river.length / spacing));
-		Shoal shoal = new Shoal(route, plane, view.getId(), river, kinds, cycle, travelling,
+		Shoal shoal = new Shoal(route, plane, view.getId(), river, kinds, cycle, fishCount(route, river, lake),
 			lake ? spawns.toArray(new double[0][]) : null);
+		shoal.mappedAround = playerTile();
+		shoal.baseX = view.getBaseX();
+		shoal.baseY = view.getBaseY();
 		if (lake)
 		{
-			log.debug("Lake {}: {} water cells, {} fish", route[0], river.waterCells, travelling);
+			log.debug("Lake {}: {} water cells, {} fish", route[0], river.waterCells, shoal.travelling);
 		}
 		else
 		{
-			log.debug("River route {} to {}: path {} long, {} fish", route[0], route[1], (int) river.length, travelling);
+			log.debug("River route {} to {}: path {} long, {} fish", route[0], route[route.length - 1], (int) river.length,
+				shoal.travelling);
 		}
-		attach(shoal, spot, at);
 		shoals.add(shoal);
 		ThreadLocalRandom random = ThreadLocalRandom.current();
 		if (lake)
 		{
-			// Fill the lake with schools spread across it, growing in, a little out of step.
-			stagger = true;
-			for (int made = 0; made < travelling; )
-			{
-				made += lakeArrival(shoal, openPlace(river, random), travelling - made, cycle, random);
-			}
-			stagger = false;
+			// Filled with schools spread across it over the next few ticks.
+			shoal.lakeFilling = true;
 			shoal.nextSpawn = cycle;
-			return;
+			return shoal;
 		}
-		// Start with groups spread evenly along the river, growing in, a little out of step.
+		// Fish spread evenly along the stretch round the player, filled a piece a tick, nearest first.
+		shoal.spacing = TRAVEL_SPACING * spacingScale;
+		updateWindow(shoal);
+		List<double[]> pieces = new ArrayList<>();
+		for (double from = shoal.windowFrom; from < shoal.windowTo; from += FILL_STRETCH)
+		{
+			pieces.add(new double[]{from, Math.min(shoal.windowTo, from + FILL_STRETCH)});
+		}
+		double playerAt = shoal.playerAt;
+		pieces.sort((a, b) -> Double.compare(Math.abs((a[0] + a[1]) / 2 - playerAt),
+			Math.abs((b[0] + b[1]) / 2 - playerAt)));
+		shoal.toFill.addAll(pieces);
+		shoal.nextSpawn = cycle + spawnGap(random);
+		shoal.nextSolo = cycle + (int) (spawnGap(random) * SOLO_EVERY);
+		shoal.nextBody = cycle + bodyGap(random);
+		return shoal;
+	}
+
+	/**
+	 * Fills a stretch of river with groups spread evenly along it, and single fish between them when schooled, all
+	 * growing in a little out of step.
+	 */
+	private void fillStretch(Shoal shoal, double from, double to, int cycle, ThreadLocalRandom random)
+	{
+		River river = shoal.river;
+		double gap = shoal.spacing;
 		stagger = true;
-		double gap = river.length / shoal.travelling;
-		for (double along = gap * random.nextDouble(); along < river.length - GROUP_LENGTH; )
+		for (double along = from + gap * random.nextDouble(); along < Math.min(to, river.length - GROUP_LENGTH); )
 		{
 			along += gap * spawnGroup(shoal, along, null, true, cycle, random, Integer.MAX_VALUE)
 				* (1 + random.nextDouble(-SPAWN_STRAY, SPAWN_STRAY));
 		}
-		// And single fish on their own between them, when schooled.
-		for (double along = gap * SOLO_EVERY * random.nextDouble(); schooled && along < river.length; )
+		for (double along = from + gap * SOLO_EVERY * random.nextDouble(); schooled && along < to; )
 		{
 			spawn(shoal, along, null, true, cycle, random, kind(shoal.kinds, random, false), null, 0);
 			along += gap * SOLO_EVERY * (1 + random.nextDouble(-SPAWN_STRAY, SPAWN_STRAY));
 		}
 		stagger = false;
-		shoal.nextSpawn = cycle + spawnGap(random);
-		shoal.nextSolo = cycle + (int) (spawnGap(random) * SOLO_EVERY);
-		shoal.nextBody = cycle + bodyGap(random);
+	}
+
+	/**
+	 * Fills a little more of a new river or lake: one stretch of river, or up to LAKE_FILL_PER_TICK lake fish.
+	 */
+	private void fillSome(Shoal shoal, int cycle, ThreadLocalRandom random)
+	{
+		if (shoal.leaving)
+		{
+			shoal.toFill.clear();
+			shoal.lakeFilling = false;
+			return;
+		}
+		double[] piece = shoal.toFill.poll();
+		if (piece != null)
+		{
+			fillStretch(shoal, piece[0], piece[1], cycle, random);
+		}
+		if (!shoal.lakeFilling)
+		{
+			return;
+		}
+		int all = 0;
+		for (Swimmer swimmer : shoal.fish)
+		{
+			all += swimmer.shrinkingSince < 0 ? 1 : 0;
+		}
+		stagger = true;
+		for (int made = 0; made < LAKE_FILL_PER_TICK && all < shoal.travelling; )
+		{
+			int added = lakeArrival(shoal, openPlace(shoal.river, random), shoal.travelling - all, cycle, random);
+			made += added;
+			all += added;
+		}
+		stagger = false;
+		shoal.lakeFilling = all < shoal.travelling;
+	}
+
+	/**
+	 * Fills the empty stretches of a river's window, as newly loaded or newly taken in: wherever fish are more than
+	 * EMPTY_GAP spacings apart (more than a school and the room round it), but only within HIDDEN_EDGE tiles of its
+	 * edges, out of the player's sight, and not once it has its fish.
+	 */
+	private void fillGaps(Shoal shoal, int cycle, ThreadLocalRandom random)
+	{
+		double gap = shoal.spacing;
+		if (gapsAlong.length < shoal.fish.size() + 1)
+		{
+			gapsAlong = new double[shoal.fish.size() * 2 + 1];
+		}
+		double[] along = gapsAlong;
+		int count = 0;
+		for (Swimmer swimmer : shoal.fish)
+		{
+			if (swimmer.shrinkingSince < 0 && swimmer.circle == null && swimmer.s >= shoal.windowFrom
+				&& swimmer.s <= shoal.windowTo)
+			{
+				along[count++] = swimmer.s;
+			}
+		}
+		// Groups, and single fish half as many again.
+		if (count >= windowFish(shoal) * (1 + 1 / SOLO_EVERY))
+		{
+			return;
+		}
+		along[count++] = shoal.windowTo;
+		Arrays.sort(along, 0, count);
+		double hidden = Math.max(0, FISH_RANGE - HIDDEN_EDGE) * 128.0;
+		double hiddenFrom = shoal.playerAt - hidden;
+		double hiddenTo = shoal.playerAt + hidden;
+		double last = shoal.windowFrom;
+		for (int k = 0; k < count; k++)
+		{
+			double s = along[k];
+			if (s - last > EMPTY_GAP * gap)
+			{
+				double from = last + gap * 2;
+				double to = s - gap * 2;
+				// Only the parts out of the player's sight.
+				if (Math.min(to, hiddenFrom) - from > gap)
+				{
+					fillStretch(shoal, from, Math.min(to, hiddenFrom), cycle, random);
+				}
+				if (to - Math.max(from, hiddenTo) > gap)
+				{
+					fillStretch(shoal, Math.max(from, hiddenTo), to, cycle, random);
+				}
+			}
+			last = s;
+		}
+	}
+
+	private WorldPoint playerTile()
+	{
+		Player player = client.getLocalPlayer();
+		return player == null ? null : player.getWorldLocation();
+	}
+
+	/**
+	 * Rivers: whether the window's come near a cut end of what's mapped and the player has moved on since, so it
+	 * should be mapped again round them.
+	 */
+	private boolean outgrown(Shoal shoal)
+	{
+		River river = shoal.river;
+		WorldPoint me = playerTile();
+		boolean nearEnd = river.cutStart && shoal.playerAt - (FISH_RANGE + REMAP_EDGE) * 128.0 < 0
+			|| river.cutEnd && shoal.playerAt + (FISH_RANGE + REMAP_EDGE) * 128.0 > river.length;
+		return nearEnd && me != null && (shoal.mappedAround == null || me.distanceTo2D(shoal.mappedAround) >= REMAP_MOVE);
+	}
+
+	/**
+	 * Rivers: centres the stretch with fish on the player's nearest place along the path.
+	 */
+	private void updateWindow(Shoal shoal)
+	{
+		Player player = client.getLocalPlayer();
+		LocalPoint me = player == null ? null : player.getLocalLocation();
+		River river = shoal.river;
+		if (me != null)
+		{
+			shoal.playerAt = river.nearest(me.getX(), me.getY());
+		}
+		shoal.windowFrom = Math.max(0, shoal.playerAt - FISH_RANGE * 128.0);
+		shoal.windowTo = Math.min(river.length, shoal.playerAt + FISH_RANGE * 128.0);
+	}
+
+	/**
+	 * Rivers: fish kept along the window at their spacing.
+	 */
+	private static int windowFish(Shoal shoal)
+	{
+		return Math.max(1, (int) Math.round((shoal.windowTo - shoal.windowFrom) / shoal.spacing));
+	}
+
+	/**
+	 * How many fish a river (from its path's length) or lake (from its water) keeps.
+	 */
+	private int fishCount(WorldPoint[] route, River river, boolean lake)
+	{
+		return Math.max(1, (int) Math.round(lake
+			? river.waterCells * CELL * CELL / (LAKE_ROOM * lakeSpacingScale) * LAKE_FISH_SHARE.getOrDefault(route[0], 1.0)
+			: river.length / (TRAVEL_SPACING * spacingScale)));
 	}
 
 	/**
@@ -910,17 +1371,20 @@ final class RiverSpotFish
 			{
 				continue;
 			}
-			double ax = route[0].getX();
-			double ay = route[0].getY();
-			double bx = route[1].getX() - ax;
-			double by = route[1].getY() - ay;
-			double t = Math.max(0, Math.min(1, ((spot.getX() - ax) * bx + (spot.getY() - ay) * by)
-				/ Math.max(1, bx * bx + by * by)));
-			double d = Math.hypot(spot.getX() - ax - bx * t, spot.getY() - ay - by * t);
-			if (d <= nearest)
+			for (int k = 0; k + 1 < route.length; k++)
 			{
-				nearest = d;
-				best = route;
+				double ax = route[k].getX();
+				double ay = route[k].getY();
+				double bx = route[k + 1].getX() - ax;
+				double by = route[k + 1].getY() - ay;
+				double t = Math.max(0, Math.min(1, ((spot.getX() - ax) * bx + (spot.getY() - ay) * by)
+					/ Math.max(1, bx * bx + by * by)));
+				double d = Math.hypot(spot.getX() - ax - bx * t, spot.getY() - ay - by * t);
+				if (d <= nearest)
+				{
+					nearest = d;
+					best = route;
+				}
 			}
 		}
 		if (best != null)
@@ -961,11 +1425,31 @@ final class RiverSpotFish
 	 */
 	private void attach(Shoal shoal, NPC spot, LocalPoint at)
 	{
-		double[] away = awayFromBank(shoal.river, at.getX(), at.getY());
-		Circle circle = new Circle(spot, shoal.river, at.getX() + away[0] * CIRCLE_OFFSET,
-			at.getY() + away[1] * CIRCLE_OFFSET, ThreadLocalRandom.current().nextBoolean() ? 1 : -1);
+		// A fixed offset for this river or lake (or the tuning spinners'), else away from the nearest bank.
+		int[] fixed = RING_MANUAL ? new int[]{RING_EAST, RING_NORTH} : RING_OFFSETS.get(shoal.route[0]);
+		double x;
+		double y;
+		if (fixed != null)
+		{
+			x = at.getX() + fixed[0];
+			y = at.getY() + fixed[1];
+		}
+		else
+		{
+			double[] away = awayFromBank(shoal.river, at.getX(), at.getY());
+			double[] round = roundRing(shoal.river, at.getX() + away[0] * CIRCLE_OFFSET,
+				at.getY() + away[1] * CIRCLE_OFFSET);
+			x = round[0];
+			y = round[1];
+		}
+		if (RING_MANUAL)
+		{
+			WorldPoint key = shoal.route[0];
+			log.debug("Ring offset: Map.entry(new WorldPoint({}, {}, {}), new int[]{{}, {}})", key.getX(), key.getY(),
+				key.getPlane(), RING_EAST, RING_NORTH);
+		}
+		Circle circle = new Circle(spot, shoal.river, x, y, ThreadLocalRandom.current().nextBoolean() ? 1 : -1);
 		shoal.circles.put(spot, circle);
-		shoal.emptySince = -1;
 		shoal.leaving = false;
 		// Fish already past the decision point skip it.
 		for (Swimmer swimmer : shoal.fish)
@@ -975,6 +1459,56 @@ final class RiverSpotFish
 				swimmer.decided.add(circle);
 			}
 		}
+	}
+
+	/**
+	 * Moves a ring's middle away from banks a little at a time until its outer lane is clear of them all round, so
+	 * it isn't pulled out of shape; within ROUND_MOST of where it started, else the place with the fewest points too
+	 * near a bank.
+	 */
+	private static double[] roundRing(River river, double startX, double startY)
+	{
+		double x = startX;
+		double y = startY;
+		double bestX = x;
+		double bestY = y;
+		int fewest = Integer.MAX_VALUE;
+		for (int step = 0; step <= ROUND_STEPS; step++)
+		{
+			int near = 0;
+			double pushX = 0;
+			double pushY = 0;
+			for (int a = 0; a < ROUND_POINTS; a++)
+			{
+				double angle = 2 * Math.PI * a / ROUND_POINTS;
+				double cos = Math.cos(angle);
+				double sin = Math.sin(angle);
+				if (river.clearanceAt(x + CIRCLE_SIZE * cos, y + CIRCLE_SIZE * sin) < BANK_GAP)
+				{
+					near++;
+					pushX -= cos;
+					pushY -= sin;
+				}
+			}
+			if (near < fewest)
+			{
+				fewest = near;
+				bestX = x;
+				bestY = y;
+			}
+			double push = Math.hypot(pushX, pushY);
+			if (near == 0 || push < 0.01)
+			{
+				break;
+			}
+			x += pushX / push * ROUND_STEP;
+			y += pushY / push * ROUND_STEP;
+			if (Math.hypot(x - startX, y - startY) > ROUND_MOST)
+			{
+				break;
+			}
+		}
+		return new double[]{bestX, bestY};
 	}
 
 	/**
@@ -1019,12 +1553,17 @@ final class RiverSpotFish
 			maxX = Math.max(maxX, points[k].getSceneX());
 			maxY = Math.max(maxY, points[k].getSceneY());
 		}
-		int reach = Math.max(maxX - minX, maxY - minY) / 2 + LAKE_MARGIN;
-		River river = new River(((minX + maxX) / 2 - reach) * 128, ((minY + maxY) / 2 - reach) * 128,
-			(2 * reach + 1) * (128 / CELL));
-		boolean[] wet = wet(scene, plane, river);
+		River river = new River((minX - LAKE_MARGIN) * 128, (minY - LAKE_MARGIN) * 128,
+			(maxX - minX + 2 * LAKE_MARGIN + 1) * (128 / CELL), (maxY - minY + 2 * LAKE_MARGIN + 1) * (128 / CELL));
+		List<int[]> centres = new ArrayList<>();
+		for (LocalPoint point : points)
+		{
+			centres.add(new int[]{point.getSceneX(), point.getSceneY()});
+		}
+		river.reach = corridor(river, centres, minX - LAKE_MARGIN, minY - LAKE_MARGIN, LAKE_RADIUS + 1, false);
+		boolean[] wet = wet(view, plane, river);
 		// Only the water near its spawn points.
-		for (int c = 0; c < wet.length; c++)
+		for (int c = 0; c < river.width * river.height; c++)
 		{
 			boolean near = false;
 			for (LocalPoint point : points)
@@ -1041,7 +1580,7 @@ final class RiverSpotFish
 		}
 		flood(river, wet, from);
 		List<Integer> open = new ArrayList<>();
-		for (int c = 0; c < river.size * river.size; c++)
+		for (int c = 0; c < river.width * river.height; c++)
 		{
 			if (river.water[c])
 			{
@@ -1053,14 +1592,25 @@ final class RiverSpotFish
 			}
 		}
 		river.open = open.stream().mapToInt(Integer::intValue).toArray();
-		int row = river.size + 1;
-		river.waterSum = new int[row * row];
-		for (int j = 0; j < river.size; j++)
+		int perTile = 128 / CELL;
+		int tilesX = river.width / perTile;
+		int tilesY = river.height / perTile;
+		int row = tilesX + 1;
+		river.tileWater = new int[row * row];
+		for (int tj = 0; tj < tilesY; tj++)
 		{
-			for (int i = 0; i < river.size; i++)
+			for (int ti = 0; ti < tilesX; ti++)
 			{
-				river.waterSum[(j + 1) * row + i + 1] = (river.water[j * river.size + i] ? 1 : 0)
-					+ river.waterSum[j * row + i + 1] + river.waterSum[(j + 1) * row + i] - river.waterSum[j * row + i];
+				int count = 0;
+				for (int j = tj * perTile; j < (tj + 1) * perTile; j++)
+				{
+					for (int i = ti * perTile; i < (ti + 1) * perTile; i++)
+					{
+						count += river.water[j * river.width + i] ? 1 : 0;
+					}
+				}
+				river.tileWater[(tj + 1) * row + ti + 1] = count + river.tileWater[tj * row + ti + 1]
+					+ river.tileWater[(tj + 1) * row + ti] - river.tileWater[tj * row + ti];
 			}
 		}
 		for (LocalPoint point : points)
@@ -1083,12 +1633,12 @@ final class RiverSpotFish
 
 	private static double cellX(River river, int cell)
 	{
-		return river.x0 + (cell % river.size + 0.5) * CELL;
+		return river.x0 + (cell % river.width + 0.5) * CELL;
 	}
 
 	private static double cellY(River river, int cell)
 	{
-		return river.y0 + (cell / river.size + 0.5) * CELL;
+		return river.y0 + (cell / river.width + 0.5) * CELL;
 	}
 
 	/**
@@ -1367,8 +1917,8 @@ final class RiverSpotFish
 			wantX = away[0] * push;
 			wantY = away[1] * push;
 		}
-		swimmer.bankX = ease(swimmer.bankX, wantX, LAKE_BANK_EASE);
-		swimmer.bankY = ease(swimmer.bankY, wantY, LAKE_BANK_EASE);
+		swimmer.bankX = ease(swimmer.bankX, wantX, LAKE_BANK_EASE * DECIDE_EVERY);
+		swimmer.bankY = ease(swimmer.bankY, wantY, LAKE_BANK_EASE * DECIDE_EVERY);
 		into[0] += swimmer.bankX;
 		into[1] += swimmer.bankY;
 	}
@@ -1423,40 +1973,221 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * Maps a route's water and lays its path; null (logged) if it can't.
+	 * Maps a route's water and lays its path through its waypoints; null (logged) if it can't. A long route is cut off
+	 * at the edge of what's loaded, and mapped again when more loads.
 	 */
 	private River mapRoute(WorldView view, WorldPoint[] route, int plane)
 	{
 		Scene scene = view.getScene();
-		LocalPoint start = LocalPoint.fromWorld(view, route[0]);
-		LocalPoint end = LocalPoint.fromWorld(view, route[1]);
-		if (scene == null || start == null || end == null)
+		WorldPoint last = route[route.length - 1];
+		List<int[]> stops = new ArrayList<>();
+		boolean[] cut = new boolean[2];
+		Player player = client.getLocalPlayer();
+		LocalPoint me = player == null ? null : player.getLocalLocation();
+		if (scene == null || !clip(view, route, me, stops, cut) || stops.size() < 2)
 		{
-			log.debug("River route {} to {}: not all in sight", route[0], route[1]);
+			log.debug("River route {} to {}: not in sight", route[0], last);
 			return null;
 		}
-		int reach = Math.max(Math.abs(start.getSceneX() - end.getSceneX()),
-			Math.abs(start.getSceneY() - end.getSceneY())) / 2 + ROUTE_MARGIN;
-		int middleX = (start.getSceneX() + end.getSceneX()) / 2;
-		int middleY = (start.getSceneY() + end.getSceneY()) / 2;
-		River river = new River((middleX - reach) * 128, (middleY - reach) * 128, (2 * reach + 1) * (128 / CELL));
-		boolean[] wet = wet(scene, plane, river);
-		int from = nearestWater(river, start, wet);
-		if (from < 0)
+		if (cut[0] || cut[1])
 		{
-			log.debug("River route {} to {}: no water within a tile of the start", route[0], route[1]);
+			log.debug("River route {} to {}: cut to what's in sight", route[0], last);
+		}
+		int minX = Integer.MAX_VALUE;
+		int minY = Integer.MAX_VALUE;
+		int maxX = Integer.MIN_VALUE;
+		int maxY = Integer.MIN_VALUE;
+		for (int[] stop : stops)
+		{
+			minX = Math.min(minX, stop[0]);
+			minY = Math.min(minY, stop[1]);
+			maxX = Math.max(maxX, stop[0]);
+			maxY = Math.max(maxY, stop[1]);
+		}
+		River river = new River((minX - BOX_MARGIN) * 128, (minY - BOX_MARGIN) * 128,
+			(maxX - minX + 2 * BOX_MARGIN + 1) * (128 / CELL), (maxY - minY + 2 * BOX_MARGIN + 1) * (128 / CELL));
+		river.reach = corridor(river, stops, minX - BOX_MARGIN, minY - BOX_MARGIN, BOX_MARGIN, true);
+		boolean[] wet = wet(view, plane, river);
+		// A cut end takes the nearest water, however far; waypoints too, so one just off the water still counts.
+		int[] cells = new int[stops.size()];
+		for (int k = 0; k < stops.size(); k++)
+		{
+			LocalPoint at = new LocalPoint(stops.get(k)[0] * 128 + 64, stops.get(k)[1] * 128 + 64, view.getId());
+			boolean exact = k == 0 ? !cut[0] : k == stops.size() - 1 && !cut[1];
+			if (k == 0)
+			{
+				cells[0] = exact ? nearestWater(river, at, wet) : nearestAny(river, at, wet);
+				if (cells[0] < 0)
+				{
+					log.debug("River route {} to {}: no water within a tile of the start", route[0], last);
+					return null;
+				}
+				flood(river, wet, cells[0]);
+				continue;
+			}
+			// The rest must be in the start's water.
+			cells[k] = exact ? nearestWater(river, at, river.water) : nearestAny(river, at, river.water);
+			if (cells[k] < 0)
+			{
+				log.debug("River route {} to {}: a point isn't in the start's water", route[0], last);
+				return null;
+			}
+		}
+		if (cells[cells.length - 1] == cells[0])
+		{
+			log.debug("River route {} to {}: the end is the start", route[0], last);
 			return null;
 		}
-		flood(river, wet, from);
-		// The end must be in the start's water.
-		int to = nearestWater(river, end, river.water);
-		if (to < 0 || to == from)
+		// Waypoints only steer the route: each moves to the most open water near it, so the path keeps to the middle.
+		for (int k = 1; k < cells.length - 1; k++)
 		{
-			log.debug("River route {} to {}: the end isn't in the start's water", route[0], route[1]);
-			return null;
+			cells[k] = roomiest(river, cells[k], WAYPOINT_SNAP / CELL);
 		}
-		layPath(river, from, to);
+		layPath(river, cells);
+		river.cutStart = cut[0];
+		river.cutEnd = cut[1];
 		return river;
+	}
+
+	/**
+	 * A route's points in scene tiles, cut back along it to the loaded scene (less ROUTE_MARGIN) and to the fish range
+	 * plus MAP_MORE round the player: its start (or where it comes in), the waypoints inside, and its end (or where it
+	 * goes out). Fills stops, and cut with whether the start and the end were cut; false if no part of it is inside.
+	 */
+	private static boolean clip(WorldView view, WorldPoint[] route, LocalPoint around, List<int[]> stops, boolean[] cut)
+	{
+		double[] low = {ROUTE_MARGIN, ROUTE_MARGIN};
+		double[] high = {view.getSizeX() - 1 - ROUTE_MARGIN, view.getSizeY() - 1 - ROUTE_MARGIN};
+		if (around != null)
+		{
+			int reach = FISH_RANGE + MAP_MORE;
+			low = new double[]{Math.max(low[0], around.getSceneX() - reach), Math.max(low[1], around.getSceneY() - reach)};
+			high = new double[]{Math.min(high[0], around.getSceneX() + reach), Math.min(high[1], around.getSceneY() + reach)};
+		}
+		int lastLeg = -1;
+		double lastLeave = 0;
+		for (int k = 0; k + 1 < route.length; k++)
+		{
+			double[] from = {route[k].getX() - view.getBaseX(), route[k].getY() - view.getBaseY()};
+			double[] way = {route[k + 1].getX() - route[k].getX(), route[k + 1].getY() - route[k].getY()};
+			// Liang-Barsky: the share of the way along this leg it enters and leaves the scene.
+			double enter = 0;
+			double leave = 1;
+			boolean outside = false;
+			for (int axis = 0; axis < 2 && !outside; axis++)
+			{
+				for (int side = 0; side < 2; side++)
+				{
+					double p = side == 0 ? -way[axis] : way[axis];
+					double q = side == 0 ? from[axis] - low[axis] : high[axis] - from[axis];
+					if (p == 0)
+					{
+						outside |= q < 0;
+						continue;
+					}
+					double t = q / p;
+					if (p < 0)
+					{
+						enter = Math.max(enter, t);
+					}
+					else
+					{
+						leave = Math.min(leave, t);
+					}
+				}
+			}
+			if (outside || enter > leave)
+			{
+				continue;
+			}
+			if (stops.isEmpty())
+			{
+				cut[0] = k > 0 || enter > 0;
+			}
+			// The leg's start: the route's, or where it comes back into the scene.
+			if (stops.isEmpty() || enter > 0)
+			{
+				stops.add(new int[]{(int) Math.round(from[0] + way[0] * enter),
+					(int) Math.round(from[1] + way[1] * enter)});
+			}
+			stops.add(new int[]{(int) Math.round(from[0] + way[0] * leave),
+				(int) Math.round(from[1] + way[1] * leave)});
+			lastLeg = k;
+			lastLeave = leave;
+		}
+		cut[1] = lastLeg < route.length - 2 || lastLeave < 1;
+		return lastLeg >= 0;
+	}
+
+	/**
+	 * Whether an object has a model with faces to see.
+	 */
+	private static boolean visible(GameObject object)
+	{
+		if (object == null || object.getRenderable() == null || object.getSceneMinLocation() == null
+			|| object.getSceneMaxLocation() == null || NOT_BLOCKING.contains(object.getId()))
+		{
+			return false;
+		}
+		Model model = object.getRenderable().getModel();
+		return model != null && model.getFaceCount() > 0;
+	}
+
+	/**
+	 * The water cell with the most room within some cells of one.
+	 */
+	private static int roomiest(River river, int cell, int reach)
+	{
+		int width = river.width;
+		int height = river.height;
+		int best = cell;
+		for (int j = Math.max(0, cell / width - reach); j <= Math.min(height - 1, cell / width + reach); j++)
+		{
+			for (int i = Math.max(0, cell % width - reach); i <= Math.min(width - 1, cell % width + reach); i++)
+			{
+				int c = j * width + i;
+				if (river.water[c] && river.clearance[c] > river.clearance[best])
+				{
+					best = c;
+				}
+			}
+		}
+		return best;
+	}
+
+	/**
+	 * The nearest marked cell to a place at any distance, or -1.
+	 */
+	private static int nearestAny(River river, LocalPoint at, boolean[] marked)
+	{
+		int width = river.width;
+		int height = river.height;
+		int ci = Math.max(0, Math.min(width - 1, (int) Math.floor((at.getX() - river.x0) / (double) CELL)));
+		int cj = Math.max(0, Math.min(height - 1, (int) Math.floor((at.getY() - river.y0) / (double) CELL)));
+		int nearestCell = -1;
+		double nearest = Double.MAX_VALUE;
+		// Square rings outwards; once one is found, a ring further out than it can't hold a nearer one.
+		for (int ring = 0; ring < Math.max(width, height) && ring * CELL <= nearest + CELL; ring++)
+		{
+			for (int j = cj - ring; j <= cj + ring; j++)
+			{
+				for (int i = ci - ring; i <= ci + ring; i++)
+				{
+					boolean edge = Math.abs(i - ci) == ring || Math.abs(j - cj) == ring;
+					if (!edge || i < 0 || j < 0 || i >= width || j >= height || !marked[j * width + i])
+					{
+						continue;
+					}
+					double d = Math.hypot(river.x0 + (i + 0.5) * CELL - at.getX(), river.y0 + (j + 0.5) * CELL - at.getY());
+					if (d < nearest)
+					{
+						nearest = d;
+						nearestCell = j * width + i;
+					}
+				}
+			}
+		}
+		return nearestCell;
 	}
 
 	/**
@@ -1466,15 +2197,22 @@ final class RiverSpotFish
 	{
 		int nearestCell = -1;
 		double nearest = Double.MAX_VALUE;
-		for (int j = 0; j < river.size; j++)
+		int reach = 128 / CELL + 1;
+		int ci = (int) Math.floor((at.getX() - river.x0) / (double) CELL);
+		int cj = (int) Math.floor((at.getY() - river.y0) / (double) CELL);
+		for (int j = Math.max(0, cj - reach); j <= Math.min(river.height - 1, cj + reach); j++)
 		{
-			for (int i = 0; i < river.size; i++)
+			for (int i = Math.max(0, ci - reach); i <= Math.min(river.width - 1, ci + reach); i++)
 			{
+				if (!marked[j * river.width + i])
+				{
+					continue;
+				}
 				double d = Math.hypot(river.x0 + (i + 0.5) * CELL - at.getX(), river.y0 + (j + 0.5) * CELL - at.getY());
-				if (marked[j * river.size + i] && d <= 128 && d < nearest)
+				if (d <= 128 && d < nearest)
 				{
 					nearest = d;
-					nearestCell = j * river.size + i;
+					nearestCell = j * river.width + i;
 				}
 			}
 		}
@@ -1482,85 +2220,248 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * Which grid cells are water, reading under bridges.
+	 * Which grid cells are water, reading under bridges. Cells under the model of a visible object that blocks
+	 * movement, as rocks and posts, aren't; walk-through ones, as lily pads, and invisible blockers don't count.
 	 */
-	private static boolean[] wet(Scene scene, int plane, River river)
+	private boolean[] wet(WorldView view, int plane, River river)
 	{
-		Tile[][] tiles = scene.getTiles()[plane];
+		Tile[][] tiles = view.getScene().getTiles()[plane];
+		CollisionData[] maps = view.getCollisionMaps();
+		int[][] flags = maps == null || maps[plane] == null ? null : maps[plane].getFlags();
 		int perTile = 128 / CELL;
-		int size = river.size;
-		boolean[] wet = new boolean[size * size];
+		int width = river.width;
+		int tilesX = width / perTile;
+		int tilesY = river.height / perTile;
+		int cells = width * river.height;
+		SCRATCH.wet = Scratch.cleared(SCRATCH.wet, cells);
+		boolean[] wet = SCRATCH.wet;
+		// Tiles with any water, so objects are only looked at where there's water.
+		SCRATCH.wetTile = Scratch.cleared(SCRATCH.wetTile, tilesX * tilesY);
+		boolean[] wetTile = SCRATCH.wetTile;
 		int tileX0 = Math.floorDiv(river.x0, 128);
 		int tileY0 = Math.floorDiv(river.y0, 128);
-		for (int ty = 0; ty < size / perTile; ty++)
+		for (int ty = 0; ty < tilesY; ty++)
 		{
-			for (int tx = 0; tx < size / perTile; tx++)
+			for (int tx = 0; tx < tilesX; tx++)
 			{
 				int sx = tileX0 + tx;
 				int sy = tileY0 + ty;
-				if (sx < 0 || sy < 0 || sx >= tiles.length || sy >= tiles[sx].length || tiles[sx][sy] == null)
+				if (river.reach != null && !river.reach[ty * tilesX + tx] || sx < 0 || sy < 0 || sx >= tiles.length
+					|| sy >= tiles[sx].length || tiles[sx][sy] == null)
 				{
 					continue;
 				}
 				Tile tile = tiles[sx][sy].getBridge() != null ? tiles[sx][sy].getBridge() : tiles[sx][sy];
 				SceneTilePaint paint = tile.getSceneTilePaint();
 				SceneTileModel model = tile.getSceneTileModel();
+				if (paint == null && model == null)
+				{
+					continue;
+				}
 				for (int cy = 0; cy < perTile; cy++)
 				{
 					for (int cx = 0; cx < perTile; cx++)
 					{
 						double x = sx * 128 + (cx + 0.5) * CELL;
 						double y = sy * 128 + (cy + 0.5) * CELL;
-						wet[(ty * perTile + cy) * size + tx * perTile + cx] = paint != null
-							? paint.getTexture() == WATER_TEXTURE
-							: model != null && textureAt(model, x, y) == WATER_TEXTURE;
-					}
-				}
-				// Objects standing in the water, as rocks and posts, aren't water: their whole footprint.
-				for (GameObject object : tile.getGameObjects())
-				{
-					if (object != null)
-					{
-						block(wet, river, object.getSceneMinLocation(), object.getSceneMaxLocation());
+						int c = (ty * perTile + cy) * width + tx * perTile + cx;
+						wet[c] = paint != null ? paint.getTexture() == WATER_TEXTURE
+							: textureAt(model, x, y) == WATER_TEXTURE;
+						wetTile[ty * tilesX + tx] |= wet[c];
 					}
 				}
 			}
+		}
+		// Cells under the model of each visible object in the water that blocks movement, and under fish blockers.
+		// An object covering several tiles is listed on each, so the water tiles' lists find all those in the water.
+		SCRATCH.solid = Scratch.cleared(SCRATCH.solid, cells);
+		boolean[] solid = SCRATCH.solid;
+		Set<GameObject> done = new HashSet<>();
+		for (int ty = 0; ty < tilesY; ty++)
+		{
+			for (int tx = 0; tx < tilesX; tx++)
+			{
+				int sx = tileX0 + tx;
+				int sy = tileY0 + ty;
+				if (!wetTile[ty * tilesX + tx] || tiles[sx][sy] == null)
+				{
+					continue;
+				}
+				for (GameObject object : tiles[sx][sy].getGameObjects())
+				{
+					if (object != null && done.add(object) && visible(object) && blocks(flags, object)
+						&& object.getLocalLocation() != null)
+					{
+						footprint(solid, river, object.getRenderable().getModel(), object.getLocalLocation(),
+							object.getModelOrientation());
+					}
+				}
+			}
+		}
+		for (Map.Entry<WorldPoint, Half> blocker : blockers().entrySet())
+		{
+			WorldPoint tile = blocker.getKey();
+			int tx = tile.getX() - view.getBaseX() - tileX0;
+			int ty = tile.getY() - view.getBaseY() - tileY0;
+			if (tile.getPlane() != plane || tx < 0 || ty < 0 || tx >= tilesX || ty >= tilesY)
+			{
+				continue;
+			}
+			// North is the upper rows of cells, east the right columns.
+			Half half = blocker.getValue();
+			int fromRow = half == Half.NORTH ? perTile / 2 : 0;
+			int toRow = half == Half.SOUTH ? perTile / 2 : perTile;
+			int fromColumn = half == Half.EAST ? perTile / 2 : 0;
+			int toColumn = half == Half.WEST ? perTile / 2 : perTile;
+			for (int cy = fromRow; cy < toRow; cy++)
+			{
+				for (int cx = fromColumn; cx < toColumn; cx++)
+				{
+					solid[(ty * perTile + cy) * width + tx * perTile + cx] = true;
+				}
+			}
+		}
+		for (int c = 0; c < cells; c++)
+		{
+			wet[c] &= !solid[c];
 		}
 		return wet;
 	}
 
 	/**
-	 * Marks the grid cells under tiles from one scene corner to another, inclusive, as not water.
+	 * The tiles of a map's box within some tiles of points (scene tiles), as a mask of its tiles: of the line through
+	 * them in turn when joined, else of each point.
 	 */
-	private static void block(boolean[] wet, River river, Point min, Point max)
+	private static boolean[] corridor(River river, List<int[]> points, int originX, int originY, int reach, boolean joined)
 	{
-		if (min == null || max == null)
-		{
-			return;
-		}
 		int perTile = 128 / CELL;
-		int tileX0 = Math.floorDiv(river.x0, 128);
-		int tileY0 = Math.floorDiv(river.y0, 128);
-		for (int sy = min.getY(); sy <= max.getY(); sy++)
+		int tilesX = river.width / perTile;
+		int tilesY = river.height / perTile;
+		boolean[] mask = new boolean[tilesX * tilesY];
+		for (int k = 0; k < points.size(); k++)
 		{
-			for (int sx = min.getX(); sx <= max.getX(); sx++)
+			int[] a = points.get(k);
+			int[] b = joined ? points.get(Math.min(k + 1, points.size() - 1)) : a;
+			double ax = a[0] - originX;
+			double ay = a[1] - originY;
+			double bx = b[0] - originX - ax;
+			double by = b[1] - originY - ay;
+			int fromX = Math.max(0, (int) Math.floor(Math.min(ax, ax + bx)) - reach);
+			int toX = Math.min(tilesX - 1, (int) Math.ceil(Math.max(ax, ax + bx)) + reach);
+			int fromY = Math.max(0, (int) Math.floor(Math.min(ay, ay + by)) - reach);
+			int toY = Math.min(tilesY - 1, (int) Math.ceil(Math.max(ay, ay + by)) + reach);
+			for (int ty = fromY; ty <= toY; ty++)
 			{
-				int tx = sx - tileX0;
-				int ty = sy - tileY0;
-				for (int cy = 0; cy < perTile; cy++)
+				for (int tx = fromX; tx <= toX; tx++)
 				{
-					for (int cx = 0; cx < perTile; cx++)
+					double t = Math.max(0, Math.min(1, ((tx - ax) * bx + (ty - ay) * by) / Math.max(1e-9, bx * bx + by * by)));
+					if (Math.hypot(tx - ax - bx * t, ty - ay - by * t) <= reach)
 					{
-						int i = tx * perTile + cx;
-						int j = ty * perTile + cy;
-						if (i >= 0 && j >= 0 && i < river.size && j < river.size)
-						{
-							wet[j * river.size + i] = false;
-						}
+						mask[ty * tilesX + tx] = true;
 					}
 				}
 			}
 		}
+		return mask;
+	}
+
+	/**
+	 * Whether any tile under an object is flagged as blocked by an object.
+	 */
+	private static boolean blocks(int[][] flags, GameObject object)
+	{
+		Point min = object.getSceneMinLocation();
+		Point max = object.getSceneMaxLocation();
+		for (int x = Math.max(0, min.getX()); flags != null && x <= Math.min(flags.length - 1, max.getX()); x++)
+		{
+			for (int y = Math.max(0, min.getY()); y <= Math.min(flags[x].length - 1, max.getY()); y++)
+			{
+				if ((flags[x][y] & CollisionDataFlag.BLOCK_MOVEMENT_OBJECT) != 0)
+				{
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Marks the grid cells inside a rough outline of a model seen from above, placed at a local point and turned by an
+	 * orientation: the convex hull of its corners, drawn in by OBJECT_INSET.
+	 */
+	private static void footprint(boolean[] solid, River river, Model model, LocalPoint at, int orientation)
+	{
+		int count = model.getVerticesCount();
+		float[] vx = model.getVerticesX();
+		float[] vz = model.getVerticesZ();
+		int sin = Perspective.SINE[orientation & 2047];
+		int cos = Perspective.COSINE[orientation & 2047];
+		double[][] points = new double[count][];
+		for (int v = 0; v < count; v++)
+		{
+			points[v] = new double[]{at.getX() + (vz[v] * sin + vx[v] * cos) / 65536.0,
+				at.getY() + (vz[v] * cos - vx[v] * sin) / 65536.0};
+		}
+		double[][] hull = hull(points);
+		double minX = Double.MAX_VALUE;
+		double minY = Double.MAX_VALUE;
+		double maxX = -Double.MAX_VALUE;
+		double maxY = -Double.MAX_VALUE;
+		for (double[] point : hull)
+		{
+			minX = Math.min(minX, point[0]);
+			minY = Math.min(minY, point[1]);
+			maxX = Math.max(maxX, point[0]);
+			maxY = Math.max(maxY, point[1]);
+		}
+		int i0 = Math.max(0, (int) Math.floor((minX - river.x0) / CELL));
+		int i1 = Math.min(river.width - 1, (int) Math.floor((maxX - river.x0) / CELL));
+		int j0 = Math.max(0, (int) Math.floor((minY - river.y0) / CELL));
+		int j1 = Math.min(river.height - 1, (int) Math.floor((maxY - river.y0) / CELL));
+		for (int j = j0; j <= j1; j++)
+		{
+			for (int i = i0; i <= i1; i++)
+			{
+				double x = river.x0 + (i + 0.5) * CELL;
+				double y = river.y0 + (j + 0.5) * CELL;
+				boolean inside = hull.length >= 3;
+				for (int k = 0; inside && k < hull.length; k++)
+				{
+					double[] p = hull[k];
+					double[] q = hull[(k + 1) % hull.length];
+					double edge = Math.max(1e-6, Math.hypot(q[0] - p[0], q[1] - p[1]));
+					inside = ((q[0] - p[0]) * (y - p[1]) - (q[1] - p[1]) * (x - p[0])) / edge >= OBJECT_INSET;
+				}
+				solid[j * river.width + i] |= inside;
+			}
+		}
+	}
+
+	/**
+	 * The convex hull of some points, anticlockwise, by the monotone chain.
+	 */
+	private static double[][] hull(double[][] points)
+	{
+		double[][] sorted = points.clone();
+		Arrays.sort(sorted, (p, q) -> p[0] != q[0] ? Double.compare(p[0], q[0]) : Double.compare(p[1], q[1]));
+		double[][] hull = new double[2 * sorted.length + 1][];
+		int k = 0;
+		for (int pass = 0; pass < 2; pass++)
+		{
+			int start = k;
+			for (int n = 0; n < sorted.length; n++)
+			{
+				double[] p = sorted[pass == 0 ? n : sorted.length - 1 - n];
+				while (k >= start + 2 && (hull[k - 1][0] - hull[k - 2][0]) * (p[1] - hull[k - 2][1])
+					- (hull[k - 1][1] - hull[k - 2][1]) * (p[0] - hull[k - 2][0]) <= 0)
+				{
+					k--;
+				}
+				hull[k++] = p;
+			}
+			k--;
+		}
+		return Arrays.copyOf(hull, Math.max(0, k));
 	}
 
 	/**
@@ -1599,28 +2500,30 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * Floods the river's water from one cell, then works out bank distances and bank cells.
+	 * Floods the river's water from one cell, then works out bank distances.
 	 */
 	private static void flood(River river, boolean[] wet, int start)
 	{
-		int size = river.size;
-		int[] stack = new int[size * size];
+		int width = river.width;
+		int height = river.height;
+		SCRATCH.stack = Scratch.atLeast(SCRATCH.stack, width * height);
+		int[] stack = SCRATCH.stack;
 		int top = 0;
 		stack[top++] = start;
 		river.water[start] = true;
 		while (top > 0)
 		{
 			int c = stack[--top];
-			int i = c % size;
-			int j = c / size;
+			int i = c % width;
+			int j = c / width;
 			for (int dj = -1; dj <= 1; dj++)
 			{
 				for (int di = -1; di <= 1; di++)
 				{
 					int ni = i + di;
 					int nj = j + dj;
-					int n = nj * size + ni;
-					if (ni >= 0 && nj >= 0 && ni < size && nj < size && wet[n] && !river.water[n])
+					int n = nj * width + ni;
+					if (ni >= 0 && nj >= 0 && ni < width && nj < height && wet[n] && !river.water[n])
 					{
 						river.water[n] = true;
 						stack[top++] = n;
@@ -1629,13 +2532,35 @@ final class RiverSpotFish
 			}
 		}
 		clearances(river);
-		for (int c = 0; c < size * size; c++)
+	}
+
+	/**
+	 * Debug: a river's bank cells' middles, x then y, worked out the first time they're drawn.
+	 */
+	private static int[] banks(River river)
+	{
+		if (river.banks == null)
 		{
-			if (river.water[c] && river.clearance[c] <= CELL)
+			int width = river.width;
+			int cells = width * river.height;
+			int count = 0;
+			for (int c = 0; c < cells; c++)
 			{
-				river.banks.add(new int[]{river.x0 + (c % size) * CELL + CELL / 2, river.y0 + (c / size) * CELL + CELL / 2});
+				count += river.clearance[c] > 0 && river.clearance[c] <= CELL ? 1 : 0;
 			}
+			int[] banks = new int[count * 2];
+			int k = 0;
+			for (int c = 0; c < cells; c++)
+			{
+				if (river.clearance[c] > 0 && river.clearance[c] <= CELL)
+				{
+					banks[k++] = river.x0 + (c % width) * CELL + CELL / 2;
+					banks[k++] = river.y0 + (c / width) * CELL + CELL / 2;
+				}
+			}
+			river.banks = banks;
 		}
+		return river.banks;
 	}
 
 	/**
@@ -1643,159 +2568,180 @@ final class RiverSpotFish
 	 */
 	private static void clearances(River river)
 	{
-		int size = river.size;
-		double[] d = river.clearance;
-		double diagonal = CELL * Math.sqrt(2);
-		for (int c = 0; c < d.length; c++)
+		int width = river.width;
+		int height = river.height;
+		int cells = width * height;
+		SCRATCH.distances = Scratch.atLeast(SCRATCH.distances, cells);
+		int[] d = SCRATCH.distances;
+		int diagonal = (int) Math.round(CELL * Math.sqrt(2));
+		for (int c = 0; c < cells; c++)
 		{
-			d[c] = river.water[c] ? Double.MAX_VALUE / 4 : 0;
+			d[c] = river.water[c] ? Integer.MAX_VALUE / 4 : 0;
 		}
-		for (int j = 0; j < size; j++)
+		for (int j = 0; j < height; j++)
 		{
-			for (int i = 0; i < size; i++)
+			for (int i = 0; i < width; i++)
 			{
-				int c = j * size + i;
+				int c = j * width + i;
 				if (i > 0)
 				{
 					d[c] = Math.min(d[c], d[c - 1] + CELL);
 				}
 				if (j > 0)
 				{
-					d[c] = Math.min(d[c], d[c - size] + CELL);
+					d[c] = Math.min(d[c], d[c - width] + CELL);
 					if (i > 0)
 					{
-						d[c] = Math.min(d[c], d[c - size - 1] + diagonal);
+						d[c] = Math.min(d[c], d[c - width - 1] + diagonal);
 					}
-					if (i < size - 1)
+					if (i < width - 1)
 					{
-						d[c] = Math.min(d[c], d[c - size + 1] + diagonal);
+						d[c] = Math.min(d[c], d[c - width + 1] + diagonal);
 					}
 				}
 			}
 		}
-		for (int j = size - 1; j >= 0; j--)
+		for (int j = height - 1; j >= 0; j--)
 		{
-			for (int i = size - 1; i >= 0; i--)
+			for (int i = width - 1; i >= 0; i--)
 			{
-				int c = j * size + i;
-				if (i < size - 1)
+				int c = j * width + i;
+				if (i < width - 1)
 				{
 					d[c] = Math.min(d[c], d[c + 1] + CELL);
 				}
-				if (j < size - 1)
+				if (j < height - 1)
 				{
-					d[c] = Math.min(d[c], d[c + size] + CELL);
-					if (i < size - 1)
+					d[c] = Math.min(d[c], d[c + width] + CELL);
+					if (i < width - 1)
 					{
-						d[c] = Math.min(d[c], d[c + size + 1] + diagonal);
+						d[c] = Math.min(d[c], d[c + width + 1] + diagonal);
 					}
 					if (i > 0)
 					{
-						d[c] = Math.min(d[c], d[c + size - 1] + diagonal);
+						d[c] = Math.min(d[c], d[c + width - 1] + diagonal);
 					}
 				}
 			}
 		}
-		// Measured to the cell edge, not its centre.
-		for (int c = 0; c < d.length; c++)
+		// Measured to the cell edge, not its centre; kept in whole local units.
+		for (int c = 0; c < cells; c++)
 		{
-			d[c] = river.water[c] ? Math.min(d[c], 1e6) - CELL / 2.0 : 0;
+			river.clearance[c] = (short) (river.water[c] ? Math.min(Short.MAX_VALUE, d[c] - CELL / 2) : 0);
 		}
 	}
 
 	/**
-	 * Lays the path down the middle of the river between two cells, with the room either side.
+	 * Lays the path down the middle of the river through some cells in turn (start, waypoints, end), with the room
+	 * either side.
 	 */
-	private static void layPath(River river, int upstream, int downstream)
+	private static void layPath(River river, int[] stops)
 	{
-		int size = river.size;
-		int[] from = new int[size * size];
-		search(river, upstream, from);
+		int width = river.width;
+		PathSearch search = new PathSearch(river);
 		List<double[]> cells = new ArrayList<>();
-		for (int c = downstream; c != upstream; c = from[c])
+		cells.add(new double[]{river.x0 + (stops[0] % width + 0.5) * CELL, river.y0 + (stops[0] / width + 0.5) * CELL});
+		for (int leg = 0; leg + 1 < stops.length; leg++)
 		{
-			cells.add(0, new double[]{river.x0 + (c % size + 0.5) * CELL, river.y0 + (c / size + 0.5) * CELL});
+			if (stops[leg] == stops[leg + 1])
+			{
+				continue;
+			}
+			search.run(stops[leg], stops[leg + 1]);
+			List<double[]> part = new ArrayList<>();
+			for (int c = stops[leg + 1]; c != stops[leg]; c = search.from[c])
+			{
+				part.add(new double[]{river.x0 + (c % width + 0.5) * CELL, river.y0 + (c / width + 0.5) * CELL});
+			}
+			Collections.reverse(part);
+			cells.addAll(part);
 		}
-		cells.add(0, new double[]{river.x0 + (upstream % size + 0.5) * CELL, river.y0 + (upstream / size + 0.5) * CELL});
 		// Smooth, keeping the ends, then space evenly.
+		int count = cells.size();
+		double[] xs = new double[count];
+		double[] ys = new double[count];
+		for (int p = 0; p < count; p++)
+		{
+			xs[p] = cells.get(p)[0];
+			ys[p] = cells.get(p)[1];
+		}
+		double[] nextX = new double[count];
+		double[] nextY = new double[count];
 		for (int pass = 0; pass < SMOOTHING; pass++)
 		{
-			List<double[]> smoothed = new ArrayList<>();
-			smoothed.add(cells.get(0));
-			for (int p = 1; p < cells.size() - 1; p++)
+			nextX[0] = xs[0];
+			nextY[0] = ys[0];
+			nextX[count - 1] = xs[count - 1];
+			nextY[count - 1] = ys[count - 1];
+			for (int p = 1; p < count - 1; p++)
 			{
-				double[] a = cells.get(p - 1);
-				double[] b = cells.get(p);
-				double[] c = cells.get(p + 1);
-				smoothed.add(new double[]{(a[0] + 2 * b[0] + c[0]) / 4, (a[1] + 2 * b[1] + c[1]) / 4});
+				nextX[p] = (xs[p - 1] + 2 * xs[p] + xs[p + 1]) / 4;
+				nextY[p] = (ys[p - 1] + 2 * ys[p] + ys[p + 1]) / 4;
 			}
-			smoothed.add(cells.get(cells.size() - 1));
-			cells = smoothed;
+			double[] swap = xs;
+			xs = nextX;
+			nextX = swap;
+			swap = ys;
+			ys = nextY;
+			nextY = swap;
 		}
-		double[][] path = even(cells);
-		int points = path.length;
-		river.pathX = new double[points];
-		river.pathY = new double[points];
+		double[][] path = even(xs, ys, count);
+		double[] pathX = path[0];
+		double[] pathY = path[1];
+		int points = pathX.length;
+		river.pathX = pathX;
+		river.pathY = pathY;
 		river.along = new double[points];
 		river.left = new double[points];
 		river.right = new double[points];
 		double walked = 0;
 		for (int p = 0; p < points; p++)
 		{
-			walked += p == 0 ? 0 : Math.hypot(path[p][0] - path[p - 1][0], path[p][1] - path[p - 1][1]);
-			river.pathX[p] = path[p][0];
-			river.pathY[p] = path[p][1];
+			walked += p == 0 ? 0 : Math.hypot(pathX[p] - pathX[p - 1], pathY[p] - pathY[p - 1]);
 			river.along[p] = walked;
-			double[] across = across(path, p);
-			river.left[p] = Math.max(0, outTo(river, path[p][0], path[p][1], across[0], across[1]) - BANK_GAP);
-			river.right[p] = Math.max(0, outTo(river, path[p][0], path[p][1], -across[0], -across[1]) - BANK_GAP);
+			// To the path's left, across its way here.
+			int ahead = Math.min(p + 1, points - 1);
+			int behind = Math.max(p - 1, 0);
+			double dx = pathX[ahead] - pathX[behind];
+			double dy = pathY[ahead] - pathY[behind];
+			double d = Math.max(1e-6, Math.hypot(dx, dy));
+			river.left[p] = Math.max(0, outTo(river, pathX[p], pathY[p], -dy / d, dx / d) - BANK_GAP);
+			river.right[p] = Math.max(0, outTo(river, pathX[p], pathY[p], dy / d, -dx / d) - BANK_GAP);
 		}
 		river.length = walked;
 	}
 
 	/**
-	 * Respaces points evenly, PATH_STEP apart.
+	 * Respaces points evenly, PATH_STEP apart; returns their x and y.
 	 */
-	private static double[][] even(List<double[]> line)
+	private static double[][] even(double[] xs, double[] ys, int count)
 	{
+		double[] lengths = new double[count];
 		double total = 0;
-		for (int k = 1; k < line.size(); k++)
+		for (int k = 0; k + 1 < count; k++)
 		{
-			total += Math.hypot(line.get(k)[0] - line.get(k - 1)[0], line.get(k)[1] - line.get(k - 1)[1]);
+			lengths[k] = Math.hypot(xs[k + 1] - xs[k], ys[k + 1] - ys[k]);
+			total += lengths[k];
 		}
 		int points = Math.max(2, (int) Math.ceil(total / PATH_STEP) + 1);
-		double[][] even = new double[points][];
+		double[] evenX = new double[points];
+		double[] evenY = new double[points];
 		int k = 0;
 		double walked = 0;
 		for (int p = 0; p < points; p++)
 		{
 			double want = p * total / (points - 1);
-			while (k < line.size() - 2 && walked + Math.hypot(line.get(k + 1)[0] - line.get(k)[0],
-				line.get(k + 1)[1] - line.get(k)[1]) < want)
+			while (k < count - 2 && walked + lengths[k] < want)
 			{
-				walked += Math.hypot(line.get(k + 1)[0] - line.get(k)[0], line.get(k + 1)[1] - line.get(k)[1]);
+				walked += lengths[k];
 				k++;
 			}
-			double[] a = line.get(k);
-			double[] b = line.get(Math.min(k + 1, line.size() - 1));
-			double step = Math.max(1e-6, Math.hypot(b[0] - a[0], b[1] - a[1]));
-			double t = Math.max(0, Math.min(1, (want - walked) / step));
-			even[p] = new double[]{a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t};
+			int next = Math.min(k + 1, count - 1);
+			double t = Math.max(0, Math.min(1, (want - walked) / Math.max(1e-6, lengths[k])));
+			evenX[p] = xs[k] + (xs[next] - xs[k]) * t;
+			evenY[p] = ys[k] + (ys[next] - ys[k]) * t;
 		}
-		return even;
-	}
-
-	/**
-	 * Unit vector to the path's left at a point.
-	 */
-	private static double[] across(double[][] path, int p)
-	{
-		int q = Math.min(p + 1, path.length - 1);
-		int o = Math.max(p - 1, 0);
-		double dx = path[q][0] - path[o][0];
-		double dy = path[q][1] - path[o][1];
-		double d = Math.max(1e-6, Math.hypot(dx, dy));
-		return new double[]{-dy / d, dx / d};
+		return new double[][]{evenX, evenY};
 	}
 
 	/**
@@ -1806,54 +2752,136 @@ final class RiverSpotFish
 		double out = 0;
 		while (out < 2048 && river.isWater(x + wayX * (out + 4), y + wayY * (out + 4)))
 		{
-			out += 4;
+			// The bank is at least this far from here in any direction, so jump that far, in 4s near it.
+			out += Math.max(4, river.clearanceAt(x + wayX * out, y + wayY * out) - CELL);
 		}
 		return out;
 	}
 
 	/**
-	 * Cheapest paths through the water from one cell, costing 1 / clearance squared so they keep to the
-	 * middle; fills from.
+	 * Cheapest paths through a river's water, costing 1 / clearance squared so they keep to the middle. Made once per
+	 * route and run once per leg, stopping when it reaches the leg's end; its queue is a heap in plain arrays.
 	 */
-	private static void search(River river, int start, int[] from)
+	private static final class PathSearch
 	{
-		int size = river.size;
-		double[] best = new double[size * size];
-		Arrays.fill(best, Double.MAX_VALUE);
-		best[start] = 0;
-		PriorityQueue<double[]> open = new PriorityQueue<>((a, b) -> Double.compare(a[0], b[0]));
-		open.add(new double[]{0, start});
-		while (!open.isEmpty())
+		private final River river;
+		private final int[] from;
+		private final float[] best;
+		// The leg each cell's best cost was found on; cells from older legs count as unreached.
+		private final int[] reachedOn;
+		private int leg;
+		private int[] heapCells = new int[256];
+		private float[] heapCosts = new float[256];
+		private int heapSize;
+
+		private PathSearch(River river)
 		{
-			double[] next = open.poll();
-			int c = (int) next[1];
-			if (next[0] > best[c])
+			this.river = river;
+			int cells = river.width * river.height;
+			SCRATCH.from = Scratch.atLeast(SCRATCH.from, cells);
+			if (SCRATCH.best.length < cells)
 			{
-				continue;
+				SCRATCH.best = new float[cells];
 			}
-			int i = c % size;
-			int j = c / size;
-			for (int dj = -1; dj <= 1; dj++)
+			SCRATCH.reachedOn = Scratch.atLeast(SCRATCH.reachedOn, cells);
+			from = SCRATCH.from;
+			best = SCRATCH.best;
+			reachedOn = SCRATCH.reachedOn;
+		}
+
+		/**
+		 * Finds the cheapest way from one cell to another; follow from back from the goal to the start.
+		 */
+		private void run(int start, int goal)
+		{
+			int width = river.width;
+			int height = river.height;
+			leg = ++SCRATCH.leg;
+			heapSize = 0;
+			reach(start, 0, start);
+			while (heapSize > 0)
 			{
-				for (int di = -1; di <= 1; di++)
+				float cost = heapCosts[0];
+				int c = pop();
+				if (cost > best[c])
 				{
-					int ni = i + di;
-					int nj = j + dj;
-					int n = nj * size + ni;
-					if ((di == 0 && dj == 0) || ni < 0 || nj < 0 || ni >= size || nj >= size || !river.water[n])
+					continue;
+				}
+				if (c == goal)
+				{
+					return;
+				}
+				int i = c % width;
+				int j = c / width;
+				for (int dj = -1; dj <= 1; dj++)
+				{
+					for (int di = -1; di <= 1; di++)
 					{
-						continue;
-					}
-					double clear = Math.max(1, river.clearance[n]);
-					double step = CELL * (di != 0 && dj != 0 ? Math.sqrt(2) : 1) / (clear * clear);
-					if (best[c] + step < best[n])
-					{
-						best[n] = best[c] + step;
-						from[n] = c;
-						open.add(new double[]{best[n], n});
+						int ni = i + di;
+						int nj = j + dj;
+						int n = nj * width + ni;
+						if ((di == 0 && dj == 0) || ni < 0 || nj < 0 || ni >= width || nj >= height || !river.water[n])
+						{
+							continue;
+						}
+						float clear = Math.max(1, river.clearance[n]);
+						float step = (float) (CELL * (di != 0 && dj != 0 ? Math.sqrt(2) : 1) / (clear * clear));
+						if (reachedOn[n] != leg || cost + step < best[n])
+						{
+							reach(n, cost + step, c);
+						}
 					}
 				}
 			}
+		}
+
+		private void reach(int cell, float cost, int previous)
+		{
+			reachedOn[cell] = leg;
+			best[cell] = cost;
+			from[cell] = previous;
+			if (heapSize == heapCells.length)
+			{
+				heapCells = Arrays.copyOf(heapCells, heapSize * 2);
+				heapCosts = Arrays.copyOf(heapCosts, heapSize * 2);
+			}
+			// Sift up.
+			int k = heapSize++;
+			while (k > 0 && heapCosts[(k - 1) / 2] > cost)
+			{
+				heapCells[k] = heapCells[(k - 1) / 2];
+				heapCosts[k] = heapCosts[(k - 1) / 2];
+				k = (k - 1) / 2;
+			}
+			heapCells[k] = cell;
+			heapCosts[k] = cost;
+		}
+
+		private int pop()
+		{
+			int top = heapCells[0];
+			int lastCell = heapCells[--heapSize];
+			float lastCost = heapCosts[heapSize];
+			// Sift down.
+			int k = 0;
+			while (2 * k + 1 < heapSize)
+			{
+				int child = 2 * k + 1;
+				if (child + 1 < heapSize && heapCosts[child + 1] < heapCosts[child])
+				{
+					child++;
+				}
+				if (heapCosts[child] >= lastCost)
+				{
+					break;
+				}
+				heapCells[k] = heapCells[child];
+				heapCosts[k] = heapCosts[child];
+				k = child;
+			}
+			heapCells[k] = lastCell;
+			heapCosts[k] = lastCost;
+			return top;
 		}
 	}
 
@@ -2083,8 +3111,7 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * Removes a spot's circle; its fish swim on. The shoal lingers in case the spot only moved. Returns whether it
-	 * was a spot here.
+	 * Removes a spot's circle; its fish swim on. Returns whether it was a spot here.
 	 */
 	boolean remove(NPC spot)
 	{
@@ -2108,10 +3135,6 @@ final class RiverSpotFish
 			}
 			swimmer.decided.remove(circle);
 		}
-		if (shoal.circles.isEmpty())
-		{
-			shoal.emptySince = client.getGameCycle();
-		}
 		return true;
 	}
 
@@ -2121,16 +3144,15 @@ final class RiverSpotFish
 	 */
 	private static void scatter(Shoal shoal, int ticks, int cycle, ThreadLocalRandom random)
 	{
-		Set<Group> groups = new HashSet<>();
-		for (Swimmer swimmer : shoal.fish)
+		// Each big group rolls once, the first time one of its fish comes up.
+		for (int n = 0; n < shoal.fish.size(); n++)
 		{
-			if (swimmer.group != null && swimmer.group.members.size() >= SCATTER_LEAST)
+			Group group = shoal.fish.get(n).group;
+			if (group == null || group.members.size() < SCATTER_LEAST || group.rolledAt == cycle)
 			{
-				groups.add(swimmer.group);
+				continue;
 			}
-		}
-		for (Group group : groups)
-		{
+			group.rolledAt = cycle;
 			if (random.nextDouble() >= ticks * SCATTER_RATE)
 			{
 				continue;
@@ -2257,13 +3279,18 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * Adds the kinds in sight, so their models are kept.
+	 * Adds the kinds of every river and lake in sight, so their models are kept.
 	 */
 	void addKinds(Set<Integer> swimming)
 	{
+		// Every kind a river or lake may show, not only those swimming now, so a rare kind's models aren't dropped
+		// and made again.
 		for (Shoal shoal : shoals)
 		{
-			shoal.fish.forEach(swimmer -> swimming.add(swimmer.item));
+			for (int kind : shoal.kinds)
+			{
+				swimming.add(kind);
+			}
 		}
 	}
 
@@ -2286,9 +3313,8 @@ final class RiverSpotFish
 		for (Iterator<Shoal> all = shoals.iterator(); all.hasNext(); )
 		{
 			Shoal shoal = all.next();
-			// Drop shoals whose spots have been gone a while.
-			// Shoals whose spots have been gone a while shrink their fish away, then go.
-			if (shoal.emptySince >= 0 && cycle - shoal.emptySince > LINGER && !shoal.leaving)
+			// Rivers and lakes the player's been far from a while shrink their fish away, then go.
+			if (shoal.farSince >= 0 && cycle - shoal.farSince > LINGER && !shoal.leaving)
 			{
 				shoal.leaving = true;
 				for (Swimmer swimmer : shoal.fish)
@@ -2318,6 +3344,12 @@ final class RiverSpotFish
 			if (ticks <= 0)
 			{
 				continue;
+			}
+			fillSome(shoal, cycle, random);
+			shoal.deciding = cycle >= shoal.nextDecision;
+			if (shoal.deciding)
+			{
+				shoal.nextDecision = cycle + DECIDE_EVERY;
 			}
 			int travelling = 0;
 			Map<Circle, Integer> circling = this.circling;
@@ -2354,18 +3386,34 @@ final class RiverSpotFish
 				trimLake(shoal, cycle);
 				shoal.nextTrim = cycle + LAKE_TRIM_EVERY;
 			}
-			// Rivers spawn on a steady timer so no gaps open, capped at twice the target.
+			// Rivers keep fish round the player, filling stretches newly taken in out of sight.
+			if (!shoal.lake && !shoal.leaving && cycle >= shoal.nextWindow)
+			{
+				updateWindow(shoal);
+				// Walked towards the end of what's mapped: map again round the player, keeping the fish.
+				WorldView view = client.getTopLevelWorldView();
+				if (outgrown(shoal) && view != null)
+				{
+					remap(view, shoal);
+				}
+				if (shoal.toFill.isEmpty())
+				{
+					fillGaps(shoal, cycle, random);
+				}
+				shoal.nextWindow = cycle + WINDOW_EVERY;
+			}
+			// Rivers spawn at the window's upstream edge on a steady timer so no gaps open, capped at twice the target.
 			if (!shoal.lake && !shoal.leaving && cycle >= shoal.nextSpawn)
 			{
-				int count = travelling < 3 * shoal.travelling
-					? spawnGroup(shoal, 0, null, true, cycle, random, Integer.MAX_VALUE) : 1;
+				int count = travelling < 2 * windowFish(shoal)
+					? spawnGroup(shoal, shoal.windowFrom, null, true, cycle, random, Integer.MAX_VALUE) : 1;
 				shoal.nextSpawn = Math.max(shoal.nextSpawn + spawnGap(random) * count, cycle);
 			}
 			if (!shoal.lake && !shoal.leaving && schooled && cycle >= shoal.nextSolo)
 			{
-				if (travelling < 3 * shoal.travelling)
+				if (travelling < 2 * windowFish(shoal))
 				{
-					spawn(shoal, 0, null, true, cycle, random, kind(shoal.kinds, random, false), null, 0);
+					spawn(shoal, shoal.windowFrom, null, true, cycle, random, kind(shoal.kinds, random, false), null, 0);
 				}
 				shoal.nextSolo = Math.max(shoal.nextSolo + (int) (spawnGap(random) * SOLO_EVERY), cycle);
 			}
@@ -2379,18 +3427,24 @@ final class RiverSpotFish
 			}
 			if (schooled)
 			{
-				scatter(shoal, ticks, cycle, random);
-				if (shoal.lake)
+				if (shoal.deciding)
 				{
-					regroup(shoal, cycle, random);
+					scatter(shoal, ticks * DECIDE_EVERY, cycle, random);
+					if (shoal.lake)
+					{
+						regroup(shoal, cycle, random);
+					}
 				}
-				// Order the fish down the river; they barely change order, so this is quick.
-				shoal.byAlong.clear();
-				shoal.byAlong.addAll(shoal.fish);
-				shoal.byAlong.sort((a, b) -> Double.compare(a.s, b.s));
-				for (int n = 0; n < shoal.byAlong.size(); n++)
+				// Order the fish down the river for deciding; they barely change order, so this is quick.
+				if (shoal.deciding)
 				{
-					shoal.byAlong.get(n).order = n;
+					shoal.byAlong.clear();
+					shoal.byAlong.addAll(shoal.fish);
+					shoal.byAlong.sort((a, b) -> Double.compare(a.s, b.s));
+					for (int n = 0; n < shoal.byAlong.size(); n++)
+					{
+						shoal.byAlong.get(n).order = n;
+					}
 				}
 			}
 			for (Iterator<Swimmer> it = shoal.fish.iterator(); it.hasNext(); )
@@ -2398,7 +3452,7 @@ final class RiverSpotFish
 				Swimmer swimmer = it.next();
 				if (swimmer.circle == null)
 				{
-					for (Circle circle : shoal.circles.values())
+					for (Circle circle : shoal.deciding ? shoal.circles.values() : List.<Circle>of())
 					{
 						// Lake fish may decide again once they've swum well away.
 						double apart = Math.hypot(swimmer.x - circle.x, swimmer.y - circle.y);
@@ -2582,6 +3636,7 @@ final class RiverSpotFish
 			object.setModel(model);
 			shoal.body = new Body(object, cycle, random);
 			shoal.body.step = 1;
+			shoal.body.s = shoal.windowFrom;
 		}
 		if (shoal.body != null && !moveBody(shoal, shoal.body, ticks, cycle))
 		{
@@ -2599,7 +3654,8 @@ final class RiverSpotFish
 		River river = shoal.river;
 		body.s += TRAVEL_SPEED * BODY_SPEED * ticks;
 		body.facing += body.turn * ticks;
-		if (body.shrinkingSince < 0 && (shoal.leaving || body.s >= river.length - TRAVEL_SPEED * BODY_SPEED * GROW_CYCLES))
+		if (body.shrinkingSince < 0 && (shoal.leaving || body.s >= shoal.windowTo - TRAVEL_SPEED * BODY_SPEED * GROW_CYCLES
+			|| body.s < shoal.windowFrom - WINDOW_SLACK))
 		{
 			body.shrinkingSince = cycle;
 		}
@@ -3000,7 +4056,11 @@ final class RiverSpotFish
 			int lanes = circle.lanes.length;
 			double out = lanes > 1 ? swimmer.circleLane / (double) (lanes - 1) : 1;
 			double lane = INNER_LANE_SPEED + (1 - INNER_LANE_SPEED) * out;
-			want *= (1 - in * (1 - lane)) * (1 + in * (spacing(shoal, swimmer) - 1));
+			if (shoal.deciding)
+			{
+				swimmer.evening = spacing(shoal, swimmer);
+			}
+			want *= (1 - in * (1 - lane)) * (1 + in * (swimmer.evening - 1));
 		}
 		// Paused lake fish hover.
 		if (shoal.lake && swimmer.circle == null && swimmer.setOffAt >= 0 && cycle < swimmer.setOffAt)
@@ -3012,53 +4072,14 @@ final class RiverSpotFish
 		double ease = pausing ? LAKE_STOP_EASE : in >= 1 ? 0.02 : 0.05;
 		swimmer.swimming += (want - swimmer.swimming) * Math.min(1, ease * ticks);
 		double moved = swimmer.swimming * ticks;
-		double targetX;
-		double targetY;
-		if (swimmer.circle != null)
+		double toward = swimmer.aim;
+		if (shoal.deciding || Double.isNaN(toward))
 		{
-			Circle circle = swimmer.circle;
-			double out = circle.lanes[swimmer.circleLane];
-			double angle = Math.atan2(swimmer.y - circle.y, swimmer.x - circle.x) + circle.way * CIRCLE_LEAD / out;
-			circlePoint(river, circle, out, angle, point);
-			targetX = point[0];
-			targetY = point[1];
+			toward = aim(shoal, swimmer, group, middleX, middleY, middleS, moved * DECIDE_EVERY, cycle);
+			swimmer.aim = toward;
 		}
-		else if (shoal.lake)
-		{
-			lakeTarget(shoal, swimmer, group, middleX, middleY, cycle, point);
-			targetX = point[0];
-			targetY = point[1];
-		}
-		else
-		{
-			// Track progress from the real position, so bends don't make it turn back.
-			swimmer.s = Math.max(swimmer.s, river.nearest(swimmer.x, swimmer.y, swimmer.s - LOOK_AHEAD,
-				swimmer.s + moved + LOOK_AHEAD));
-			double wander = WANDER * (group != null ? group.wander : swimmer.wander).at(cycle);
-			// In a group, steer for its own place along it, so the group keeps its shape.
-			double aim = Double.isNaN(middleS) ? swimmer.s : Math.max(swimmer.s - LOOK_AHEAD, middleS + swimmer.slotAlong);
-			river.at(aim + LOOK_AHEAD, point);
-			double across = group != null ? group.across : swimmer.across;
-			double offset = share(Math.max(-1, Math.min(1, across + wander)), point) + (group != null ? swimmer.slot : 0);
-			// Keep outside any circle being passed.
-			pass(shoal, swimmer);
-			if (swimmer.passing != null)
-			{
-				double edge = swimmer.passing.across + swimmer.passSide * (swimmer.passing.radius + CIRCLE_CLEARANCE);
-				offset = swimmer.passSide > 0 ? Math.max(offset, edge) : Math.min(offset, edge);
-			}
-			// Stay within the room.
-			offset = Math.max(-point[5], Math.min(point[4], offset));
-			swimmer.lateral = offset;
-			targetX = point[0] - point[3] * offset;
-			targetY = point[1] + point[2] * offset;
-		}
-		swimmer.targetX = targetX;
-		swimmer.targetY = targetY;
-		double toward = Math.atan2(targetY - swimmer.y, targetX - swimmer.x);
 		if (schooled && swimmer.circle == null)
 		{
-			toward = flock(shoal, swimmer, group, toward, middleX, middleY);
 			// Ease the intended heading, so being shoved and coming back both curve smoothly.
 			swimmer.steer = Double.isNaN(swimmer.steer) ? toward
 				: swimmer.steer + Math.IEEEremainder(toward - swimmer.steer, 2 * Math.PI) * Math.min(1, STEER_EASE * ticks);
@@ -3108,9 +4129,10 @@ final class RiverSpotFish
 		{
 			swimmer.shrinkingSince = cycle;
 		}
-		// Shrink near the path's end.
-		if (!shoal.lake && swimmer.circle == null && swimmer.shrinkingSince < 0
-			&& swimmer.s >= river.length - swimmer.swimming * GROW_CYCLES)
+		// Shrink near the window's downstream end, or when left behind upstream of it.
+		if (!shoal.lake && swimmer.circle == null && swimmer.bound == null && swimmer.shrinkingSince < 0
+			&& (swimmer.s >= shoal.windowTo - swimmer.swimming * GROW_CYCLES
+			|| swimmer.s < shoal.windowFrom - WINDOW_SLACK))
 		{
 			swimmer.shrinkingSince = cycle;
 		}
@@ -3136,7 +4158,63 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * Eases a push towards what it should be: at the given share per tick while growing, slower while fading.
+	 * Where a fish aims, as a heading: round its circle, to its place in its school or along its way down the river or
+	 * round the lake, steered round others when schooled. Worked out when its shoal decides; moved is how far it goes
+	 * before the next time.
+	 */
+	private double aim(Shoal shoal, Swimmer swimmer, Group group, double middleX, double middleY, double middleS,
+		double moved, int cycle)
+	{
+		River river = shoal.river;
+		double targetX;
+		double targetY;
+		if (swimmer.circle != null)
+		{
+			Circle circle = swimmer.circle;
+			double out = circle.lanes[swimmer.circleLane];
+			double angle = Math.atan2(swimmer.y - circle.y, swimmer.x - circle.x) + circle.way * CIRCLE_LEAD / out;
+			circlePoint(river, circle, out, angle, point);
+			targetX = point[0];
+			targetY = point[1];
+		}
+		else if (shoal.lake)
+		{
+			lakeTarget(shoal, swimmer, group, middleX, middleY, cycle, point);
+			targetX = point[0];
+			targetY = point[1];
+		}
+		else
+		{
+			// Track progress from the real position, so bends don't make it turn back.
+			swimmer.s = Math.max(swimmer.s, river.nearest(swimmer.x, swimmer.y, swimmer.s - LOOK_AHEAD,
+				swimmer.s + moved + LOOK_AHEAD));
+			double wander = WANDER * (group != null ? group.wander : swimmer.wander).at(cycle);
+			// In a group, steer for its own place along it, so the group keeps its shape.
+			double aim = Double.isNaN(middleS) ? swimmer.s : Math.max(swimmer.s - LOOK_AHEAD, middleS + swimmer.slotAlong);
+			river.at(aim + LOOK_AHEAD, point);
+			double across = group != null ? group.across : swimmer.across;
+			double offset = share(Math.max(-1, Math.min(1, across + wander)), point) + (group != null ? swimmer.slot : 0);
+			// Keep outside any circle being passed.
+			pass(shoal, swimmer);
+			if (swimmer.passing != null)
+			{
+				double edge = swimmer.passing.across + swimmer.passSide * (swimmer.passing.radius + CIRCLE_CLEARANCE);
+				offset = swimmer.passSide > 0 ? Math.max(offset, edge) : Math.min(offset, edge);
+			}
+			// Stay within the room.
+			offset = Math.max(-point[5], Math.min(point[4], offset));
+			swimmer.lateral = offset;
+			targetX = point[0] - point[3] * offset;
+			targetY = point[1] + point[2] * offset;
+		}
+		swimmer.targetX = targetX;
+		swimmer.targetY = targetY;
+		double toward = Math.atan2(targetY - swimmer.y, targetX - swimmer.x);
+		return schooled && swimmer.circle == null ? flock(shoal, swimmer, group, toward, middleX, middleY) : toward;
+	}
+
+	/**
+	 * Eases a push towards what it should be: at the given share per call while growing, slower while fading.
 	 */
 	private static double ease(double now, double wanted, double share)
 	{
@@ -3195,10 +4273,11 @@ final class RiverSpotFish
 				repelY += dy / apart * push;
 			}
 		}
-		swimmer.repelX = ease(swimmer.repelX, repelX, REPEL_EASE);
-		swimmer.repelY = ease(swimmer.repelY, repelY, REPEL_EASE);
-		swimmer.groupRepelX = ease(swimmer.groupRepelX, groupRepelX, GROUP_REPEL_EASE);
-		swimmer.groupRepelY = ease(swimmer.groupRepelY, groupRepelY, GROUP_REPEL_EASE);
+		// Eased per decision, every DECIDE_EVERY ticks.
+		swimmer.repelX = ease(swimmer.repelX, repelX, REPEL_EASE * DECIDE_EVERY);
+		swimmer.repelY = ease(swimmer.repelY, repelY, REPEL_EASE * DECIDE_EVERY);
+		swimmer.groupRepelX = ease(swimmer.groupRepelX, groupRepelX, GROUP_REPEL_EASE * DECIDE_EVERY);
+		swimmer.groupRepelY = ease(swimmer.groupRepelY, groupRepelY, GROUP_REPEL_EASE * DECIDE_EVERY);
 		x += REPEL * swimmer.repelX + GROUP_REPEL * swimmer.groupRepelX;
 		y += REPEL * swimmer.repelY + GROUP_REPEL * swimmer.groupRepelY;
 		if (group != null && group.members.size() > 1)
@@ -3254,7 +4333,11 @@ final class RiverSpotFish
 		double through = swimmer.dippingSince < 0 ? 0
 			: Math.PI * (cycle - swimmer.dippingSince) / Math.max(1, look.dipMillis / 20.0);
 		double dip = Math.sin(through);
-		swimmer.fish.setZ(waterHeight(x, y, shoal.plane) + look.sink + bobbed
+		if (shoal.deciding || swimmer.surface == Integer.MIN_VALUE)
+		{
+			swimmer.surface = waterHeight(x, y, shoal.plane);
+		}
+		swimmer.fish.setZ(swimmer.surface + look.sink + bobbed
 			+ (int) Math.round(look.dipDepth * dip * dip + swimmer.depthNow));
 		// Tip with the bob and dip; only at full size.
 		double tip = look.tip / 100.0 * ((look.rise > 0 && bobAt >= 0 ? -BOB_PITCH * Perspective.SINE[bobAt] / 65536 : 0)
@@ -3372,6 +4455,9 @@ final class RiverSpotFish
 		drawFish = config.debugRiverDrawFish();
 		drawSchools = config.debugRiverDrawSchools();
 		drawBounds = config.debugRiverDrawBounds();
+		drawPoints = config.debugRiverDrawPoints();
+		drawBlockers = config.debugRiverDrawBlockers();
+		drawBoxes = config.debugRiverDrawBoxes();
 		WEIGHTS.put(ItemID.RAW_TROUT, config.debugRiverShareTrout());
 		WEIGHTS.put(ItemID.RAW_SALMON, config.debugRiverShareSalmon());
 		WEIGHTS.put(ItemID.RAW_PIKE, config.debugRiverSharePike());
@@ -3389,8 +4475,12 @@ final class RiverSpotFish
 		CIRCLE_CLEARANCE = config.debugRiverCircleClearance();
 		SCATTER_RATE = 1.0 / (config.debugRiverScatterSeconds() * 50.0);
 		LAKE_JOIN_CHANCE = config.debugRiverLakeJoinChance();
+		FISH_RANGE = config.debugRiverFishRange();
 		LAKE_SPEED = config.debugRiverLakeSpeed() / 100.0;
 		CIRCLE_OFFSET = config.debugRiverCircleOffset();
+		RING_MANUAL = config.debugRiverRingManual();
+		RING_EAST = config.debugRiverRingEast();
+		RING_NORTH = config.debugRiverRingNorth();
 		TRAVEL_SPACING = config.debugRiverTravelSpacing();
 		SPREAD = config.debugRiverSpread() / 100.0;
 		WANDER = config.debugRiverWander() / 100.0;
@@ -3422,6 +4512,64 @@ final class RiverSpotFish
 	}
 
 	/**
+	 * Every fish blocker: the locked-in ones and those placed this session.
+	 */
+	private Map<WorldPoint, Half> blockers()
+	{
+		if (placedBlockers.isEmpty())
+		{
+			return BLOCKERS;
+		}
+		Map<WorldPoint, Half> all = new HashMap<>(BLOCKERS);
+		all.putAll(placedBlockers);
+		return all;
+	}
+
+	boolean isBlocker(WorldPoint tile)
+	{
+		return blockers().containsKey(tile);
+	}
+
+	/**
+	 * TEMPORARY: places a fish blocker on a tile, or a half of it, or removes the one there; logs them all, and maps
+	 * the rivers and lakes in sight again, keeping their fish.
+	 */
+	void toggleBlocker(WorldPoint tile, Half half)
+	{
+		if (placedBlockers.remove(tile) == null)
+		{
+			placedBlockers.put(tile, half);
+		}
+		StringBuilder line = new StringBuilder();
+		for (Map.Entry<WorldPoint, Half> blocker : blockers().entrySet())
+		{
+			WorldPoint at = blocker.getKey();
+			line.append(line.length() > 0 ? ",\n\t\t" : "\n\t\t").append("Map.entry(new WorldPoint(").append(at.getX())
+				.append(", ").append(at.getY()).append(", ").append(at.getPlane()).append("), Half.")
+				.append(blocker.getValue()).append(")");
+		}
+		log.debug("Fish blockers: Map.ofEntries({})", line);
+		WorldView view = client.getTopLevelWorldView();
+		if (view == null)
+		{
+			return;
+		}
+		for (Iterator<Shoal> all = shoals.iterator(); all.hasNext(); )
+		{
+			Shoal shoal = all.next();
+			if (!remap(view, shoal))
+			{
+				shoal.fish.forEach(swimmer -> swimmer.fish.setActive(false));
+				if (shoal.body != null)
+				{
+					shoal.body.object.setActive(false);
+				}
+				all.remove();
+			}
+		}
+	}
+
+	/**
 	 * TEMPORARY: forgets the lake being picked. Returns whether there was one.
 	 */
 	boolean clearPickedLake()
@@ -3431,11 +4579,244 @@ final class RiverSpotFish
 		return had;
 	}
 
-	void pickRoute(WorldPoint start, WorldPoint end)
+	/**
+	 * TEMPORARY: the points of the route being picked so far, drawn while picking.
+	 */
+	void setPicking(List<WorldPoint> points)
 	{
-		picked.add(0, new WorldPoint[]{start, end});
-		log.debug("River route picked: new WorldPoint[]{{new WorldPoint({}, {}, {}), new WorldPoint({}, {}, {})}}",
-			start.getX(), start.getY(), start.getPlane(), end.getX(), end.getY(), end.getPlane());
+		picking = points;
+	}
+
+	void pickRoute(List<WorldPoint> points)
+	{
+		picked.add(0, points.toArray(new WorldPoint[0]));
+		StringBuilder line = new StringBuilder("new WorldPoint[]{");
+		for (int k = 0; k < points.size(); k++)
+		{
+			WorldPoint point = points.get(k);
+			line.append(k > 0 ? ", " : "").append("new WorldPoint(").append(point.getX()).append(", ")
+				.append(point.getY()).append(", ").append(point.getPlane()).append(")");
+		}
+		log.debug("River route picked: {}", line.append("}"));
+	}
+
+	/**
+	 * After a map load: keeps each river and lake, and its fish, moving them to the new scene coordinates; one whose
+	 * map no longer fits in the loaded scene is mapped again for what's loaded, keeping the fish still on it.
+	 */
+	void reload(WorldView view)
+	{
+		long started = System.nanoTime();
+		reloadTimed(view);
+		log.debug("River timing: map load handled in {} ms", (System.nanoTime() - started) / 100_000 / 10.0);
+	}
+
+	private void reloadTimed(WorldView view)
+	{
+		int cycle = client.getGameCycle();
+		unmappable.clear();
+		for (Iterator<Shoal> all = shoals.iterator(); all.hasNext(); )
+		{
+			Shoal shoal = all.next();
+			River river = shoal.river;
+			int dx = (shoal.baseX - view.getBaseX()) * 128;
+			int dy = (shoal.baseY - view.getBaseY()) * 128;
+			int across = river.width * CELL;
+			int up = river.height * CELL;
+			shift(shoal, dx, dy);
+			shoal.baseX = view.getBaseX();
+			shoal.baseY = view.getBaseY();
+			// A map that no longer fits the loaded scene is mapped again for what's loaded now; one that fits is only
+			// moved, and walking maps more of it as needed.
+			if ((river.x0 < 0 || river.y0 < 0 || river.x0 + across > view.getSizeX() * 128
+				|| river.y0 + up > view.getSizeY() * 128) && !remap(view, shoal))
+			{
+				shoal.fish.forEach(swimmer -> swimmer.fish.setActive(false));
+				if (shoal.body != null)
+				{
+					shoal.body.object.setActive(false);
+				}
+				all.remove();
+				continue;
+			}
+			for (Swimmer swimmer : shoal.fish)
+			{
+				swimmer.fish.setActive(false);
+				swimmer.fish.setLocation(new LocalPoint((int) swimmer.x, (int) swimmer.y, shoal.worldView), shoal.plane);
+				place(shoal, swimmer, cycle);
+				swimmer.fish.setActive(true);
+			}
+			// Placed again on its next move.
+			if (shoal.body != null)
+			{
+				shoal.body.object.setActive(false);
+			}
+		}
+	}
+
+	/**
+	 * Maps a shoal again for the loaded scene, its fish carrying on where they are: those off the new map go, the
+	 * rest pick up their place along the new path, and the circles are placed again. Returns false if it can't.
+	 */
+	private boolean remap(WorldView view, Shoal shoal)
+	{
+		long started = System.nanoTime();
+		boolean mapped = remapTimed(view, shoal);
+		log.debug("River timing: {} {} mapped again in {} ms", shoal.lake ? "lake" : "river", shoal.route[0],
+			(System.nanoTime() - started) / 100_000 / 10.0);
+		return mapped;
+	}
+
+	private boolean remapTimed(WorldView view, Shoal shoal)
+	{
+		List<double[]> spawns = new ArrayList<>();
+		River river = shoal.lake ? mapLake(view, shoal.route, shoal.plane, spawns)
+			: mapRoute(view, shoal.route, shoal.plane);
+		if (river == null)
+		{
+			return false;
+		}
+		river.water = null;
+		// Where the body is now, on the old path.
+		double[] bodyAt = null;
+		if (shoal.body != null && !shoal.lake)
+		{
+			shoal.river.at(shoal.body.s, point);
+			bodyAt = new double[]{point[0], point[1]};
+		}
+		shoal.river = river;
+		shoal.travelling = fishCount(shoal.route, river, shoal.lake);
+		shoal.mappedAround = playerTile();
+		if (shoal.lake)
+		{
+			shoal.spawns = spawns.toArray(new double[0][]);
+		}
+		if (bodyAt != null && river.isWater(bodyAt[0], bodyAt[1]))
+		{
+			shoal.body.s = river.nearest(bodyAt[0], bodyAt[1]);
+		}
+		else if (shoal.body != null)
+		{
+			shoal.body.object.setActive(false);
+			shoal.body = null;
+		}
+		// Circles placed again on the new map, by their spots.
+		Map<Circle, Circle> moved = new HashMap<>();
+		List<NPC> spots = new ArrayList<>(shoal.circles.keySet());
+		Map<NPC, Circle> old = new HashMap<>(shoal.circles);
+		shoal.circles.clear();
+		for (NPC spot : spots)
+		{
+			LocalPoint at = spot.getLocalLocation();
+			if (at != null)
+			{
+				attach(shoal, spot, at);
+				moved.put(old.get(spot), shoal.circles.get(spot));
+			}
+		}
+		for (Iterator<Swimmer> it = shoal.fish.iterator(); it.hasNext(); )
+		{
+			Swimmer swimmer = it.next();
+			if (!river.isWater(swimmer.x, swimmer.y))
+			{
+				ungroup(swimmer);
+				swimmer.fish.setActive(false);
+				it.remove();
+				continue;
+			}
+			if (!shoal.lake)
+			{
+				swimmer.s = river.nearest(swimmer.x, swimmer.y);
+			}
+			swimmer.passing = null;
+			swimmer.circle = swimmer.circle == null ? null : moved.get(swimmer.circle);
+			swimmer.bound = swimmer.bound == null ? null : moved.get(swimmer.bound);
+			swimmer.decided.clear();
+			for (Circle circle : shoal.circles.values())
+			{
+				if (!shoal.lake && swimmer.s > circle.along - JOIN_BEFORE && swimmer.circle != circle)
+				{
+					swimmer.decided.add(circle);
+				}
+			}
+		}
+		// Newly loaded stretches get their fish now, not only as fish swim down to them.
+		if (!shoal.lake)
+		{
+			shoal.spacing = TRAVEL_SPACING * spacingScale;
+			updateWindow(shoal);
+			fillGaps(shoal, client.getGameCycle(), ThreadLocalRandom.current());
+		}
+		return true;
+	}
+
+	/**
+	 * Moves everything a shoal keeps in scene coordinates by some local units.
+	 */
+	private static void shift(Shoal shoal, int dx, int dy)
+	{
+		if (dx == 0 && dy == 0)
+		{
+			return;
+		}
+		River river = shoal.river;
+		river.x0 += dx;
+		river.y0 += dy;
+		for (int k = 0; river.pathX != null && k < river.pathX.length; k++)
+		{
+			river.pathX[k] += dx;
+			river.pathY[k] += dy;
+		}
+		// Worked out again when next drawn.
+		river.banks = null;
+		for (int k = 0; shoal.spawns != null && k < shoal.spawns.length; k++)
+		{
+			shoal.spawns[k][0] += dx;
+			shoal.spawns[k][1] += dy;
+		}
+		for (Circle circle : shoal.circles.values())
+		{
+			circle.x += dx;
+			circle.y += dy;
+		}
+		Set<Group> groups = new HashSet<>();
+		for (Swimmer swimmer : shoal.fish)
+		{
+			swimmer.surface = Integer.MIN_VALUE;
+			swimmer.x += dx;
+			swimmer.y += dy;
+			swimmer.targetX += dx;
+			swimmer.targetY += dy;
+			swimmer.goalX += dx;
+			swimmer.goalY += dy;
+			if (shoal.lake)
+			{
+				swimmer.s += dx;
+			}
+			if (swimmer.group != null && groups.add(swimmer.group))
+			{
+				swimmer.group.goalX += dx;
+				swimmer.group.goalY += dy;
+				swimmer.group.middleAt = -1;
+			}
+		}
+	}
+
+	/**
+	 * TEMPORARY: each river and lake's name, its fish against the most it keeps, and its fish, for the debug counter.
+	 */
+	String[][] counts()
+	{
+		String[][] rows = new String[shoals.size()][];
+		for (int k = 0; k < rows.length; k++)
+		{
+			Shoal shoal = shoals.get(k);
+			WorldPoint first = shoal.route[0];
+			int most = shoal.lake ? shoal.travelling : windowFish(shoal);
+			rows[k] = new String[]{(shoal.lake ? "Lake " : "River ") + first.getX() + "," + first.getY(),
+				shoal.fish.size() + " / " + most, String.valueOf(shoal.fish.size())};
+		}
+		return rows;
 	}
 
 	/**
@@ -3443,6 +4824,7 @@ final class RiverSpotFish
 	 */
 	void clear()
 	{
+		unmappable.clear();
 		for (Shoal shoal : shoals)
 		{
 			shoal.fish.forEach(swimmer -> swimmer.fish.setActive(false));
@@ -3491,10 +4873,51 @@ final class RiverSpotFish
 	private static boolean drawFish = true;
 	private static boolean drawSchools = true;
 	private static boolean drawBounds = true;
+	private static boolean drawPoints = true;
+	private static boolean drawBlockers = true;
+	private static boolean drawBoxes = true;
 	// Debug: length of a school's heading arrow, local units.
 	private static final double SCHOOL_ARROW = 160;
 	// Debug: room drawn round each fish in a school's outline, local units.
 	private static final double SCHOOL_PAD = 24;
+
+	/**
+	 * Debug: a route's points as tile outlines, numbered in order, the first marked start and, when finished, the
+	 * last marked end.
+	 */
+	private void routePoints(Graphics2D graphics, WorldView view, WorldPoint[] points, Color colour, boolean finished)
+	{
+		graphics.setColor(colour);
+		for (int k = 0; k < points.length; k++)
+		{
+			LocalPoint at = LocalPoint.fromWorld(view, points[k]);
+			Polygon tile = at == null ? null : Perspective.getCanvasTilePoly(client, at);
+			if (tile == null)
+			{
+				continue;
+			}
+			graphics.draw(tile);
+			String text = (k + 1) + (k == 0 ? " start" : finished && k == points.length - 1 ? " end" : "");
+			Point label = Perspective.getCanvasTextLocation(client, graphics, at, text, 0);
+			if (label != null)
+			{
+				graphics.drawString(text, label.getX(), label.getY());
+			}
+		}
+	}
+
+	/**
+	 * Debug: a line on the water between two places.
+	 */
+	private void edge(Graphics2D graphics, Shoal shoal, double fromX, double fromY, double toX, double toY)
+	{
+		Point a = canvas(shoal, fromX, fromY);
+		Point b = canvas(shoal, toX, toY);
+		if (a != null && b != null)
+		{
+			graphics.drawLine(a.getX(), a.getY(), b.getX(), b.getY());
+		}
+	}
 
 	/**
 	 * Debug: a school's bounds, the outline round its fish with a little room.
@@ -3573,14 +4996,59 @@ final class RiverSpotFish
 	 */
 	void drawDebug(Graphics2D graphics)
 	{
+		// Each route's start, waypoints and end, numbered; the one being picked in magenta.
+		WorldView view = client.getTopLevelWorldView();
+		if (drawBlockers && view != null)
+		{
+			graphics.setColor(Color.RED);
+			for (Map.Entry<WorldPoint, Half> blocker : blockers().entrySet())
+			{
+				LocalPoint at = LocalPoint.fromWorld(view, blocker.getKey());
+				if (at == null)
+				{
+					continue;
+				}
+				// The tile, or one half of it.
+				Half half = blocker.getValue();
+				int south = half == Half.NORTH ? 0 : -64;
+				int north = half == Half.SOUTH ? 0 : 64;
+				int west = half == Half.EAST ? 0 : -64;
+				int east = half == Half.WEST ? 0 : 64;
+				int plane = blocker.getKey().getPlane();
+				Polygon area = new Polygon();
+				for (int[] corner : new int[][]{{west, south}, {east, south}, {east, north}, {west, north}})
+				{
+					Point p = Perspective.localToCanvas(client,
+						new LocalPoint(at.getX() + corner[0], at.getY() + corner[1], view.getId()), plane);
+					if (p != null)
+					{
+						area.addPoint(p.getX(), p.getY());
+					}
+				}
+				if (area.npoints == 4)
+				{
+					graphics.draw(area);
+				}
+			}
+		}
+		if (drawPoints && view != null)
+		{
+			List<WorldPoint[]> all = new ArrayList<>(picked);
+			all.addAll(ROUTES);
+			for (WorldPoint[] route : all)
+			{
+				routePoints(graphics, view, route, Color.YELLOW, true);
+			}
+			routePoints(graphics, view, picking.toArray(new WorldPoint[0]), Color.MAGENTA, false);
+		}
 		for (Shoal shoal : shoals)
 		{
 			River river = shoal.river;
 			graphics.setColor(new Color(255, 160, 0, 160));
-			for (int k = 0; drawBanks && k < river.banks.size(); k++)
+			int[] banks = drawBanks ? banks(river) : new int[0];
+			for (int k = 0; k + 1 < banks.length; k += 2)
 			{
-				int[] bank = river.banks.get(k);
-				Point p = canvas(shoal, bank[0], bank[1]);
+				Point p = canvas(shoal, banks[k], banks[k + 1]);
 				if (p != null)
 				{
 					graphics.fillRect(p.getX() - 1, p.getY() - 1, 3, 3);
@@ -3613,6 +5081,71 @@ final class RiverSpotFish
 			if (last != null)
 			{
 				graphics.fillOval(last.getX() - 4, last.getY() - 4, 8, 8);
+			}
+			// The tiles mapped for it: the outline of the band along the route or round the lake.
+			if (drawBoxes && river.reach != null)
+			{
+				graphics.setColor(new Color(180, 120, 255));
+				int tilesX = river.width / (128 / CELL);
+				int tilesY = river.height / (128 / CELL);
+				for (int ty = 0; ty < tilesY; ty++)
+				{
+					for (int tx = 0; tx < tilesX; tx++)
+					{
+						if (!river.reach[ty * tilesX + tx])
+						{
+							continue;
+						}
+						double west = river.x0 + tx * 128;
+						double south = river.y0 + ty * 128;
+						// Each side with no mapped tile beyond it.
+						if (tx == 0 || !river.reach[ty * tilesX + tx - 1])
+						{
+							edge(graphics, shoal, west, south, west, south + 128);
+						}
+						if (tx == tilesX - 1 || !river.reach[ty * tilesX + tx + 1])
+						{
+							edge(graphics, shoal, west + 128, south, west + 128, south + 128);
+						}
+						if (ty == 0 || !river.reach[(ty - 1) * tilesX + tx])
+						{
+							edge(graphics, shoal, west, south, west + 128, south);
+						}
+						if (ty == tilesY - 1 || !river.reach[(ty + 1) * tilesX + tx])
+						{
+							edge(graphics, shoal, west, south + 128, west + 128, south + 128);
+						}
+					}
+				}
+			}
+			else if (drawBoxes)
+			{
+				graphics.setColor(new Color(180, 120, 255));
+				double right = river.x0 + river.width * CELL;
+				double top = river.y0 + river.height * CELL;
+				double[][] corners = {{river.x0, river.y0}, {right, river.y0}, {right, top}, {river.x0, top}};
+				for (int side = 0; side < 4; side++)
+				{
+					double[] from = corners[side];
+					double[] to = corners[(side + 1) % 4];
+					int steps = (int) Math.max(1, Math.hypot(to[0] - from[0], to[1] - from[1]) / 128);
+					Point before = null;
+					for (int k = 0; k <= steps; k++)
+					{
+						Point p = canvas(shoal, from[0] + (to[0] - from[0]) * k / steps, from[1] + (to[1] - from[1]) * k / steps);
+						if (p != null && before != null)
+						{
+							graphics.drawLine(before.getX(), before.getY(), p.getX(), p.getY());
+						}
+						before = p;
+					}
+				}
+			}
+			// The stretch with fish round the player.
+			if (!shoal.lake && drawPath)
+			{
+				acrossLine(graphics, shoal, shoal.windowFrom, Color.ORANGE);
+				acrossLine(graphics, shoal, shoal.windowTo, Color.ORANGE);
 			}
 			// Room edges.
 			graphics.setColor(new Color(0, 160, 160, 140));

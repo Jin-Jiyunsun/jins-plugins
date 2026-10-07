@@ -172,6 +172,19 @@ final class SeaSpotFish
 	private final Client client;
 	private final FishModels models;
 	private final Map<NPC, School> schools = new HashMap<>();
+
+	/**
+	 * TEMPORARY: how many fish there are at all the sea spots, for the debug counter.
+	 */
+	int fishCount()
+	{
+		int count = 0;
+		for (School school : schools.values())
+		{
+			count += school.fish.size();
+		}
+		return count;
+	}
 	// Whether the water is see-through (117 HD), so fish under it can be seen.
 	private boolean seeThrough;
 

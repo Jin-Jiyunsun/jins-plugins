@@ -206,6 +206,14 @@ final class FishModels
 	// Made models, by item, size, tip and frame.
 	private final Map<Long, Model> models = new HashMap<>();
 
+	/**
+	 * TEMPORARY: how many models are made, for the debug counter.
+	 */
+	int count()
+	{
+		return models.size();
+	}
+
 	// Models waiting to be made, and their keys, so none is queued twice.
 	private final Deque<int[]> toMake = new ArrayDeque<>();
 	private final Set<Long> queued = new HashSet<>();

@@ -1,8 +1,10 @@
 package com.livelyfishingspots;
 
 import com.google.inject.Provides;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import javax.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
@@ -15,6 +17,7 @@ import net.runelite.api.Tile;
 import net.runelite.api.WorldView;
 import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.events.ClientTick;
+import net.runelite.api.events.GameTick;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.MenuEntryAdded;
 import net.runelite.api.events.MenuOptionClicked;
@@ -67,6 +70,7 @@ public class LivelyFishingSpotsPlugin extends Plugin
 	// start awaiting its end, or null.
 	private boolean debugPick;
 	private WorldPoint pickedStart;
+	private final List<WorldPoint> pickedWays = new ArrayList<>();
 
 	@Inject
 	private LivelyFishingSpotsConfig config;
@@ -76,6 +80,9 @@ public class LivelyFishingSpotsPlugin extends Plugin
 
 	@Inject
 	private RiverDebugOverlay riverDebugOverlay;
+
+	@Inject
+	private FishCountOverlay fishCountOverlay;
 
 	@Provides
 	LivelyFishingSpotsConfig provideConfig(ConfigManager configManager)
@@ -98,6 +105,8 @@ public class LivelyFishingSpotsPlugin extends Plugin
 		tuneLooks();
 		riverDebugOverlay.setRivers(riverSpotFish);
 		overlayManager.add(riverDebugOverlay);
+		fishCountOverlay.setSources(seaSpotFish, riverSpotFish, fishModels);
+		overlayManager.add(fishCountOverlay);
 		seaSpotFish.setSeeThrough(seeThroughWater());
 		riverSpotFish.setSeeThrough(seeThroughWater());
 		clientThread.invoke(this::addSpotFish);
@@ -108,6 +117,7 @@ public class LivelyFishingSpotsPlugin extends Plugin
 	protected void shutDown()
 	{
 		overlayManager.remove(riverDebugOverlay);
+		overlayManager.remove(fishCountOverlay);
 		SeaSpotFish fish = seaSpotFish;
 		RiverSpotFish riverFish = riverSpotFish;
 		FishModels models = fishModels;
@@ -129,15 +139,24 @@ public class LivelyFishingSpotsPlugin extends Plugin
 			// Another account may log in next.
 			fishingXp = -1;
 		}
+		if (event.getGameState() == GameState.LOGIN_SCREEN || event.getGameState() == GameState.HOPPING)
+		{
+			// The spots will be new ones.
+			riverSpotFish.clear();
+		}
 		if (event.getGameState() == GameState.LOGGED_IN)
 		{
 			WorldView top = client.getTopLevelWorldView();
 			if (top != null)
 			{
 				seaSpotFish.reload(top.npcs());
+				// Rivers and lakes are kept, moved to the new scene coordinates.
+				riverSpotFish.reload(top);
 			}
-			// River grids are in scene coordinates, which a map load moves.
-			riverSpotFish.clear();
+			else
+			{
+				riverSpotFish.clear();
+			}
 			addSpotFish();
 		}
 	}
@@ -198,6 +217,12 @@ public class LivelyFishingSpotsPlugin extends Plugin
 		seaSpotFish.addKinds(swimming);
 		riverSpotFish.addKinds(swimming);
 		fishModels.keepOnly(swimming);
+	}
+
+	@Subscribe
+	public void onGameTick(GameTick event)
+	{
+		riverSpotFish.activate();
 	}
 
 	@Subscribe
@@ -283,7 +308,8 @@ public class LivelyFishingSpotsPlugin extends Plugin
 	}
 
 	/**
-	 * TEMPORARY: adds River start, River end and Lake spawn to the tile menu. Local only; nothing is sent to the game.
+	 * TEMPORARY: adds River start, River waypoint, River end, Lake spawn and Clear lake to the tile menu. Local only;
+	 * nothing is sent to the game.
 	 */
 	@Subscribe
 	public void onMenuEntryAdded(MenuEntryAdded event)
@@ -304,14 +330,52 @@ public class LivelyFishingSpotsPlugin extends Plugin
 			client.getMenu().createMenuEntry(-1).setOption("River end").setTarget("").setType(MenuAction.RUNELITE)
 				.onClick(entry ->
 				{
-					riverSpotFish.pickRoute(pickedStart, at);
+					List<WorldPoint> points = new ArrayList<>();
+					points.add(pickedStart);
+					points.addAll(pickedWays);
+					points.add(at);
+					riverSpotFish.pickRoute(points);
 					pickedStart = null;
+					pickedWays.clear();
+					riverSpotFish.setPicking(List.of());
 					riverSpotFish.clear();
 					addSpotFish();
 				});
+			client.getMenu().createMenuEntry(-1).setOption("River waypoint").setTarget("").setType(MenuAction.RUNELITE)
+				.onClick(entry ->
+				{
+					pickedWays.add(at);
+					List<WorldPoint> points = new ArrayList<>();
+					points.add(pickedStart);
+					points.addAll(pickedWays);
+					riverSpotFish.setPicking(points);
+				});
 		}
 		client.getMenu().createMenuEntry(-1).setOption("River start").setTarget("").setType(MenuAction.RUNELITE)
-			.onClick(entry -> pickedStart = at);
+			.onClick(entry ->
+			{
+				pickedStart = at;
+				pickedWays.clear();
+				riverSpotFish.setPicking(List.of(at));
+			});
+		if (riverSpotFish.isBlocker(at))
+		{
+			client.getMenu().createMenuEntry(-1).setOption("Remove fish blocker").setTarget("")
+				.setType(MenuAction.RUNELITE).onClick(entry -> riverSpotFish.toggleBlocker(at, RiverSpotFish.Half.WHOLE));
+		}
+		else
+		{
+			client.getMenu().createMenuEntry(-1).setOption("Fish blocker (west half)").setTarget("")
+				.setType(MenuAction.RUNELITE).onClick(entry -> riverSpotFish.toggleBlocker(at, RiverSpotFish.Half.WEST));
+			client.getMenu().createMenuEntry(-1).setOption("Fish blocker (east half)").setTarget("")
+				.setType(MenuAction.RUNELITE).onClick(entry -> riverSpotFish.toggleBlocker(at, RiverSpotFish.Half.EAST));
+			client.getMenu().createMenuEntry(-1).setOption("Fish blocker (south half)").setTarget("")
+				.setType(MenuAction.RUNELITE).onClick(entry -> riverSpotFish.toggleBlocker(at, RiverSpotFish.Half.SOUTH));
+			client.getMenu().createMenuEntry(-1).setOption("Fish blocker (north half)").setTarget("")
+				.setType(MenuAction.RUNELITE).onClick(entry -> riverSpotFish.toggleBlocker(at, RiverSpotFish.Half.NORTH));
+			client.getMenu().createMenuEntry(-1).setOption("Fish blocker").setTarget("")
+				.setType(MenuAction.RUNELITE).onClick(entry -> riverSpotFish.toggleBlocker(at, RiverSpotFish.Half.WHOLE));
+		}
 		client.getMenu().createMenuEntry(-1).setOption("Clear lake").setTarget("").setType(MenuAction.RUNELITE)
 			.onClick(entry ->
 			{

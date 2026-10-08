@@ -1,14 +1,17 @@
 package com.livelyfishingspots;
 
+import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Graphics2D;
+import java.util.List;
 import javax.inject.Inject;
 import net.runelite.client.ui.overlay.OverlayPanel;
 import net.runelite.client.ui.overlay.OverlayPosition;
 import net.runelite.client.ui.overlay.components.LineComponent;
 
 /**
- * TEMPORARY: debug panel counting the fish loaded, by sea, river and lake, and timing river mapping.
+ * TEMPORARY: debug panel: the fish loaded, by sea, river and lake; models made; mapping times; and the time
+ * each part takes a client tick.
  */
 class FishCountOverlay extends OverlayPanel
 {
@@ -22,7 +25,7 @@ class FishCountOverlay extends OverlayPanel
 	{
 		this.config = config;
 		setPosition(OverlayPosition.TOP_LEFT);
-		panelComponent.setPreferredSize(new Dimension(220, 0));
+		panelComponent.setPreferredSize(new Dimension(240, 0));
 	}
 
 	void setSources(SeaSpotFish sea, RiverSpotFish rivers, FishModels models)
@@ -46,24 +49,40 @@ class FishCountOverlay extends OverlayPanel
 		{
 			total += Integer.parseInt(shoal[2]);
 		}
-		panelComponent.getChildren().add(LineComponent.builder().left("Fish loaded").right(String.valueOf(total)).build());
-		panelComponent.getChildren().add(LineComponent.builder().left("Sea").right(String.valueOf(seaFish)).build());
+		heading("Fish loaded", String.valueOf(total));
+		line("  Sea", String.valueOf(seaFish));
+		// Each river and lake: fish now / most it keeps.
 		for (String[] shoal : shoals)
 		{
-			panelComponent.getChildren().add(LineComponent.builder().left(shoal[0]).right(shoal[1]).build());
+			line("  " + shoal[0], shoal[1]);
 		}
-		panelComponent.getChildren().add(LineComponent.builder().left("Models").right(String.valueOf(models.count()))
-			.build());
-		for (String[] timing : rivers.timings())
+		line("Models made", String.valueOf(models.count()));
+		List<String[]> timings = rivers.timings();
+		if (!timings.isEmpty())
 		{
-			panelComponent.getChildren().add(LineComponent.builder().left(timing[0]).right(timing[1]).build());
+			heading("Mapping, latest first", "ms");
+			for (String[] timing : timings)
+			{
+				line(timing[0], timing[1].replace(" ms", ""));
+			}
 		}
 		// Each part a client tick, over the last second.
-		panelComponent.getChildren().add(LineComponent.builder().left("Per tick, ms").right("avg / worst").build());
+		heading("Each client tick", "avg / worst ms");
 		for (String[] part : TickTimes.rows())
 		{
-			panelComponent.getChildren().add(LineComponent.builder().left(part[0]).right(part[1]).build());
+			line(part[0], part[1]);
 		}
 		return super.render(graphics);
+	}
+
+	private void heading(String left, String right)
+	{
+		panelComponent.getChildren().add(LineComponent.builder().left(left).leftColor(Color.YELLOW).right(right)
+			.rightColor(Color.YELLOW).build());
+	}
+
+	private void line(String left, String right)
+	{
+		panelComponent.getChildren().add(LineComponent.builder().left(left).right(right).build());
 	}
 }

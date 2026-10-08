@@ -37,11 +37,16 @@ class RiverDebugOverlay extends Overlay
 		{
 			long started = System.nanoTime();
 			rivers.drawDebug(graphics);
-			if (baker != null && config.debugRiverDrawBlockers())
+			if (baker != null && (config.debugRiverDrawPoints() || config.debugPick()))
 			{
 				baker.drawBlockers(graphics);
 			}
-			TickTimes.add("Debug drawing", started);
+			TickTimes.add(TickTimes.DRAWING, started);
+		}
+		// The picking menu's hovered mark entry, whatever else is drawn.
+		if (baker != null && config.debugPick())
+		{
+			baker.drawPreview(graphics);
 		}
 		return null;
 	}

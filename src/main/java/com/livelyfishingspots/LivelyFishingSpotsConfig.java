@@ -68,15 +68,14 @@ public interface LivelyFishingSpotsConfig extends Config
 	@ConfigSection(
 		name = "Debug: rivers",
 		description = "Temporary settings for setting up the river spots",
-		position = 99,
-		closedByDefault = true
+		position = 99
 	)
 	String debugRivers = "debugRivers";
 
 	@ConfigItem(
 		keyName = "debugDraw",
-		name = "Show debug drawing",
-		description = "Draws the parts of the river and<br>lake debug ticked below",
+		name = "Debug drawing",
+		description = "Draws the parts ticked below on the<br>rivers and lakes near you, and<br>the debug panel",
 		section = debugRivers,
 		position = 0
 	)
@@ -86,11 +85,35 @@ public interface LivelyFishingSpotsConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = "debugRiverDrawBanks",
-		name = "Draw banks",
-		description = "Orange dots along the banks",
+		keyName = "debugRiverDrawCount",
+		name = "Debug panel",
+		description = "Top left: fish loaded (sea, and each<br>river and lake: now / most kept),<br>models made, mapping times, and the<br>ms each part takes a client tick",
 		section = debugRivers,
 		position = 1
+	)
+	default boolean debugRiverDrawCount()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "debugRiverDrawRange",
+		name = "Ranges",
+		description = "Cyan square round you: rivers are<br>mapped inside it. Purple: each river<br>and lake's mapped box. Rivers: fish<br>are kept between the orange lines<br>and drawn between the yellow ones",
+		section = debugRivers,
+		position = 2
+	)
+	default boolean debugRiverDrawRange()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "debugRiverDrawBanks",
+		name = "Banks",
+		description = "Orange dots on the water's edge,<br>as baked",
+		section = debugRivers,
+		position = 3
 	)
 	default boolean debugRiverDrawBanks()
 	{
@@ -99,10 +122,10 @@ public interface LivelyFishingSpotsConfig extends Config
 
 	@ConfigItem(
 		keyName = "debugRiverDrawPath",
-		name = "Draw path",
-		description = "Cyan line the river fish follow,<br>with a dot at its end",
+		name = "Path and room",
+		description = "Rivers: the cyan line fish follow,<br>a dot at its downstream end, and<br>teal lines at the room either side",
 		section = debugRivers,
-		position = 2
+		position = 4
 	)
 	default boolean debugRiverDrawPath()
 	{
@@ -110,35 +133,23 @@ public interface LivelyFishingSpotsConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = "debugRiverDrawRoom",
-		name = "Draw room",
-		description = "Teal lines: the room either side<br>of a river's path",
+		keyName = "debugRiverDrawShade",
+		name = "Room shading",
+		description = "Rivers: hatches the room fish<br>may swim in, between the<br>teal room lines",
 		section = debugRivers,
-		position = 3
+		position = 5
 	)
-	default boolean debugRiverDrawRoom()
-	{
-		return true;
-	}
-
-	@ConfigItem(
-		keyName = "debugRiverDrawSpawns",
-		name = "Draw lake spawns",
-		description = "Yellow rings at a lake's<br>spawn points",
-		section = debugRivers,
-		position = 4
-	)
-	default boolean debugRiverDrawSpawns()
+	default boolean debugRiverDrawShade()
 	{
 		return true;
 	}
 
 	@ConfigItem(
 		keyName = "debugRiverDrawRings",
-		name = "Draw rings",
-		description = "Green lanes and middle of<br>each spot's ring",
+		name = "Spots",
+		description = "At each spot: its ring's lanes and<br>middle (green), the red ring passing<br>fish keep outside, and its NPC id.<br>Rivers: where passing fish decide<br>to join (magenta), and the ring's<br>line across the river (green)",
 		section = debugRivers,
-		position = 5
+		position = 6
 	)
 	default boolean debugRiverDrawRings()
 	{
@@ -146,47 +157,11 @@ public interface LivelyFishingSpotsConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = "debugRiverDrawDecisions",
-		name = "Draw join lines",
-		description = "Rivers: magenta line where passing<br>fish decide to join a ring, and a<br>green line through the ring",
-		section = debugRivers,
-		position = 6
-	)
-	default boolean debugRiverDrawDecisions()
-	{
-		return true;
-	}
-
-	@ConfigItem(
-		keyName = "debugRiverDrawKeepOut",
-		name = "Draw keep-out",
-		description = "Red ring that fish not joining<br>stay outside",
+		keyName = "debugRiverDrawFish",
+		name = "Fish steering",
+		description = "Arrow from each fish to where it's<br>steering: white swimming, green<br>circling, yellow growing or coming<br>into sight, red shrinking or going<br>out of sight, grey not drawn",
 		section = debugRivers,
 		position = 7
-	)
-	default boolean debugRiverDrawKeepOut()
-	{
-		return true;
-	}
-
-	@ConfigItem(
-		keyName = "debugRiverDrawSpotIds",
-		name = "Draw spot ids",
-		description = "Each fishing spot's NPC id",
-		section = debugRivers,
-		position = 8
-	)
-	default boolean debugRiverDrawSpotIds()
-	{
-		return true;
-	}
-
-	@ConfigItem(
-		keyName = "debugRiverDrawFish",
-		name = "Draw fish steering",
-		description = "Arrow from each fish to where it's<br>steering: white swimming, green<br>circling, yellow growing, red shrinking",
-		section = debugRivers,
-		position = 9
 	)
 	default boolean debugRiverDrawFish()
 	{
@@ -195,10 +170,10 @@ public interface LivelyFishingSpotsConfig extends Config
 
 	@ConfigItem(
 		keyName = "debugRiverDrawSchools",
-		name = "Draw school headings",
-		description = "Blue arrow from each school's<br>middle along its heading",
+		name = "Schools",
+		description = "Blue outline round each school,<br>and an arrow from its middle<br>along its heading",
 		section = debugRivers,
-		position = 10
+		position = 8
 	)
 	default boolean debugRiverDrawSchools()
 	{
@@ -206,23 +181,11 @@ public interface LivelyFishingSpotsConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = "debugRiverDrawBounds",
-		name = "Draw school bounds",
-		description = "Blue outline round each school",
-		section = debugRivers,
-		position = 11
-	)
-	default boolean debugRiverDrawBounds()
-	{
-		return true;
-	}
-
-	@ConfigItem(
 		keyName = "debugRiverDrawPoints",
-		name = "Draw route points",
-		description = "Yellow tiles numbered in order: each<br>route's start, waypoints and end;<br>magenta while picking one",
+		name = "Picked points",
+		description = "Yellow tiles numbered in order: each<br>route's start, waypoints and end<br>(magenta while picking one). Yellow<br>rings at lake spawns. Red outlines<br>on fish blockers",
 		section = debugRivers,
-		position = 12
+		position = 9
 	)
 	default boolean debugRiverDrawPoints()
 	{
@@ -230,73 +193,25 @@ public interface LivelyFishingSpotsConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = "debugRiverDrawCount",
-		name = "Draw fish count",
-		description = "A panel at the top left counting<br>the fish loaded: sea, each river<br>and lake, and models made; and<br>the latest river mapping timings",
+		keyName = "debugPick",
+		name = "Picking menu",
+		description = "Adds River and Fork start, waypoint<br>and end, Lake spawn, Clear lake,<br>Fish blocker and Fish allower to<br>the right-click menu on tiles. A fork<br>is a side channel of a baked river",
 		section = debugRivers,
-		position = 13
+		position = 10
 	)
-	default boolean debugRiverDrawCount()
-	{
-		return true;
-	}
-
-	@ConfigItem(
-		keyName = "debugRiverDrawBlockers",
-		name = "Draw fish blockers",
-		description = "Red outlines on the tiles fish<br>treat as land by hand",
-		section = debugRivers,
-		position = 14
-	)
-	default boolean debugRiverDrawBlockers()
-	{
-		return true;
-	}
-
-	@ConfigItem(
-		keyName = "debugRiverDrawBoxes",
-		name = "Draw map boxes",
-		description = "Purple outline round the box of tiles<br>mapped for each river and lake",
-		section = debugRivers,
-		position = 15
-	)
-	default boolean debugRiverDrawBoxes()
-	{
-		return true;
-	}
-
-	@ConfigItem(
-		keyName = "debugRiverDrawRange",
-		name = "Draw mapping range",
-		description = "Cyan square round you: rivers are<br>mapped only inside it (fish range<br>plus 4 tiles, within the scene)",
-		section = debugRivers,
-		position = 18
-	)
-	default boolean debugRiverDrawRange()
-	{
-		return true;
-	}
-
-	@ConfigItem(
-		keyName = "debugRiverBake",
-		name = "Bake rivers",
-		description = "Records the water round you near<br>each river and lake as you walk;<br>turning it off saves them to<br>.runelite/lively-fishing-spots/baked.<br>Only baked rivers and lakes have fish",
-		section = debugRivers,
-		position = 17
-	)
-	default boolean debugRiverBake()
+	default boolean debugPick()
 	{
 		return false;
 	}
 
 	@ConfigItem(
-		keyName = "debugPick",
-		name = "Pick routes",
-		description = "Adds River start, waypoints and end,<br>Lake spawn, Clear lake and Fish blocker<br>to the right-click menu on tiles;<br>each pick is logged",
+		keyName = "debugRiverBake",
+		name = "Bake water bodies",
+		description = "Records the water round you near<br>each river and lake as you walk;<br>turning it off saves them to<br>.runelite/lively-fishing-spots/baked.<br>Only baked rivers and lakes have fish",
 		section = debugRivers,
-		position = 16
+		position = 11
 	)
-	default boolean debugPick()
+	default boolean debugRiverBake()
 	{
 		return false;
 	}
@@ -308,6 +223,38 @@ public interface LivelyFishingSpotsConfig extends Config
 		closedByDefault = true
 	)
 	String debugRiverShares = "debugRiverShares";
+
+	@ConfigSection(
+		name = "Debug: dead bodies",
+		description = "Temporary tuning of the dead bodies<br>drifting down the rivers",
+		position = 107,
+		closedByDefault = true
+	)
+	String debugBodies = "debugBodies";
+
+	@ConfigSection(
+		name = "Debug: lakes",
+		description = "Temporary tuning of the lake fish",
+		position = 108,
+		closedByDefault = true
+	)
+	String debugLakes = "debugLakes";
+
+	@ConfigSection(
+		name = "Debug: fish range",
+		description = "Temporary tuning of how far<br>from you fish are kept",
+		position = 109,
+		closedByDefault = true
+	)
+	String debugRange = "debugRange";
+
+	@ConfigSection(
+		name = "Debug: schools",
+		description = "Temporary tuning of the schools<br>of river and lake fish",
+		position = 110,
+		closedByDefault = true
+	)
+	String debugSchools = "debugSchools";
 
 	@ConfigSection(
 		name = "Debug: trout look",
@@ -522,8 +469,8 @@ public interface LivelyFishingSpotsConfig extends Config
 		keyName = "debugRiverScatterSeconds",
 		name = "Scatter every",
 		description = "How long, on average, a big group<br>swims before it scatters",
-		section = debugRiverLanes,
-		position = 12
+		section = debugSchools,
+		position = 0
 	)
 	default int debugRiverScatterSeconds()
 	{
@@ -814,7 +761,7 @@ public interface LivelyFishingSpotsConfig extends Config
 	)
 	default int debugLookTroutSize()
 	{
-		return 30;
+		return 26;
 	}
 
 	@Range(min = -360, max = 360)
@@ -1022,7 +969,7 @@ public interface LivelyFishingSpotsConfig extends Config
 	)
 	default int debugLookSalmonSize()
 	{
-		return 30;
+		return 28;
 	}
 
 	@Range(min = -360, max = 360)
@@ -1178,7 +1125,7 @@ public interface LivelyFishingSpotsConfig extends Config
 	)
 	default int debugLookPikeSink()
 	{
-		return 8;
+		return 9;
 	}
 
 	@Range(min = 0, max = 500)
@@ -1435,12 +1382,37 @@ public interface LivelyFishingSpotsConfig extends Config
 		keyName = "debugRiverBodyMinutes",
 		name = "Dead body every",
 		description = "How long, on average, between<br>dead bodies drifting down a river",
-		section = debugRiverShares,
-		position = 4
+		section = debugBodies,
+		position = 0
 	)
 	default int debugRiverBodyMinutes()
 	{
 		return 180;
+	}
+
+	@ConfigItem(
+		keyName = "debugRiverBodyTest",
+		name = "Dead body every 10 s",
+		description = "For testing: a dead body<br>10 seconds after the last one goes",
+		section = debugBodies,
+		position = 1
+	)
+	default boolean debugRiverBodyTest()
+	{
+		return false;
+	}
+
+	@Range(max = 359)
+	@ConfigItem(
+		keyName = "debugRiverBodyFeet",
+		name = "Dead body feet turn",
+		description = "Turn that lines a dead body up<br>with a narrow river",
+		section = debugBodies,
+		position = 2
+	)
+	default int debugRiverBodyFeet()
+	{
+		return 145;
 	}
 
 	@Range(min = 10, max = 200)
@@ -1449,8 +1421,8 @@ public interface LivelyFishingSpotsConfig extends Config
 		keyName = "debugRiverLakeSpeed",
 		name = "Lake speed",
 		description = "How fast lake fish cruise,<br>of river fish speed",
-		section = debugRiverLanes,
-		position = 13
+		section = debugLakes,
+		position = 0
 	)
 	default int debugRiverLakeSpeed()
 	{
@@ -1463,8 +1435,8 @@ public interface LivelyFishingSpotsConfig extends Config
 		keyName = "debugRiverLakeJoinChance",
 		name = "Lake join chance",
 		description = "Chance a lake fish passing a spot<br>being fished joins its ring;<br>rivers stay at 50%",
-		section = debugRiverLanes,
-		position = 14
+		section = debugLakes,
+		position = 1
 	)
 	default int debugRiverLakeJoinChance()
 	{
@@ -1495,6 +1467,33 @@ public interface LivelyFishingSpotsConfig extends Config
 	default int debugRiverDeepMost()
 	{
 		return 96;
+	}
+
+	@Range(min = 0, max = 400)
+	@ConfigItem(
+		keyName = "debugRiverDiveDepth",
+		name = "Diver depth",
+		description = "How far under the surface fish go<br>on a fish diver, local units<br>(only fish not swimming deep)",
+		section = debugRiverDips,
+		position = 7
+	)
+	default int debugRiverDiveDepth()
+	{
+		return 25;
+	}
+
+	@Range(min = 1, max = 50)
+	@Units(Units.PERCENT)
+	@ConfigItem(
+		keyName = "debugRiverDiveSpeed",
+		name = "Diver speed",
+		description = "Share of the way down (and back up)<br>a fish goes each client tick<br>on a fish diver",
+		section = debugRiverDips,
+		position = 8
+	)
+	default int debugRiverDiveSpeed()
+	{
+		return 1;
 	}
 
 	@Range(min = 50, max = 200)
@@ -1553,12 +1552,25 @@ public interface LivelyFishingSpotsConfig extends Config
 	@ConfigItem(
 		keyName = "debugRiverFishRange",
 		name = "Fish range",
-		description = "Tiles along a river either side of you<br>that keep fish; rivers and lakes start<br>4 tiles further out, and go 16 further",
-		section = debugRiverLanes,
-		position = 18
+		description = "Tiles along a river either side of you<br>where fish are drawn; lakes start<br>4 tiles further out, and go 16 further",
+		section = debugRange,
+		position = 0
 	)
 	default int debugRiverFishRange()
 	{
 		return 28;
+	}
+
+	@Range(max = 40)
+	@ConfigItem(
+		keyName = "debugRiverLoadMore",
+		name = "Fish load beyond",
+		description = "Tiles past the fish range that rivers<br>still keep fish in, unseen, so fish<br>come into sight already swimming;<br>rivers start 4 tiles further out still",
+		section = debugRange,
+		position = 1
+	)
+	default int debugRiverLoadMore()
+	{
+		return 16;
 	}
 }

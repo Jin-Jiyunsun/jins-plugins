@@ -13,10 +13,29 @@ final class TickTimes
 {
 	// Client ticks per report: a second.
 	private static final int TICKS = 50;
+	// The parts, in the panel's order; river fish's own parts indented under it.
+	static final String STARTING = "Starting rivers (game tick)";
+	static final String MODELS = "Making models";
+	static final String SEA = "Sea fish";
+	static final String RIVERS = "River fish, all";
+	static final String MAPPING = "  mapping, rings";
+	static final String FILLING = "  filling gaps";
+	static final String SPAWNING = "  spawning";
+	static final String WINDOW = "  loaded stretch, remaps";
+	static final String SCHOOLS = "  schools";
+	static final String MOVING = "  moving fish";
+	static final String DRAWING = "Debug drawing";
+	private static final List<String> ORDER = List.of(STARTING, MODELS, SEA, RIVERS, MAPPING, FILLING, SPAWNING,
+		WINDOW, SCHOOLS, MOVING, DRAWING);
 	// Per part: nanoseconds this tick, the total and the worst tick this second.
 	private static final Map<String, long[]> PARTS = new LinkedHashMap<>();
 	private static List<String[]> rows = List.of();
 	private static int ticks;
+
+	static
+	{
+		clear();
+	}
 
 	private TickTimes()
 	{
@@ -70,6 +89,10 @@ final class TickTimes
 	static void clear()
 	{
 		PARTS.clear();
+		for (String part : ORDER)
+		{
+			PARTS.put(part, new long[3]);
+		}
 		rows = List.of();
 		ticks = 0;
 	}

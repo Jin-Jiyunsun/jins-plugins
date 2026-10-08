@@ -1,6 +1,7 @@
 package com.livelyfishingspots;
 
 import com.google.inject.Provides;
+import java.awt.Color;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -11,13 +12,18 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import javax.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
 import net.runelite.api.Skill;
+import net.runelite.api.Menu;
 import net.runelite.api.MenuAction;
+import net.runelite.api.MenuEntry;
 import net.runelite.api.NPC;
 import net.runelite.api.Tile;
 import net.runelite.api.WorldView;
@@ -41,13 +47,15 @@ import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.plugins.PluginManager;
 import net.runelite.client.ui.overlay.OverlayManager;
+import net.runelite.client.util.ColorUtil;
 
 /**
  * Shows fish swimming at fishing spots. Visual only: no clickboxes or menu options, and the spots are untouched.
  */
 @Slf4j
 @PluginDescriptor(
-	name = "Lively Fishing Spots",
+	// TEMPORARY: dev name, back to "Lively Fishing Spots" before a Hub release.
+	name = "116-lively-fishing-spots",
 	description = "Shows the fish each fishing spot gives swimming around it",
 	tags = {"fishing", "fish", "spot", "sailing", "sea", "shoal", "swimming", "visual"}
 )
@@ -82,7 +90,16 @@ public class LivelyFishingSpotsPlugin extends Plugin
 	// TEMPORARY: whether Bake rivers is on, and the baker recording while it is.
 	private boolean debugBake;
 	private RiverBaker riverBaker;
+	// TEMPORARY: checks for changed bake files, and when each was last changed, by name.
+	private ScheduledFuture<?> bakeWatch;
+	private final Map<String, Long> bakeTimes = new ConcurrentHashMap<>();
 	private WorldPoint pickedStart;
+	// Whether what's being picked is a fork of a baked river, not a river of its own.
+	private boolean pickingFork;
+	// A river's route point picked up to move, or null.
+	private WorldPoint movingPoint;
+	// TEMPORARY: whether the point picked up is a lake's spawn point, not a river's.
+	private boolean movingSpawn;
 	private final List<WorldPoint> pickedWays = new ArrayList<>();
 
 	@Inject
@@ -103,19 +120,33 @@ public class LivelyFishingSpotsPlugin extends Plugin
 		return configManager.getConfig(LivelyFishingSpotsConfig.class);
 	}
 
+	/**
+	 * Hands the river fish their player settings.
+	 */
+	private void riverSettings()
+	{
+		riverSpotFish.setSchooled(config.riverSwimming() == RiverSwimming.SCHOOLED);
+		riverSpotFish.setAmount(config.riverFishAmount());
+		riverSpotFish.setLakeAmount(config.lakeFishAmount());
+		riverSpotFish.setDeep(config.riverDeep());
+	}
+
 	@Override
 	protected void startUp()
 	{
 		fishModels = new FishModels(client);
 		seaSpotFish = new SeaSpotFish(client, fishModels);
 		riverSpotFish = new RiverSpotFish(client, fishModels);
-		riverSpotFish.setSchooled(config.riverSwimming() == RiverSwimming.SCHOOLED);
-		riverSpotFish.setAmount(config.riverFishAmount());
-		riverSpotFish.setLakeAmount(config.lakeFishAmount());
-		riverSpotFish.setDeep(config.riverDeep());
+		riverSettings();
 		debugPick = config.debugPick();
 		debugBake = config.debugRiverBake();
-		riverBaker = new RiverBaker(client, riverSpotFish);
+		riverBaker = new RiverBaker(client, riverSpotFish, this::saveBaked);
+		// Side channels picked but not laid yet get their paths.
+		clientThread.invoke(riverBaker::layBranches);
+		// Bakes changed in .runelite are reloaded while playing.
+		bakeTimes.clear();
+		checkBakes(false);
+		bakeWatch = executor.scheduleWithFixedDelay(() -> checkBakes(true), 2, 2, TimeUnit.SECONDS);
 		RiverSpotFish.tune(config);
 		tuneLooks();
 		riverDebugOverlay.setRivers(riverSpotFish, riverBaker);
@@ -131,11 +162,21 @@ public class LivelyFishingSpotsPlugin extends Plugin
 	@Override
 	protected void shutDown()
 	{
+		if (bakeWatch != null)
+		{
+			bakeWatch.cancel(false);
+			bakeWatch = null;
+		}
 		overlayManager.remove(riverDebugOverlay);
 		overlayManager.remove(fishCountOverlay);
 		SeaSpotFish fish = seaSpotFish;
 		RiverSpotFish riverFish = riverSpotFish;
 		FishModels models = fishModels;
+		// Nothing to clear if starting up failed partway.
+		if (fish == null || riverFish == null || models == null)
+		{
+			return;
+		}
 		clientThread.invoke(() ->
 		{
 			fish.clear();
@@ -244,7 +285,7 @@ public class LivelyFishingSpotsPlugin extends Plugin
 		{
 			riverBaker.record();
 		}
-		TickTimes.add("River: activate", started);
+		TickTimes.add(TickTimes.STARTING, started);
 	}
 
 	@Subscribe
@@ -252,11 +293,11 @@ public class LivelyFishingSpotsPlugin extends Plugin
 	{
 		long started = System.nanoTime();
 		fishModels.makeQueued();
-		started = TickTimes.add("Models", started);
+		started = TickTimes.add(TickTimes.MODELS, started);
 		seaSpotFish.swim();
-		started = TickTimes.add("Sea fish", started);
+		started = TickTimes.add(TickTimes.SEA, started);
 		riverSpotFish.swim();
-		TickTimes.add("River fish (all)", started);
+		TickTimes.add(TickTimes.RIVERS, started);
 		TickTimes.endTick();
 	}
 
@@ -278,10 +319,7 @@ public class LivelyFishingSpotsPlugin extends Plugin
 		{
 			clientThread.invoke(() ->
 			{
-				riverSpotFish.setSchooled(config.riverSwimming() == RiverSwimming.SCHOOLED);
-				riverSpotFish.setAmount(config.riverFishAmount());
-				riverSpotFish.setLakeAmount(config.lakeFishAmount());
-				riverSpotFish.setDeep(config.riverDeep());
+				riverSettings();
 				riverSpotFish.clear();
 				addSpotFish();
 			});
@@ -294,7 +332,10 @@ public class LivelyFishingSpotsPlugin extends Plugin
 			{
 				if ("debugRiverBake".equals(key) && !config.debugRiverBake())
 				{
-					saveBaked(riverBaker.save());
+					// Saved, and shown at once.
+					Map<String, String> files = riverBaker.save();
+					saveBaked(files);
+					files.forEach(riverSpotFish::reloadBaked);
 				}
 				debugBake = config.debugRiverBake();
 				RiverSpotFish.tune(config);
@@ -309,6 +350,32 @@ public class LivelyFishingSpotsPlugin extends Plugin
 					addSpotFish();
 				}
 			});
+		}
+	}
+
+	/**
+	 * TEMPORARY: looks for bake files in .runelite that are new or changed since last looked, and when reloading,
+	 * hands each one's text to the rivers on the client thread. Off the client thread.
+	 */
+	private void checkBakes(boolean reload)
+	{
+		try
+		{
+			File[] files = new File(RuneLite.RUNELITE_DIR, RiverSpotFish.BAKED_FOLDER).listFiles(
+				(folder, name) -> name.endsWith(".txt"));
+			for (File file : files == null ? new File[0] : files)
+			{
+				Long seen = bakeTimes.put(file.getName(), file.lastModified());
+				if (reload && (seen == null || seen != file.lastModified()))
+				{
+					String text = new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
+					clientThread.invoke(() -> riverSpotFish.reloadBaked(file.getName(), text));
+				}
+			}
+		}
+		catch (IOException | RuntimeException e)
+		{
+			log.warn("Couldn't check the bakes", e);
 		}
 	}
 
@@ -330,6 +397,8 @@ public class LivelyFishingSpotsPlugin extends Plugin
 				try
 				{
 					Files.write(new File(folder, file.getKey()).toPath(), file.getValue().getBytes(StandardCharsets.UTF_8));
+					// Already in use, so the watch for changed bakes skips it.
+					bakeTimes.put(file.getKey(), new File(folder, file.getKey()).lastModified());
 					log.debug("Baked {}", new File(folder, file.getKey()));
 				}
 				catch (IOException e)
@@ -368,8 +437,8 @@ public class LivelyFishingSpotsPlugin extends Plugin
 	}
 
 	/**
-	 * TEMPORARY: adds River start, River waypoint, River end, Lake spawn and Clear lake to the tile menu. Local only;
-	 * nothing is sent to the game.
+	 * TEMPORARY: adds picking to the tile menu: rivers, forks, route points, lake spawns, fish blockers and allowers.
+	 * Local only; nothing is sent to the game.
 	 */
 	@Subscribe
 	public void onMenuEntryAdded(MenuEntryAdded event)
@@ -385,23 +454,33 @@ public class LivelyFishingSpotsPlugin extends Plugin
 			return;
 		}
 		WorldPoint at = tile.getWorldLocation();
+		riverBaker.clearPreviews();
+		// A river being picked, or a fork (a side channel of a baked river): its end and waypoints.
 		if (pickedStart != null)
 		{
-			client.getMenu().createMenuEntry(-1).setOption("River end").setTarget("").setType(MenuAction.RUNELITE)
+			String kind = pickingFork ? "Fork" : "River";
+			client.getMenu().createMenuEntry(-1).setOption(tint(kind + " end", pickingFork)).setTarget("").setType(MenuAction.RUNELITE)
 				.onClick(entry ->
 				{
 					List<WorldPoint> points = new ArrayList<>();
 					points.add(pickedStart);
 					points.addAll(pickedWays);
 					points.add(at);
-					riverSpotFish.pickRoute(points);
+					if (!pickingFork)
+					{
+						riverBaker.newRiver(points);
+						riverSpotFish.clear();
+						addSpotFish();
+					}
+					else if (!riverBaker.addBranch(points))
+					{
+						log.debug("Fork from {} to {}: no baked river near both ends", points.get(0), at);
+					}
 					pickedStart = null;
 					pickedWays.clear();
 					riverSpotFish.setPicking(List.of());
-					riverSpotFish.clear();
-					addSpotFish();
 				});
-			client.getMenu().createMenuEntry(-1).setOption("River waypoint").setTarget("").setType(MenuAction.RUNELITE)
+			client.getMenu().createMenuEntry(-1).setOption(tint(kind + " waypoint", pickingFork)).setTarget("").setType(MenuAction.RUNELITE)
 				.onClick(entry ->
 				{
 					pickedWays.add(at);
@@ -411,47 +490,119 @@ public class LivelyFishingSpotsPlugin extends Plugin
 					riverSpotFish.setPicking(points);
 				});
 		}
-		client.getMenu().createMenuEntry(-1).setOption("River start").setTarget("").setType(MenuAction.RUNELITE)
-			.onClick(entry ->
-			{
-				pickedStart = at;
-				pickedWays.clear();
-				riverSpotFish.setPicking(List.of(at));
-			});
-		if (riverBaker.isBlocker(at))
+		if (riverBaker.hasFork(at))
 		{
-			client.getMenu().createMenuEntry(-1).setOption("Remove fish blocker").setTarget("")
-				.setType(MenuAction.RUNELITE).onClick(entry -> riverBaker.toggleBlocker(at, RiverBaker.Half.WHOLE));
-		}
-		else
-		{
-			client.getMenu().createMenuEntry(-1).setOption("Fish blocker (west half)").setTarget("")
-				.setType(MenuAction.RUNELITE).onClick(entry -> riverBaker.toggleBlocker(at, RiverBaker.Half.WEST));
-			client.getMenu().createMenuEntry(-1).setOption("Fish blocker (east half)").setTarget("")
-				.setType(MenuAction.RUNELITE).onClick(entry -> riverBaker.toggleBlocker(at, RiverBaker.Half.EAST));
-			client.getMenu().createMenuEntry(-1).setOption("Fish blocker (south half)").setTarget("")
-				.setType(MenuAction.RUNELITE).onClick(entry -> riverBaker.toggleBlocker(at, RiverBaker.Half.SOUTH));
-			client.getMenu().createMenuEntry(-1).setOption("Fish blocker (north half)").setTarget("")
-				.setType(MenuAction.RUNELITE).onClick(entry -> riverBaker.toggleBlocker(at, RiverBaker.Half.NORTH));
-			client.getMenu().createMenuEntry(-1).setOption("Fish blocker").setTarget("")
-				.setType(MenuAction.RUNELITE).onClick(entry -> riverBaker.toggleBlocker(at, RiverBaker.Half.WHOLE));
-		}
-		client.getMenu().createMenuEntry(-1).setOption("Clear lake").setTarget("").setType(MenuAction.RUNELITE)
-			.onClick(entry ->
+			client.getMenu().createMenuEntry(-1).setOption(tint("Remove fork", true)).setTarget("").setType(MenuAction.RUNELITE)
+				.onClick(entry -> riverBaker.removeFork(at));
+			// The share of fish taking it.
+			Menu shares = client.getMenu().createMenuEntry(-1).setOption(tint("Fork share", true)).setTarget("")
+				.setType(MenuAction.RUNELITE).createSubMenu();
+			for (int share : new int[]{-1, 90, 75, 50, 25, 10})
 			{
-				if (riverSpotFish.clearPickedLake())
+				shares.createMenuEntry(-1).setOption(share < 0 ? "By width" : share + "%").setTarget("")
+					.setType(MenuAction.RUNELITE).onClick(entry -> riverBaker.setForkShare(at, share));
+			}
+		}
+		for (int kind = 0; kind < 2; kind++)
+		{
+			boolean fork = kind == 1;
+			client.getMenu().createMenuEntry(-1).setOption(tint(fork ? "Fork start" : "River start", fork)).setTarget("")
+				.setType(MenuAction.RUNELITE).onClick(entry ->
 				{
+					pickedStart = at;
+					pickingFork = fork;
+					pickedWays.clear();
+					riverSpotFish.setPicking(List.of(at));
+				});
+		}
+		// Fish blockers, allowers, surfacers and divers, the whole tile or a half, each in a submenu; or clearing the one
+		// there. Each shows what it would place or remove while hovered.
+		String[] markNames = {"Fish blocker", "Fish allower", "Fish surfacer", "Fish diver"};
+		for (int k = 0; k < markNames.length; k++)
+		{
+			int kind = k;
+			// Coloured as they're drawn.
+			String name = ColorUtil.wrapWithColorTag(markNames[kind], RiverBaker.markColour(kind));
+			if (riverBaker.hasMark(at, kind))
+			{
+				MenuEntry remove = client.getMenu().createMenuEntry(-1).setOption("Remove " + name).setTarget("")
+					.setType(MenuAction.RUNELITE).onClick(entry -> riverBaker.setMark(at, null, kind));
+				riverBaker.preview(remove, at, riverBaker.markAt(at, kind), kind);
+				continue;
+			}
+			// Clicked itself, the whole tile.
+			MenuEntry parent = client.getMenu().createMenuEntry(-1).setOption(name).setTarget("")
+				.setType(MenuAction.RUNELITE).onClick(entry -> riverBaker.setMark(at, RiverBaker.Half.WHOLE, kind));
+			riverBaker.preview(parent, at, RiverBaker.Half.WHOLE, kind);
+			Menu halves = parent.createSubMenu();
+			for (RiverBaker.Half half : RiverBaker.Half.values())
+			{
+				MenuEntry option = halves.createMenuEntry(-1).setOption(half == RiverBaker.Half.WHOLE ? "Whole tile"
+						: half.name().charAt(0) + half.name().substring(1).toLowerCase() + " half").setTarget("")
+					.setType(MenuAction.RUNELITE).onClick(entry -> riverBaker.setMark(at, half, kind));
+				riverBaker.preview(option, at, half, kind);
+			}
+		}
+		// A river's route points, or a lake's spawn points: added, moved (picked up, then put down) or removed.
+		if (movingPoint != null)
+		{
+			WorldPoint from = movingPoint;
+			boolean lake = movingSpawn;
+			client.getMenu().createMenuEntry(-1).setOption(tint(lake ? "Put lake spawn here" : "Put river point here", false))
+				.setTarget("").setType(MenuAction.RUNELITE).onClick(entry ->
+				{
+					riverBaker.moveRoutePoint(from, at, lake);
+					movingPoint = null;
 					riverSpotFish.clear();
 					addSpotFish();
-				}
-			});
-		client.getMenu().createMenuEntry(-1).setOption("Lake spawn").setTarget("").setType(MenuAction.RUNELITE)
+				});
+		}
+		for (boolean lake : new boolean[]{false, true})
+		{
+			if (!riverBaker.isRoutePoint(at, lake))
+			{
+				continue;
+			}
+			String what = lake ? "lake spawn" : "river point";
+			client.getMenu().createMenuEntry(-1).setOption(tint("Remove " + what, false)).setTarget("")
+				.setType(MenuAction.RUNELITE).onClick(entry ->
+				{
+					riverBaker.removeRoutePoint(at, lake);
+					riverSpotFish.clear();
+					addSpotFish();
+				});
+			client.getMenu().createMenuEntry(-1).setOption(tint("Move " + what, false)).setTarget("")
+				.setType(MenuAction.RUNELITE).onClick(entry ->
+				{
+					movingPoint = at;
+					movingSpawn = lake;
+				});
+		}
+		if (!riverBaker.isRoutePoint(at, false))
+		{
+			client.getMenu().createMenuEntry(-1).setOption(tint("Add river point", false)).setTarget("")
+				.setType(MenuAction.RUNELITE).onClick(entry ->
+				{
+					riverBaker.addRoutePoint(at);
+					riverSpotFish.clear();
+					addSpotFish();
+				});
+		}
+		client.getMenu().createMenuEntry(-1).setOption(tint("Lake spawn", false)).setTarget("").setType(MenuAction.RUNELITE)
 			.onClick(entry ->
 			{
-				riverSpotFish.pickLake(at);
+				riverBaker.addLakeSpawn(at);
 				riverSpotFish.clear();
 				addSpotFish();
 			});
+	}
+
+	/**
+	 * TEMPORARY: a picking menu option coloured as what it picks is drawn: forks light blue, rivers and lakes yellow.
+	 */
+	private static String tint(String option, boolean fork)
+	{
+		return ColorUtil.wrapWithColorTag(option, fork ? new Color(120, 200, 255) : Color.YELLOW);
 	}
 
 	/**

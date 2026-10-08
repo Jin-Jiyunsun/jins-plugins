@@ -14,17 +14,21 @@ repositories {
 }
 
 def runeLiteVersion = 'latest.release'
+// TEMPORARY: the dev client runs RuneLite's next snapshot, for a Menu Entry Swapper crash in 1.13.1; back to
+// runeLiteVersion before a Hub release.
+def devRuneLiteVersion = '1.13.2-SNAPSHOT'
 def pluginMainClass = 'com.livelyfishingspots.LivelyFishingSpotsPluginTest'
 
 dependencies {
-	compileOnly group: 'net.runelite', name:'client', version: runeLiteVersion
+	compileOnly group: 'net.runelite', name:'' +
+			'client', version: runeLiteVersion
 
 	compileOnly 'org.projectlombok:lombok:1.18.30'
 	annotationProcessor 'org.projectlombok:lombok:1.18.30'
 
 	testImplementation 'junit:junit:4.12'
-	testImplementation group: 'net.runelite', name:'client', version: runeLiteVersion
-	testImplementation group: 'net.runelite', name:'jshell', version: runeLiteVersion
+	testImplementation group: 'net.runelite', name:'client', version: devRuneLiteVersion
+	testImplementation group: 'net.runelite', name:'jshell', version: devRuneLiteVersion
 }
 
 group = 'com.livelyfishingspots'
@@ -39,6 +43,8 @@ tasks.register('run', JavaExec) {
 	mainClass = pluginMainClass
 
 	jvmArgs "-ea"
+	// TEMPORARY: with the snapshot, load Hub plugins built for the latest release, as there are none for snapshots.
+	jvmArgs "-Drunelite.pluginhub.version=1.13.1"
 	args "--developer-mode", "--debug"
 }
 

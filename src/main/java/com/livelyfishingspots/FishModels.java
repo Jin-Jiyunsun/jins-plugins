@@ -171,7 +171,9 @@ final class FishModels
 	// Trout, salmon and pike: the cod's, smaller and shallower.
 	private static final int[] RIVER_VALUES = {-90, 0, 30, 17, 8, 3, 16, -90, 0, 40, 60, 30, 20, 7, 1500,
 		50, 100, 100, 0, 100, 50, 0, 0, 100, 100, 0, 35, 0, 6, 0, 0, 50, 100, 0, 0, 100};
-	private static final Look RIVER = new Look(RIVER_VALUES);
+	private static final Look TROUT = riverLook(26, 8);
+	private static final Look SALMON = riverLook(28, 8);
+	private static final Look PIKE = riverLook(30, 9);
 	// Rainbow fish: smaller, nearer the surface, stretched longer.
 	private static final Look RAINBOW = new Look(new int[]{-90, 0, 17, 17, 6, 3, 16, -90, 0, 40, 60, 30, 3, 7, 1500,
 		7, 100, 100, 0, 150, 50, 0, 0, 100, 100, 0, 35, 0, 6, 0, 0, 50, 100, 0, 0, 100});
@@ -190,9 +192,9 @@ final class FishModels
 		Map.entry(ItemID.RAW_MACKEREL, new Look(new int[]{-90, 0, 30, 17, 10, 6, 16, -90, 0, 40, 60, 30, 10, 12, 1500,
 			25, 100, 100, 0, 100, 50, 0, 0, 90, 105, 0, 35, 0, 6, 0, 0, 50, 100, 0, 0, 100})),
 		Map.entry(ItemID.RAW_COD, COD),
-		Map.entry(ItemID.RAW_TROUT, RIVER),
-		Map.entry(ItemID.RAW_SALMON, RIVER),
-		Map.entry(ItemID.RAW_PIKE, RIVER),
+		Map.entry(ItemID.RAW_TROUT, TROUT),
+		Map.entry(ItemID.RAW_SALMON, SALMON),
+		Map.entry(ItemID.RAW_PIKE, PIKE),
 		Map.entry(ItemID.HUNTING_RAW_FISH_SPECIAL, RAINBOW),
 		Map.entry(ItemID.RAW_LOBSTER, new Look(new int[]{0, 0, 45, 17, 30, 5, 0, -90, 0, 40, 60, 30, 3, 0, 1500,
 			35, 0, 100, 0, 100, 50, 0, 0, 50, 50, 0, 35, 0, 6, 0, 0, 50, 100, 0, 0, 100})),
@@ -311,13 +313,8 @@ final class FishModels
 			longest = spread(ways[i], count) > spread(ways[longest], count) ? i : longest;
 		}
 		float[] along = ways[longest];
-		float min = Float.MAX_VALUE;
-		float max = -Float.MAX_VALUE;
-		for (int i = 0; i < count; i++)
-		{
-			min = Math.min(min, along[i]);
-			max = Math.max(max, along[i]);
-		}
+		float min = min(along, count);
+		float max = max(along, count);
 		double length = Math.max(1, max - min);
 		int[] others = longest == 0 ? new int[]{1, 2} : longest == 1 ? new int[]{0, 2} : new int[]{0, 1};
 		// Each slice's middle across both other axes, and the whole model's.
@@ -627,7 +624,10 @@ final class FishModels
 				{
 					continue;
 				}
-				double far = Math.pow(u[i] - u[j], 2) + Math.pow(v[i] - v[j], 2) + Math.pow(side[i] - side[j], 2);
+				double du = u[i] - u[j];
+				double dv = v[i] - v[j];
+				double dside = side[i] - side[j];
+				double far = du * du + dv * dv + dside * dside;
 				if (far < nearestFar.getOrDefault(piece[i], Double.MAX_VALUE))
 				{
 					nearestFar.put(piece[i], far);
@@ -781,13 +781,8 @@ final class FishModels
 		{
 			along = spread(way, count) > spread(along, count) ? way : along;
 		}
-		float min = Float.MAX_VALUE;
-		float max = -Float.MAX_VALUE;
-		for (int i = 0; i < count; i++)
-		{
-			min = Math.min(min, along[i]);
-			max = Math.max(max, along[i]);
-		}
+		float min = min(along, count);
+		float max = max(along, count);
 		double middle = (min + max) / 2.0;
 		for (int i = 0; i < count; i++)
 		{
@@ -966,6 +961,17 @@ final class FishModels
 	}
 
 	/**
+	 * The river look with its own size and sink.
+	 */
+	private static Look riverLook(int size, int sink)
+	{
+		int[] values = RIVER_VALUES.clone();
+		values[2] = size;
+		values[4] = sink;
+		return new Look(values);
+	}
+
+	/**
 	 * TEMPORARY: sets a kind's look from the river look with some values replaced, and drops its models.
 	 */
 	void tuneLook(int item, int[] places, int[] values)
@@ -1033,14 +1039,7 @@ final class FishModels
 
 	static float spread(float[] values, int count)
 	{
-		float min = Float.MAX_VALUE;
-		float max = -Float.MAX_VALUE;
-		for (int i = 0; i < count; i++)
-		{
-			min = Math.min(min, values[i]);
-			max = Math.max(max, values[i]);
-		}
-		return max - min;
+		return max(values, count) - min(values, count);
 	}
 
 	/**

@@ -1,23 +1,30 @@
 package com.livelyfishingspots;
 
 import com.livelyfishingspots.RiverSpotFish.River;
+import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Graphics2D;
 import java.awt.Polygon;
+import java.awt.Stroke;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
+import java.util.function.Consumer;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.CollisionData;
 import net.runelite.api.CollisionDataFlag;
 import net.runelite.api.GameObject;
+import net.runelite.api.Menu;
+import net.runelite.api.MenuEntry;
 import net.runelite.api.Model;
 import net.runelite.api.Perspective;
 import net.runelite.api.Player;
@@ -39,12 +46,14 @@ import net.runelite.api.gameval.ObjectID;
 class RiverBaker
 {
 	private static final int CELL = RiverSpotFish.CELL;
-	// Floor texture of river water, seen in game.
-	private static final int WATER_TEXTURE = 1;
+	private static final int PER_TILE = RiverSpotFish.PER_TILE;
+	// A diagonal step between cells.
+	private static final double DIAGONAL = CELL * Math.sqrt(2);
+	// Floor textures of river water, seen in game: plain water, and Tirannwn's crystal water (WATER_CRYSTAL_OPEN,
+	// 170, to its deepest, 174).
+	private static final Set<Integer> WATER_TEXTURES = Set.of(1, 170, 171, 172, 173, 174);
 	// How far inside an object's rough outline a cell's middle must be to count as blocked, local units.
 	private static final double OBJECT_INSET = 16;
-	// How far a waypoint may move to the most open water near it, local units.
-	private static final int WAYPOINT_SNAP = 256;
 	// Smoothing passes over the path.
 	private static final int SMOOTHING = 4;
 	// Tiles walked before the water round the player is read again.
@@ -54,8 +63,6 @@ class RiverBaker
 	private static final Set<Integer> NOT_BLOCKING = Set.of(ObjectID.DUCKBLOCKER, ObjectID.WATERFALL_FOAM,
 		ObjectID.WATERWHEEL_CENTRE, ObjectID.WATERWHEEL_LEFT, ObjectID.WATERWHEEL_RIGHT, ObjectID.WATERWHEEL_DRIP,
 		ObjectID.KASTORI_WATERWHEEL_CENTRE, ObjectID.KASTORI_WATERWHEEL_LEFT, ObjectID.KASTORI_WATERWHEEL_RIGHT);
-	// Hand-placed tiles, or halves of them, fish treat as land, where the water map gets it wrong.
-	private static final Map<WorldPoint, Half> BLOCKERS = Map.ofEntries();
 
 	/**
 	 * How much of a tile a fish blocker covers.
@@ -71,19 +78,32 @@ class RiverBaker
 
 	private final Client client;
 	private final RiverSpotFish rivers;
-	// Water recorded, per river or lake, per world tile (x << 14 | y): a bit per cell, row by row.
-	private final Map<WorldPoint[], Map<Integer, Integer>> recorded = new LinkedHashMap<>();
-	// Fish blockers placed this session, on top of BLOCKERS.
-	private final Map<WorldPoint, Half> placedBlockers = new HashMap<>();
+	// Water recorded, per river or lake (by its first point, which stays as its points change), per world tile
+	// (x << 14 | y): a bit per cell, row by row.
+	private final Map<WorldPoint, Map<Integer, Integer>> recorded = new LinkedHashMap<>();
+	// All water walked past while baking, per plane, per world tile as above, so a river or lake picked afterwards
+	// still gets it.
+	private final Map<Integer, Map<Integer, Integer>> walked = new HashMap<>();
+	// The picking menu's mark entries: what each would place or remove (tile, half, kind), shown while hovered. By the
+	// entry itself, as entries with the same text (each kind's "West half") count as equal.
+	private final Map<MenuEntry, Object[]> previews = new IdentityHashMap<>();
+	// TEMPORARY: each floor texture's cells in the last read, for the log.
+	private final Map<Integer, Integer> textures = new TreeMap<>();
+	// Rivers and lakes (by first point) whose recorded water changed since they were last baked.
+	private final Set<WorldPoint> changed = new HashSet<>();
 	// Where the player was, and the scene's corner, when the water was last read.
 	private WorldPoint readAt;
 	private int readBaseX;
 	private int readBaseY;
 
-	RiverBaker(Client client, RiverSpotFish rivers)
+	// Writes bake files (name, text) to .runelite, off the client thread.
+	private final Consumer<Map<String, String>> saveFiles;
+
+	RiverBaker(Client client, RiverSpotFish rivers, Consumer<Map<String, String>> saveFiles)
 	{
 		this.client = client;
 		this.rivers = rivers;
+		this.saveFiles = saveFiles;
 	}
 
 	/**
@@ -109,7 +129,7 @@ class RiverBaker
 		readBaseX = view.getBaseX();
 		readBaseY = view.getBaseY();
 		LocalPoint at = player.getLocalLocation();
-		int reach = RiverSpotFish.FISH_RANGE + RiverSpotFish.MAP_MORE;
+		int reach = RiverSpotFish.loadRange() + RiverSpotFish.MAP_MORE;
 		int margin = RiverSpotFish.ROUTE_MARGIN;
 		int lowX = Math.max(margin, at.getSceneX() - reach);
 		int lowY = Math.max(margin, at.getSceneY() - reach);
@@ -119,21 +139,20 @@ class RiverBaker
 		{
 			return;
 		}
-		int perTile = 128 / CELL;
 		int tilesX = highX - lowX + 1;
 		int tilesY = highY - lowY + 1;
-		River box = new River(lowX * 128, lowY * 128, tilesX * perTile, tilesY * perTile);
+		River box = new River(lowX * 128, lowY * 128, tilesX * PER_TILE, tilesY * PER_TILE);
 		// Which of its tiles each river or lake reaches: within BOX_MARGIN tiles of a river's line, or LAKE_RADIUS + 1
 		// of a lake's spawn points.
 		Map<WorldPoint[], boolean[]> reaches = new LinkedHashMap<>();
 		boolean[] near = new boolean[tilesX * tilesY];
+		Arrays.fill(near, true);
 		for (WorldPoint[] route : rivers.routesAndLakes())
 		{
 			if (route[0].getPlane() != me.getPlane())
 			{
 				continue;
 			}
-			boolean lake = rivers.isLake(route);
 			boolean[] mask = new boolean[tilesX * tilesY];
 			boolean any = false;
 			for (int ty = 0; ty < tilesY; ty++)
@@ -142,11 +161,9 @@ class RiverBaker
 				{
 					int x = view.getBaseX() + lowX + tx;
 					int y = view.getBaseY() + lowY + ty;
-					if (lake ? toSpawns(route, x, y) <= RiverSpotFish.LAKE_RADIUS + 1
-						: toLine(route, x, y) <= RiverSpotFish.BOX_MARGIN)
+					if (reaches(route, x, y))
 					{
 						mask[ty * tilesX + tx] = true;
-						near[ty * tilesX + tx] = true;
 						any = true;
 					}
 				}
@@ -156,15 +173,29 @@ class RiverBaker
 				reaches.put(route, mask);
 			}
 		}
-		if (reaches.isEmpty())
-		{
-			return;
-		}
+		textures.clear();
 		boolean[] wet = wet(view, me.getPlane(), box, near);
+		// TEMPORARY: what was read, to spot water with another floor texture.
+		int water = 0;
+		for (boolean cell : wet)
+		{
+			water += cell ? 1 : 0;
+		}
+		log.debug("Read round {}: {} water cells; floor textures (cells): {}", me, water, textures);
+		Map<Integer, Integer> walkedHere = walked.computeIfAbsent(me.getPlane(), plane -> new HashMap<>());
+		for (int ty = 0; ty < tilesY; ty++)
+		{
+			for (int tx = 0; tx < tilesX; tx++)
+			{
+				walkedHere.put((view.getBaseX() + lowX + tx) << 14 | (view.getBaseY() + lowY + ty),
+					cellBits(wet, box.width, tx, ty));
+			}
+		}
 		for (Map.Entry<WorldPoint[], boolean[]> entry : reaches.entrySet())
 		{
 			boolean[] mask = entry.getValue();
-			Map<Integer, Integer> tiles = recorded.computeIfAbsent(entry.getKey(), r -> new HashMap<>());
+			// Its own water only; what's walked past is taken when it's baked.
+			Map<Integer, Integer> tiles = recorded.computeIfAbsent(entry.getKey()[0], rivers::bakedTiles);
 			for (int ty = 0; ty < tilesY; ty++)
 			{
 				for (int tx = 0; tx < tilesX; tx++)
@@ -173,52 +204,91 @@ class RiverBaker
 					{
 						continue;
 					}
-					int bits = 0;
-					for (int cy = 0; cy < perTile; cy++)
+					int bits = cellBits(wet, box.width, tx, ty);
+					if (!Integer.valueOf(bits).equals(tiles.put((view.getBaseX() + lowX + tx) << 14
+						| (view.getBaseY() + lowY + ty), bits)))
 					{
-						for (int cx = 0; cx < perTile; cx++)
-						{
-							if (wet[(ty * perTile + cy) * box.width + tx * perTile + cx])
-							{
-								bits |= 1 << (cy * perTile + cx);
-							}
-						}
+						changed.add(entry.getKey()[0]);
 					}
-					tiles.put((view.getBaseX() + lowX + tx) << 14 | (view.getBaseY() + lowY + ty), bits);
 				}
 			}
 		}
 	}
 
 	/**
-	 * Tiles from a tile to a route's line through its points.
+	 * A tile's water cells as bits, a bit per cell, row by row.
 	 */
-	private static double toLine(WorldPoint[] route, int x, int y)
+	private static int cellBits(boolean[] wet, int width, int tx, int ty)
 	{
-		double nearest = Double.MAX_VALUE;
-		for (int k = 0; k + 1 < route.length; k++)
+		int bits = 0;
+		for (int cy = 0; cy < PER_TILE; cy++)
 		{
-			double ax = route[k].getX();
-			double ay = route[k].getY();
-			double bx = route[k + 1].getX() - ax;
-			double by = route[k + 1].getY() - ay;
-			double t = Math.max(0, Math.min(1, ((x - ax) * bx + (y - ay) * by) / Math.max(1, bx * bx + by * by)));
-			nearest = Math.min(nearest, Math.hypot(x - ax - bx * t, y - ay - by * t));
+			for (int cx = 0; cx < PER_TILE; cx++)
+			{
+				if (wet[(ty * PER_TILE + cy) * width + tx * PER_TILE + cx])
+				{
+					bits |= 1 << (cy * PER_TILE + cx);
+				}
+			}
 		}
-		return nearest;
+		return bits;
 	}
 
 	/**
-	 * Tiles from a tile to a lake's nearest spawn point.
+	 * A river or lake's recorded water, starting from its bake if it has one, so it can be baked again (with new fish
+	 * blockers, say) without walking all of it; with any water walked past it reaches.
 	 */
-	private static double toSpawns(WorldPoint[] lake, int x, int y)
+	private Map<Integer, Integer> tilesOf(WorldPoint[] route)
 	{
-		double nearest = Double.MAX_VALUE;
-		for (WorldPoint spawn : lake)
+		Map<Integer, Integer> tiles = recorded.computeIfAbsent(route[0], rivers::bakedTiles);
+		takeWalked(route, tiles);
+		return tiles;
+	}
+
+	/**
+	 * Adds the water walked past while baking that a river or lake reaches to its tiles; true if any changed.
+	 */
+	private boolean takeWalked(WorldPoint[] route, Map<Integer, Integer> tiles)
+	{
+		boolean changed = false;
+		for (Map.Entry<Integer, Integer> tile : walked.getOrDefault(route[0].getPlane(), Map.of()).entrySet())
 		{
-			nearest = Math.min(nearest, Math.hypot(spawn.getX() - x, spawn.getY() - y));
+			if (reaches(route, tile.getKey() >> 14, tile.getKey() & 0x3FFF)
+				&& !tile.getValue().equals(tiles.put(tile.getKey(), tile.getValue())))
+			{
+				changed = true;
+			}
 		}
-		return nearest;
+		return changed;
+	}
+
+	/**
+	 * Whether a world tile is near enough a river's line, or a lake's spawn points, to be recorded for it.
+	 */
+	private boolean reaches(WorldPoint[] route, int x, int y)
+	{
+		if (rivers.isLake(route))
+		{
+			return RiverSpotFish.toSpawns(route, x, y) <= RiverSpotFish.LAKE_RADIUS + 1;
+		}
+		if (RiverSpotFish.toLine(route, x, y) <= RiverSpotFish.BOX_MARGIN)
+		{
+			return true;
+		}
+		// Its side channels' water too.
+		for (int[] branch : rivers.bakedBranches(route[0]))
+		{
+			WorldPoint[] line = new WorldPoint[branch.length / 2];
+			for (int k = 0; k < line.length; k++)
+			{
+				line[k] = new WorldPoint(branch[2 * k], branch[2 * k + 1], route[0].getPlane());
+			}
+			if (RiverSpotFish.toLine(line, x, y) <= RiverSpotFish.BOX_MARGIN)
+			{
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**
@@ -229,153 +299,591 @@ class RiverBaker
 	 */
 	Map<String, String> save()
 	{
-		Map<String, String> files = new LinkedHashMap<>();
-		int perTile = 128 / CELL;
-		for (Map.Entry<WorldPoint[], Map<Integer, Integer>> entry : recorded.entrySet())
+		Map<WorldPoint, String> texts = new LinkedHashMap<>();
+		for (WorldPoint[] route : rivers.routesAndLakes())
 		{
-			WorldPoint[] route = entry.getKey();
-			boolean lake = rivers.isLake(route);
-			Map<Integer, Integer> tiles = entry.getValue();
-			int minX = Integer.MAX_VALUE;
-			int minY = Integer.MAX_VALUE;
-			int maxX = Integer.MIN_VALUE;
-			int maxY = Integer.MIN_VALUE;
-			for (int key : tiles.keySet())
+			// Only those whose water changed.
+			boolean dirty = changed.remove(route[0]);
+			Map<Integer, Integer> tiles = recorded.computeIfAbsent(route[0], rivers::bakedTiles);
+			String text = takeWalked(route, tiles) || dirty ? bakeRoute(route, tiles) : null;
+			if (text != null)
 			{
-				minX = Math.min(minX, key >> 14);
-				maxX = Math.max(maxX, key >> 14);
-				minY = Math.min(minY, key & 0x3FFF);
-				maxY = Math.max(maxY, key & 0x3FFF);
+				texts.put(route[0], text);
 			}
-			// In world local units, so its cells are world cells.
-			River river = new River(minX * 128, minY * 128, (maxX - minX + 1) * perTile, (maxY - minY + 1) * perTile);
-			boolean[] wet = new boolean[river.width * river.height];
-			for (Map.Entry<Integer, Integer> tile : tiles.entrySet())
-			{
-				int tx = (tile.getKey() >> 14) - minX;
-				int ty = (tile.getKey() & 0x3FFF) - minY;
-				for (int bit = 0; bit < perTile * perTile; bit++)
-				{
-					wet[(ty * perTile + bit / perTile) * river.width + tx * perTile + bit % perTile] =
-						(tile.getValue() >> bit & 1) != 0;
-				}
-			}
-			if (lake)
-			{
-				for (int c = 0; c < wet.length; c++)
-				{
-					double x = river.x0 + (c % river.width + 0.5) * CELL;
-					double y = river.y0 + (c / river.width + 0.5) * CELL;
-					wet[c] &= toSpawns(route, (int) Math.floor(x / 128), (int) Math.floor(y / 128))
-						<= RiverSpotFish.LAKE_RADIUS;
-				}
-			}
-			// Its points that were recorded: within two tiles of water.
-			List<Integer> cells = new ArrayList<>();
-			for (WorldPoint point : route)
-			{
-				LocalPoint at = new LocalPoint(point.getX() * 128 + 64, point.getY() * 128 + 64, -1);
-				int cell = nearestAny(river, at, cells.isEmpty() ? wet : river.water);
-				double x = river.x0 + (cell % river.width + 0.5) * CELL;
-				double y = river.y0 + (cell / river.width + 0.5) * CELL;
-				if (cell >= 0 && Math.hypot(x - at.getX(), y - at.getY()) <= 256)
-				{
-					if (cells.isEmpty())
-					{
-						flood(river, wet, cell);
-					}
-					cells.add(cell);
-				}
-			}
-			if (cells.isEmpty())
-			{
-				log.debug("Bake {}: none of its points were recorded", route[0]);
-				continue;
-			}
-			StringBuilder text = new StringBuilder();
-			for (int j = 0; j < river.height; j++)
-			{
-				StringBuilder row = new StringBuilder();
-				for (int i = 0; i < river.width; i++)
-				{
-					if (river.water[j * river.width + i] && (i == 0 || !river.water[j * river.width + i - 1]))
-					{
-						int end = i;
-						while (end < river.width && river.water[j * river.width + end])
-						{
-							end++;
-						}
-						row.append(' ').append(minX * perTile + i).append(' ').append(minX * perTile + end);
-					}
-				}
-				if (row.length() > 0)
-				{
-					text.append("water ").append(minY * perTile + j).append(row).append('\n');
-				}
-			}
-			if (!lake && cells.size() >= 2)
-			{
-				RiverSpotFish.clearances(river);
-				int[] stops = new int[cells.size()];
-				for (int k = 0; k < stops.length; k++)
-				{
-					stops[k] = k == 0 || k == stops.length - 1 ? cells.get(k)
-						: roomiest(river, cells.get(k), WAYPOINT_SNAP / CELL);
-				}
-				double[][] path = layPath(river, stops);
-				// Every other point; spaced evenly again when used.
-				StringBuilder line = new StringBuilder("path");
-				int last = path[0].length - 1;
-				for (int k = 0; k <= last; k += 2)
-				{
-					line.append(' ').append(Math.round(path[0][k])).append(' ').append(Math.round(path[1][k]));
-					if (k % 40 == 38)
-					{
-						text.append(line).append('\n');
-						line = new StringBuilder("path");
-					}
-				}
-				if (last % 2 != 0)
-				{
-					line.append(' ').append(Math.round(path[0][last])).append(' ').append(Math.round(path[1][last]));
-				}
-				text.append(line).append('\n');
-			}
-			log.debug("Bake {}: {} of {} points recorded, {} tiles", route[0], cells.size(), route.length, tiles.size());
-			files.put(RiverSpotFish.bakedName(route[0]), text.toString());
 		}
-		return files;
-	}
-
-	boolean isBlocker(WorldPoint tile)
-	{
-		return blockers().containsKey(tile);
+		return filesOf(texts);
 	}
 
 	/**
-	 * Places a fish blocker on a tile, or a half of it, or removes the one there; logs them all, and reads the water
-	 * round the player again, so the recording has it.
+	 * A river or lake's bake from its tiles' water: the water saved as read (fish blockers and allowers are applied
+	 * when it's played, so they can be taken off again), and a river's path laid through the water with them applied.
+	 * Null if none of its points have water.
 	 */
-	void toggleBlocker(WorldPoint tile, Half half)
+	private String bakeRoute(WorldPoint[] route, Map<Integer, Integer> tiles)
 	{
-		if (placedBlockers.remove(tile) == null)
+		boolean lake = rivers.isLake(route);
+		int minX = Integer.MAX_VALUE;
+		int minY = Integer.MAX_VALUE;
+		int maxX = Integer.MIN_VALUE;
+		int maxY = Integer.MIN_VALUE;
+		for (int key : tiles.keySet())
 		{
-			placedBlockers.put(tile, half);
+			minX = Math.min(minX, key >> 14);
+			maxX = Math.max(maxX, key >> 14);
+			minY = Math.min(minY, key & 0x3FFF);
+			maxY = Math.max(maxY, key & 0x3FFF);
 		}
-		StringBuilder line = new StringBuilder();
-		for (Map.Entry<WorldPoint, Half> blocker : blockers().entrySet())
+		// A tile of land all round, so water on the box's edge is measured to its bank, not past it.
+		minX--;
+		minY--;
+		maxX++;
+		maxY++;
+		// In world local units, so its cells are world cells.
+		River river = new River(minX * 128, minY * 128, (maxX - minX + 1) * PER_TILE, (maxY - minY + 1) * PER_TILE);
+		boolean[] wet = new boolean[river.width * river.height];
+		for (Map.Entry<Integer, Integer> tile : tiles.entrySet())
 		{
-			WorldPoint at = blocker.getKey();
-			line.append(line.length() > 0 ? ",\n\t\t" : "\n\t\t").append("Map.entry(new WorldPoint(").append(at.getX())
-				.append(", ").append(at.getY()).append(", ").append(at.getPlane()).append("), Half.")
-				.append(blocker.getValue()).append(")");
+			int tx = (tile.getKey() >> 14) - minX;
+			int ty = (tile.getKey() & 0x3FFF) - minY;
+			for (int bit = 0; bit < PER_TILE * PER_TILE; bit++)
+			{
+				wet[(ty * PER_TILE + bit / PER_TILE) * river.width + tx * PER_TILE + bit % PER_TILE] =
+					(tile.getValue() >> bit & 1) != 0;
+			}
 		}
-		log.debug("Fish blockers: Map.ofEntries({})", line);
+		if (lake)
+		{
+			for (int c = 0; c < wet.length; c++)
+			{
+				double x = river.x0 + (c % river.width + 0.5) * CELL;
+				double y = river.y0 + (c / river.width + 0.5) * CELL;
+				wet[c] &= RiverSpotFish.toSpawns(route, (int) Math.floor(x / 128), (int) Math.floor(y / 128))
+					<= RiverSpotFish.LAKE_RADIUS;
+			}
+		}
+		// The water as read, kept to save; the path is laid with fish blockers and allowers applied.
+		boolean[] read = wet.clone();
+		for (int kind = 0; kind < 2; kind++)
+		{
+			for (Map.Entry<WorldPoint, Half> mark : marks(kind).entrySet())
+			{
+				WorldPoint at = mark.getKey();
+				int tx = at.getX() - minX;
+				int ty = at.getY() - minY;
+				if (at.getPlane() != route[0].getPlane() || tx < 0 || ty < 0 || tx > maxX - minX || ty > maxY - minY)
+				{
+					continue;
+				}
+				int[] cells = RiverSpotFish.blockedCells(mark.getValue().name());
+				for (int cy = cells[2]; cy < cells[3]; cy++)
+				{
+					for (int cx = cells[0]; cx < cells[1]; cx++)
+					{
+						wet[(ty * PER_TILE + cy) * river.width + tx * PER_TILE + cx] = kind == 1;
+					}
+				}
+			}
+		}
+		// Its points that were recorded: within two tiles of water. A river's water is what's joined to its first point,
+		// a lake's what's joined to any of its spawn points.
+		List<Integer> cells = new ArrayList<>();
+		for (WorldPoint point : route)
+		{
+			LocalPoint at = new LocalPoint(point.getX() * 128 + 64, point.getY() * 128 + 64, -1);
+			int cell = nearestAny(river, at, cells.isEmpty() || lake ? wet : river.water);
+			double x = river.x0 + (cell % river.width + 0.5) * CELL;
+			double y = river.y0 + (cell / river.width + 0.5) * CELL;
+			if (cell >= 0 && Math.hypot(x - at.getX(), y - at.getY()) <= 256)
+			{
+				if (cells.isEmpty() || lake)
+				{
+					flood(river, wet, cell);
+				}
+				cells.add(cell);
+			}
+		}
+		if (cells.isEmpty())
+		{
+			log.debug("Bake {}: none of its points were recorded", route[0]);
+			return null;
+		}
+		// Saved: the water as read that's joined to the first point (or any spawn point), or to the water with marks
+		// applied.
+		River saved = new River(river.x0, river.y0, river.width, river.height);
+		for (int cell : lake ? cells : cells.subList(0, 1))
+		{
+			if (read[cell])
+			{
+				flood(saved, read, cell);
+			}
+		}
+		for (int c = 0; c < read.length; c++)
+		{
+			saved.water[c] |= read[c] && river.water[c];
+		}
+		// Each row's runs of water (world cells, end exclusive), from the first row with water to the last.
+		List<int[]> rows = new ArrayList<>();
+		int firstRow = -1;
+		for (int j = 0; j < river.height; j++)
+		{
+			List<Integer> row = new ArrayList<>();
+			for (int i = 0; i < river.width; i++)
+			{
+				if (saved.water[j * river.width + i] && (i == 0 || !saved.water[j * river.width + i - 1]))
+				{
+					int end = i;
+					while (end < river.width && saved.water[j * river.width + end])
+					{
+						end++;
+					}
+					row.add(minX * PER_TILE + i);
+					row.add(minX * PER_TILE + end);
+				}
+			}
+			if (firstRow < 0 && row.isEmpty())
+			{
+				continue;
+			}
+			firstRow = firstRow < 0 ? j : firstRow;
+			rows.add(row.stream().mapToInt(Integer::intValue).toArray());
+		}
+		while (!rows.isEmpty() && rows.get(rows.size() - 1).length == 0)
+		{
+			rows.remove(rows.size() - 1);
+		}
+		List<int[]> points = new ArrayList<>();
+		if (!lake && cells.size() >= 2)
+		{
+			RiverSpotFish.clearances(river);
+			int[] stops = new int[cells.size()];
+			for (int k = 0; k < stops.length; k++)
+			{
+				// Through each route point as placed.
+				stops[k] = cells.get(k);
+			}
+			for (int[] point : thinned(layPath(river, stops)))
+			{
+				points.add(point);
+			}
+		}
+		// Side channels: each laid through its picked tiles, if they're all on the water.
+		List<int[]> branchStops = rivers.bakedBranches(route[0]);
+		List<int[]> branchPaths = new ArrayList<>();
+		for (int[] branch : branchStops)
+		{
+			int[] laid = new int[0];
+			int[] stops = new int[branch.length / 2];
+			boolean found = !lake && !points.isEmpty();
+			for (int k = 0; found && k < stops.length; k++)
+			{
+				LocalPoint at = new LocalPoint(branch[2 * k] * 128 + 64, branch[2 * k + 1] * 128 + 64, -1);
+				int cell = nearestAny(river, at, river.water);
+				double x = river.x0 + (cell % river.width + 0.5) * CELL;
+				double y = river.y0 + (cell / river.width + 0.5) * CELL;
+				found = cell >= 0 && Math.hypot(x - at.getX(), y - at.getY()) <= 256;
+				// Through each picked tile as it is: a fork goes where it's told.
+				stops[k] = cell;
+			}
+			if (found)
+			{
+				List<int[]> branchPoints = thinned(layPath(river, stops));
+				laid = new int[branchPoints.size() * 2];
+				for (int k = 0; k < branchPoints.size(); k++)
+				{
+					laid[2 * k] = branchPoints.get(k)[0];
+					laid[2 * k + 1] = branchPoints.get(k)[1];
+				}
+			}
+			else
+			{
+				log.debug("Bake {}: a branch from {}, {} isn't all on recorded water yet; walk it while baking", route[0],
+					branch[0], branch[1]);
+			}
+			branchPaths.add(laid);
+		}
+		log.debug("Bake {}: {} of {} points recorded, {} tiles", route[0], cells.size(), route.length, tiles.size());
+		return RiverSpotFish.bakedText(RiverSpotFish.headLine(route, lake), rivers.bakedFishShare(route[0]),
+			minX * PER_TILE, minY * PER_TILE + firstRow, rows, points,
+			rivers.bakedMarks(route[0]), branchStops, branchPaths,
+			rivers.bakedBranchShares(route[0]));
+	}
+
+	/**
+	 * A laid path's every 8th point (a tile apart), and its last, rounded; spaced evenly again when used.
+	 */
+	private static List<int[]> thinned(double[][] path)
+	{
+		List<int[]> points = new ArrayList<>();
+		int last = path[0].length - 1;
+		for (int k = 0; k <= last; k = k + 8 > last && k < last ? last : k + 8)
+		{
+			points.add(new int[]{(int) Math.round(path[0][k]), (int) Math.round(path[1][k])});
+		}
+		return points;
+	}
+
+	/**
+	 * Lays the paths of side channels not laid yet, baking their rivers again from their bakes.
+	 */
+	void layBranches()
+	{
+		for (WorldPoint[] route : rivers.routesAndLakes())
+		{
+			if (!rivers.hasUnlaidBranch(route[0]))
+			{
+				continue;
+			}
+			relay(route);
+		}
+	}
+
+	/**
+	 * Saves a river or lake's new text, if any, into its bake file (with whatever else is in it), and shows it at once.
+	 */
+	private void saveBake(String name, WorldPoint first, String text)
+	{
+		if (text != null)
+		{
+			String file = rivers.fileText(name, Map.of(first, text));
+			saveFiles.accept(Map.of(name, file));
+			rivers.reloadBaked(name, file);
+			// Read the water round the player again, so a new or changed river or lake is recorded at once.
+			readAt = null;
+		}
+	}
+
+	/**
+	 * Rivers and lakes' new texts (by first point) as their bake files' texts, with whatever else is in each.
+	 */
+	private Map<String, String> filesOf(Map<WorldPoint, String> texts)
+	{
+		Map<String, Map<WorldPoint, String>> byFile = new LinkedHashMap<>();
+		texts.forEach((first, text) -> byFile.computeIfAbsent(RiverSpotFish.bakedName(first), name -> new HashMap<>())
+			.put(first, text));
+		Map<String, String> files = new LinkedHashMap<>();
+		byFile.forEach((name, ofFile) -> files.put(name, rivers.fileText(name, ofFile)));
+		return files;
+	}
+
+	/**
+	 * Bakes a river or lake again from its bake (and any water walked while baking), saved and shown at once.
+	 */
+	private void relay(WorldPoint[] route)
+	{
+		saveBake(RiverSpotFish.bakedName(route[0]), route[0], bakeRoute(route, tilesOf(route)));
+	}
+
+	/**
+	 * The river and fork (its place in the river's list) one of whose picked tiles is a tile, or null.
+	 */
+	private Object[] forkAt(WorldPoint tile)
+	{
+		for (WorldPoint[] route : rivers.routesAndLakes())
+		{
+			List<int[]> forks = rivers.bakedBranches(route[0]);
+			for (int f = 0; route[0].getPlane() == tile.getPlane() && f < forks.size(); f++)
+			{
+				int[] stops = forks.get(f);
+				for (int k = 0; k + 1 < stops.length; k += 2)
+				{
+					if (stops[k] == tile.getX() && stops[k + 1] == tile.getY())
+					{
+						return new Object[]{route, f};
+					}
+				}
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Whether a tile is one of a fork's picked tiles.
+	 */
+	boolean hasFork(WorldPoint tile)
+	{
+		return forkAt(tile) != null;
+	}
+
+	/**
+	 * Sets the share of fish taking the fork one of whose picked tiles is a tile, percent, or -1 for by its width;
+	 * saved and shown at once.
+	 */
+	void setForkShare(WorldPoint tile, int share)
+	{
+		Object[] found = forkAt(tile);
+		if (found == null)
+		{
+			return;
+		}
+		WorldPoint[] route = (WorldPoint[]) found[0];
+		saveBake(RiverSpotFish.bakedName(route[0]), route[0], rivers.setBranchShare(route[0], (Integer) found[1], share));
+	}
+
+	/**
+	 * Removes the fork one of whose picked tiles is a tile, from its river's bake, saved and shown at once.
+	 */
+	void removeFork(WorldPoint tile)
+	{
+		Object[] found = forkAt(tile);
+		if (found == null)
+		{
+			return;
+		}
+		WorldPoint[] route = (WorldPoint[]) found[0];
+		rivers.removeBranch(route[0], (Integer) found[1]);
+		relay(route);
+		log.debug("Fork removed from {}", RiverSpotFish.bakedName(route[0]));
+	}
+
+	/**
+	 * The river one of whose route points is a tile, or null.
+	 */
+	private WorldPoint[] routeWithPoint(WorldPoint tile, boolean lake)
+	{
+		for (WorldPoint[] route : rivers.routesAndLakes())
+		{
+			if (rivers.isLake(route) == lake && Arrays.asList(route).contains(tile))
+			{
+				return route;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Whether a tile is one of a river's route points, or a lake's spawn points.
+	 */
+	boolean isRoutePoint(WorldPoint tile, boolean lake)
+	{
+		return routeWithPoint(tile, lake) != null;
+	}
+
+	/**
+	 * Takes a route point out of its river, keeping at least its start and end; or a spawn point out of its lake,
+	 * keeping at least one.
+	 */
+	void removeRoutePoint(WorldPoint tile, boolean lake)
+	{
+		WorldPoint[] route = routeWithPoint(tile, lake);
+		if (route != null && route.length > (lake ? 1 : 2))
+		{
+			editRoute(route, Arrays.stream(route).filter(point -> !point.equals(tile)).toArray(WorldPoint[]::new));
+		}
+	}
+
+	/**
+	 * Moves a river's route point, or a lake's spawn point, to another tile.
+	 */
+	void moveRoutePoint(WorldPoint from, WorldPoint to, boolean lake)
+	{
+		WorldPoint[] route = routeWithPoint(from, lake);
+		if (route != null)
+		{
+			editRoute(route, Arrays.stream(route).map(point -> point.equals(from) ? to : point).toArray(WorldPoint[]::new));
+		}
+	}
+
+	/**
+	 * Adds a point to the river whose route passes nearest a tile (within BOX_MARGIN), between the two points it's
+	 * nearest the line between.
+	 */
+	void addRoutePoint(WorldPoint tile)
+	{
+		WorldPoint[] best = null;
+		int after = 0;
+		double nearest = RiverSpotFish.BOX_MARGIN;
+		for (WorldPoint[] route : rivers.routesAndLakes())
+		{
+			for (int k = 0; !rivers.isLake(route) && route[0].getPlane() == tile.getPlane() && k + 1 < route.length; k++)
+			{
+				double d = RiverSpotFish.toLine(new WorldPoint[]{route[k], route[k + 1]}, tile.getX(), tile.getY());
+				if (d <= nearest)
+				{
+					nearest = d;
+					best = route;
+					after = k;
+				}
+			}
+		}
+		if (best == null)
+		{
+			log.debug("River point at {}: no river near it", tile);
+			return;
+		}
+		WorldPoint[] changed = new WorldPoint[best.length + 1];
+		System.arraycopy(best, 0, changed, 0, after + 1);
+		changed[after + 1] = tile;
+		System.arraycopy(best, after + 1, changed, after + 2, best.length - after - 1);
+		editRoute(best, changed);
+	}
+
+	/**
+	 * Gives a river its changed route, its path laid again from its bake, saved and shown at once.
+	 */
+	private void editRoute(WorldPoint[] route, WorldPoint[] changed)
+	{
+		String text = rivers.setRoute(route, changed);
+		if (text == null)
+		{
+			return;
+		}
+		Map<Integer, Integer> tiles = recorded.remove(route[0]);
+		recorded.put(changed[0], tiles != null ? tiles : rivers.bakedTiles(changed[0]));
+		String laid = bakeRoute(changed, recorded.get(changed[0]));
+		saveBake(RiverSpotFish.bakedName(changed[0]), changed[0], laid != null ? laid : text);
+		log.debug("Route of {} changed", RiverSpotFish.bakedName(changed[0]));
+	}
+
+	/**
+	 * Makes a new river from a picked route: its bake, with only its route until it's walked while baking.
+	 */
+	void newRiver(List<WorldPoint> picked)
+	{
+		WorldPoint[] route = picked.toArray(new WorldPoint[0]);
+		// Not over another river that starts there (a lake there is replaced).
+		WorldPoint[] there = rivers.routeOf(route[0]);
+		if (there != null && !rivers.isLake(there))
+		{
+			log.debug("River start at {}: another river starts there", route[0]);
+			return;
+		}
+		String name = "river-" + route[0].getX() + "-" + route[0].getY() + ".txt";
+		saveBake(name, route[0], RiverSpotFish.headLine(route, false) + "\n");
+		log.debug("New river {}: walk it while baking to bake its water and path", name);
+	}
+
+	/**
+	 * Adds a spawn point to the lake whose first is within LAKE_PICK_REACH tiles, or makes a new lake there: in the
+	 * bake of a river whose line is within BOX_MARGIN tiles, else its own.
+	 */
+	void addLakeSpawn(WorldPoint spawn)
+	{
+		for (WorldPoint[] lake : rivers.routesAndLakes())
+		{
+			if (rivers.isLake(lake) && lake[0].getPlane() == spawn.getPlane()
+				&& lake[0].distanceTo2D(spawn) <= RiverSpotFish.LAKE_PICK_REACH)
+			{
+				WorldPoint[] spawns = Arrays.copyOf(lake, lake.length + 1);
+				spawns[lake.length] = spawn;
+				saveBake(RiverSpotFish.bakedName(lake[0]), lake[0], rivers.setLakeSpawns(lake[0], spawns));
+				return;
+			}
+		}
+		// Each river and lake goes by its first point, so a new one can't start on another's.
+		if (rivers.routeOf(spawn) != null)
+		{
+			log.debug("Lake spawn at {}: another river or lake starts there", spawn);
+			return;
+		}
+		String name = "lake-" + spawn.getX() + "-" + spawn.getY() + ".txt";
+		for (WorldPoint[] river : rivers.routesAndLakes())
+		{
+			if (!rivers.isLake(river) && river[0].getPlane() == spawn.getPlane()
+				&& RiverSpotFish.toLine(river, spawn.getX(), spawn.getY()) <= RiverSpotFish.BOX_MARGIN)
+			{
+				name = RiverSpotFish.bakedName(river[0]);
+			}
+		}
+		saveBake(name, spawn, RiverSpotFish.headLine(new WorldPoint[]{spawn}, true) + "\n");
+		log.debug("New lake {}: walk round it while baking to bake its water", name);
+	}
+
+	/**
+	 * Adds a picked route as a side channel of the baked river both its ends are near, laid at once from its bake
+	 * (once its water is recorded); false if there's no such river.
+	 */
+	boolean addBranch(List<WorldPoint> picked)
+	{
+		WorldPoint start = picked.get(0);
+		WorldPoint end = picked.get(picked.size() - 1);
+		for (WorldPoint[] route : rivers.routesAndLakes())
+		{
+			if (rivers.isLake(route) || route[0].getPlane() != start.getPlane()
+				|| RiverSpotFish.toLine(route, start.getX(), start.getY()) > RiverSpotFish.BOX_MARGIN
+				|| RiverSpotFish.toLine(route, end.getX(), end.getY()) > RiverSpotFish.BOX_MARGIN)
+			{
+				continue;
+			}
+			int[] stops = new int[picked.size() * 2];
+			for (int k = 0; k < picked.size(); k++)
+			{
+				stops[2 * k] = picked.get(k).getX();
+				stops[2 * k + 1] = picked.get(k).getY();
+			}
+			if (!rivers.addBranch(route[0], stops))
+			{
+				continue;
+			}
+			relay(route);
+			log.debug("Branch added to {}", RiverSpotFish.bakedName(route[0]));
+			return true;
+		}
+		return false;
+	}
+
+	/**
+	 * Each kind of mark's colour, drawn and in the menu: fish blockers red, allowers green, surfacers orange, divers
+	 * blue.
+	 */
+	static Color markColour(int kind)
+	{
+		return kind == 0 ? Color.RED : kind == 1 ? Color.GREEN : kind == 2 ? Color.ORANGE : new Color(70, 110, 255);
+	}
+
+	/**
+	 * Whether a tile has a fish blocker, allower or surfacer (kind 0, 1 or 2) in any bake.
+	 */
+	boolean hasMark(WorldPoint tile, int kind)
+	{
+		return marks(kind).containsKey(tile);
+	}
+
+	/**
+	 * Places a fish blocker, allower or surfacer (kind 0, 1 or 2) on a tile, or a half of it, or with null clears it:
+	 * into the bake of each river and lake it's near, saved at once, so it shows straight away and lasts.
+	 */
+	void setMark(WorldPoint tile, Half half, int kind)
+	{
+		Map<WorldPoint, String> texts = new LinkedHashMap<>();
+		for (WorldPoint[] route : rivers.routesAndLakes())
+		{
+			if (route[0].getPlane() == tile.getPlane() && reaches(route, tile.getX(), tile.getY()))
+			{
+				String marked = rivers.setMark(route[0], tile, half == null ? null : half.name(), kind);
+				if (marked == null)
+				{
+					continue;
+				}
+				// Surfacers and divers don't change the path.
+				if (kind >= 2)
+				{
+					texts.put(route[0], marked);
+					continue;
+				}
+				// Baked again from its bake (and any water walked while baking), so the path goes round it too.
+				long started = System.nanoTime();
+				String text = bakeRoute(route, tilesOf(route));
+				log.debug("Re-laid {} in {} ms", RiverSpotFish.bakedName(route[0]), (System.nanoTime() - started) / 1_000_000);
+				if (text != null)
+				{
+					texts.put(route[0], text);
+				}
+			}
+		}
+		if (texts.isEmpty())
+		{
+			log.debug("Fish {} at {}: no baked river or lake near it", RiverSpotFish.MARK_WORDS[kind], tile);
+			return;
+		}
+		Map<String, String> files = filesOf(texts);
+		saveFiles.accept(files);
+		files.forEach(rivers::reloadBaked);
 		readAt = null;
 	}
 
 	/**
-	 * Draws each fish blocker, or the half of the tile it covers.
+	 * Draws each fish blocker, allower and surfacer in its colour: an outline round the tile, or the half of it, it covers, lightly
+	 * filled.
 	 */
 	void drawBlockers(Graphics2D graphics)
 	{
@@ -384,49 +892,124 @@ class RiverBaker
 		{
 			return;
 		}
-		graphics.setColor(Color.RED);
-		for (Map.Entry<WorldPoint, Half> blocker : blockers().entrySet())
+		for (int kind = 0; kind < RiverSpotFish.MARK_WORDS.length; kind++)
 		{
-			LocalPoint at = LocalPoint.fromWorld(view, blocker.getKey());
-			if (at == null)
+			for (Map.Entry<WorldPoint, Half> mark : marks(kind).entrySet())
 			{
-				continue;
-			}
-			// The tile, or one half of it.
-			Half half = blocker.getValue();
-			int south = half == Half.NORTH ? 0 : -64;
-			int north = half == Half.SOUTH ? 0 : 64;
-			int west = half == Half.EAST ? 0 : -64;
-			int east = half == Half.WEST ? 0 : 64;
-			int plane = blocker.getKey().getPlane();
-			Polygon area = new Polygon();
-			for (int[] corner : new int[][]{{west, south}, {east, south}, {east, north}, {west, north}})
-			{
-				Point p = Perspective.localToCanvas(client,
-					new LocalPoint(at.getX() + corner[0], at.getY() + corner[1], view.getId()), plane);
-				if (p != null)
-				{
-					area.addPoint(p.getX(), p.getY());
-				}
-			}
-			if (area.npoints == 4)
-			{
-				graphics.draw(area);
+				drawMark(graphics, view, mark.getKey(), mark.getValue(), markColour(kind), 50);
 			}
 		}
 	}
 
 	/**
-	 * Every fish blocker: the locked-in ones and those placed this session.
+	 * Draws a mark's area: an outline round the tile, or the half of it, filled at some alpha.
 	 */
-	private Map<WorldPoint, Half> blockers()
+	private void drawMark(Graphics2D graphics, WorldView view, WorldPoint tile, Half half, Color colour, int alpha)
 	{
-		if (placedBlockers.isEmpty())
+		LocalPoint at = LocalPoint.fromWorld(view, tile);
+		if (at == null)
 		{
-			return BLOCKERS;
+			return;
 		}
-		Map<WorldPoint, Half> all = new HashMap<>(BLOCKERS);
-		all.putAll(placedBlockers);
+		int south = half == Half.NORTH ? 0 : -64;
+		int north = half == Half.SOUTH ? 0 : 64;
+		int west = half == Half.EAST ? 0 : -64;
+		int east = half == Half.WEST ? 0 : 64;
+		Polygon area = new Polygon();
+		for (int[] corner : new int[][]{{west, south}, {east, south}, {east, north}, {west, north}})
+		{
+			// At the water's own height, so it isn't lifted onto a bridge above.
+			int x = at.getX() + corner[0];
+			int y = at.getY() + corner[1];
+			Point p = Perspective.localToCanvas(client, x, y, rivers.waterHeight(x, y, tile.getPlane()));
+			if (p != null)
+			{
+				area.addPoint(p.getX(), p.getY());
+			}
+		}
+		if (area.npoints == 4)
+		{
+			graphics.setColor(new Color(colour.getRed(), colour.getGreen(), colour.getBlue(), alpha));
+			graphics.fill(area);
+			graphics.setColor(colour);
+			graphics.draw(area);
+		}
+	}
+
+	/**
+	 * Remembers what a picking menu entry would place or remove, to show while it's hovered.
+	 */
+	void preview(MenuEntry entry, WorldPoint tile, Half half, int kind)
+	{
+		previews.put(entry, new Object[]{tile, half, kind});
+	}
+
+	/**
+	 * Forgets the last menu's entries, as a new one opens.
+	 */
+	void clearPreviews()
+	{
+		previews.clear();
+	}
+
+	/**
+	 * The fish blocker, allower, surfacer or diver (kind 0 to 3) on a tile, or null.
+	 */
+	Half markAt(WorldPoint tile, int kind)
+	{
+		return marks(kind).get(tile);
+	}
+
+	/**
+	 * While the menu is open, draws what the hovered mark entry would place or remove, strongly, with a thick outline.
+	 */
+	void drawPreview(Graphics2D graphics)
+	{
+		WorldView view = client.getTopLevelWorldView();
+		if (view == null || previews.isEmpty() || !client.isMenuOpen())
+		{
+			return;
+		}
+		Point mouse = client.getMouseCanvasPosition();
+		MenuEntry hovered = null;
+		for (MenuEntry entry : client.getMenu().getMenuEntries())
+		{
+			hovered = hovered != null || entry.getSubMenu() == null ? hovered : hoveredIn(entry.getSubMenu(), mouse);
+		}
+		Object[] mark = previews.get(hovered != null ? hovered : hoveredIn(client.getMenu(), mouse));
+		if (mark == null)
+		{
+			return;
+		}
+		Stroke stroke = graphics.getStroke();
+		graphics.setStroke(new BasicStroke(3));
+		drawMark(graphics, view, (WorldPoint) mark[0], (Half) mark[1], markColour((Integer) mark[2]), 120);
+		graphics.setStroke(stroke);
+	}
+
+	/**
+	 * The entry of a shown menu under the mouse, or null: rows 15 high under a 19 high header, the last entry at the
+	 * top.
+	 */
+	private static MenuEntry hoveredIn(Menu menu, Point mouse)
+	{
+		int x = mouse.getX() - menu.getMenuX();
+		int y = mouse.getY() - menu.getMenuY() - 19;
+		MenuEntry[] entries = menu.getMenuEntries();
+		int index = entries.length - 1 - y / 15;
+		return x < 0 || x >= menu.getMenuWidth() || y < 0 || index < 0 ? null : entries[index];
+	}
+
+	/**
+	 * Every fish blocker, allower, surfacer or diver (kind 0 to 3) from every bake.
+	 */
+	private Map<WorldPoint, Half> marks(int kind)
+	{
+		Map<WorldPoint, Half> all = new HashMap<>();
+		for (WorldPoint[] route : rivers.routesAndLakes())
+		{
+			rivers.bakedMarks(route[0], kind).forEach((tile, half) -> all.put(tile, Half.valueOf(half)));
+		}
 		return all;
 	}
 
@@ -439,10 +1022,9 @@ class RiverBaker
 		Tile[][] tiles = view.getScene().getTiles()[plane];
 		CollisionData[] maps = view.getCollisionMaps();
 		int[][] flags = maps == null || maps[plane] == null ? null : maps[plane].getFlags();
-		int perTile = 128 / CELL;
 		int width = river.width;
-		int tilesX = width / perTile;
-		int tilesY = river.height / perTile;
+		int tilesX = width / PER_TILE;
+		int tilesY = river.height / PER_TILE;
 		int cells = width * river.height;
 		boolean[] wet = new boolean[cells];
 		// Tiles with any water, so objects are only looked at where there's water.
@@ -467,21 +1049,22 @@ class RiverBaker
 				{
 					continue;
 				}
-				for (int cy = 0; cy < perTile; cy++)
+				for (int cy = 0; cy < PER_TILE; cy++)
 				{
-					for (int cx = 0; cx < perTile; cx++)
+					for (int cx = 0; cx < PER_TILE; cx++)
 					{
 						double x = sx * 128 + (cx + 0.5) * CELL;
 						double y = sy * 128 + (cy + 0.5) * CELL;
-						int c = (ty * perTile + cy) * width + tx * perTile + cx;
-						wet[c] = paint != null ? paint.getTexture() == WATER_TEXTURE
-							: textureAt(model, x, y) == WATER_TEXTURE;
+						int c = (ty * PER_TILE + cy) * width + tx * PER_TILE + cx;
+						int texture = paint != null ? paint.getTexture() : textureAt(model, x, y);
+						textures.merge(texture, 1, Integer::sum);
+						wet[c] = WATER_TEXTURES.contains(texture);
 						wetTile[ty * tilesX + tx] |= wet[c];
 					}
 				}
 			}
 		}
-		// Cells under the model of each visible object in the water that blocks movement, and under fish blockers.
+		// Cells under the model of each visible object in the water that blocks movement.
 		// An object covering several tiles is listed on each, so the water tiles' lists find all those in the water.
 		boolean[] solid = new boolean[cells];
 		Set<GameObject> done = new HashSet<>();
@@ -503,29 +1086,6 @@ class RiverBaker
 						footprint(solid, river, object.getRenderable().getModel(), object.getLocalLocation(),
 							object.getModelOrientation());
 					}
-				}
-			}
-		}
-		for (Map.Entry<WorldPoint, Half> blocker : blockers().entrySet())
-		{
-			WorldPoint tile = blocker.getKey();
-			int tx = tile.getX() - view.getBaseX() - tileX0;
-			int ty = tile.getY() - view.getBaseY() - tileY0;
-			if (tile.getPlane() != plane || tx < 0 || ty < 0 || tx >= tilesX || ty >= tilesY)
-			{
-				continue;
-			}
-			// North is the upper rows of cells, east the right columns.
-			Half half = blocker.getValue();
-			int fromRow = half == Half.NORTH ? perTile / 2 : 0;
-			int toRow = half == Half.SOUTH ? perTile / 2 : perTile;
-			int fromColumn = half == Half.EAST ? perTile / 2 : 0;
-			int toColumn = half == Half.WEST ? perTile / 2 : perTile;
-			for (int cy = fromRow; cy < toRow; cy++)
-			{
-				for (int cx = fromColumn; cx < toColumn; cx++)
-				{
-					solid[(ty * perTile + cy) * width + tx * perTile + cx] = true;
 				}
 			}
 		}
@@ -753,28 +1313,6 @@ class RiverBaker
 	}
 
 	/**
-	 * The water cell with the most room within some cells of one.
-	 */
-	private static int roomiest(River river, int cell, int reach)
-	{
-		int width = river.width;
-		int height = river.height;
-		int best = cell;
-		for (int j = Math.max(0, cell / width - reach); j <= Math.min(height - 1, cell / width + reach); j++)
-		{
-			for (int i = Math.max(0, cell % width - reach); i <= Math.min(width - 1, cell % width + reach); i++)
-			{
-				int c = j * width + i;
-				if (river.water[c] && river.clearance[c] > river.clearance[best])
-				{
-					best = c;
-				}
-			}
-		}
-		return best;
-	}
-
-	/**
 	 * The path down the middle of the river through some cells in turn (start, waypoints, end), smoothed and spaced
 	 * evenly; its x and y.
 	 */
@@ -892,7 +1430,7 @@ class RiverBaker
 							continue;
 						}
 						float clear = Math.max(1, river.clearance[n]);
-						float step = (float) (CELL * (di != 0 && dj != 0 ? Math.sqrt(2) : 1) / (clear * clear));
+						float step = (float) ((di != 0 && dj != 0 ? DIAGONAL : CELL) / (clear * clear));
 						if (reachedOn[n] != leg || cost + step < best[n])
 						{
 							reach(n, cost + step, c);

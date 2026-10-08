@@ -38,7 +38,7 @@ import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.gameval.ObjectID;
 
 /**
- * TEMPORARY (debug, Bake rivers): records the water of each river and lake from the scene as the player walks, and
+ * Debug (Bake water bodies): records the water of each river and lake from the scene as the player walks, and
  * turns it into baked files: the water joined up from its first point, and a river's path down its middle. The game
  * itself only uses baked rivers and lakes; this is how they're made.
  */
@@ -92,6 +92,9 @@ class RiverBaker
 	// The picking menu's mark entries: what each would place or remove (tile, half, kind), shown while hovered. By the
 	// entry itself, as entries with the same text (each kind's "West half") count as equal.
 	private final Map<MenuEntry, Object[]> previews = new IdentityHashMap<>();
+	// The picking menu's entry with a submenu the mouse was last on: the game opens that one's submenu, and the
+	// others keep where they were last shown, so only its submenu is looked in.
+	private MenuEntry openParent;
 	// TEMPORARY: each floor texture's cells in the last read, for the log.
 	private final Map<Integer, Integer> textures = new TreeMap<>();
 	// TEMPORARY: each floor overlay's untextured tiles in the last read, for the log.
@@ -203,7 +206,7 @@ class RiverBaker
 					{
 						continue;
 					}
-					tiles = tiles != null ? tiles : recorded.computeIfAbsent(route[0], rivers::bakedTiles);
+					tiles = tiles != null ? tiles : recorded.computeIfAbsent(route[0], first -> Bakes.bakedTiles(rivers, first));
 					Integer bits = walkedHere.get(x << 14 | y);
 					if (!bits.equals(tiles.put(x << 14 | y, bits)))
 					{
@@ -239,7 +242,7 @@ class RiverBaker
 	 */
 	private Map<Integer, Integer> tilesOf(WorldPoint[] route)
 	{
-		Map<Integer, Integer> tiles = recorded.computeIfAbsent(route[0], rivers::bakedTiles);
+		Map<Integer, Integer> tiles = recorded.computeIfAbsent(route[0], first -> Bakes.bakedTiles(rivers, first));
 		takeWalked(route, tiles);
 		return tiles;
 	}
@@ -334,7 +337,7 @@ class RiverBaker
 		{
 			// Only those whose water changed.
 			boolean dirty = changed.remove(route[0]);
-			Map<Integer, Integer> tiles = recorded.computeIfAbsent(route[0], rivers::bakedTiles);
+			Map<Integer, Integer> tiles = recorded.computeIfAbsent(route[0], first -> Bakes.bakedTiles(rivers, first));
 			String text = takeWalked(route, tiles) || dirty ? bakeRoute(route, tiles) : null;
 			if (text != null)
 			{
@@ -530,10 +533,10 @@ class RiverBaker
 			branchPaths.add(laid);
 		}
 		log.debug("Bake {}: {} of {} points recorded, {} tiles", route[0], cells.size(), route.length, tiles.size());
-		return RiverSpotFish.bakedText(RiverSpotFish.headLine(route, lake), rivers.bakedFishShare(route[0]),
+		return Bakes.bakedText(Bakes.headLine(route, lake), rivers.bakedFishShare(route[0]),
 			minX * PER_TILE, minY * PER_TILE + firstRow, rows, points,
-			rivers.bakedMarks(route[0]), branchStops, branchPaths,
-			rivers.bakedBranchShares(route[0]));
+			Bakes.bakedMarks(rivers, route[0]), branchStops, branchPaths,
+			Bakes.bakedBranchShares(rivers, route[0]));
 	}
 
 	/**
@@ -557,7 +560,7 @@ class RiverBaker
 	{
 		for (WorldPoint[] route : rivers.routesAndLakes())
 		{
-			if (!rivers.hasUnlaidBranch(route[0]))
+			if (!Bakes.hasUnlaidBranch(rivers, route[0]))
 			{
 				continue;
 			}
@@ -572,9 +575,9 @@ class RiverBaker
 	{
 		if (text != null)
 		{
-			String file = rivers.fileText(name, Map.of(first, text));
+			String file = Bakes.fileText(rivers, name, Map.of(first, text));
 			saveFiles.accept(Map.of(name, file));
-			rivers.reloadBaked(name, file);
+			Bakes.reloadBaked(rivers, name, file);
 			// Read the water round the player again, so a new or changed river or lake is recorded at once.
 			readAt = null;
 		}
@@ -586,10 +589,10 @@ class RiverBaker
 	private Map<String, String> filesOf(Map<WorldPoint, String> texts)
 	{
 		Map<String, Map<WorldPoint, String>> byFile = new LinkedHashMap<>();
-		texts.forEach((first, text) -> byFile.computeIfAbsent(RiverSpotFish.bakedName(first), name -> new HashMap<>())
+		texts.forEach((first, text) -> byFile.computeIfAbsent(Bakes.bakedName(first), name -> new HashMap<>())
 			.put(first, text));
 		Map<String, String> files = new LinkedHashMap<>();
-		byFile.forEach((name, ofFile) -> files.put(name, rivers.fileText(name, ofFile)));
+		byFile.forEach((name, ofFile) -> files.put(name, Bakes.fileText(rivers, name, ofFile)));
 		return files;
 	}
 
@@ -598,7 +601,7 @@ class RiverBaker
 	 */
 	private void relay(WorldPoint[] route)
 	{
-		saveBake(RiverSpotFish.bakedName(route[0]), route[0], bakeRoute(route, tilesOf(route)));
+		saveBake(Bakes.bakedName(route[0]), route[0], bakeRoute(route, tilesOf(route)));
 	}
 
 	/**
@@ -644,7 +647,7 @@ class RiverBaker
 			return;
 		}
 		WorldPoint[] route = (WorldPoint[]) found[0];
-		saveBake(RiverSpotFish.bakedName(route[0]), route[0], rivers.setBranchShare(route[0], (Integer) found[1], share));
+		saveBake(Bakes.bakedName(route[0]), route[0], Bakes.setBranchShare(rivers, route[0], (Integer) found[1], share));
 	}
 
 	/**
@@ -658,9 +661,9 @@ class RiverBaker
 			return;
 		}
 		WorldPoint[] route = (WorldPoint[]) found[0];
-		rivers.removeBranch(route[0], (Integer) found[1]);
+		Bakes.removeBranch(rivers, route[0], (Integer) found[1]);
 		relay(route);
-		log.debug("Fork removed from {}", RiverSpotFish.bakedName(route[0]));
+		log.debug("Fork removed from {}", Bakes.bakedName(route[0]));
 	}
 
 	/**
@@ -750,16 +753,16 @@ class RiverBaker
 	 */
 	private void editRoute(WorldPoint[] route, WorldPoint[] changed)
 	{
-		String text = rivers.setRoute(route, changed);
+		String text = Bakes.setRoute(rivers, route, changed);
 		if (text == null)
 		{
 			return;
 		}
 		Map<Integer, Integer> tiles = recorded.remove(route[0]);
-		recorded.put(changed[0], tiles != null ? tiles : rivers.bakedTiles(changed[0]));
+		recorded.put(changed[0], tiles != null ? tiles : Bakes.bakedTiles(rivers, changed[0]));
 		String laid = bakeRoute(changed, recorded.get(changed[0]));
-		saveBake(RiverSpotFish.bakedName(changed[0]), changed[0], laid != null ? laid : text);
-		log.debug("Route of {} changed", RiverSpotFish.bakedName(changed[0]));
+		saveBake(Bakes.bakedName(changed[0]), changed[0], laid != null ? laid : text);
+		log.debug("Route of {} changed", Bakes.bakedName(changed[0]));
 	}
 
 	/**
@@ -776,7 +779,7 @@ class RiverBaker
 			return;
 		}
 		String name = "river-" + route[0].getX() + "-" + route[0].getY() + ".txt";
-		saveBake(name, route[0], RiverSpotFish.headLine(route, false) + "\n");
+		saveBake(name, route[0], Bakes.headLine(route, false) + "\n");
 		log.debug("New river {}: walk it while baking to bake its water and path", name);
 	}
 
@@ -793,7 +796,7 @@ class RiverBaker
 			{
 				WorldPoint[] spawns = Arrays.copyOf(lake, lake.length + 1);
 				spawns[lake.length] = spawn;
-				saveBake(RiverSpotFish.bakedName(lake[0]), lake[0], rivers.setLakeSpawns(lake[0], spawns));
+				saveBake(Bakes.bakedName(lake[0]), lake[0], Bakes.setLakeSpawns(rivers, lake[0], spawns));
 				return;
 			}
 		}
@@ -809,10 +812,10 @@ class RiverBaker
 			if (!rivers.isLake(river) && river[0].getPlane() == spawn.getPlane()
 				&& RiverSpotFish.toLine(river, spawn.getX(), spawn.getY()) <= RiverSpotFish.BOX_MARGIN)
 			{
-				name = RiverSpotFish.bakedName(river[0]);
+				name = Bakes.bakedName(river[0]);
 			}
 		}
-		saveBake(name, spawn, RiverSpotFish.headLine(new WorldPoint[]{spawn}, true) + "\n");
+		saveBake(name, spawn, Bakes.headLine(new WorldPoint[]{spawn}, true) + "\n");
 		log.debug("New lake {}: walk round it while baking to bake its water", name);
 	}
 
@@ -838,12 +841,12 @@ class RiverBaker
 				stops[2 * k] = picked.get(k).getX();
 				stops[2 * k + 1] = picked.get(k).getY();
 			}
-			if (!rivers.addBranch(route[0], stops))
+			if (!Bakes.addBranch(rivers, route[0], stops))
 			{
 				continue;
 			}
 			relay(route);
-			log.debug("Branch added to {}", RiverSpotFish.bakedName(route[0]));
+			log.debug("Branch added to {}", Bakes.bakedName(route[0]));
 			return true;
 		}
 		return false;
@@ -877,7 +880,7 @@ class RiverBaker
 		{
 			if (route[0].getPlane() == tile.getPlane() && reaches(route, tile.getX(), tile.getY()))
 			{
-				String marked = rivers.setMark(route[0], tile, half == null ? null : half.name(), kind);
+				String marked = Bakes.setMark(rivers, route[0], tile, half == null ? null : half.name(), kind);
 				if (marked == null)
 				{
 					continue;
@@ -891,7 +894,7 @@ class RiverBaker
 				// Baked again from its bake (and any water walked while baking), so the path goes round it too.
 				long started = System.nanoTime();
 				String text = bakeRoute(route, tilesOf(route));
-				log.debug("Re-laid {} in {} ms", RiverSpotFish.bakedName(route[0]), (System.nanoTime() - started) / 1_000_000);
+				log.debug("Re-laid {} in {} ms", Bakes.bakedName(route[0]), (System.nanoTime() - started) / 1_000_000);
 				if (text != null)
 				{
 					texts.put(route[0], text);
@@ -905,7 +908,7 @@ class RiverBaker
 		}
 		Map<String, String> files = filesOf(texts);
 		saveFiles.accept(files);
-		files.forEach(rivers::reloadBaked);
+		files.forEach((name, text) -> Bakes.reloadBaked(rivers, name, text));
 		readAt = null;
 	}
 
@@ -978,6 +981,7 @@ class RiverBaker
 	void clearPreviews()
 	{
 		previews.clear();
+		openParent = null;
 	}
 
 	/**
@@ -999,12 +1003,14 @@ class RiverBaker
 			return;
 		}
 		Point mouse = client.getMouseCanvasPosition();
-		MenuEntry hovered = null;
-		for (MenuEntry entry : client.getMenu().getMenuEntries())
+		MenuEntry inMenu = hoveredIn(client.getMenu(), mouse);
+		if (inMenu != null && inMenu.getSubMenu() != null)
 		{
-			hovered = hovered != null || entry.getSubMenu() == null ? hovered : hoveredIn(entry.getSubMenu(), mouse);
+			openParent = inMenu;
 		}
-		Object[] mark = previews.get(hovered != null ? hovered : hoveredIn(client.getMenu(), mouse));
+		MenuEntry hovered = inMenu != null ? inMenu
+			: openParent != null ? hoveredIn(openParent.getSubMenu(), mouse) : null;
+		Object[] mark = previews.get(hovered);
 		if (mark == null)
 		{
 			return;
@@ -1036,7 +1042,7 @@ class RiverBaker
 		Map<WorldPoint, Half> all = new HashMap<>();
 		for (WorldPoint[] route : rivers.routesAndLakes())
 		{
-			rivers.bakedMarks(route[0], kind).forEach((tile, half) -> all.put(tile, Half.valueOf(half)));
+			Bakes.bakedMarks(rivers, route[0], kind).forEach((tile, half) -> all.put(tile, Half.valueOf(half)));
 		}
 		return all;
 	}
@@ -1088,8 +1094,10 @@ class RiverBaker
 				{
 					continue;
 				}
-				// Untextured water is known by its overlay, the whole tile.
+				// Untextured water is known by its overlay, the whole tile; only on a tile with no texture at all, as a
+				// shore tile's land part has none either, under the same overlay as its water.
 				int overlay = overlayAt(view, plane, sx, sy);
+				boolean untextured = paint != null ? paint.getTexture() == -1 : !textured(model);
 				for (int cy = 0; cy < PER_TILE; cy++)
 				{
 					for (int cx = 0; cx < PER_TILE; cx++)
@@ -1103,7 +1111,7 @@ class RiverBaker
 						{
 							overlays.merge(overlay, 1, Integer::sum);
 						}
-						wet[c] = WATER_TEXTURES.contains(texture) || texture == -1 && WATER_OVERLAYS.contains(overlay);
+						wet[c] = WATER_TEXTURES.contains(texture) || untextured && WATER_OVERLAYS.contains(overlay);
 						wetTile[ty * tilesX + tx] |= wet[c];
 					}
 				}
@@ -1252,6 +1260,22 @@ class RiverBaker
 			k--;
 		}
 		return Arrays.copyOf(hull, Math.max(0, k));
+	}
+
+	/**
+	 * Whether any face of a shaped tile has a texture.
+	 */
+	private static boolean textured(SceneTileModel model)
+	{
+		int[] textures = model.getTriangleTextureId();
+		for (int k = 0; textures != null && k < textures.length; k++)
+		{
+			if (textures[k] >= 0)
+			{
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**

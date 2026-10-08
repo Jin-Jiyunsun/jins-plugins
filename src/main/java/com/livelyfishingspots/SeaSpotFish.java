@@ -174,7 +174,7 @@ final class SeaSpotFish
 	private final Map<NPC, School> schools = new HashMap<>();
 
 	/**
-	 * TEMPORARY: how many fish there are at all the sea spots, for the debug counter.
+	 * How many fish there are at all the sea spots, for the debug panel.
 	 */
 	int fishCount()
 	{

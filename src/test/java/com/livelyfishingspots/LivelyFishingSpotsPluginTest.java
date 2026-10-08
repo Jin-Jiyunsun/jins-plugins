@@ -7,7 +7,7 @@ public class LivelyFishingSpotsPluginTest
 {
 	public static void main(String[] args) throws Exception
 	{
-		ExternalPluginManager.loadBuiltin(LivelyFishingSpotsPlugin.class);
+		ExternalPluginManager.loadBuiltin(LivelyFishingSpotsPlugin.class, LivelyFishingSpotsDebugPlugin.class);
 		RuneLite.main(args);
 	}
 }

@@ -37,7 +37,7 @@ final class FishModels
 	private static final double WIGGLE_WAVES = 1.2;
 	// Kinds whose item model is a relief facing one way, given a mirrored back.
 	private static final Set<Integer> ONE_SIDED = Set.of(ItemID.HUNTING_RAW_FISH_SPECIAL);
-	// TEMPORARY: their depth from the back, percent (tuning spinner).
+	// Their depth from the back, percent (the debug plugin may tune it).
 	static int oneSidedDepth = 50;
 	// Kinds that keep their untipped height when tipped, so a long nose doesn't lift out.
 	private static final Set<Integer> KEEP_HEIGHT = Set.of(ItemID.RAW_SWORDFISH);
@@ -177,7 +177,7 @@ final class FishModels
 	// Rainbow fish: smaller, nearer the surface, stretched longer.
 	private static final Look RAINBOW = new Look(new int[]{-90, 0, 17, 17, 6, 3, 16, -90, 0, 40, 60, 30, 3, 7, 1500,
 		7, 100, 100, 0, 150, 50, 0, 0, 100, 100, 0, 35, 0, 6, 0, 0, 50, 100, 0, 0, 100});
-	// TEMPORARY: looks from the tuning spinners, by item, overriding LOOKS.
+	// Looks from the debug plugin's tuning spinners, by item, overriding LOOKS; none in the plugin itself.
 	private static final Map<Integer, Look> TUNED = new HashMap<>();
 	private static final Map<Integer, Look> LOOKS = Map.ofEntries(
 		Map.entry(ItemID.RAW_ANGLERFISH, ANGLERFISH),
@@ -209,7 +209,7 @@ final class FishModels
 	private final Map<Long, Model> models = new HashMap<>();
 
 	/**
-	 * TEMPORARY: how many models are made, for the debug counter.
+	 * How many models are made, for the debug panel.
 	 */
 	int count()
 	{
@@ -972,7 +972,7 @@ final class FishModels
 	}
 
 	/**
-	 * TEMPORARY: sets a kind's look from the river look with some values replaced, and drops its models.
+	 * For the debug plugin: sets a kind's look from the river look with some values replaced, and drops its models.
 	 */
 	void tuneLook(int item, int[] places, int[] values)
 	{

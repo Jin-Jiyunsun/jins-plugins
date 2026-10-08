@@ -8,35 +8,35 @@ import net.runelite.client.ui.overlay.OverlayLayer;
 import net.runelite.client.ui.overlay.OverlayPosition;
 
 /**
- * Debug drawing for the river fish.
+ * Debug: the river and lake drawing, and the picking menu's preview.
  */
 class RiverDebugOverlay extends Overlay
 {
-	private final LivelyFishingSpotsConfig config;
-	private RiverSpotFish rivers;
+	private final LivelyFishingSpotsDebugConfig config;
+	private RiverDrawing drawing;
 	private RiverBaker baker;
 
 	@Inject
-	RiverDebugOverlay(LivelyFishingSpotsConfig config)
+	RiverDebugOverlay(LivelyFishingSpotsDebugConfig config)
 	{
 		this.config = config;
 		setPosition(OverlayPosition.DYNAMIC);
 		setLayer(OverlayLayer.ABOVE_SCENE);
 	}
 
-	void setRivers(RiverSpotFish rivers, RiverBaker baker)
+	void setRivers(RiverDrawing drawing, RiverBaker baker)
 	{
-		this.rivers = rivers;
+		this.drawing = drawing;
 		this.baker = baker;
 	}
 
 	@Override
 	public Dimension render(Graphics2D graphics)
 	{
-		if (config.debugDraw() && rivers != null)
+		if (config.debugDraw() && drawing != null)
 		{
 			long started = TickTimes.start();
-			rivers.drawDebug(graphics);
+			drawing.drawDebug(graphics);
 			if (baker != null && (config.debugRiverDrawPoints() || config.debugPick()))
 			{
 				baker.drawBlockers(graphics);

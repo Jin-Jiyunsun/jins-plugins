@@ -3,35 +3,65 @@ package com.livelyfishingspots;
 import java.lang.management.GarbageCollectorMXBean;
 import java.lang.management.ManagementFactory;
 import java.lang.management.ThreadMXBean;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Deque;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
- * TEMPORARY: how long each part of the plugin takes a client tick, on average and at worst over each second, and how
- * much memory it allocates (garbage for Java to collect later), for the debug panel. Client thread only.
+ * Debug: how long each part of the plugin takes a client tick, on average and at worst over each second, and how much
+ * memory it allocates (garbage for Java to collect later); and the latest mapping times; for the debug panel. Fed by
+ * the plugin's Probe. Client thread only.
  */
 final class TickTimes
 {
 	// Client ticks per report: a second.
 	private static final int TICKS = 50;
 	// The parts, in the panel's order; river fish's own parts indented under it.
-	static final String STARTING = "Starting rivers (game tick)";
-	static final String MODELS = "Making models";
-	static final String SEA = "Sea fish";
-	static final String RIVERS = "River fish, all";
-	static final String MAPPING = "  mapping, rings";
-	static final String FILLING = "  filling gaps";
-	static final String SPAWNING = "  spawning";
-	static final String WINDOW = "  loaded stretch, remaps";
-	static final String SCHOOLS = "  schools";
-	static final String MOVING = "  moving fish";
+	// The debug plugin's own parts, after the plugin's.
 	static final String DRAWING = "Debug drawing";
-	static final String SPOTS = "Spots appearing, going";
 	static final String BAKING = "Baking, reading water (game tick)";
-	private static final List<String> ORDER = List.of(STARTING, MODELS, SEA, RIVERS, MAPPING, FILLING, SPAWNING,
-		WINDOW, SCHOOLS, MOVING, SPOTS, DRAWING, BAKING);
+	private static final List<String> ORDER = List.of(Probe.STARTING, Probe.MODELS, Probe.SEA, Probe.RIVERS,
+		Probe.MAPPING, Probe.FILLING, Probe.SPAWNING, Probe.WINDOW, Probe.SCHOOLS, Probe.MOVING, Probe.SPOTS, DRAWING,
+		BAKING);
+	// The latest mapping times (what, how long), newest first, and the slowest so far; and the last river or lake
+	// started, each step's time (ms).
+	private static final int TIMINGS_SHOWN = 6;
+	private static final Deque<String[]> TIMINGS = new ArrayDeque<>();
+	private static double slowest;
+	private static String slowestWhat;
+	private static String lastLoad;
+	private static double[] lastLoadSteps;
+	// The plugin's timing hooks, into these.
+	static final Probe PROBE = new Probe()
+	{
+		@Override
+		public long start()
+		{
+			return TickTimes.start();
+		}
+
+		@Override
+		public long add(String part, long started)
+		{
+			return TickTimes.add(part, started);
+		}
+
+		@Override
+		public void endTick()
+		{
+			TickTimes.endTick();
+		}
+
+		@Override
+		public void mapped(String what, double ms, double[] steps)
+		{
+			TickTimes.mapped(what, ms, steps);
+		}
+	};
 	// Per part: nanoseconds this tick, the total and the worst tick this second, and bytes allocated this second.
 	private static final Map<String, long[]> PARTS = new LinkedHashMap<>();
 	// The client thread's bytes allocated so far, where it's measured (-1 if it can't be).
@@ -106,7 +136,7 @@ final class TickTimes
 		{
 			if (part.getKey().startsWith("  "))
 			{
-				PARTS.get(RIVERS)[3] += part.getValue()[3];
+				PARTS.get(Probe.RIVERS)[3] += part.getValue()[3];
 			}
 		}
 		List<String[]> report = new ArrayList<>();
@@ -159,5 +189,68 @@ final class TickTimes
 		}
 		rows = List.of();
 		ticks = 0;
+	}
+
+	/**
+	 * Notes something mapping took: a river or lake started (with each step's time), or mapped again, or a map load.
+	 */
+	static void mapped(String what, double ms, double[] steps)
+	{
+		double rounded = Math.round(ms * 10) / 10.0;
+		if (steps != null)
+		{
+			lastLoad = what.replace(" start", "");
+			lastLoadSteps = steps;
+			int worst = 0;
+			for (int k = 0; k < steps.length; k++)
+			{
+				worst = steps[k] > steps[worst] ? k : worst;
+			}
+			what += ", worst step: " + RiverSpotFish.STEP_NAMES[worst];
+			rounded = Math.round(steps[worst] * 10) / 10.0;
+		}
+		TIMINGS.addFirst(new String[]{what, rounded + " ms"});
+		while (TIMINGS.size() > TIMINGS_SHOWN)
+		{
+			TIMINGS.removeLast();
+		}
+		if (rounded > slowest)
+		{
+			slowest = rounded;
+			slowestWhat = what;
+		}
+	}
+
+	/**
+	 * The last river or lake started: a heading (its name, all steps' ms), then each step; empty if none yet.
+	 */
+	static List<String[]> lastLoad()
+	{
+		List<String[]> rows = new ArrayList<>();
+		if (lastLoad == null)
+		{
+			return rows;
+		}
+		double[] steps = lastLoadSteps;
+		rows.add(new String[]{"Last load: " + lastLoad, String.format("%.2f", Arrays.stream(steps).sum())});
+		for (int k = 0; k < steps.length; k++)
+		{
+			rows.add(new String[]{"  " + RiverSpotFish.STEP_NAMES[k], String.format("%.2f", steps[k])});
+		}
+		rows.add(new String[]{"  over client ticks", String.valueOf(steps.length)});
+		return rows;
+	}
+
+	/**
+	 * The latest mapping times, newest first, then the slowest so far.
+	 */
+	static List<String[]> timings()
+	{
+		List<String[]> rows = new ArrayList<>(TIMINGS);
+		if (slowestWhat != null)
+		{
+			rows.add(new String[]{"Worst: " + slowestWhat, slowest + " ms"});
+		}
+		return rows;
 	}
 }

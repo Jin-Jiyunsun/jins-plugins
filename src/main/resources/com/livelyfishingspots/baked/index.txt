@@ -5,3 +5,8 @@ river-shilo-village
 river-ardougne
 lake-observatory
 river-afon-ganol
+river-fisher-realm
+river-entrana
+river-water-ravine
+river-great-conch
+river-ortus

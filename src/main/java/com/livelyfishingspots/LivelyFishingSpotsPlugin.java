@@ -257,41 +257,45 @@ public class LivelyFishingSpotsPlugin extends Plugin
 	@Subscribe
 	public void onNpcSpawned(NpcSpawned event)
 	{
+		long started = TickTimes.start();
 		seaSpotFish.add(event.getNpc());
 		riverSpotFish.add(event.getNpc());
+		TickTimes.add(TickTimes.SPOTS, started);
 	}
 
 	@Subscribe
 	public void onNpcDespawned(NpcDespawned event)
 	{
 		// Only a fishing spot going can leave a kind out of sight; then free its models.
+		long started = TickTimes.start();
 		boolean sea = seaSpotFish.remove(event.getNpc());
-		if (!riverSpotFish.remove(event.getNpc()) && !sea)
+		if (riverSpotFish.remove(event.getNpc()) || sea)
 		{
-			return;
+			Set<Integer> swimming = new HashSet<>();
+			seaSpotFish.addKinds(swimming);
+			riverSpotFish.addKinds(swimming);
+			fishModels.keepOnly(swimming);
 		}
-		Set<Integer> swimming = new HashSet<>();
-		seaSpotFish.addKinds(swimming);
-		riverSpotFish.addKinds(swimming);
-		fishModels.keepOnly(swimming);
+		TickTimes.add(TickTimes.SPOTS, started);
 	}
 
 	@Subscribe
 	public void onGameTick(GameTick event)
 	{
-		long started = System.nanoTime();
+		long started = TickTimes.start();
 		riverSpotFish.activate();
+		started = TickTimes.add(TickTimes.STARTING, started);
 		if (debugBake)
 		{
 			riverBaker.record();
 		}
-		TickTimes.add(TickTimes.STARTING, started);
+		TickTimes.add(TickTimes.BAKING, started);
 	}
 
 	@Subscribe
 	public void onClientTick(ClientTick event)
 	{
-		long started = System.nanoTime();
+		long started = TickTimes.start();
 		fishModels.makeQueued();
 		started = TickTimes.add(TickTimes.MODELS, started);
 		seaSpotFish.swim();

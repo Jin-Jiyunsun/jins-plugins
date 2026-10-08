@@ -35,7 +35,7 @@ class RiverDebugOverlay extends Overlay
 	{
 		if (config.debugDraw() && rivers != null)
 		{
-			long started = System.nanoTime();
+			long started = TickTimes.start();
 			rivers.drawDebug(graphics);
 			if (baker != null && (config.debugRiverDrawPoints() || config.debugPick()))
 			{

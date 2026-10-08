@@ -52,8 +52,13 @@ class RiverBaker
 	// Floor textures of river water, seen in game: plain water, and Tirannwn's crystal water (WATER_CRYSTAL_OPEN,
 	// 170, to its deepest, 174).
 	private static final Set<Integer> WATER_TEXTURES = Set.of(1, 170, 171, 172, 173, 174);
+	// Floor overlays of untextured water, seen in game: plain water's (6, untextured in places along Kourend's
+	// rivers), and the Water Ravine Dungeon's.
+	private static final Set<Integer> WATER_OVERLAYS = Set.of(6, 130);
 	// How far inside an object's rough outline a cell's middle must be to count as blocked, local units.
 	private static final double OBJECT_INSET = 16;
+	// How near water a route point or fork point must be to count as recorded, local units (two tiles).
+	private static final int POINT_REACH = 256;
 	// Smoothing passes over the path.
 	private static final int SMOOTHING = 4;
 	// Tiles walked before the water round the player is read again.
@@ -89,6 +94,8 @@ class RiverBaker
 	private final Map<MenuEntry, Object[]> previews = new IdentityHashMap<>();
 	// TEMPORARY: each floor texture's cells in the last read, for the log.
 	private final Map<Integer, Integer> textures = new TreeMap<>();
+	// TEMPORARY: each floor overlay's untextured tiles in the last read, for the log.
+	private final Map<Integer, Integer> overlays = new TreeMap<>();
 	// Rivers and lakes (by first point) whose recorded water changed since they were last baked.
 	private final Set<WorldPoint> changed = new HashSet<>();
 	// Where the player was, and the scene's corner, when the water was last read.
@@ -108,8 +115,8 @@ class RiverBaker
 
 	/**
 	 * Once a game tick while baking: after a couple of tiles walked or a map load, reads the water of the tiles round
-	 * the player (the square rivers are mapped within) near each river or lake, and records it; a tile read again
-	 * keeps its latest reading.
+	 * the player (the square rivers are mapped within), and records it for each river or lake it's near, and as walked;
+	 * a tile read again keeps its latest reading.
 	 */
 	void record()
 	{
@@ -142,39 +149,9 @@ class RiverBaker
 		int tilesX = highX - lowX + 1;
 		int tilesY = highY - lowY + 1;
 		River box = new River(lowX * 128, lowY * 128, tilesX * PER_TILE, tilesY * PER_TILE);
-		// Which of its tiles each river or lake reaches: within BOX_MARGIN tiles of a river's line, or LAKE_RADIUS + 1
-		// of a lake's spawn points.
-		Map<WorldPoint[], boolean[]> reaches = new LinkedHashMap<>();
-		boolean[] near = new boolean[tilesX * tilesY];
-		Arrays.fill(near, true);
-		for (WorldPoint[] route : rivers.routesAndLakes())
-		{
-			if (route[0].getPlane() != me.getPlane())
-			{
-				continue;
-			}
-			boolean[] mask = new boolean[tilesX * tilesY];
-			boolean any = false;
-			for (int ty = 0; ty < tilesY; ty++)
-			{
-				for (int tx = 0; tx < tilesX; tx++)
-				{
-					int x = view.getBaseX() + lowX + tx;
-					int y = view.getBaseY() + lowY + ty;
-					if (reaches(route, x, y))
-					{
-						mask[ty * tilesX + tx] = true;
-						any = true;
-					}
-				}
-			}
-			if (any)
-			{
-				reaches.put(route, mask);
-			}
-		}
 		textures.clear();
-		boolean[] wet = wet(view, me.getPlane(), box, near);
+		overlays.clear();
+		boolean[] wet = wet(view, me.getPlane(), box);
 		// TEMPORARY: what was read, to spot water with another floor texture.
 		int water = 0;
 		for (boolean cell : wet)
@@ -182,6 +159,21 @@ class RiverBaker
 			water += cell ? 1 : 0;
 		}
 		log.debug("Read round {}: {} water cells; floor textures (cells): {}", me, water, textures);
+		// TEMPORARY: the floor overlay under each river and lake point in the scene, to find untextured water.
+		Map<WorldPoint, Integer> atPoints = new LinkedHashMap<>();
+		for (WorldPoint[] route : rivers.routesAndLakes())
+		{
+			for (WorldPoint point : route)
+			{
+				LocalPoint local = point.getPlane() == me.getPlane() ? LocalPoint.fromWorld(view, point) : null;
+				if (local != null)
+				{
+					atPoints.put(point, overlayAt(view, me.getPlane(), local.getSceneX(), local.getSceneY()));
+				}
+			}
+		}
+		log.debug("Read round {}: untextured tiles by overlay: {}; overlay at points: {}", me, overlays, atPoints);
+		// Every tile read, as walked.
 		Map<Integer, Integer> walkedHere = walked.computeIfAbsent(me.getPlane(), plane -> new HashMap<>());
 		for (int ty = 0; ty < tilesY; ty++)
 		{
@@ -191,24 +183,31 @@ class RiverBaker
 					cellBits(wet, box.width, tx, ty));
 			}
 		}
-		for (Map.Entry<WorldPoint[], boolean[]> entry : reaches.entrySet())
+		// And each river or lake's own: the tiles within WATER_REACH of a river's line, or LAKE_RADIUS + 1 of a lake's
+		// spawn points. What's walked past further off is taken when it's baked.
+		for (WorldPoint[] route : rivers.routesAndLakes())
 		{
-			boolean[] mask = entry.getValue();
-			// Its own water only; what's walked past is taken when it's baked.
-			Map<Integer, Integer> tiles = recorded.computeIfAbsent(entry.getKey()[0], rivers::bakedTiles);
+			if (route[0].getPlane() != me.getPlane())
+			{
+				continue;
+			}
+			int[] bounds = boundsOf(route);
+			Map<Integer, Integer> tiles = null;
 			for (int ty = 0; ty < tilesY; ty++)
 			{
 				for (int tx = 0; tx < tilesX; tx++)
 				{
-					if (!mask[ty * tilesX + tx])
+					int x = view.getBaseX() + lowX + tx;
+					int y = view.getBaseY() + lowY + ty;
+					if (!inBounds(bounds, x, y) || !reaches(route, x, y))
 					{
 						continue;
 					}
-					int bits = cellBits(wet, box.width, tx, ty);
-					if (!Integer.valueOf(bits).equals(tiles.put((view.getBaseX() + lowX + tx) << 14
-						| (view.getBaseY() + lowY + ty), bits)))
+					tiles = tiles != null ? tiles : recorded.computeIfAbsent(route[0], rivers::bakedTiles);
+					Integer bits = walkedHere.get(x << 14 | y);
+					if (!bits.equals(tiles.put(x << 14 | y, bits)))
 					{
-						changed.add(entry.getKey()[0]);
+						changed.add(route[0]);
 					}
 				}
 			}
@@ -251,15 +250,45 @@ class RiverBaker
 	private boolean takeWalked(WorldPoint[] route, Map<Integer, Integer> tiles)
 	{
 		boolean changed = false;
+		int[] bounds = boundsOf(route);
 		for (Map.Entry<Integer, Integer> tile : walked.getOrDefault(route[0].getPlane(), Map.of()).entrySet())
 		{
-			if (reaches(route, tile.getKey() >> 14, tile.getKey() & 0x3FFF)
+			int x = tile.getKey() >> 14;
+			int y = tile.getKey() & 0x3FFF;
+			if (inBounds(bounds, x, y) && reaches(route, x, y)
 				&& !tile.getValue().equals(tiles.put(tile.getKey(), tile.getValue())))
 			{
 				changed = true;
 			}
 		}
 		return changed;
+	}
+
+	/**
+	 * The world tiles a river or lake could reach, as a box {west, south, east, north}: round its points and side
+	 * channels, grown by its reach. A quick check before the slower reaches().
+	 */
+	private int[] boundsOf(WorldPoint[] route)
+	{
+		int[] bounds = {Integer.MAX_VALUE, Integer.MAX_VALUE, Integer.MIN_VALUE, Integer.MIN_VALUE};
+		for (WorldPoint point : route)
+		{
+			RiverSpotFish.include(bounds, point.getX(), point.getY());
+		}
+		for (int[] branch : rivers.bakedBranches(route[0]))
+		{
+			for (int k = 0; k + 1 < branch.length; k += 2)
+			{
+				RiverSpotFish.include(bounds, branch[k], branch[k + 1]);
+			}
+		}
+		int grow = rivers.isLake(route) ? RiverSpotFish.LAKE_RADIUS + 1 : RiverSpotFish.WATER_REACH;
+		return new int[]{bounds[0] - grow, bounds[1] - grow, bounds[2] + grow, bounds[3] + grow};
+	}
+
+	private static boolean inBounds(int[] bounds, int x, int y)
+	{
+		return x >= bounds[0] && y >= bounds[1] && x <= bounds[2] && y <= bounds[3];
 	}
 
 	/**
@@ -271,7 +300,7 @@ class RiverBaker
 		{
 			return RiverSpotFish.toSpawns(route, x, y) <= RiverSpotFish.LAKE_RADIUS + 1;
 		}
-		if (RiverSpotFish.toLine(route, x, y) <= RiverSpotFish.BOX_MARGIN)
+		if (RiverSpotFish.toLine(route, x, y) <= RiverSpotFish.WATER_REACH)
 		{
 			return true;
 		}
@@ -283,7 +312,7 @@ class RiverBaker
 			{
 				line[k] = new WorldPoint(branch[2 * k], branch[2 * k + 1], route[0].getPlane());
 			}
-			if (RiverSpotFish.toLine(line, x, y) <= RiverSpotFish.BOX_MARGIN)
+			if (RiverSpotFish.toLine(line, x, y) <= RiverSpotFish.WATER_REACH)
 			{
 				return true;
 			}
@@ -299,6 +328,7 @@ class RiverBaker
 	 */
 	Map<String, String> save()
 	{
+		long started = System.nanoTime();
 		Map<WorldPoint, String> texts = new LinkedHashMap<>();
 		for (WorldPoint[] route : rivers.routesAndLakes())
 		{
@@ -311,6 +341,11 @@ class RiverBaker
 				texts.put(route[0], text);
 			}
 		}
+		// All in the bakes now, so the next baking starts from them, with nothing walked yet.
+		recorded.clear();
+		walked.clear();
+		changed.clear();
+		log.debug("Baked {} in {} ms", texts.size(), (System.nanoTime() - started) / 1_000_000);
 		return filesOf(texts);
 	}
 
@@ -389,11 +424,8 @@ class RiverBaker
 		List<Integer> cells = new ArrayList<>();
 		for (WorldPoint point : route)
 		{
-			LocalPoint at = new LocalPoint(point.getX() * 128 + 64, point.getY() * 128 + 64, -1);
-			int cell = nearestAny(river, at, cells.isEmpty() || lake ? wet : river.water);
-			double x = river.x0 + (cell % river.width + 0.5) * CELL;
-			double y = river.y0 + (cell / river.width + 0.5) * CELL;
-			if (cell >= 0 && Math.hypot(x - at.getX(), y - at.getY()) <= 256)
+			int cell = nearestWater(river, point.getX(), point.getY(), cells.isEmpty() || lake ? wet : river.water);
+			if (cell >= 0)
 			{
 				if (cells.isEmpty() || lake)
 				{
@@ -476,13 +508,9 @@ class RiverBaker
 			boolean found = !lake && !points.isEmpty();
 			for (int k = 0; found && k < stops.length; k++)
 			{
-				LocalPoint at = new LocalPoint(branch[2 * k] * 128 + 64, branch[2 * k + 1] * 128 + 64, -1);
-				int cell = nearestAny(river, at, river.water);
-				double x = river.x0 + (cell % river.width + 0.5) * CELL;
-				double y = river.y0 + (cell / river.width + 0.5) * CELL;
-				found = cell >= 0 && Math.hypot(x - at.getX(), y - at.getY()) <= 256;
 				// Through each picked tile as it is: a fork goes where it's told.
-				stops[k] = cell;
+				stops[k] = nearestWater(river, branch[2 * k], branch[2 * k + 1], river.water);
+				found = stops[k] >= 0;
 			}
 			if (found)
 			{
@@ -1014,10 +1042,21 @@ class RiverBaker
 	}
 
 	/**
+	 * A scene tile's floor overlay id (0 for none). The ids array may be the extended scene's, centred on
+	 * the scene.
+	 */
+	private static int overlayAt(WorldView view, int plane, int sx, int sy)
+	{
+		short[][] ids = view.getScene().getOverlayIds()[plane];
+		int offset = (ids.length - view.getSizeX()) / 2;
+		return ids[sx + offset][sy + offset];
+	}
+
+	/**
 	 * Which grid cells are water, reading under bridges. Cells under the model of a visible object that blocks
 	 * movement, as rocks and posts, aren't; walk-through ones, as lily pads, and invisible blockers don't count.
 	 */
-	private boolean[] wet(WorldView view, int plane, River river, boolean[] near)
+	private boolean[] wet(WorldView view, int plane, River river)
 	{
 		Tile[][] tiles = view.getScene().getTiles()[plane];
 		CollisionData[] maps = view.getCollisionMaps();
@@ -1037,7 +1076,7 @@ class RiverBaker
 			{
 				int sx = tileX0 + tx;
 				int sy = tileY0 + ty;
-				if (!near[ty * tilesX + tx] || sx < 0 || sy < 0 || sx >= tiles.length
+				if (sx < 0 || sy < 0 || sx >= tiles.length
 					|| sy >= tiles[sx].length || tiles[sx][sy] == null)
 				{
 					continue;
@@ -1049,6 +1088,8 @@ class RiverBaker
 				{
 					continue;
 				}
+				// Untextured water is known by its overlay, the whole tile.
+				int overlay = overlayAt(view, plane, sx, sy);
 				for (int cy = 0; cy < PER_TILE; cy++)
 				{
 					for (int cx = 0; cx < PER_TILE; cx++)
@@ -1058,7 +1099,11 @@ class RiverBaker
 						int c = (ty * PER_TILE + cy) * width + tx * PER_TILE + cx;
 						int texture = paint != null ? paint.getTexture() : textureAt(model, x, y);
 						textures.merge(texture, 1, Integer::sum);
-						wet[c] = WATER_TEXTURES.contains(texture);
+						if (texture == -1 && cx == 0 && cy == 0)
+						{
+							overlays.merge(overlay, 1, Integer::sum);
+						}
+						wet[c] = WATER_TEXTURES.contains(texture) || texture == -1 && WATER_OVERLAYS.contains(overlay);
 						wetTile[ty * tilesX + tx] |= wet[c];
 					}
 				}
@@ -1278,29 +1323,32 @@ class RiverBaker
 	}
 
 	/**
-	 * The nearest marked cell to a place at any distance, or -1.
+	 * The water cell nearest a world tile's middle, within POINT_REACH, or -1.
 	 */
-	private static int nearestAny(River river, LocalPoint at, boolean[] marked)
+	private static int nearestWater(River river, int tileX, int tileY, boolean[] water)
 	{
 		int width = river.width;
 		int height = river.height;
-		int ci = Math.max(0, Math.min(width - 1, (int) Math.floor((at.getX() - river.x0) / (double) CELL)));
-		int cj = Math.max(0, Math.min(height - 1, (int) Math.floor((at.getY() - river.y0) / (double) CELL)));
+		int atX = tileX * 128 + 64;
+		int atY = tileY * 128 + 64;
+		int ci = Math.max(0, Math.min(width - 1, Math.floorDiv(atX - river.x0, CELL)));
+		int cj = Math.max(0, Math.min(height - 1, Math.floorDiv(atY - river.y0, CELL)));
 		int nearestCell = -1;
-		double nearest = Double.MAX_VALUE;
-		// Square rings outwards; once one is found, a ring further out than it can't hold a nearer one.
-		for (int ring = 0; ring < Math.max(width, height) && ring * CELL <= nearest + CELL; ring++)
+		// Just over POINT_REACH, so one at it counts.
+		double nearest = POINT_REACH + 1;
+		// Square rings outwards; a ring further out than the nearest found yet can't hold a nearer one.
+		for (int ring = 0; ring * CELL <= nearest + CELL; ring++)
 		{
 			for (int j = cj - ring; j <= cj + ring; j++)
 			{
 				for (int i = ci - ring; i <= ci + ring; i++)
 				{
 					boolean edge = Math.abs(i - ci) == ring || Math.abs(j - cj) == ring;
-					if (!edge || i < 0 || j < 0 || i >= width || j >= height || !marked[j * width + i])
+					if (!edge || i < 0 || j < 0 || i >= width || j >= height || !water[j * width + i])
 					{
 						continue;
 					}
-					double d = Math.hypot(river.x0 + (i + 0.5) * CELL - at.getX(), river.y0 + (j + 0.5) * CELL - at.getY());
+					double d = Math.hypot(river.x0 + (i + 0.5) * CELL - atX, river.y0 + (j + 0.5) * CELL - atY);
 					if (d < nearest)
 					{
 						nearest = d;

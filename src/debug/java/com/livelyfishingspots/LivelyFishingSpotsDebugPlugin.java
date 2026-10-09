@@ -2,10 +2,9 @@ package com.livelyfishingspots;
 
 import com.google.inject.Provides;
 import java.awt.Color;
-import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
@@ -16,6 +15,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import javax.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
@@ -28,7 +29,6 @@ import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.events.MenuEntryAdded;
 import net.runelite.api.gameval.ItemID;
-import net.runelite.client.RuneLite;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
@@ -39,6 +39,7 @@ import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.plugins.PluginManager;
 import net.runelite.client.ui.overlay.OverlayManager;
 import net.runelite.client.util.ColorUtil;
+import net.runelite.client.util.Filepath;
 
 /**
  * Dev only, never shipped: tools for building Lively Fishing Spots. Baking rivers and lakes (picking routes, lake
@@ -49,16 +50,18 @@ import net.runelite.client.util.ColorUtil;
  */
 @Slf4j
 @PluginDescriptor(
-	name = "116-lively-fishing-spots debug",
+	name = "Lively Fishing Spots debug",
 	description = "Dev tools for Lively Fishing Spots: baking, tuning and debug drawing",
-	developerPlugin = true
+	developerPlugin = true,
+	// Its folder: .runelite/plugin-data/lively-fishing-spots-debug. RuneLite moved the old one,
+	// .runelite/lively-fishing-spots, into it the first time.
+	internalName = "lively-fishing-spots-debug",
+	legacyDataDirectory = "lively-fishing-spots"
 )
 public class LivelyFishingSpotsDebugPlugin extends Plugin
 {
 	// The Look value each look spinner sets.
 	private static final int[] LOOK_PLACES = {4, 5, 0, 1, 2, 7, 15, 16, 17, 23, 24, 22, 6, 12, 13, 14};
-	// Where the bakes made while playing are saved and read from, in .runelite.
-	static final String BAKED_FOLDER = "lively-fishing-spots/baked";
 
 	@Inject
 	private Client client;
@@ -423,26 +426,50 @@ public class LivelyFishingSpotsDebugPlugin extends Plugin
 	}
 
 	/**
-	 * Looks for bake files in .runelite that are new or changed since last looked, and when reloading,
-	 * hands each one's text to the rivers on the client thread. Off the client thread.
+	 * The folder bakes made while playing are saved to and read from:
+	 * .runelite/plugin-data/lively-fishing-spots-debug/baked.
+	 */
+	private Filepath bakedFolder() throws IOException
+	{
+		return getPluginDirectory().join("baked");
+	}
+
+	/**
+	 * Looks for bake files that are new or changed since last looked, and when reloading, hands each one's text to
+	 * the rivers on the client thread. Off the client thread.
 	 */
 	private void checkBakes(boolean reload)
 	{
 		try
 		{
-			File[] files = new File(RuneLite.RUNELITE_DIR, LivelyFishingSpotsDebugPlugin.BAKED_FOLDER).listFiles(
-				(folder, name) -> name.endsWith(".txt"));
-			for (File file : files == null ? new File[0] : files)
+			Filepath folder = bakedFolder();
+			if (!folder.isDirectory())
 			{
-				Long seen = bakeTimes.put(file.getName(), file.lastModified());
-				if (reload && (seen == null || seen != file.lastModified()))
+				return;
+			}
+			List<Filepath> files;
+			try (Stream<Filepath> found = folder.walk(1))
+			{
+				files = found.filter(file -> file.isFile() && file.getFileName().endsWith(".txt"))
+					.collect(Collectors.toList());
+			}
+			for (Filepath file : files)
+			{
+				String name = file.getFileName();
+				long changed = file.getLastModifiedTime().toMillis();
+				Long seen = bakeTimes.put(name, changed);
+				if (reload && (seen == null || seen != changed))
 				{
-					String text = new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
+					String text;
+					try (InputStream in = file.openInputStream())
+					{
+						text = new String(in.readAllBytes(), StandardCharsets.UTF_8);
+					}
 					clientThread.invoke(() ->
 					{
 						if (attached())
 						{
-							Bakes.reloadBaked(rivers, file.getName(), text);
+							Bakes.reloadBaked(rivers, name, text);
 						}
 					});
 				}
@@ -455,30 +482,36 @@ public class LivelyFishingSpotsDebugPlugin extends Plugin
 	}
 
 	/**
-	 * Writes baked rivers and lakes to .runelite/lively-fishing-spots/baked, off the client thread.
+	 * Writes baked rivers and lakes to the bakes folder, off the client thread.
 	 */
 	private void saveBaked(Map<String, String> files)
 	{
 		executor.execute(() ->
 		{
-			File folder = new File(RuneLite.RUNELITE_DIR, "lively-fishing-spots/baked");
-			if (!folder.mkdirs() && !folder.isDirectory())
+			Filepath folder;
+			try
 			{
-				log.warn("Couldn't make {}", folder);
+				folder = bakedFolder();
+				folder.createDirectories();
+			}
+			catch (IOException | RuntimeException e)
+			{
+				log.warn("Couldn't make the bakes folder", e);
 				return;
 			}
-			for (Map.Entry<String, String> file : files.entrySet())
+			for (Map.Entry<String, String> entry : files.entrySet())
 			{
 				try
 				{
-					Files.write(new File(folder, file.getKey()).toPath(), file.getValue().getBytes(StandardCharsets.UTF_8));
+					Filepath file = folder.join(entry.getKey());
+					file.write(entry.getValue());
 					// Already in use, so the watch for changed bakes skips it.
-					bakeTimes.put(file.getKey(), new File(folder, file.getKey()).lastModified());
-					log.debug("Baked {}", new File(folder, file.getKey()));
+					bakeTimes.put(entry.getKey(), file.getLastModifiedTime().toMillis());
+					log.debug("Baked {}", file);
 				}
-				catch (IOException e)
+				catch (IOException | RuntimeException e)
 				{
-					log.warn("Couldn't save {}", file.getKey(), e);
+					log.warn("Couldn't save {}", entry.getKey(), e);
 				}
 			}
 		});

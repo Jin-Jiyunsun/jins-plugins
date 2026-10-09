@@ -3,6 +3,8 @@ package com.livelyfishingspots;
 import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Graphics2D;
+import java.lang.management.ManagementFactory;
+import java.lang.management.MemoryUsage;
 import java.util.Arrays;
 import java.util.List;
 import javax.inject.Inject;
@@ -102,9 +104,8 @@ class FishCountOverlay extends OverlayPanel
 		// Memory: all of RuneLite's heap, Java's garbage collections (a pause shows as a spike anywhere), and what
 		// the river and lake maps hold.
 		heading("Memory", "Memory", "");
-		Runtime java = Runtime.getRuntime();
-		line("Java heap used", String.format("%d / %d MB", (java.totalMemory() - java.freeMemory()) >> 20,
-			java.maxMemory() >> 20));
+		MemoryUsage heap = ManagementFactory.getMemoryMXBean().getHeapMemoryUsage();
+		line("Java heap used", String.format("%d / %d MB", heap.getUsed() >> 20, heap.getMax() >> 20));
 		line("Garbage collections (last s)", TickTimes.collected());
 		line("River and lake maps", String.format("%.1f MB", RiverDrawing.mapsMb(rivers)));
 		line("Warm-up at plugin start", String.format("%.1f ms", rivers.warmUpMs));

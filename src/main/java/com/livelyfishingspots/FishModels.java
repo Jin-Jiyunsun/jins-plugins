@@ -180,9 +180,10 @@ final class FishModels
 	private static final Look SALMON = riverLook(28, 8);
 	private static final Look PIKE = riverLook(30, 9);
 	// Leaping fish: the river look, tilted level (their models leap); trout and salmon face the other way.
-	private static final Look LEAPING_TROUT = riverLook(26, 6, -39, 180);
-	private static final Look LEAPING_SALMON = riverLook(26, 10, -40, 180);
-	private static final Look STURGEON = riverLook(40, 10, -52, -90);
+	private static final Look LEAPING_TROUT = riverLook(26, 6, -39, 180, 100);
+	private static final Look LEAPING_SALMON = riverLook(26, 10, -40, 180, 100);
+	// The sturgeon slower too.
+	private static final Look STURGEON = riverLook(40, 10, -52, -90, 70);
 	// Rainbow fish: smaller, nearer the surface, stretched longer.
 	private static final Look RAINBOW = new Look(new int[]{-90, 0, 17, 17, 6, 3, 16, -90, 0, 40, 60, 30, 3, 7, 1500,
 		7, 100, 100, 0, 150, 50, 0, 0, 100, 100, 0, 35, 0, 6, 0, 0, 50, 100, 0, 0, 100});
@@ -977,19 +978,20 @@ final class FishModels
 	 */
 	private static Look riverLook(int size, int sink)
 	{
-		return riverLook(size, sink, 0, -90);
+		return riverLook(size, sink, 0, -90, 100);
 	}
 
 	/**
-	 * The river look with its own size, sink, tilt and turn.
+	 * The river look with its own size, sink, tilt, turn and speed (percent).
 	 */
-	private static Look riverLook(int size, int sink, int tilt, int turn)
+	private static Look riverLook(int size, int sink, int tilt, int turn, int pace)
 	{
 		int[] values = RIVER_VALUES.clone();
 		values[1] = tilt;
 		values[2] = size;
 		values[4] = sink;
 		values[7] = turn;
+		values[23] = pace;
 		return new Look(values);
 	}
 

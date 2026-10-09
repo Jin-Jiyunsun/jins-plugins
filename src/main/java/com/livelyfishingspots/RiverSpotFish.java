@@ -53,6 +53,8 @@ final class RiverSpotFish
 	private static final int[] LURE_FISH = {ItemID.RAW_TROUT, ItemID.RAW_SALMON, ItemID.RAW_PIKE, RAINBOW};
 	// Barbarian spots: leaping trout, salmon and sturgeon.
 	private static final int[] LEAPING_FISH = {ItemID.BRUT_SPAWNING_TROUT, ItemID.BRUT_SPAWNING_SALMON, ItemID.BRUT_STURGEON};
+	// Sturgeon: always alone, never in a school; and with see-through water, as deep as fish go.
+	private static final int STURGEON = ItemID.BRUT_STURGEON;
 	// Each kind of river or lake's fish, by its bake's "kind" line (lure if none).
 	private static final Map<String, int[]> KIND_FISH = Map.of("lure", LURE_FISH, "barbarian", LEAPING_FISH);
 	// River spots with fish, by NPC id: the kind of river or lake they're on.
@@ -3461,7 +3463,13 @@ final class RiverSpotFish
 				at = new double[]{place[0] + ux * ahead - uy * across, place[1] + uy * ahead + ux * across};
 				at = shoal.river.isWater(at[0], at[1]) ? at : place;
 			}
-			Swimmer added = spawn(shoal, along, at, grow, cycle, random, kind(shoal.kinds, random, rainbow), group, across);
+			int item;
+			do
+			{
+				item = kind(shoal.kinds, random, rainbow);
+			}
+			while (item == STURGEON);
+			Swimmer added = spawn(shoal, along, at, grow, cycle, random, item, group, across);
 			if (added != null)
 			{
 				added.slotAlong = ahead;
@@ -3585,7 +3593,7 @@ final class RiverSpotFish
 		swimmer.slot = slot;
 		swimmer.scale = scale(item);
 		int deepest = Math.max(DEEP_LEAST, shoal.lake ? (int) (DEEP_MOST * LAKE_DEEPER) : DEEP_MOST);
-		swimmer.deep = seeThrough && deep ? random.nextInt(DEEP_LEAST, deepest + 1) : 0;
+		swimmer.deep = !seeThrough || !deep ? 0 : item == STURGEON ? deepest : random.nextInt(DEEP_LEAST, deepest + 1);
 		swimmer.depthNow = swimmer.deep;
 		if (group != null)
 		{

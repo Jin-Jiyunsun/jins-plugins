@@ -904,7 +904,7 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 	)
 	default int debugLookSturgeonPace()
 	{
-		return 100;
+		return 70;
 	}
 
 	@Range(min = 0, max = 500)

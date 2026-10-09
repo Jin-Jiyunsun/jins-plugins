@@ -1,30 +1,28 @@
 # Lively Fishing Spots
 
-Brings fishing spots to life: the spots at sea each have a small shoal of the fish they give swimming
-around them, and the rivers and lakes with lure and bait spots have trout, salmon and pike swimming
-through them.
+<p align="center">
+<img width="800" height="590" alt="splash" src="https://github.com/user-attachments/assets/9bc74dba-ce3f-4f51-b6dc-e373c3ceac6c" />
+</p>
+
+Brings fishing spots to life: the spots at sea each have a small shoal of the fish you can catch at them, and the rivers and lakes with lure and bait spots have trout, salmon and pike swimming
+through and around them.
 
 ## Features
 
-- **The spot's own fish**: each fishing spot at sea shows the fish you can catch there, mixed as
-  they come, swimming round the spot in lanes.
+- **The spot's own fish**: each fishing spot at sea shows the fish you can catch there, mixed into a circling shoal.
   - Small net: shrimps, anchovies, sardines and herring.
   - Big net: mackerel, cod and bass, circled by three sharks.
   - Harpoon and lobster pot: lobsters, tuna and swordfish.
-  - Karambwan, anglerfish and monkfish spots: their own fish.
+  - Karambwan, anglerfish and monkfish are lonely fish who only swim alone :(
 - **Lifelike movement**: fish speed up and slow down, wag their tails, bob and dip, follow each
   other round, change lanes, and make room for each other and for the sharks.
-- **River and lake fish**: trout, salmon and pike swim down every river and round every lake that
+- **River and lake fish**: trout, salmon and pike swim down every river and around every lake that
   has a lure and bait fishing spot, in schools or on their own, round islands and down waterfalls.
   - When you fish a spot, passing fish come to circle it: Lure draws trout and salmon, Bait draws
-    pike. They drift off again when you stop.
-  - Now and then a rare rainbow fish school swims by, drawn in only by Lure with stripy feathers.
-  - Lakes keep their fish, which roam the lake in schools, pausing and setting off again.
-- **Only something to look at**: the fish have no clickbox or menu options, and the fishing spots
-  work exactly as before.
+    pike. They even scatter and go back to swimming down stream when you stop fishing!
 
-With 117 HD, which draws the water see-through, some fish also swim deeper under the water. Other
-renderers draw the water solid, so only the fish at the surface are shown there.
+With 117 HD, since it has transparent water, fish swim deeper. Other
+renderers draw the water solid, so only fish at the surface are shown.
 
 ## Settings
 

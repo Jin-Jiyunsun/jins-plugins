@@ -83,6 +83,7 @@ public class LivelyFishingSpotsPlugin extends Plugin
 		seaSpotFish = new SeaSpotFish(client, fishModels);
 		riverSpotFish = new RiverSpotFish(client, fishModels);
 		riverSettings();
+		riverSpotFish.warmUp();
 		seaSpotFish.setSeeThrough(seeThroughWater());
 		riverSpotFish.setSeeThrough(seeThroughWater());
 		clientThread.invoke(this::addSpotFish);

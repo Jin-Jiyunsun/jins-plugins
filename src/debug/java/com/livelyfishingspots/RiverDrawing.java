@@ -421,7 +421,7 @@ final class RiverDrawing
 		{
 			// The square rivers are mapped within round the player, as clip() cuts them: tile middles, so drawn half a
 			// tile out.
-			int reach = loadRange() + MAP_MORE;
+			int reach = rivers.range() + MAP_MORE;
 			int lowX = Math.max(ROUTE_MARGIN, meAt.getSceneX() - reach);
 			int lowY = Math.max(ROUTE_MARGIN, meAt.getSceneY() - reach);
 			int highX = Math.min(view.getSizeX() - 1 - ROUTE_MARGIN, meAt.getSceneX() + reach);

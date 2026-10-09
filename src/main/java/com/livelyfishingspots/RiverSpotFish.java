@@ -172,6 +172,9 @@ final class RiverSpotFish
 	// sight already swimming, and spawn, fill in and shrink away out of sight.
 	static int LOAD_MORE = 10;
 	private static final int ACTIVE_MORE = 4;
+	// Only at my spot: tiles along a river either side of the player that are mapped and keep fish, as fish only come
+	// to the spot being fished, right by the player.
+	private static final int SPOT_ONLY_RANGE = 8;
 	private static final int LEAVE_MORE = 16;
 	private static final int LINGER = 500;
 	// The window is worked out every WINDOW_EVERY client ticks (a game tick): fish grow in at its upstream edge and
@@ -342,6 +345,8 @@ final class RiverSpotFish
 	// Only at my spot, with no passing fish to help: fillers come quicker, every 1 to 4 s.
 	private static final int SPOT_ONLY_GAP_LEAST = 50;
 	private static final int SPOT_ONLY_GAP_MOST = 200;
+	// Only at my spot: client ticks a lake fish that's left its circle swims on before shrinking away (5 s).
+	private static final int SPOT_ONLY_LAKE_LINGER = 250;
 	// Client ticks away from a circle after which fishing it again starts its wait afresh.
 	private static final int REFILL_BREAK = 50;
 
@@ -922,6 +927,8 @@ final class RiverSpotFish
 		private double across;
 		// Client tick a scatter burst ends, or -1.
 		private int burstUntil = -1;
+		// Only at my spot, on a lake: the client tick it was last neither circling nor on its way to a circle, or -1.
+		private int freeSince = -1;
 		private final int surgePhase;
 		// Own wander, used when not in a group.
 		private final Glide wander;
@@ -1000,6 +1007,8 @@ final class RiverSpotFish
 	// Stretches mapped while the plugin starts, to warm the mapping code up: a fixed total shared out among the
 	// rivers, so more bakes don't make starting slower.
 	private static final int WARM_STRETCHES = 80;
+	// Lakes mapped while the plugin starts, likewise a fixed total shared out among them.
+	private static final int WARM_LAKES = 20;
 	// Baked water and paths, by each river or lake's first point.
 	final Map<WorldPoint, Baked> baked = new HashMap<>();
 	// The warm-up's time at plugin start, ms, for the debug plugin.
@@ -1013,6 +1022,11 @@ final class RiverSpotFish
 	// Rivers and lakes being mapped, a step a client tick; and spots waiting on one now open, given rings a tick apart.
 	private final List<Opening> openings = new ArrayList<>();
 	private final Deque<NPC> toAttach = new ArrayDeque<>();
+	// River and lake spots in the scene; with fish only at the spot being fished, a river or lake opens only once one
+	// of its spots is near the player.
+	private final Set<NPC> riverSpots = new HashSet<>();
+	// Kept between game ticks: each river or lake's nearest spot to the player, tiles.
+	private final Map<WorldPoint[], Double> spotApart = new HashMap<>();
 	// Where each spot tile's ring goes, from the spot (east, north, local units), worked out the first time.
 	final Map<WorldPoint, double[]> ringPlaces = new HashMap<>();
 	// Rivers and lakes that couldn't be mapped since the last map load.
@@ -1059,24 +1073,27 @@ final class RiverSpotFish
 			}
 		}
 		texts.forEach(this::addBaked);
-		long started = System.nanoTime();
-		warmUp();
-		warmUpMs = (System.nanoTime() - started) / 1e6;
-		log.debug("River mapping warmed up in {} ms", Math.round(warmUpMs * 10) / 10.0);
 	}
 
 	/**
 	 * Maps stretches of each baked river a few times, keeping nothing, so Java has sped the mapping code up before
-	 * the first real map; else that one takes several times as long. Runs while the plugin starts, before any game
-	 * events reach it, so it can't clash with real mapping.
+	 * the first real map; else that one takes several times as long, even a small one. Runs while the plugin starts,
+	 * once the settings are in (its maps the size the player's are) and before any game events reach it, so it can't
+	 * clash with real mapping.
 	 */
-	private void warmUp()
+	void warmUp()
 	{
-		int reach = loadRange() + MAP_MORE;
+		long started = System.nanoTime();
+		int reach = range() + MAP_MORE;
 		List<Baked> rivers = new ArrayList<>();
+		List<Baked> lakes = new ArrayList<>();
 		for (Baked saved : baked.values())
 		{
-			if (saved.pathX != null)
+			if (saved.lake)
+			{
+				lakes.add(saved);
+			}
+			else if (saved.pathX != null)
 			{
 				rivers.add(saved);
 			}
@@ -1106,6 +1123,23 @@ final class RiverSpotFish
 				roundRing(river, point[0] + away[0] * CIRCLE_OFFSET, point[1] + away[1] * CIRCLE_OFFSET);
 			}
 		}
+		// Each lake in turn, whole, as it's mapped.
+		for (int k = 0; k < WARM_LAKES && !lakes.isEmpty(); k++)
+		{
+			Baked lake = lakes.get(k % lakes.size());
+			int[] bounds = {Integer.MAX_VALUE, Integer.MAX_VALUE, Integer.MIN_VALUE, Integer.MIN_VALUE};
+			for (WorldPoint spawn : lake.route)
+			{
+				include(bounds, spawn.getX(), spawn.getY());
+			}
+			River river = new River((bounds[0] - LAKE_MARGIN) * 128, (bounds[1] - LAKE_MARGIN) * 128,
+				(bounds[2] - bounds[0] + 2 * LAKE_MARGIN + 1) * PER_TILE, (bounds[3] - bounds[1] + 2 * LAKE_MARGIN + 1) * PER_TILE);
+			bakedWet(lake, 0, 0, river);
+			clearances(river);
+			lakeRoom(river);
+		}
+		warmUpMs = (System.nanoTime() - started) / 1e6;
+		log.debug("River mapping warmed up in {} ms", Math.round(warmUpMs * 10) / 10.0);
 	}
 
 	/**
@@ -1377,7 +1411,12 @@ final class RiverSpotFish
 	 */
 	void add(NPC spot)
 	{
-		if (!SPOT_FISH.containsKey(spot.getId()) || shoalOf(spot) != null)
+		if (!SPOT_FISH.containsKey(spot.getId()))
+		{
+			return;
+		}
+		riverSpots.add(spot);
+		if (shoalOf(spot) != null || onlyAtSpot && !nearPlayer(spot))
 		{
 			return;
 		}
@@ -1446,8 +1485,9 @@ final class RiverSpotFish
 
 	/**
 	 * Starts the river or lake near the player: rivers within their load range, and lakes within FISH_RANGE, plus
-	 * ACTIVE_MORE tiles open, and those beyond it plus LEAVE_MORE start going. Once a game tick; a route that can't be mapped isn't tried again until the next map
-	 * load.
+	 * ACTIVE_MORE tiles open, and those beyond it plus LEAVE_MORE start going; with fish only at the spot being
+	 * fished, measured to their spots instead, so nothing opens without a spot near. Once a game tick; a route that
+	 * can't be mapped isn't tried again until the next map load.
 	 */
 	void activate()
 	{
@@ -1463,14 +1503,31 @@ final class RiverSpotFish
 		all.clear();
 		all.addAll(routes);
 		all.addAll(lakes);
+		// Each spot's river or lake worked out once: how near its nearest spot is, and spots near enough opened.
+		spotApart.clear();
+		for (NPC spot : onlyAtSpot ? riverSpots : Set.<NPC>of())
+		{
+			WorldPoint at = spot.getWorldLocation();
+			WorldPoint[] route = at.getPlane() == me.getPlane() ? routeFor(at) : null;
+			if (route == null)
+			{
+				continue;
+			}
+			double apart = at.distanceTo2D(me);
+			spotApart.merge(route, apart, Math::min);
+			if (apart <= range() + ACTIVE_MORE && !unmappable.contains(route) && shoalOf(spot) == null)
+			{
+				add(spot);
+			}
+		}
 		for (WorldPoint[] route : all)
 		{
-			double apart = reachTo(route, me);
-			int range = isLake(route) ? FISH_RANGE : loadRange();
+			double apart = onlyAtSpot ? spotApart.getOrDefault(route, Double.MAX_VALUE) : reachTo(route, me);
+			int range = isLake(route) && !onlyAtSpot ? FISH_RANGE : range();
 			Shoal shoal = shoalFor(route);
 			if (shoal == null)
 			{
-				if (apart <= range + ACTIVE_MORE && !unmappable.contains(route))
+				if (!onlyAtSpot && apart <= range + ACTIVE_MORE && !unmappable.contains(route))
 				{
 					open(view, route, me.getPlane(), null);
 				}
@@ -1484,6 +1541,17 @@ final class RiverSpotFish
 				shoal.farSince = -1;
 			}
 		}
+	}
+
+	/**
+	 * Whether a spot is within the range (plus ACTIVE_MORE) of the player.
+	 */
+	private boolean nearPlayer(NPC spot)
+	{
+		Player player = client.getLocalPlayer();
+		WorldPoint me = player == null ? null : player.getWorldLocation();
+		WorldPoint at = spot.getWorldLocation();
+		return me != null && at.getPlane() == me.getPlane() && at.distanceTo2D(me) <= range() + ACTIVE_MORE;
 	}
 
 	/**
@@ -1687,10 +1755,7 @@ final class RiverSpotFish
 		// Fish spread evenly along the stretch round the player, a school a tick, nearest first.
 		shoal.spacing = riverSpacing(shoal.route);
 		updateWindow(shoal);
-		if (!onlyAtSpot)
-		{
-			fillStretch(shoal, shoal.windowFrom, shoal.windowTo, random);
-		}
+		fillStretch(shoal, shoal.windowFrom, shoal.windowTo, random);
 		shoal.nextSpawn = cycle + spawnGap(random);
 		shoal.nextSolo = cycle + (int) (spawnGap(random) * SOLO_EVERY);
 		shoal.nextBody = cycle + bodyGap(random);
@@ -1699,10 +1764,15 @@ final class RiverSpotFish
 
 	/**
 	 * Queues a stretch of river's fill: groups spread evenly along it, and single fish between them when schooled,
-	 * nearest the player first, each its place along and how many (0 for a single fish).
+	 * nearest the player first, each its place along and how many (0 for a single fish). None with fish only at the
+	 * spot being fished; every river fill comes through here.
 	 */
 	private void fillStretch(Shoal shoal, double from, double to, ThreadLocalRandom random)
 	{
+		if (onlyAtSpot)
+		{
+			return;
+		}
 		River river = shoal.river;
 		double gap = shoal.spacing;
 		List<double[]> arrivals = new ArrayList<>();
@@ -1830,8 +1900,8 @@ final class RiverSpotFish
 	{
 		River river = shoal.river;
 		WorldPoint me = playerTile();
-		boolean nearEnd = river.cutStart && shoal.playerAt - (loadRange() + REMAP_EDGE) * 128.0 < 0
-			|| river.cutEnd && shoal.playerAt + (loadRange() + REMAP_EDGE) * 128.0 > river.length;
+		boolean nearEnd = river.cutStart && shoal.playerAt - (range() + REMAP_EDGE) * 128.0 < 0
+			|| river.cutEnd && shoal.playerAt + (range() + REMAP_EDGE) * 128.0 > river.length;
 		return nearEnd && me != null && (shoal.mappedAround == null || me.distanceTo2D(shoal.mappedAround) >= REMAP_MOVE);
 	}
 
@@ -1841,6 +1911,14 @@ final class RiverSpotFish
 	static int loadRange()
 	{
 		return FISH_RANGE + LOAD_MORE;
+	}
+
+	/**
+	 * The load range, or a smaller one with fish only at the spot being fished.
+	 */
+	int range()
+	{
+		return onlyAtSpot ? SPOT_ONLY_RANGE : loadRange();
 	}
 
 	/**
@@ -1855,8 +1933,8 @@ final class RiverSpotFish
 		{
 			shoal.playerAt = river.nearest(me.getX(), me.getY());
 		}
-		shoal.windowFrom = Math.max(0, shoal.playerAt - loadRange() * 128.0);
-		shoal.windowTo = Math.min(river.length, shoal.playerAt + loadRange() * 128.0);
+		shoal.windowFrom = Math.max(0, shoal.playerAt - range() * 128.0);
+		shoal.windowTo = Math.min(river.length, shoal.playerAt + range() * 128.0);
 	}
 
 	/**
@@ -1992,14 +2070,20 @@ final class RiverSpotFish
 		}
 		else
 		{
-			// Worked out once per spot tile, as the water doesn't change: where the ring's middle is from the spot.
-			double[] offset = ringPlaces.computeIfAbsent(spot.getWorldLocation(), tile ->
+			// Worked out once per spot tile, as the water doesn't change: where the ring's middle is from the spot. Kept
+			// only when the spot is on the mapped water; one off the map is placed again once mapped round.
+			double[] offset = ringPlaces.get(spot.getWorldLocation());
+			if (offset == null)
 			{
 				double[] away = awayFromBank(shoal.river, at.getX(), at.getY());
 				double[] round = roundRing(shoal.river, at.getX() + away[0] * CIRCLE_OFFSET,
 					at.getY() + away[1] * CIRCLE_OFFSET);
-				return new double[]{round[0] - at.getX(), round[1] - at.getY()};
-			});
+				offset = new double[]{round[0] - at.getX(), round[1] - at.getY()};
+				if (shoal.river.clearanceAt(at.getX(), at.getY()) > 0)
+				{
+					ringPlaces.put(spot.getWorldLocation(), offset);
+				}
+			}
 			x = at.getX() + offset[0];
 			y = at.getY() + offset[1];
 		}
@@ -2162,7 +2246,7 @@ final class RiverSpotFish
 					cut = new boolean[2];
 					Player player = client.getLocalPlayer();
 					LocalPoint me = player == null ? null : player.getLocalLocation();
-					if (view.getScene() == null || !clip(view, route, me, stops, cut) || stops.size() < 2)
+					if (view.getScene() == null || !clip(view, route, me, range(), stops, cut) || stops.size() < 2)
 					{
 						if (saidOutOfSight.add(route[0]))
 						{
@@ -2284,39 +2368,7 @@ final class RiverSpotFish
 					return true;
 				default:
 				{
-					List<Integer> open = new ArrayList<>();
-					for (int c = 0; c < river.width * river.height; c++)
-					{
-						if (river.water[c])
-						{
-							river.waterCells++;
-							if (river.clearance[c] >= LAKE_GOAL_ROOM)
-							{
-								open.add(c);
-							}
-						}
-					}
-					river.open = open.stream().mapToInt(Integer::intValue).toArray();
-					int tilesX = river.width / PER_TILE;
-					int tilesY = river.height / PER_TILE;
-					int row = tilesX + 1;
-					river.tileWater = new int[row * (tilesY + 1)];
-					for (int tj = 0; tj < tilesY; tj++)
-					{
-						for (int ti = 0; ti < tilesX; ti++)
-						{
-							int count = 0;
-							for (int j = tj * PER_TILE; j < (tj + 1) * PER_TILE; j++)
-							{
-								for (int i = ti * PER_TILE; i < (ti + 1) * PER_TILE; i++)
-								{
-									count += river.water[j * river.width + i] ? 1 : 0;
-								}
-							}
-							river.tileWater[(tj + 1) * row + ti + 1] = count + river.tileWater[tj * row + ti + 1]
-								+ river.tileWater[(tj + 1) * row + ti] - river.tileWater[tj * row + ti];
-						}
-					}
+					lakeRoom(river);
 					for (LocalPoint point : points)
 					{
 						int cell = nearestWater(river, point, river.water);
@@ -2353,6 +2405,50 @@ final class RiverSpotFish
 		private Opening(Mapping mapping)
 		{
 			this.mapping = mapping;
+		}
+	}
+
+	/**
+	 * A lake's water count, its roomy cells to head for, and its water per tile (a summed-area table).
+	 */
+	private static void lakeRoom(River river)
+	{
+		int cells = river.width * river.height;
+		int roomy = 0;
+		river.waterCells = 0;
+		for (int c = 0; c < cells; c++)
+		{
+			river.waterCells += river.water[c] ? 1 : 0;
+			roomy += river.water[c] && river.clearance[c] >= LAKE_GOAL_ROOM ? 1 : 0;
+		}
+		river.open = new int[roomy];
+		roomy = 0;
+		for (int c = 0; c < cells; c++)
+		{
+			if (river.water[c] && river.clearance[c] >= LAKE_GOAL_ROOM)
+			{
+				river.open[roomy++] = c;
+			}
+		}
+		int tilesX = river.width / PER_TILE;
+		int tilesY = river.height / PER_TILE;
+		int row = tilesX + 1;
+		river.tileWater = new int[row * (tilesY + 1)];
+		for (int tj = 0; tj < tilesY; tj++)
+		{
+			for (int ti = 0; ti < tilesX; ti++)
+			{
+				int count = 0;
+				for (int j = tj * PER_TILE; j < (tj + 1) * PER_TILE; j++)
+				{
+					for (int i = ti * PER_TILE; i < (ti + 1) * PER_TILE; i++)
+					{
+						count += river.water[j * river.width + i] ? 1 : 0;
+					}
+				}
+				river.tileWater[(tj + 1) * row + ti + 1] = count + river.tileWater[tj * row + ti + 1]
+					+ river.tileWater[(tj + 1) * row + ti] - river.tileWater[tj * row + ti];
+			}
 		}
 	}
 
@@ -2729,13 +2825,14 @@ final class RiverSpotFish
 	 * its nearest point): its start (or where it comes in), the waypoints inside, and its end (or where it goes out).
 	 * Fills stops, and cut with whether the start and the end were cut; false if no part of it is inside.
 	 */
-	private static boolean clip(WorldView view, WorldPoint[] route, LocalPoint around, List<int[]> stops, boolean[] cut)
+	private static boolean clip(WorldView view, WorldPoint[] route, LocalPoint around, int range, List<int[]> stops,
+		boolean[] cut)
 	{
 		double[] low = {ROUTE_MARGIN, ROUTE_MARGIN};
 		double[] high = {view.getSizeX() - 1 - ROUTE_MARGIN, view.getSizeY() - 1 - ROUTE_MARGIN};
 		if (around != null)
 		{
-			int reach = loadRange() + MAP_MORE + (int) Math.ceil(toLine(route, view.getBaseX() + around.getSceneX(),
+			int reach = range + MAP_MORE + (int) Math.ceil(toLine(route, view.getBaseX() + around.getSceneX(),
 				view.getBaseY() + around.getSceneY()));
 			low = new double[]{Math.max(low[0], around.getSceneX() - reach), Math.max(low[1], around.getSceneY() - reach)};
 			high = new double[]{Math.min(high[0], around.getSceneX() + reach), Math.min(high[1], around.getSceneY() + reach)};
@@ -3466,6 +3563,7 @@ final class RiverSpotFish
 	 */
 	boolean remove(NPC spot)
 	{
+		riverSpots.remove(spot);
 		if (toAttach.remove(spot))
 		{
 			return true;
@@ -3767,7 +3865,7 @@ final class RiverSpotFish
 				{
 					shoal.remapping = new Mapping(view, shoal.route, shoal.plane);
 				}
-				if (shoal.toFill.isEmpty() && !onlyAtSpot)
+				if (shoal.toFill.isEmpty())
 				{
 					fillGaps(shoal, random);
 				}
@@ -3869,6 +3967,17 @@ final class RiverSpotFish
 					&& random.nextDouble() < ticks / LEAVE_AFTER)
 				{
 					leave(shoal, swimmer);
+				}
+				// Only at my spot, a lake fish that's left its circle shrinks away after a few seconds, as no others roam.
+				if (onlyAtSpot && shoal.lake)
+				{
+					boolean free = swimmer.circle == null && swimmer.bound == null && swimmer.shrinkingSince < 0;
+					swimmer.freeSince = !free ? -1 : swimmer.freeSince < 0 ? cycle : swimmer.freeSince;
+					if (free && cycle - swimmer.freeSince >= SPOT_ONLY_LAKE_LINGER)
+					{
+						ungroup(swimmer);
+						swimmer.shrinkingSince = cycle;
+					}
 				}
 				// Dips start only between bobs; on a fish surfacer, none start and bobs wait at rest.
 				Look look = swimmer.look;
@@ -5286,6 +5395,7 @@ final class RiverSpotFish
 	 */
 	void clear()
 	{
+		riverSpots.clear();
 		unmappable.clear();
 		openings.clear();
 		toAttach.clear();

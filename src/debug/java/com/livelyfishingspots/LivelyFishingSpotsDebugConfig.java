@@ -274,7 +274,7 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 	)
 	default int debugLookLeapTroutSink()
 	{
-		return 6;
+		return 9;
 	}
 
 	@Range(min = 0, max = 500)
@@ -326,7 +326,7 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 	)
 	default int debugLookLeapTroutSize()
 	{
-		return 26;
+		return 38;
 	}
 
 	@Range(min = -360, max = 360)
@@ -531,7 +531,7 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 	)
 	default int debugLookLeapSalmonSink()
 	{
-		return 10;
+		return 13;
 	}
 
 	@Range(min = 0, max = 500)
@@ -583,7 +583,7 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 	)
 	default int debugLookLeapSalmonSize()
 	{
-		return 26;
+		return 33;
 	}
 
 	@Range(min = -360, max = 360)
@@ -788,7 +788,7 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 	)
 	default int debugLookSturgeonSink()
 	{
-		return 10;
+		return 13;
 	}
 
 	@Range(min = 0, max = 500)
@@ -840,7 +840,7 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 	)
 	default int debugLookSturgeonSize()
 	{
-		return 40;
+		return 51;
 	}
 
 	@Range(min = -360, max = 360)
@@ -2329,7 +2329,6 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 		return 150;
 	}
 
-
 	@Range(min = 50, max = 500)
 	@Units(Units.PERCENT)
 	@ConfigItem(
@@ -2454,6 +2453,34 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 		return 200;
 	}
 
+	@Range(min = 100, max = 300)
+	@Units(Units.PERCENT)
+	@ConfigItem(
+		keyName = "debugLeapSturgeonSpeed",
+		name = "Sturgeon leap speed",
+		description = "Sturgeon, slow swimmers, leap<br>this much faster again",
+		section = debugLeaps,
+		position = 7
+	)
+	default int debugLeapSturgeonSpeed()
+	{
+		return 130;
+	}
+
+	@Range(min = 10, max = 150)
+	@Units(Units.PERCENT)
+	@ConfigItem(
+		keyName = "debugLeapSturgeonTilt",
+		name = "Sturgeon leap tilt",
+		description = "How far sturgeon point down<br>coming down from a leap,<br>of other fish",
+		section = debugLeaps,
+		position = 7
+	)
+	default int debugLeapSturgeonTilt()
+	{
+		return 60;
+	}
+
 	@Range(min = 1, max = 100)
 	@Units(Units.PERCENT)
 	@ConfigItem(
@@ -2466,6 +2493,20 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 	default int debugLeapTipEase()
 	{
 		return 25;
+	}
+
+	@Range(min = 50, max = 300)
+	@Units(Units.PERCENT)
+	@ConfigItem(
+		keyName = "debugLeapDiveTilt",
+		name = "Leap dive tilt",
+		description = "How steeply a fish points coming<br>down and into the water, of<br>its way (up to Leap tilt)",
+		section = debugLeaps,
+		position = 8
+	)
+	default int debugLeapDiveTilt()
+	{
+		return 130;
 	}
 
 	@Range(min = 0, max = 90)
@@ -2658,7 +2699,6 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 	{
 		return 175;
 	}
-
 
 	@Range(min = 50, max = 200)
 	@Units(Units.PERCENT)

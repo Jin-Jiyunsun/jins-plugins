@@ -604,7 +604,10 @@ public class LivelyFishingSpotsDebugPlugin extends Plugin
 		RiverSpotFish.LEAP_LANDING = config.debugLeapLanding() / 100.0;
 		RiverSpotFish.LEAP_RUN_TICKS = Math.max(1, config.debugLeapRunMillis() / 20);
 		RiverSpotFish.LEAP_SPEED = config.debugLeapSpeed() / 100.0;
+		RiverSpotFish.STURGEON_LEAP_SPEED = config.debugLeapSturgeonSpeed() / 100.0;
+		RiverSpotFish.STURGEON_LEAP_TILT = config.debugLeapSturgeonTilt() / 100.0;
 		RiverSpotFish.LEAP_TIP_EASE = config.debugLeapTipEase() / 100.0;
+		RiverSpotFish.LEAP_DIVE_TILT = config.debugLeapDiveTilt() / 100.0;
 		RiverSpotFish.LEAP_CARRY = config.debugLeapCarry() / 100.0;
 		RiverSpotFish.SPLASH_MODEL[0] = config.debugLeapSplashOut().model;
 		RiverSpotFish.SPLASH_ANIMATION[0] = config.debugLeapSplashOut().animation;

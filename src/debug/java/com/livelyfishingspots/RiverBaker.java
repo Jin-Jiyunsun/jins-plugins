@@ -57,6 +57,8 @@ class RiverBaker
 	// Floor overlays of untextured water, seen in game: plain water's (6, untextured in places along Kourend's
 	// rivers), the Water Ravine Dungeon's (130) and the cave's round 1303, 9799 (41).
 	private static final Set<Integer> WATER_OVERLAYS = Set.of(6, 41, 130);
+	// A floor colour that isn't drawn.
+	private static final int HIDDEN_COLOUR = 12345678;
 	// How far inside an object's rough outline a cell's middle must be to count as blocked, local units.
 	private static final double OBJECT_INSET = 16;
 	// Tiles from a river's laid path (or a fork's) its water is saved within: its whole width round any bend, but not
@@ -590,7 +592,7 @@ class RiverBaker
 			rows.remove(rows.size() - 1);
 		}
 		log.debug("Bake {}: {} of {} points recorded, {} tiles", route[0], cells.size(), route.length, tiles.size());
-		return Bakes.bakedText(Bakes.headLine(route, lake), rivers.bakedFishShare(route[0]),
+		return Bakes.bakedText(Bakes.headLine(route, lake), rivers.bakedFishShare(route[0]), rivers.bakedKind(route[0]),
 			minX * PER_TILE, minY * PER_TILE + firstRow, rows, points,
 			Bakes.bakedMarks(rivers, route[0]), branchStops, branchPaths,
 			Bakes.bakedBranchShares(rivers, route[0]));
@@ -1157,43 +1159,32 @@ class RiverBaker
 		boolean[] wetTile = new boolean[tilesX * tilesY];
 		int tileX0 = Math.floorDiv(river.x0, 128);
 		int tileY0 = Math.floorDiv(river.y0, 128);
-		for (int ty = 0; ty < tilesY; ty++)
+		// Untextured water's colours (hue and saturation) on whole water tiles, so a shore tile's water parts can
+		// be told from its land ones, which share its overlay.
+		Set<Integer> waterColours = new HashSet<>();
+		for (int pass = 0; pass < 2; pass++)
 		{
-			for (int tx = 0; tx < tilesX; tx++)
+			for (int ty = 0; ty < tilesY; ty++)
 			{
-				int sx = tileX0 + tx;
-				int sy = tileY0 + ty;
-				if (sx < 0 || sy < 0 || sx >= tiles.length
-					|| sy >= tiles[sx].length || tiles[sx][sy] == null)
+				for (int tx = 0; tx < tilesX; tx++)
 				{
-					continue;
-				}
-				Tile tile = tiles[sx][sy].getBridge() != null ? tiles[sx][sy].getBridge() : tiles[sx][sy];
-				SceneTilePaint paint = tile.getSceneTilePaint();
-				SceneTileModel model = tile.getSceneTileModel();
-				if (paint == null && model == null)
-				{
-					continue;
-				}
-				// Untextured water is known by its overlay, the whole tile; only on a tile with no texture at all, as a
-				// shore tile's land part has none either, under the same overlay as its water.
-				int overlay = overlayAt(view, plane, sx, sy);
-				boolean untextured = paint != null ? paint.getTexture() == -1 : !textured(model);
-				for (int cy = 0; cy < PER_TILE; cy++)
-				{
-					for (int cx = 0; cx < PER_TILE; cx++)
+					int sx = tileX0 + tx;
+					int sy = tileY0 + ty;
+					if (sx < 0 || sy < 0 || sx >= tiles.length
+						|| sy >= tiles[sx].length || tiles[sx][sy] == null)
 					{
-						double x = sx * 128 + (cx + 0.5) * CELL;
-						double y = sy * 128 + (cy + 0.5) * CELL;
-						int c = (ty * PER_TILE + cy) * width + tx * PER_TILE + cx;
-						int texture = paint != null ? paint.getTexture() : textureAt(model, x, y);
-						textures.merge(texture, 1, Integer::sum);
-						if (texture == -1 && cx == 0 && cy == 0)
-						{
-							overlays.merge(overlay, 1, Integer::sum);
-						}
-						wet[c] = WATER_TEXTURES.contains(texture) || untextured && WATER_OVERLAYS.contains(overlay);
-						wetTile[ty * tilesX + tx] |= wet[c];
+						continue;
+					}
+					Tile tile = tiles[sx][sy].getBridge() != null ? tiles[sx][sy].getBridge() : tiles[sx][sy];
+					SceneTilePaint paint = tile.getSceneTilePaint();
+					if (pass == 0 && paint != null && paint.getTexture() == -1 && paint.getSwColor() != HIDDEN_COLOUR
+						&& WATER_OVERLAYS.contains(overlayAt(view, plane, sx, sy)))
+					{
+						waterColours.add(hueAndSaturation(paint.getSwColor()));
+					}
+					if (pass == 1)
+					{
+						readTile(view, plane, river, tile, sx, sy, tx, ty, waterColours, wet, wetTile, textures, overlays);
 					}
 				}
 			}
@@ -1341,6 +1332,80 @@ class RiverBaker
 			k--;
 		}
 		return Arrays.copyOf(hull, Math.max(0, k));
+	}
+
+	/**
+	 * Reads one tile's cells into wet (and wetTile, and the texture and overlay counts).
+	 */
+	private static void readTile(WorldView view, int plane, River river, Tile tile, int sx, int sy, int tx, int ty,
+		Set<Integer> waterColours, boolean[] wet, boolean[] wetTile, Map<Integer, Integer> textures,
+		Map<Integer, Integer> overlays)
+	{
+		SceneTilePaint paint = tile.getSceneTilePaint();
+		SceneTileModel model = tile.getSceneTileModel();
+		if (paint == null && model == null)
+		{
+			return;
+		}
+		int width = river.width;
+		int tilesX = width / PER_TILE;
+		// Untextured water is known by its overlay; only on a tile with no texture at all, as a shore tile's land part
+		// has none either, under the same overlay as its water. On a shore tile, only the parts in water's colour.
+		int overlay = overlayAt(view, plane, sx, sy);
+		boolean untextured = paint != null ? paint.getTexture() == -1 : !textured(model);
+		boolean byColour = paint == null && !waterColours.isEmpty();
+		for (int cy = 0; cy < PER_TILE; cy++)
+		{
+			for (int cx = 0; cx < PER_TILE; cx++)
+			{
+				double x = sx * 128 + (cx + 0.5) * CELL;
+				double y = sy * 128 + (cy + 0.5) * CELL;
+				int c = (ty * PER_TILE + cy) * width + tx * PER_TILE + cx;
+				int texture = paint != null ? paint.getTexture() : textureAt(model, x, y);
+				textures.merge(texture, 1, Integer::sum);
+				if (texture == -1 && cx == 0 && cy == 0)
+				{
+					overlays.merge(overlay, 1, Integer::sum);
+				}
+				boolean overlayWater = untextured && WATER_OVERLAYS.contains(overlay)
+					&& (!byColour || waterColours.contains(hueAndSaturation(colourAt(model, x, y))));
+				wet[c] = WATER_TEXTURES.contains(texture) || overlayWater;
+				wetTile[ty * tilesX + tx] |= wet[c];
+			}
+		}
+	}
+
+	/**
+	 * A floor colour's hue and saturation, leaving out its lightness (shading).
+	 */
+	private static int hueAndSaturation(int colour)
+	{
+		return colour >> 7 & 511;
+	}
+
+	/**
+	 * Colour of a shaped tile's face under a place, or -1.
+	 */
+	private static int colourAt(SceneTileModel model, double x, double y)
+	{
+		int[] colours = model.getTriangleColorA();
+		int[] a = model.getFaceX();
+		int[] b = model.getFaceY();
+		int[] c = model.getFaceZ();
+		int[] vx = model.getVertexX();
+		int[] vz = model.getVertexZ();
+		if (colours == null || a == null)
+		{
+			return -1;
+		}
+		for (int f = 0; f < a.length; f++)
+		{
+			if (inside(x, y, vx[a[f]], vz[a[f]], vx[b[f]], vz[b[f]], vx[c[f]], vz[c[f]]))
+			{
+				return colours[f];
+			}
+		}
+		return -1;
 	}
 
 	/**

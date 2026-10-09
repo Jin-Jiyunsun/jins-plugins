@@ -26,8 +26,8 @@ final class Bakes
 
 	/**
 	 * A baked river or lake as text: its head line (see headLine), then "fish N" if it has N% of the fish its size would
-	 * give, then "water X Y" gives the first row's world cell (y) and the cell the rows count from
-	 * (x); the lines after hold the rows, going north, split by commas: each row's water as gap, length, gap,
+	 * give, then "kind K" if its fish aren't lure/bait ones (barbarian: leaping fish), then "water X Y" gives the first
+	 * row's world cell (y) and the cell the rows count from (x); the lines after hold the rows, going north, split by commas: each row's water as gap, length, gap,
 	 * length..., each gap from the end of the run before (the first from X); "N*" in front repeats the row N times, and
 	 * "-" is a row with none. "path X Y" gives the first path point (world local units), and each "step" line the steps
 	 * on to the next points. Each "block X Y PLANE HALF" line is a fish blocker: a world tile, or half of it, counted
@@ -35,13 +35,17 @@ final class Bakes
 	 * deep fish come up; each "dive" line a fish diver, where they go down. Each "branch X Y X Y ..." line is a side
 	 * channel's picked tiles, first and last on the river, followed by its laid path as "bpath" and "bstep" lines.
 	 */
-	static String bakedText(String head, int fishShare, int x0, int y0, List<int[]> rows, List<int[]> path,
+	static String bakedText(String head, int fishShare, String fishKind, int x0, int y0, List<int[]> rows, List<int[]> path,
 		List<Map<WorldPoint, String>> marks, List<int[]> branchStops, List<int[]> branchPaths, List<Integer> branchShares)
 	{
 		StringBuilder text = new StringBuilder(head).append('\n');
 		if (fishShare != 100)
 		{
 			text.append("fish ").append(fishShare).append('\n');
+		}
+		if (!fishKind.equals("lure"))
+		{
+			text.append("kind ").append(fishKind).append('\n');
 		}
 		text.append("water ").append(x0).append(' ').append(y0).append('\n');
 		StringBuilder line = new StringBuilder();
@@ -286,7 +290,7 @@ final class Bakes
 		{
 			path.add(new int[]{(int) Math.round(saved.pathX[k]), (int) Math.round(saved.pathY[k])});
 		}
-		return bakedText(headLine(saved.route, saved.lake), saved.fishShare, x0, saved.y0, rows, path, saved.marks,
+		return bakedText(headLine(saved.route, saved.lake), saved.fishShare, saved.kind, x0, saved.y0, rows, path, saved.marks,
 			saved.branchStops, saved.branchPaths, saved.branchShares);
 	}
 

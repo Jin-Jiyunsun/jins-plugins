@@ -16,6 +16,7 @@ import net.runelite.api.Client;
 import net.runelite.api.Perspective;
 import net.runelite.api.Player;
 import net.runelite.api.Point;
+import net.runelite.api.RuneLiteObject;
 import net.runelite.api.WorldView;
 import net.runelite.api.coords.LocalPoint;
 import net.runelite.api.coords.WorldPoint;
@@ -263,6 +264,37 @@ final class RiverDrawing
 		line(graphics, view);
 	}
 
+	/**
+	 * Draws lines from a fish's middle to the points it wags and tips about, ahead of it the way it faces.
+	 */
+	private void pivots(Graphics2D graphics, Swimmer swimmer)
+	{
+		RuneLiteObject fish = swimmer.fish;
+		int z = fish.getZ();
+		Point middle = Perspective.localToCanvas(client, fish.getX(), fish.getY(), z);
+		if (middle == null)
+		{
+			return;
+		}
+		// The way it faces: its orientation less its look's turn, as (-sine, -cosine).
+		int swung = fish.getOrientation() - swimmer.look.turn * 2048 / 360 & 2047;
+		int[] pivots = {swimmer.look.pivot, swimmer.look.tipPivot};
+		int[] heights = {0, swimmer.look.tipPivotUp};
+		Color[] colours = {Color.ORANGE, Color.MAGENTA};
+		for (int k = 0; k < 2; k++)
+		{
+			// Heights grow downwards.
+			Point about = Perspective.localToCanvas(client, fish.getX() - (pivots[k] * Perspective.SINE[swung] >> 16),
+				fish.getY() - (pivots[k] * Perspective.COSINE[swung] >> 16), z - heights[k]);
+			if (about != null)
+			{
+				graphics.setColor(colours[k]);
+				graphics.drawLine(middle.getX(), middle.getY(), about.getX(), about.getY());
+				graphics.fillOval(about.getX() - 2 - k, about.getY() - 2 - k, 4 + 2 * k, 4 + 2 * k);
+			}
+		}
+	}
+
 	// which parts of the debug drawing to show (toggles).
 	static boolean drawRanges = true;
 	static boolean drawShade = true;
@@ -272,6 +304,7 @@ final class RiverDrawing
 	static boolean drawFish = true;
 	static boolean drawSchools = true;
 	static boolean drawPicked = true;
+	static boolean drawPivots = true;
 	// Debug: length of a school's heading arrow, local units.
 	private static final double SCHOOL_ARROW = 160;
 	// Debug: room drawn round each fish in a school's outline, local units.
@@ -678,6 +711,14 @@ final class RiverDrawing
 					drawArrow(graphics, n * 4);
 				}
 				marked = 0;
+			}
+			// Each fish's wag point, orange, and tip point, magenta: lines from its middle.
+			for (Swimmer swimmer : drawPivots ? shoal.fish : List.<Swimmer>of())
+			{
+				if (swimmer.shown)
+				{
+					pivots(graphics, swimmer);
+				}
 			}
 			// Schools, blue: an outline round each, and an arrow from its middle along its fish's average heading.
 			if (!drawSchools)

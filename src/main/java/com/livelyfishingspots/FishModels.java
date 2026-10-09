@@ -36,9 +36,11 @@ final class FishModels
 	static final int WIGGLE_FRAMES = 4;
 	private static final double WIGGLE_WAVES = 1.2;
 	// Kinds whose item model is a relief facing one way, given a mirrored back.
-	private static final Set<Integer> ONE_SIDED = Set.of(ItemID.HUNTING_RAW_FISH_SPECIAL);
-	// Their depth from the back, percent (the debug plugin may tune it).
-	static int oneSidedDepth = 50;
+	private static final Set<Integer> ONE_SIDED = Set.of(ItemID.HUNTING_RAW_FISH_SPECIAL, ItemID.BRUT_SPAWNING_TROUT,
+		ItemID.BRUT_SPAWNING_SALMON, ItemID.BRUT_STURGEON);
+	// Their depth from the back, percent, by kind; 50 if none (the debug plugin may tune it).
+	static final Map<Integer, Integer> ONE_SIDED_DEPTH = new HashMap<>(Map.of(ItemID.BRUT_SPAWNING_TROUT, 100,
+		ItemID.BRUT_SPAWNING_SALMON, 100));
 	// Kinds that keep their untipped height when tipped, so a long nose doesn't lift out.
 	private static final Set<Integer> KEEP_HEIGHT = Set.of(ItemID.RAW_SWORDFISH);
 	// Hue range (of 64) and least saturation (of 8) counted as green, never lightened.
@@ -65,6 +67,7 @@ final class FishModels
 	 * <li>joint, bend, joint2, bend2, tailSize: two joints along the length, their bends, and the size
 	 * past the second</li>
 	 * <li>tipPivot: how far ahead of its middle it tips about</li>
+	 * <li>tipPivotUp: how far above its middle it tips about (optional, 0 if left out)</li>
 	 * <li>pace, surge: share of its lane's speed and surge</li>
 	 * <li>sweep, sweepBody, wiggle, wiggleRate: arms swept back, body share left alone, arm wave and
 	 * frames a second</li>
@@ -99,6 +102,7 @@ final class FishModels
 		final int joint;
 		final int bend;
 		final int tipPivot;
+		final int tipPivotUp;
 		final int pace;
 		final int surge;
 		final int sweep;
@@ -138,6 +142,7 @@ final class FishModels
 			joint = values[20];
 			bend = values[21];
 			tipPivot = values[22];
+			tipPivotUp = values.length > 36 ? values[36] : 0;
 			pace = values[23];
 			surge = values[24];
 			sweep = values[25];
@@ -174,6 +179,10 @@ final class FishModels
 	private static final Look TROUT = riverLook(26, 8);
 	private static final Look SALMON = riverLook(28, 8);
 	private static final Look PIKE = riverLook(30, 9);
+	// Leaping fish: the river look, tilted level (their models leap); trout and salmon face the other way.
+	private static final Look LEAPING_TROUT = riverLook(26, 6, -39, 180);
+	private static final Look LEAPING_SALMON = riverLook(26, 10, -40, 180);
+	private static final Look STURGEON = riverLook(40, 10, -52, -90);
 	// Rainbow fish: smaller, nearer the surface, stretched longer.
 	private static final Look RAINBOW = new Look(new int[]{-90, 0, 17, 17, 6, 3, 16, -90, 0, 40, 60, 30, 3, 7, 1500,
 		7, 100, 100, 0, 150, 50, 0, 0, 100, 100, 0, 35, 0, 6, 0, 0, 50, 100, 0, 0, 100});
@@ -196,6 +205,9 @@ final class FishModels
 		Map.entry(ItemID.RAW_SALMON, SALMON),
 		Map.entry(ItemID.RAW_PIKE, PIKE),
 		Map.entry(ItemID.HUNTING_RAW_FISH_SPECIAL, RAINBOW),
+		Map.entry(ItemID.BRUT_SPAWNING_TROUT, LEAPING_TROUT),
+		Map.entry(ItemID.BRUT_SPAWNING_SALMON, LEAPING_SALMON),
+		Map.entry(ItemID.BRUT_STURGEON, STURGEON),
 		Map.entry(ItemID.RAW_LOBSTER, new Look(new int[]{0, 0, 45, 17, 30, 5, 0, -90, 0, 40, 60, 30, 3, 0, 1500,
 			35, 0, 100, 0, 100, 50, 0, 0, 50, 50, 0, 35, 0, 6, 0, 0, 50, 100, 0, 0, 100})),
 		Map.entry(ItemID.RAW_TUNA, BASS),
@@ -235,7 +247,7 @@ final class FishModels
 		ModelData model = client.loadModelData(fish.getInventoryModel());
 		if (model != null && ONE_SIDED.contains(item))
 		{
-			model = bothSides(model);
+			model = bothSides(model, ONE_SIDED_DEPTH.getOrDefault(item, 50));
 		}
 		return model == null ? null : recolor(model.cloneVertices().cloneColors(), fish.getColorToReplace(),
 			fish.getColorToReplaceWith());
@@ -244,7 +256,7 @@ final class FishModels
 	/**
 	 * The model with a copy mirrored across its back, so a one-way relief shows from both sides.
 	 */
-	private ModelData bothSides(ModelData model)
+	private ModelData bothSides(ModelData model, int depth)
 	{
 		int vertices = model.getVerticesCount();
 		int faces = model.getFaceCount();
@@ -279,7 +291,7 @@ final class FishModels
 		float[] mirrored = axis(copy, thin);
 		for (int vertex = 0; vertex < vertices; vertex++)
 		{
-			squashed[vertex] = (float) (back + (squashed[vertex] - back) * oneSidedDepth / 100.0);
+			squashed[vertex] = (float) (back + (squashed[vertex] - back) * depth / 100.0);
 			mirrored[vertex] = (float) (2 * back - squashed[vertex]);
 		}
 		ModelData both = client.mergeModels(front, copy);
@@ -901,7 +913,7 @@ final class FishModels
 		// Tip about tipPivot, scaled to its size; its head faces (sin, -cos) of its turn.
 		double turn = Math.toRadians(look.turn);
 		standUp(model, look.roll, look.tilt, pitch * PITCH_STEP, look.tipPivot * 100.0 / size,
-			Math.sin(turn), -Math.cos(turn), KEEP_HEIGHT.contains(item));
+			look.tipPivotUp * 100.0 / size, Math.sin(turn), -Math.cos(turn), KEEP_HEIGHT.contains(item));
 		int scale = size * 128 / 100;
 		model.scale(scale, scale, scale);
 		// Lit as any item, then lightened where its look asks.
@@ -965,9 +977,19 @@ final class FishModels
 	 */
 	private static Look riverLook(int size, int sink)
 	{
+		return riverLook(size, sink, 0, -90);
+	}
+
+	/**
+	 * The river look with its own size, sink, tilt and turn.
+	 */
+	private static Look riverLook(int size, int sink, int tilt, int turn)
+	{
 		int[] values = RIVER_VALUES.clone();
+		values[1] = tilt;
 		values[2] = size;
 		values[4] = sink;
+		values[7] = turn;
 		return new Look(values);
 	}
 
@@ -976,7 +998,7 @@ final class FishModels
 	 */
 	void tuneLook(int item, int[] places, int[] values)
 	{
-		int[] look = RIVER_VALUES.clone();
+		int[] look = Arrays.copyOf(RIVER_VALUES, 37);
 		for (int i = 0; i < places.length; i++)
 		{
 			look[places[i]] = values[i];
@@ -989,10 +1011,11 @@ final class FishModels
 
 	/**
 	 * Rolls a side-lying model upright by roll, tilts it by tilt, tips it by tip about a pivot towards its
-	 * head (headX, headZ), then rests its lowest point on the water (its untipped one if keepHeight).
+	 * head (headX, headZ) and pivotUp above its middle, then rests its lowest point on the water (its untipped one if
+	 * keepHeight).
 	 */
-	private static void standUp(ModelData model, int roll, int tilt, double tip, double pivot, double headX,
-		double headZ, boolean keepHeight)
+	private static void standUp(ModelData model, int roll, int tilt, double tip, double pivot, double pivotUp,
+		double headX, double headZ, boolean keepHeight)
 	{
 		int count = model.getVerticesCount();
 		float[] x = model.getVerticesX();
@@ -1005,10 +1028,10 @@ final class FishModels
 		double rollSin = Math.sin(Math.toRadians(roll)) * UPRIGHT;
 		double cos = Math.cos(Math.toRadians(tilt));
 		double sin = Math.sin(Math.toRadians(tilt));
-		double tipCos = Math.cos(Math.toRadians(tip));
-		double tipSin = Math.sin(Math.toRadians(tip));
-		// Pivot on the head's side.
+		// Pivot on the head's side, and tip the head's way: nose up for more than 0 whichever end it's at.
 		double head = longX ? headX : headZ;
+		double tipCos = Math.cos(Math.toRadians(tip));
+		double tipSin = Math.sin(Math.toRadians(tip)) * (head < 0 ? 1 : -1);
 		double about = pivot * (head < 0 ? -1 : 1);
 		float lowest = -Float.MAX_VALUE;
 		float tipped = -Float.MAX_VALUE;
@@ -1022,11 +1045,11 @@ final class FishModels
 			length[i] = (float) (along * cos - y[i] * sin);
 			y[i] = (float) (along * sin + y[i] * cos);
 			lowest = Math.max(lowest, y[i]);
-			// Tip about the pivot.
+			// Tip about the pivot (y grows downwards).
 			double from = length[i] - about;
-			float height = y[i];
+			double height = y[i] + pivotUp;
 			length[i] = (float) (about + from * tipCos - height * tipSin);
-			y[i] = (float) (from * tipSin + height * tipCos);
+			y[i] = (float) (from * tipSin + height * tipCos - pivotUp);
 			tipped = Math.max(tipped, y[i]);
 		}
 		// Lowest point is the largest y. keepHeight rests it as untipped, so the tail dips as the nose lifts.

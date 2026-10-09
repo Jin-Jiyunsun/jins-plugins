@@ -20,7 +20,6 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 		"debugRiverBodyMinutes", "debugRiverDeepLeast", "debugRiverDeepMost", "debugRiverRingManual",
 		"debugRiverRingEast", "debugRiverRingNorth");
 
-
 	@ConfigSection(
 		name = "Debug: rivers",
 		description = "Temporary settings for setting up the river spots",
@@ -137,6 +136,18 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "debugRiverDrawPivots",
+		name = "Wag and tip points",
+		description = "Line from each fish's middle to<br>the point it wags about (orange)<br>and tips about (magenta)",
+		section = debugRivers,
+		position = 8
+	)
+	default boolean debugRiverDrawPivots()
+	{
+		return true;
+	}
+
+	@ConfigItem(
 		keyName = "debugRiverDrawPoints",
 		name = "Picked points",
 		description = "Yellow tiles numbered in order: each<br>route's start, waypoints and end<br>(magenta while picking one). Yellow<br>rings at lake spawns. Red outlines<br>on fish blockers",
@@ -163,7 +174,7 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 	@ConfigItem(
 		keyName = "debugRiverBake",
 		name = "Bake water bodies",
-		description = "Records the water round you near<br>each river and lake as you walk;<br>turning it off saves them to<br>.runelite/lively-fishing-spots/baked.<br>Only baked rivers and lakes have fish",
+		description = "Records the water round you near<br>each river and lake as you walk;<br>turning it off saves them to<br>.runelite/plugin-data/<br>lively-fishing-spots-debug/baked.<br>Only baked rivers and lakes have fish",
 		section = debugRivers,
 		position = 11
 	)
@@ -245,12 +256,791 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 	String debugLookRainbow = "debugLookRainbow";
 
 	@ConfigSection(
+		name = "Debug: leaping trout look",
+		description = "Temporary tuning of the leaping trout's look and dips",
+		position = 111,
+		closedByDefault = true
+	)
+	String debugLookLeapTrout = "debugLookLeapTrout";
+
+	@Range(min = -500, max = 500)
+	@ConfigItem(
+		keyName = "debugLookLeapTroutSink",
+		name = "Fish sink",
+		description = "How far under the water<br>it rests, local units",
+		section = debugLookLeapTrout,
+		position = 0
+	)
+	default int debugLookLeapTroutSink()
+	{
+		return 6;
+	}
+
+	@Range(min = 0, max = 500)
+	@ConfigItem(
+		keyName = "debugLookLeapTroutRise",
+		name = "Fish bob",
+		description = "How far down from where<br>it rests it bobs, local units",
+		section = debugLookLeapTrout,
+		position = 1
+	)
+	default int debugLookLeapTroutRise()
+	{
+		return 3;
+	}
+
+	@Range(min = -180, max = 180)
+	@ConfigItem(
+		keyName = "debugLookLeapTroutRoll",
+		name = "Fish roll",
+		description = "Degrees rolled up off its side",
+		section = debugLookLeapTrout,
+		position = 2
+	)
+	default int debugLookLeapTroutRoll()
+	{
+		return -90;
+	}
+
+	@Range(min = -180, max = 180)
+	@ConfigItem(
+		keyName = "debugLookLeapTroutTilt",
+		name = "Fish tilt",
+		description = "Degrees tilted head up",
+		section = debugLookLeapTrout,
+		position = 3
+	)
+	default int debugLookLeapTroutTilt()
+	{
+		return -39;
+	}
+
+	@Range(min = 1, max = 500)
+	@ConfigItem(
+		keyName = "debugLookLeapTroutSize",
+		name = "Fish size",
+		description = "Percent of the item's size",
+		section = debugLookLeapTrout,
+		position = 4
+	)
+	default int debugLookLeapTroutSize()
+	{
+		return 26;
+	}
+
+	@Range(min = -360, max = 360)
+	@ConfigItem(
+		keyName = "debugLookLeapTroutTurn",
+		name = "Fish turn",
+		description = "Degrees turned to face<br>the way it swims",
+		section = debugLookLeapTrout,
+		position = 5
+	)
+	default int debugLookLeapTroutTurn()
+	{
+		return 180;
+	}
+
+	@Range(min = 0, max = 127)
+	@ConfigItem(
+		keyName = "debugLookLeapTroutLightest",
+		name = "Fish min lightness",
+		description = "Lightest every face is,<br>of 127",
+		section = debugLookLeapTrout,
+		position = 6
+	)
+	default int debugLookLeapTroutLightest()
+	{
+		return 50;
+	}
+
+	@Range(min = 0, max = 500)
+	@ConfigItem(
+		keyName = "debugLookLeapTroutWag",
+		name = "Fish wag",
+		description = "Percent of the tail wag",
+		section = debugLookLeapTrout,
+		position = 7
+	)
+	default int debugLookLeapTroutWag()
+	{
+		return 100;
+	}
+
+	@Range(min = 0, max = 500)
+	@ConfigItem(
+		keyName = "debugLookLeapTroutTip",
+		name = "Fish tipping",
+		description = "Percent of the tip<br>as it bobs and dips",
+		section = debugLookLeapTrout,
+		position = 8
+	)
+	default int debugLookLeapTroutTip()
+	{
+		return 100;
+	}
+
+	@Range(min = 1, max = 500)
+	@ConfigItem(
+		keyName = "debugLookLeapTroutPace",
+		name = "Fish speed",
+		description = "Percent of the river speed",
+		section = debugLookLeapTrout,
+		position = 9
+	)
+	default int debugLookLeapTroutPace()
+	{
+		return 100;
+	}
+
+	@Range(min = 0, max = 500)
+	@ConfigItem(
+		keyName = "debugLookLeapTroutSurge",
+		name = "Fish surge",
+		description = "Percent of the surge",
+		section = debugLookLeapTrout,
+		position = 10
+	)
+	default int debugLookLeapTroutSurge()
+	{
+		return 100;
+	}
+
+	@Range(min = -500, max = 500)
+	@ConfigItem(
+		keyName = "debugLookLeapTroutTipPivot",
+		name = "Fish tip pivot",
+		description = "How far ahead of its middle<br>it tips about, local units",
+		section = debugLookLeapTrout,
+		position = 11
+	)
+	default int debugLookLeapTroutTipPivot()
+	{
+		return 0;
+	}
+
+	@Range(min = -500, max = 500)
+	@ConfigItem(
+		keyName = "debugLookLeapTroutTipPivotUp",
+		name = "Fish tip pivot height",
+		description = "How far above its middle<br>it tips about, local units",
+		section = debugLookLeapTrout,
+		position = 13
+	)
+	default int debugLookLeapTroutTipPivotUp()
+	{
+		return 0;
+	}
+
+	@Range(min = -500, max = 500)
+	@ConfigItem(
+		keyName = "debugLookLeapTroutPivot",
+		name = "Fish wag pivot",
+		description = "How far ahead of its middle<br>it wags about, local units",
+		section = debugLookLeapTrout,
+		position = 12
+	)
+	default int debugLookLeapTroutPivot()
+	{
+		return 16;
+	}
+
+	@Range(min = 1, max = 600)
+	@ConfigItem(
+		keyName = "debugLookLeapTroutDipEvery",
+		name = "Fish dip every",
+		description = "Seconds between dips,<br>on average",
+		section = debugLookLeapTrout,
+		position = 20
+	)
+	default int debugLookLeapTroutDipEvery()
+	{
+		return 20;
+	}
+
+	@Range(min = 0, max = 500)
+	@ConfigItem(
+		keyName = "debugLookLeapTroutDipDepth",
+		name = "Fish dip depth",
+		description = "How much deeper a dip goes,<br>local units",
+		section = debugLookLeapTrout,
+		position = 21
+	)
+	default int debugLookLeapTroutDipDepth()
+	{
+		return 7;
+	}
+
+	@Range(min = 1, max = 10000)
+	@ConfigItem(
+		keyName = "debugLookLeapTroutDipMillis",
+		name = "Fish dip length",
+		description = "Milliseconds a dip takes,<br>down and back up",
+		section = debugLookLeapTrout,
+		position = 22
+	)
+	default int debugLookLeapTroutDipMillis()
+	{
+		return 1500;
+	}
+
+	@Range(min = 5, max = 200)
+	@Units(Units.PERCENT)
+	@ConfigItem(
+		keyName = "debugLookLeapTroutThickness",
+		name = "Fish thickness",
+		description = "How thick the leaping trout is,<br>of its doubled model",
+		section = debugLookLeapTrout,
+		position = 30
+	)
+	default int debugLookLeapTroutThickness()
+	{
+		return 100;
+	}
+
+	@Range(min = 50, max = 200)
+	@Units(Units.PERCENT)
+	@ConfigItem(
+		keyName = "debugLookLeapTroutStretch",
+		name = "Fish stretch",
+		description = "How long the leaping trout is,<br>of its model's length",
+		section = debugLookLeapTrout,
+		position = 31
+	)
+	default int debugLookLeapTroutStretch()
+	{
+		return 100;
+	}
+
+	@ConfigSection(
+		name = "Debug: leaping salmon look",
+		description = "Temporary tuning of the leaping salmon's look and dips",
+		position = 112,
+		closedByDefault = true
+	)
+	String debugLookLeapSalmon = "debugLookLeapSalmon";
+
+	@Range(min = -500, max = 500)
+	@ConfigItem(
+		keyName = "debugLookLeapSalmonSink",
+		name = "Fish sink",
+		description = "How far under the water<br>it rests, local units",
+		section = debugLookLeapSalmon,
+		position = 0
+	)
+	default int debugLookLeapSalmonSink()
+	{
+		return 10;
+	}
+
+	@Range(min = 0, max = 500)
+	@ConfigItem(
+		keyName = "debugLookLeapSalmonRise",
+		name = "Fish bob",
+		description = "How far down from where<br>it rests it bobs, local units",
+		section = debugLookLeapSalmon,
+		position = 1
+	)
+	default int debugLookLeapSalmonRise()
+	{
+		return 3;
+	}
+
+	@Range(min = -180, max = 180)
+	@ConfigItem(
+		keyName = "debugLookLeapSalmonRoll",
+		name = "Fish roll",
+		description = "Degrees rolled up off its side",
+		section = debugLookLeapSalmon,
+		position = 2
+	)
+	default int debugLookLeapSalmonRoll()
+	{
+		return -90;
+	}
+
+	@Range(min = -180, max = 180)
+	@ConfigItem(
+		keyName = "debugLookLeapSalmonTilt",
+		name = "Fish tilt",
+		description = "Degrees tilted head up",
+		section = debugLookLeapSalmon,
+		position = 3
+	)
+	default int debugLookLeapSalmonTilt()
+	{
+		return -40;
+	}
+
+	@Range(min = 1, max = 500)
+	@ConfigItem(
+		keyName = "debugLookLeapSalmonSize",
+		name = "Fish size",
+		description = "Percent of the item's size",
+		section = debugLookLeapSalmon,
+		position = 4
+	)
+	default int debugLookLeapSalmonSize()
+	{
+		return 26;
+	}
+
+	@Range(min = -360, max = 360)
+	@ConfigItem(
+		keyName = "debugLookLeapSalmonTurn",
+		name = "Fish turn",
+		description = "Degrees turned to face<br>the way it swims",
+		section = debugLookLeapSalmon,
+		position = 5
+	)
+	default int debugLookLeapSalmonTurn()
+	{
+		return 180;
+	}
+
+	@Range(min = 0, max = 127)
+	@ConfigItem(
+		keyName = "debugLookLeapSalmonLightest",
+		name = "Fish min lightness",
+		description = "Lightest every face is,<br>of 127",
+		section = debugLookLeapSalmon,
+		position = 6
+	)
+	default int debugLookLeapSalmonLightest()
+	{
+		return 50;
+	}
+
+	@Range(min = 0, max = 500)
+	@ConfigItem(
+		keyName = "debugLookLeapSalmonWag",
+		name = "Fish wag",
+		description = "Percent of the tail wag",
+		section = debugLookLeapSalmon,
+		position = 7
+	)
+	default int debugLookLeapSalmonWag()
+	{
+		return 100;
+	}
+
+	@Range(min = 0, max = 500)
+	@ConfigItem(
+		keyName = "debugLookLeapSalmonTip",
+		name = "Fish tipping",
+		description = "Percent of the tip<br>as it bobs and dips",
+		section = debugLookLeapSalmon,
+		position = 8
+	)
+	default int debugLookLeapSalmonTip()
+	{
+		return 100;
+	}
+
+	@Range(min = 1, max = 500)
+	@ConfigItem(
+		keyName = "debugLookLeapSalmonPace",
+		name = "Fish speed",
+		description = "Percent of the river speed",
+		section = debugLookLeapSalmon,
+		position = 9
+	)
+	default int debugLookLeapSalmonPace()
+	{
+		return 100;
+	}
+
+	@Range(min = 0, max = 500)
+	@ConfigItem(
+		keyName = "debugLookLeapSalmonSurge",
+		name = "Fish surge",
+		description = "Percent of the surge",
+		section = debugLookLeapSalmon,
+		position = 10
+	)
+	default int debugLookLeapSalmonSurge()
+	{
+		return 100;
+	}
+
+	@Range(min = -500, max = 500)
+	@ConfigItem(
+		keyName = "debugLookLeapSalmonTipPivot",
+		name = "Fish tip pivot",
+		description = "How far ahead of its middle<br>it tips about, local units",
+		section = debugLookLeapSalmon,
+		position = 11
+	)
+	default int debugLookLeapSalmonTipPivot()
+	{
+		return 0;
+	}
+
+	@Range(min = -500, max = 500)
+	@ConfigItem(
+		keyName = "debugLookLeapSalmonTipPivotUp",
+		name = "Fish tip pivot height",
+		description = "How far above its middle<br>it tips about, local units",
+		section = debugLookLeapSalmon,
+		position = 13
+	)
+	default int debugLookLeapSalmonTipPivotUp()
+	{
+		return 0;
+	}
+
+	@Range(min = -500, max = 500)
+	@ConfigItem(
+		keyName = "debugLookLeapSalmonPivot",
+		name = "Fish wag pivot",
+		description = "How far ahead of its middle<br>it wags about, local units",
+		section = debugLookLeapSalmon,
+		position = 12
+	)
+	default int debugLookLeapSalmonPivot()
+	{
+		return 16;
+	}
+
+	@Range(min = 1, max = 600)
+	@ConfigItem(
+		keyName = "debugLookLeapSalmonDipEvery",
+		name = "Fish dip every",
+		description = "Seconds between dips,<br>on average",
+		section = debugLookLeapSalmon,
+		position = 20
+	)
+	default int debugLookLeapSalmonDipEvery()
+	{
+		return 20;
+	}
+
+	@Range(min = 0, max = 500)
+	@ConfigItem(
+		keyName = "debugLookLeapSalmonDipDepth",
+		name = "Fish dip depth",
+		description = "How much deeper a dip goes,<br>local units",
+		section = debugLookLeapSalmon,
+		position = 21
+	)
+	default int debugLookLeapSalmonDipDepth()
+	{
+		return 7;
+	}
+
+	@Range(min = 1, max = 10000)
+	@ConfigItem(
+		keyName = "debugLookLeapSalmonDipMillis",
+		name = "Fish dip length",
+		description = "Milliseconds a dip takes,<br>down and back up",
+		section = debugLookLeapSalmon,
+		position = 22
+	)
+	default int debugLookLeapSalmonDipMillis()
+	{
+		return 1500;
+	}
+
+	@Range(min = 5, max = 200)
+	@Units(Units.PERCENT)
+	@ConfigItem(
+		keyName = "debugLookLeapSalmonThickness",
+		name = "Fish thickness",
+		description = "How thick the leaping salmon is,<br>of its doubled model",
+		section = debugLookLeapSalmon,
+		position = 30
+	)
+	default int debugLookLeapSalmonThickness()
+	{
+		return 100;
+	}
+
+	@Range(min = 50, max = 200)
+	@Units(Units.PERCENT)
+	@ConfigItem(
+		keyName = "debugLookLeapSalmonStretch",
+		name = "Fish stretch",
+		description = "How long the leaping salmon is,<br>of its model's length",
+		section = debugLookLeapSalmon,
+		position = 31
+	)
+	default int debugLookLeapSalmonStretch()
+	{
+		return 100;
+	}
+
+	@ConfigSection(
+		name = "Debug: leaping sturgeon look",
+		description = "Temporary tuning of the leaping sturgeon's look and dips",
+		position = 113,
+		closedByDefault = true
+	)
+	String debugLookSturgeon = "debugLookSturgeon";
+
+	@Range(min = -500, max = 500)
+	@ConfigItem(
+		keyName = "debugLookSturgeonSink",
+		name = "Fish sink",
+		description = "How far under the water<br>it rests, local units",
+		section = debugLookSturgeon,
+		position = 0
+	)
+	default int debugLookSturgeonSink()
+	{
+		return 10;
+	}
+
+	@Range(min = 0, max = 500)
+	@ConfigItem(
+		keyName = "debugLookSturgeonRise",
+		name = "Fish bob",
+		description = "How far down from where<br>it rests it bobs, local units",
+		section = debugLookSturgeon,
+		position = 1
+	)
+	default int debugLookSturgeonRise()
+	{
+		return 3;
+	}
+
+	@Range(min = -180, max = 180)
+	@ConfigItem(
+		keyName = "debugLookSturgeonRoll",
+		name = "Fish roll",
+		description = "Degrees rolled up off its side",
+		section = debugLookSturgeon,
+		position = 2
+	)
+	default int debugLookSturgeonRoll()
+	{
+		return -90;
+	}
+
+	@Range(min = -180, max = 180)
+	@ConfigItem(
+		keyName = "debugLookSturgeonTilt",
+		name = "Fish tilt",
+		description = "Degrees tilted head up",
+		section = debugLookSturgeon,
+		position = 3
+	)
+	default int debugLookSturgeonTilt()
+	{
+		return -52;
+	}
+
+	@Range(min = 1, max = 500)
+	@ConfigItem(
+		keyName = "debugLookSturgeonSize",
+		name = "Fish size",
+		description = "Percent of the item's size",
+		section = debugLookSturgeon,
+		position = 4
+	)
+	default int debugLookSturgeonSize()
+	{
+		return 40;
+	}
+
+	@Range(min = -360, max = 360)
+	@ConfigItem(
+		keyName = "debugLookSturgeonTurn",
+		name = "Fish turn",
+		description = "Degrees turned to face<br>the way it swims",
+		section = debugLookSturgeon,
+		position = 5
+	)
+	default int debugLookSturgeonTurn()
+	{
+		return -90;
+	}
+
+	@Range(min = 0, max = 127)
+	@ConfigItem(
+		keyName = "debugLookSturgeonLightest",
+		name = "Fish min lightness",
+		description = "Lightest every face is,<br>of 127",
+		section = debugLookSturgeon,
+		position = 6
+	)
+	default int debugLookSturgeonLightest()
+	{
+		return 50;
+	}
+
+	@Range(min = 0, max = 500)
+	@ConfigItem(
+		keyName = "debugLookSturgeonWag",
+		name = "Fish wag",
+		description = "Percent of the tail wag",
+		section = debugLookSturgeon,
+		position = 7
+	)
+	default int debugLookSturgeonWag()
+	{
+		return 100;
+	}
+
+	@Range(min = 0, max = 500)
+	@ConfigItem(
+		keyName = "debugLookSturgeonTip",
+		name = "Fish tipping",
+		description = "Percent of the tip<br>as it bobs and dips",
+		section = debugLookSturgeon,
+		position = 8
+	)
+	default int debugLookSturgeonTip()
+	{
+		return 100;
+	}
+
+	@Range(min = 1, max = 500)
+	@ConfigItem(
+		keyName = "debugLookSturgeonPace",
+		name = "Fish speed",
+		description = "Percent of the river speed",
+		section = debugLookSturgeon,
+		position = 9
+	)
+	default int debugLookSturgeonPace()
+	{
+		return 100;
+	}
+
+	@Range(min = 0, max = 500)
+	@ConfigItem(
+		keyName = "debugLookSturgeonSurge",
+		name = "Fish surge",
+		description = "Percent of the surge",
+		section = debugLookSturgeon,
+		position = 10
+	)
+	default int debugLookSturgeonSurge()
+	{
+		return 100;
+	}
+
+	@Range(min = -500, max = 500)
+	@ConfigItem(
+		keyName = "debugLookSturgeonTipPivot",
+		name = "Fish tip pivot",
+		description = "How far ahead of its middle<br>it tips about, local units",
+		section = debugLookSturgeon,
+		position = 11
+	)
+	default int debugLookSturgeonTipPivot()
+	{
+		return 0;
+	}
+
+	@Range(min = -500, max = 500)
+	@ConfigItem(
+		keyName = "debugLookSturgeonTipPivotUp",
+		name = "Fish tip pivot height",
+		description = "How far above its middle<br>it tips about, local units",
+		section = debugLookSturgeon,
+		position = 13
+	)
+	default int debugLookSturgeonTipPivotUp()
+	{
+		return 0;
+	}
+
+	@Range(min = -500, max = 500)
+	@ConfigItem(
+		keyName = "debugLookSturgeonPivot",
+		name = "Fish wag pivot",
+		description = "How far ahead of its middle<br>it wags about, local units",
+		section = debugLookSturgeon,
+		position = 12
+	)
+	default int debugLookSturgeonPivot()
+	{
+		return 16;
+	}
+
+	@Range(min = 1, max = 600)
+	@ConfigItem(
+		keyName = "debugLookSturgeonDipEvery",
+		name = "Fish dip every",
+		description = "Seconds between dips,<br>on average",
+		section = debugLookSturgeon,
+		position = 20
+	)
+	default int debugLookSturgeonDipEvery()
+	{
+		return 20;
+	}
+
+	@Range(min = 0, max = 500)
+	@ConfigItem(
+		keyName = "debugLookSturgeonDipDepth",
+		name = "Fish dip depth",
+		description = "How much deeper a dip goes,<br>local units",
+		section = debugLookSturgeon,
+		position = 21
+	)
+	default int debugLookSturgeonDipDepth()
+	{
+		return 7;
+	}
+
+	@Range(min = 1, max = 10000)
+	@ConfigItem(
+		keyName = "debugLookSturgeonDipMillis",
+		name = "Fish dip length",
+		description = "Milliseconds a dip takes,<br>down and back up",
+		section = debugLookSturgeon,
+		position = 22
+	)
+	default int debugLookSturgeonDipMillis()
+	{
+		return 1500;
+	}
+
+	@Range(min = 5, max = 200)
+	@Units(Units.PERCENT)
+	@ConfigItem(
+		keyName = "debugLookSturgeonThickness",
+		name = "Fish thickness",
+		description = "How thick the leaping sturgeon is,<br>of its doubled model",
+		section = debugLookSturgeon,
+		position = 30
+	)
+	default int debugLookSturgeonThickness()
+	{
+		return 50;
+	}
+
+	@Range(min = 50, max = 200)
+	@Units(Units.PERCENT)
+	@ConfigItem(
+		keyName = "debugLookSturgeonStretch",
+		name = "Fish stretch",
+		description = "How long the leaping sturgeon is,<br>of its model's length",
+		section = debugLookSturgeon,
+		position = 31
+	)
+	default int debugLookSturgeonStretch()
+	{
+		return 100;
+	}
+
+	@ConfigSection(
 		name = "Debug: river bobs and depth",
 		description = "Temporary tuning of bob timing, all river fish",
 		position = 104,
 		closedByDefault = true
 	)
 	String debugRiverDips = "debugRiverDips";
+
+	@ConfigSection(
+		name = "Debug: waterfalls",
+		description = "Temporary tuning of fish climbing<br>up waterfalls",
+		position = 114,
+		closedByDefault = true
+	)
+	String debugWaterfalls = "debugWaterfalls";
 
 	@ConfigSection(
 		name = "Debug: river lanes",
@@ -603,6 +1393,19 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 
 	@Range(min = -500, max = 500)
 	@ConfigItem(
+		keyName = "debugLookRainbowTipPivotUp",
+		name = "Fish tip pivot height",
+		description = "How far above its middle<br>it tips about, local units",
+		section = debugLookRainbow,
+		position = 13
+	)
+	default int debugLookRainbowTipPivotUp()
+	{
+		return 0;
+	}
+
+	@Range(min = -500, max = 500)
+	@ConfigItem(
 		keyName = "debugLookRainbowPivot",
 		name = "Fish wag pivot",
 		description = "How far ahead of its middle<br>it wags about, local units",
@@ -825,6 +1628,19 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 
 	@Range(min = -500, max = 500)
 	@ConfigItem(
+		keyName = "debugLookTroutTipPivotUp",
+		name = "Fish tip pivot height",
+		description = "How far above its middle<br>it tips about, local units",
+		section = debugLookTrout,
+		position = 13
+	)
+	default int debugLookTroutTipPivotUp()
+	{
+		return 0;
+	}
+
+	@Range(min = -500, max = 500)
+	@ConfigItem(
 		keyName = "debugLookTroutPivot",
 		name = "Fish wag pivot",
 		description = "How far ahead of its middle<br>it wags about, local units",
@@ -1033,6 +1849,19 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 
 	@Range(min = -500, max = 500)
 	@ConfigItem(
+		keyName = "debugLookSalmonTipPivotUp",
+		name = "Fish tip pivot height",
+		description = "How far above its middle<br>it tips about, local units",
+		section = debugLookSalmon,
+		position = 13
+	)
+	default int debugLookSalmonTipPivotUp()
+	{
+		return 0;
+	}
+
+	@Range(min = -500, max = 500)
+	@ConfigItem(
 		keyName = "debugLookSalmonPivot",
 		name = "Fish wag pivot",
 		description = "How far ahead of its middle<br>it wags about, local units",
@@ -1235,6 +2064,19 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 		position = 11
 	)
 	default int debugLookPikeTipPivot()
+	{
+		return 0;
+	}
+
+	@Range(min = -500, max = 500)
+	@ConfigItem(
+		keyName = "debugLookPikeTipPivotUp",
+		name = "Fish tip pivot height",
+		description = "How far above its middle<br>it tips about, local units",
+		section = debugLookPike,
+		position = 13
+	)
+	default int debugLookPikeTipPivotUp()
 	{
 		return 0;
 	}
@@ -1463,6 +2305,62 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 	{
 		return 1;
 	}
+
+	@Range(min = 50, max = 400)
+	@Units(Units.PERCENT)
+	@ConfigItem(
+		keyName = "debugRiverClimbTilt",
+		name = "Climb tilt",
+		description = "How far fish point up steep water,<br>of its slope (at most 80 degrees)",
+		section = debugWaterfalls,
+		position = 0
+	)
+	default int debugRiverClimbTilt()
+	{
+		return 150;
+	}
+
+	@Range(min = 16, max = 512)
+	@ConfigItem(
+		keyName = "debugRiverClimbLook",
+		name = "Climb look ahead",
+		description = "How far ahead climbing fish look<br>for the top, to level out before it,<br>local units (128 a tile)",
+		section = debugWaterfalls,
+		position = 1
+	)
+	default int debugRiverClimbLook()
+	{
+		return 50;
+	}
+
+	@Range(min = 16, max = 1024)
+	@ConfigItem(
+		keyName = "debugRiverClimbSpeedAhead",
+		name = "Climb speed look ahead",
+		description = "How far ahead climbing fish look<br>for the top, to start speeding up<br>before it, local units (128 a tile)",
+		section = debugWaterfalls,
+		position = 2
+	)
+	default int debugRiverClimbSpeedAhead()
+	{
+		return 40;
+	}
+
+	@Range(min = 50, max = 500)
+	@Units(Units.PERCENT)
+	@ConfigItem(
+		keyName = "debugRiverClimbWag",
+		name = "Climb wag",
+		description = "How fast tails wag climbing,<br>of how fast on the flat",
+		section = debugWaterfalls,
+		position = 3
+	)
+	default int debugRiverClimbWag()
+	{
+		return 150;
+	}
+
+
 
 	@Range(min = 50, max = 200)
 	@Units(Units.PERCENT)

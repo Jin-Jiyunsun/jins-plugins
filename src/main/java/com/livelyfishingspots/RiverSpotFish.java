@@ -51,38 +51,42 @@ final class RiverSpotFish
 	static final Map<Integer, Integer> WEIGHTS = new HashMap<>();
 	// Lure/bait spots: trout, salmon, pike and the odd rainbow fish.
 	private static final int[] LURE_FISH = {ItemID.RAW_TROUT, ItemID.RAW_SALMON, ItemID.RAW_PIKE, RAINBOW};
-	// Fish in every river and lake, for now all lure/bait.
-	private static final int[] ROUTE_FISH = LURE_FISH;
-	// River spots with fish, by NPC id.
-	private static final Map<Integer, int[]> SPOT_FISH = Map.ofEntries(
-		Map.entry(NpcID._0_26_57_FRESHFISH, LURE_FISH),
-		Map.entry(NpcID._0_37_53_FRESHFISH, LURE_FISH),
-		Map.entry(NpcID._0_38_49_FRESHFISH, LURE_FISH),
-		Map.entry(NpcID._0_39_53_FRESHFISH, LURE_FISH),
-		Map.entry(NpcID._0_40_52_FRESHFISH, LURE_FISH),
-		Map.entry(NpcID._0_41_73_FRESHFISH, LURE_FISH),
-		Map.entry(NpcID._0_42_55_FRESHFISH, LURE_FISH),
-		Map.entry(NpcID._0_44_46_FRESHFISH, LURE_FISH),
-		Map.entry(NpcID._0_44_52_FRESHFISH, LURE_FISH),
-		Map.entry(NpcID._0_48_53_FRESHFISH, LURE_FISH),
-		Map.entry(NpcID._0_50_50_FRESHFISH, LURE_FISH),
-		Map.entry(NpcID._0_52_149_FRESHFISH, LURE_FISH),
-		Map.entry(NpcID._0_34_50_FRESHFISH, LURE_FISH),
-		Map.entry(NpcID._0_35_50_FRESHFISH, LURE_FISH),
-		Map.entry(NpcID._0_24_55_FRESHFISH, LURE_FISH),
-		Map.entry(NpcID._0_25_55_FRESHFISH, LURE_FISH),
-		Map.entry(NpcID._0_26_56_FRESHFISH, LURE_FISH),
-		Map.entry(NpcID._0_19_57_FRESHFISH, LURE_FISH),
-		Map.entry(NpcID._0_24_49_FRESHFISH, LURE_FISH),
-		Map.entry(NpcID._0_25_50_FRESHFISH, LURE_FISH),
-		Map.entry(NpcID._0_19_48_FRESHFISH, LURE_FISH),
-		Map.entry(NpcID._0_20_152_FRESHFISH, LURE_FISH),
-		Map.entry(NpcID._0_19_53_FRESHFISH, LURE_FISH),
-		Map.entry(NpcID._0_20_52_FRESHFISH, LURE_FISH),
-		Map.entry(NpcID._0_21_51_FRESHFISH, LURE_FISH),
-		Map.entry(NpcID._0_22_52_FRESHFISH, LURE_FISH),
-		Map.entry(NpcID._0_50_37_FRESHFISH, LURE_FISH),
-		Map.entry(NpcID._0_49_38_FRESHFISH, LURE_FISH));
+	// Barbarian spots: leaping trout, salmon and sturgeon.
+	private static final int[] LEAPING_FISH = {ItemID.BRUT_SPAWNING_TROUT, ItemID.BRUT_SPAWNING_SALMON, ItemID.BRUT_STURGEON};
+	// Each kind of river or lake's fish, by its bake's "kind" line (lure if none).
+	private static final Map<String, int[]> KIND_FISH = Map.of("lure", LURE_FISH, "barbarian", LEAPING_FISH);
+	// River spots with fish, by NPC id: the kind of river or lake they're on.
+	private static final Map<Integer, String> SPOT_KINDS = Map.ofEntries(
+		Map.entry(NpcID._0_39_54_BRUT_FISHING_SPOT, "barbarian"),
+		Map.entry(NpcID._0_19_55_BRUT_FISHING_SPOT, "barbarian"),
+		Map.entry(NpcID._0_26_57_FRESHFISH, "lure"),
+		Map.entry(NpcID._0_37_53_FRESHFISH, "lure"),
+		Map.entry(NpcID._0_38_49_FRESHFISH, "lure"),
+		Map.entry(NpcID._0_39_53_FRESHFISH, "lure"),
+		Map.entry(NpcID._0_40_52_FRESHFISH, "lure"),
+		Map.entry(NpcID._0_41_73_FRESHFISH, "lure"),
+		Map.entry(NpcID._0_42_55_FRESHFISH, "lure"),
+		Map.entry(NpcID._0_44_46_FRESHFISH, "lure"),
+		Map.entry(NpcID._0_44_52_FRESHFISH, "lure"),
+		Map.entry(NpcID._0_48_53_FRESHFISH, "lure"),
+		Map.entry(NpcID._0_50_50_FRESHFISH, "lure"),
+		Map.entry(NpcID._0_52_149_FRESHFISH, "lure"),
+		Map.entry(NpcID._0_34_50_FRESHFISH, "lure"),
+		Map.entry(NpcID._0_35_50_FRESHFISH, "lure"),
+		Map.entry(NpcID._0_24_55_FRESHFISH, "lure"),
+		Map.entry(NpcID._0_25_55_FRESHFISH, "lure"),
+		Map.entry(NpcID._0_26_56_FRESHFISH, "lure"),
+		Map.entry(NpcID._0_19_57_FRESHFISH, "lure"),
+		Map.entry(NpcID._0_24_49_FRESHFISH, "lure"),
+		Map.entry(NpcID._0_25_50_FRESHFISH, "lure"),
+		Map.entry(NpcID._0_19_48_FRESHFISH, "lure"),
+		Map.entry(NpcID._0_20_152_FRESHFISH, "lure"),
+		Map.entry(NpcID._0_19_53_FRESHFISH, "lure"),
+		Map.entry(NpcID._0_20_52_FRESHFISH, "lure"),
+		Map.entry(NpcID._0_21_51_FRESHFISH, "lure"),
+		Map.entry(NpcID._0_22_52_FRESHFISH, "lure"),
+		Map.entry(NpcID._0_50_37_FRESHFISH, "lure"),
+		Map.entry(NpcID._0_49_38_FRESHFISH, "lure"));
 	// Fish each menu option draws to the circle; other options draw all.
 	private static final Map<String, int[]> OPTION_FISH = Map.of(
 		"lure", new int[]{ItemID.RAW_TROUT, ItemID.RAW_SALMON},
@@ -90,7 +94,8 @@ final class RiverSpotFish
 	private static final int[] STRIPY_FISH = {RAINBOW};
 	// Fishing XP per catch, to tell catches apart; within CATCH_XP_SPREAD counts (outfit bonuses).
 	private static final Map<Integer, Integer> CATCH_XP = Map.of(
-		ItemID.RAW_TROUT, 50, ItemID.RAW_PIKE, 60, ItemID.RAW_SALMON, 70, RAINBOW, 80);
+		ItemID.RAW_TROUT, 50, ItemID.RAW_PIKE, 60, ItemID.RAW_SALMON, 70, RAINBOW, 80,
+		ItemID.BRUT_SPAWNING_TROUT, 50, ItemID.BRUT_SPAWNING_SALMON, 70, ItemID.BRUT_STURGEON, 80);
 	private static final double CATCH_XP_SPREAD = 0.15;
 	// Rivers and lakes, from their bake files: each river's route (upstream start, waypoints, downstream end; spots
 	// near none get no fish) and each lake's spawn points; and each one's name, its file's, by its first point.
@@ -392,6 +397,19 @@ final class RiverSpotFish
 	private static final double SLOPE_MIN = 8;
 	private static final double SLOPE_MOST = 50;
 	private static final double SLOPE_EASE = 0.2;
+	// Climbing, fish point up more than the slope, by this share, up to CLIMB_MOST degrees.
+	static double CLIMB_TILT = 1.5;
+	private static final double CLIMB_MOST = 80;
+	// Climbing fish point no steeper than the water from them to this far ahead (local units), so they level out
+	// as they near the top.
+	static int CLIMB_LOOK = 50;
+	// And go no slower along the ground than the water from them to this far ahead asks, so they speed up before it.
+	static int CLIMB_SPEED_LOOK = 40;
+	// Climbing, tails wag this much faster, fully by CLIMB_WAG_SLOPE degrees nose up.
+	static double CLIMB_WAG = 1.5;
+	private static final double CLIMB_WAG_SLOPE = 30;
+	// Bobs and dips fade out climbing, gone by this slope (degrees nose up).
+	private static final double CLIMB_CALM = 10;
 
 	/**
 	 * A river or lake's water, saved from the scene once, in world cells; and a river's path, in world local units.
@@ -408,6 +426,8 @@ final class RiverSpotFish
 		boolean lake;
 		// Its share of the fish its size would give, percent ("fish N" line; 100 if none).
 		int fishShare = 100;
+		// Its kind of fish ("kind" line; lure if none), a key of KIND_FISH.
+		String kind = "lure";
 		// Its marks, each kind's (MARK_WORDS order) tiles or halves of them (WHOLE, WEST, EAST, SOUTH, NORTH): fish
 		// blockers count as land, allowers as water; on surfacers deep fish (117 HD) come up to their usual depth; on
 		// divers other fish go down to the deepest, under logs across the water.
@@ -892,7 +912,7 @@ final class RiverSpotFish
 	{
 		final RuneLiteObject fish;
 		private final int item;
-		private final Look look;
+		final Look look;
 		// Position, heading (radians), distance along the path; and the heading's cos and sin, kept with it.
 		double x;
 		double y;
@@ -973,6 +993,9 @@ final class RiverSpotFish
 		// Nose up along the water's slope, degrees: as last read, and eased towards it.
 		private double slopeWant;
 		private double slope;
+		// Climbing: the share of its speed that goes along the ground (the rest goes up), so it swims up the water
+		// at its usual speed rather than seeming to rush up it.
+		private double along = 1;
 		private int dippingSince = -1;
 		// Caught: shrinks away once in its lane.
 		private boolean caught;
@@ -1246,6 +1269,7 @@ final class RiverSpotFish
 		WorldPoint[] route = null;
 		boolean lake = false;
 		int fishShare = 100;
+		String kind = "lure";
 		try
 		{
 			int x0 = 0;
@@ -1267,6 +1291,10 @@ final class RiverSpotFish
 				else if (parts[0].equals("fish"))
 				{
 					fishShare = Integer.parseInt(parts[1]);
+				}
+				else if (parts[0].equals("kind") && KIND_FISH.containsKey(parts[1]))
+				{
+					kind = parts[1];
 				}
 				else if (parts[0].equals("route") || parts[0].equals("lake"))
 				{
@@ -1400,6 +1428,7 @@ final class RiverSpotFish
 		saved.route = route;
 		saved.lake = lake;
 		saved.fishShare = fishShare;
+		saved.kind = kind;
 		saved.branchStops.addAll(branchStops);
 		saved.branchPaths.addAll(branchPaths);
 		saved.branchShares.addAll(branchShares);
@@ -1411,7 +1440,7 @@ final class RiverSpotFish
 	 */
 	void add(NPC spot)
 	{
-		if (!SPOT_FISH.containsKey(spot.getId()))
+		if (!SPOT_KINDS.containsKey(spot.getId()))
 		{
 			return;
 		}
@@ -1422,7 +1451,7 @@ final class RiverSpotFish
 		}
 		LocalPoint at = spot.getLocalLocation();
 		WorldView view = client.getTopLevelWorldView();
-		WorldPoint[] route = routeFor(spot.getWorldLocation());
+		WorldPoint[] route = routeFor(spot);
 		if (at == null || view == null || route == null)
 		{
 			return;
@@ -1508,7 +1537,7 @@ final class RiverSpotFish
 		for (NPC spot : onlyAtSpot ? riverSpots : Set.<NPC>of())
 		{
 			WorldPoint at = spot.getWorldLocation();
-			WorldPoint[] route = at.getPlane() == me.getPlane() ? routeFor(at) : null;
+			WorldPoint[] route = at.getPlane() == me.getPlane() ? routeFor(spot) : null;
 			if (route == null)
 			{
 				continue;
@@ -1706,7 +1735,7 @@ final class RiverSpotFish
 		boolean lake = mapping.lake;
 		River river = mapping.river;
 		List<double[]> spawns = mapping.spawns;
-		int[] kinds = ROUTE_FISH;
+		int[] kinds = KIND_FISH.get(bakedKind(route[0]));
 		// Every size queued, to be made a couple a tick rather than all in one frame: the growing ones first, the
 		// smallest at the very front, as new fish start at it and none come until it's made; then the tipped
 		// full-size ones.
@@ -1979,6 +2008,15 @@ final class RiverSpotFish
 	}
 
 	/**
+	 * A river or lake's kind of fish, lure if it has no bake.
+	 */
+	String bakedKind(WorldPoint first)
+	{
+		Baked saved = baked.get(first);
+		return saved == null ? "lure" : saved.kind;
+	}
+
+	/**
 	 * The shoal a spot is on, or null.
 	 */
 	private Shoal shoalOf(NPC spot)
@@ -1994,15 +2032,17 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * The nearest route within ROUTE_REACH tiles of a spot; null for none.
+	 * The nearest route of the spot's kind within ROUTE_REACH tiles of it; null for none.
 	 */
-	private WorldPoint[] routeFor(WorldPoint spot)
+	private WorldPoint[] routeFor(NPC npc)
 	{
+		WorldPoint spot = npc.getWorldLocation();
+		String kind = SPOT_KINDS.get(npc.getId());
 		WorldPoint[] best = null;
 		double nearest = ROUTE_REACH;
 		for (WorldPoint[] route : routes)
 		{
-			if (route[0].getPlane() != spot.getPlane())
+			if (route[0].getPlane() != spot.getPlane() || !bakedKind(route[0]).equals(kind))
 			{
 				continue;
 			}
@@ -2022,7 +2062,8 @@ final class RiverSpotFish
 		{
 			for (WorldPoint spawn : lake)
 			{
-				if (spawn.getPlane() == spot.getPlane() && spot.distanceTo2D(spawn) <= LAKE_REACH)
+				if (spawn.getPlane() == spot.getPlane() && spot.distanceTo2D(spawn) <= LAKE_REACH
+					&& bakedKind(lake[0]).equals(kind))
 				{
 					return lake;
 				}
@@ -3613,7 +3654,7 @@ final class RiverSpotFish
 				continue;
 			}
 			group.rolledAt = cycle;
-			if (random.nextDouble() >= ticks * SCATTER_RATE)
+			if (random.nextDouble() >= ticks * SCATTER_RATE || climbing(group))
 			{
 				continue;
 			}
@@ -3642,6 +3683,21 @@ final class RiverSpotFish
 				member.repelY += SCATTER_PUSH * Math.sin(angle);
 			}
 		}
+	}
+
+	/**
+	 * Whether any of a group is climbing.
+	 */
+	private static boolean climbing(Group group)
+	{
+		for (Swimmer member : group.members)
+		{
+			if (member.slope > 1)
+			{
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**
@@ -3888,7 +3944,8 @@ final class RiverSpotFish
 				}
 				shoal.nextSolo = Math.max(shoal.nextSolo + (int) (spawnGap(random) * SOLO_EVERY), cycle);
 			}
-			if (!shoal.lake && !onlyAtSpot)
+			// Leaping fish swim up their rivers, so nothing drifts down them.
+			if (!shoal.lake && !onlyAtSpot && shoal.kinds != LEAPING_FISH)
 			{
 				drift(shoal, ticks, cycle, random);
 			}
@@ -4013,7 +4070,7 @@ final class RiverSpotFish
 	 */
 	void chose(NPC spot, String option)
 	{
-		if (spot != null && SPOT_FISH.containsKey(spot.getId()))
+		if (spot != null && SPOT_KINDS.containsKey(spot.getId()))
 		{
 			chosenSpot = spot;
 			chosenFish = option == null ? null : OPTION_FISH.get(option.toLowerCase());
@@ -4047,23 +4104,19 @@ final class RiverSpotFish
 	{
 		Player player = client.getLocalPlayer();
 		Actor fishing = player == null ? null : player.getInteracting();
-		Integer item = null;
-		for (Map.Entry<Integer, Integer> kind : CATCH_XP.entrySet())
-		{
-			if (Math.abs(xp - kind.getValue()) <= kind.getValue() * CATCH_XP_SPREAD
-				&& (item == null || Math.abs(xp - kind.getValue()) < Math.abs(xp - CATCH_XP.get(item))))
-			{
-				item = kind.getKey();
-			}
-		}
-		log.debug("River catch: {} xp, item {}, fishing {}", xp, item, fishing == null ? null : fishing.getName());
-		if (fishing == null || item == null)
+		log.debug("River catch: {} xp, fishing {}", xp, fishing == null ? null : fishing.getName());
+		if (fishing == null)
 		{
 			return;
 		}
 		// Prefer one already in its lane; otherwise mark one still coming in.
 		for (Shoal shoal : shoals)
 		{
+			Integer item = caughtKind(xp, shoal.kinds);
+			if (item == null)
+			{
+				continue;
+			}
 			List<Swimmer> inLane = new ArrayList<>();
 			List<Swimmer> comingIn = new ArrayList<>();
 			for (Swimmer swimmer : shoal.fish)
@@ -4082,6 +4135,24 @@ final class RiverSpotFish
 				return;
 			}
 		}
+	}
+
+	/**
+	 * The kind among these a catch of so much Fishing XP was, or null.
+	 */
+	private static Integer caughtKind(int xp, int[] kinds)
+	{
+		Integer item = null;
+		for (int kind : kinds)
+		{
+			int kindXp = CATCH_XP.get(kind);
+			if (Math.abs(xp - kindXp) <= kindXp * CATCH_XP_SPREAD
+				&& (item == null || Math.abs(xp - kindXp) < Math.abs(xp - CATCH_XP.get(item))))
+			{
+				item = kind;
+			}
+		}
+		return item;
 	}
 
 	/**
@@ -4600,7 +4671,8 @@ final class RiverSpotFish
 		}
 		double ease = pausing ? LAKE_STOP_EASE : in >= 1 ? 0.02 : 0.05;
 		swimmer.swimming += (want - swimmer.swimming) * Math.min(1, ease * ticks);
-		double moved = swimmer.swimming * ticks;
+		// Up steep water, only some of it goes along the ground.
+		double moved = swimmer.swimming * ticks * swimmer.along;
 		double toward = swimmer.aim;
 		if (shoal.deciding || Double.isNaN(toward))
 		{
@@ -4649,7 +4721,9 @@ final class RiverSpotFish
 			// Lakes have no path; ordering by x still finds near fish.
 			swimmer.s = x;
 		}
-		swimmer.wag += 2 * Math.PI * moved / WAG_DISTANCE;
+		// Wagging faster climbing.
+		double wagFaster = 1 + (CLIMB_WAG - 1) * Math.min(1, Math.max(0, swimmer.slope) / CLIMB_WAG_SLOPE);
+		swimmer.wag += 2 * Math.PI * swimmer.swimming * ticks * wagFaster / WAG_DISTANCE;
 		while (swimmer.wag >= 2 * Math.PI)
 		{
 			swimmer.wag -= 2 * Math.PI;
@@ -5003,12 +5077,28 @@ final class RiverSpotFish
 			int drop = waterHeight(x + dx, y + dy, shoal.plane) - waterHeight(x - dx, y - dy, shoal.plane);
 			double angle = Math.toDegrees(Math.atan2(drop, 2 * SLOPE_LOOK));
 			swimmer.slopeWant = -Math.signum(angle) * Math.min(SLOPE_MOST, Math.max(0, Math.abs(angle) - SLOPE_MIN));
+			swimmer.slopeWant = swimmer.slopeWant > 0 ? Math.min(CLIMB_MOST, swimmer.slopeWant * CLIMB_TILT)
+				: swimmer.slopeWant;
+			// Climbing, no steeper than the water from here on ahead: levelling out nearing the top.
+			int ax = (int) Math.round(CLIMB_LOOK * swimmer.headX);
+			int ay = (int) Math.round(CLIMB_LOOK * swimmer.headY);
+			int rise = swimmer.surface - waterHeight(x + ax, y + ay, shoal.plane);
+			double ahead = Math.toDegrees(Math.atan2(rise, CLIMB_LOOK));
+			ahead = Math.min(CLIMB_MOST, Math.max(0, ahead - SLOPE_MIN) * CLIMB_TILT);
+			swimmer.slopeWant = swimmer.slopeWant > 0 ? Math.min(swimmer.slopeWant, ahead) : swimmer.slopeWant;
+			int sx = (int) Math.round(CLIMB_SPEED_LOOK * swimmer.headX);
+			int sy = (int) Math.round(CLIMB_SPEED_LOOK * swimmer.headY);
+			double speedAhead = Math.toDegrees(Math.atan2(swimmer.surface - waterHeight(x + sx, y + sy, shoal.plane),
+				CLIMB_SPEED_LOOK));
+			swimmer.along = Math.cos(Math.toRadians(Math.max(0, Math.min(-angle, speedAhead))));
 		}
 		swimmer.slope += (swimmer.slopeWant - swimmer.slope) * SLOPE_EASE;
-		swimmer.fish.setZ(swimmer.surface + look.sink + bobbed
-			+ (int) Math.round(look.dipDepth * dip * dip + swimmer.depthNow));
+		// No bobs or dips while climbing.
+		double calm = Math.max(0, 1 - Math.max(0, swimmer.slope) / CLIMB_CALM);
+		swimmer.fish.setZ(swimmer.surface + look.sink + (int) Math.round(calm * (bobbed + look.dipDepth * dip * dip)
+			+ swimmer.depthNow));
 		// Tip with the water's slope, bob and dip; only at full size.
-		double tip = swimmer.slope + look.tip / 100.0 * ((look.rise > 0 && bobAt >= 0 ? -BOB_PITCH * Perspective.SINE[bobAt] / 65536 : 0)
+		double tip = swimmer.slope + calm * look.tip / 100.0 * ((look.rise > 0 && bobAt >= 0 ? -BOB_PITCH * Perspective.SINE[bobAt] / 65536 : 0)
 			- (swimmer.dippingSince >= 0 && look.dipDepth > 0 ? DIP_PITCH * Math.sin(2 * through) : 0));
 		int pitch = swimmer.wantStep == GROW_STEPS ? (int) Math.round(tip / FishModels.PITCH_STEP) : 0;
 		if (pitch != swimmer.pitch || swimmer.wantStep != swimmer.step)

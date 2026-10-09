@@ -540,7 +540,7 @@ final class FishModels
 		}
 	}
 
-	private static float min(float[] values, int count)
+	static float min(float[] values, int count)
 	{
 		float min = Float.MAX_VALUE;
 		for (int i = 0; i < count; i++)
@@ -550,7 +550,7 @@ final class FishModels
 		return min;
 	}
 
-	private static float max(float[] values, int count)
+	static float max(float[] values, int count)
 	{
 		float max = -Float.MAX_VALUE;
 		for (int i = 0; i < count; i++)

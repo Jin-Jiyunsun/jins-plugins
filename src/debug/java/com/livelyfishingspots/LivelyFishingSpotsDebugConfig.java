@@ -1,6 +1,7 @@
 package com.livelyfishingspots;
 
 import java.util.Set;
+import net.runelite.api.gameval.AnimationID;
 import net.runelite.client.config.Config;
 import net.runelite.client.config.ConfigGroup;
 import net.runelite.client.config.ConfigItem;
@@ -2479,6 +2480,156 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 	default int debugLeapCarry()
 	{
 		return 90;
+	}
+
+	/**
+	 * Splash models to try, with their animations.
+	 */
+	enum Splash
+	{
+		AERIAL_FISHING(2223, AnimationID.AERIAL_FISHING_SPLASH_MEDIUM),
+		STONE_SKIP(2223, AnimationID.WATERSPLASH_SMALL),
+		WATER(49225, AnimationID.VFX_WATER_SPLASH_01),
+		WATER_SMALL(49226, AnimationID.VFX_WATER_SPLASH_01),
+		MINNOW(33187, AnimationID.MINNOW_FISHING_FLYINGFISH),
+		SPRAY_IMPACT(55576, AnimationID.STRIKE_IMPACT);
+
+		final int model;
+		final int animation;
+
+		Splash(int model, int animation)
+		{
+			this.model = model;
+			this.animation = animation;
+		}
+	}
+
+	@ConfigItem(
+		keyName = "debugLeapSplashOut",
+		name = "Leaving splash",
+		description = "Which splash leaping fish make<br>leaving the water (as for the<br>landing splash)",
+		section = debugLeaps,
+		position = 11
+	)
+	default Splash debugLeapSplashOut()
+	{
+		return Splash.SPRAY_IMPACT;
+	}
+
+	@Range(min = 4, max = 256)
+	@ConfigItem(
+		keyName = "debugLeapSplashOutSize",
+		name = "Leaving splash size",
+		description = "The leaving splash's size, 128<br>as the model is",
+		section = debugLeaps,
+		position = 11
+	)
+	default int debugLeapSplashOutSize()
+	{
+		return 30;
+	}
+
+	@ConfigItem(
+		keyName = "debugLeapSplash",
+		name = "Landing splash",
+		description = "Which splash leaping fish make<br>landing: aerial fishing's, a<br>skipped stone's, the newer water<br>splash (or its spray), the minnow<br>spot's, or a water spray impact",
+		section = debugLeaps,
+		position = 12
+	)
+	default Splash debugLeapSplash()
+	{
+		return Splash.WATER_SMALL;
+	}
+
+	@Range(min = 4, max = 256)
+	@ConfigItem(
+		keyName = "debugLeapSplashSize",
+		name = "Landing splash size",
+		description = "The landing splash's size, 128<br>as the model is",
+		section = debugLeaps,
+		position = 13
+	)
+	default int debugLeapSplashSize()
+	{
+		return 70;
+	}
+
+	@Range(min = -1, max = 63)
+	@ConfigItem(
+		keyName = "debugLeapSplashHue",
+		name = "Splash hue (GPU)",
+		description = "The splash's colour, 0 to 63<br>(about 32 cyan, 40 blue);<br>-1 leaves it as it is",
+		section = debugLeaps,
+		position = 14
+	)
+	default int debugLeapSplashHue()
+	{
+		return 39;
+	}
+
+	@Range(min = 0, max = 7)
+	@ConfigItem(
+		keyName = "debugLeapSplashSaturation",
+		name = "Splash saturation (GPU)",
+		description = "How strong its colour is, 0 grey<br>to 7 full",
+		section = debugLeaps,
+		position = 15
+	)
+	default int debugLeapSplashSaturation()
+	{
+		return 1;
+	}
+
+	@Range(min = 0, max = 100)
+	@ConfigItem(
+		keyName = "debugLeapSplashLighter",
+		name = "Splash lightness (GPU)",
+		description = "Lightness added to every face<br>(of 127)",
+		section = debugLeaps,
+		position = 16
+	)
+	default int debugLeapSplashLighter()
+	{
+		return 36;
+	}
+
+	@Range(min = -1, max = 63)
+	@ConfigItem(
+		keyName = "debugLeapSplashHueHd",
+		name = "Splash hue (117 HD)",
+		description = "The splash's colour, 0 to 63<br>(about 32 cyan, 40 blue);<br>-1 leaves it as it is",
+		section = debugLeaps,
+		position = 17
+	)
+	default int debugLeapSplashHueHd()
+	{
+		return 39;
+	}
+
+	@Range(min = 0, max = 7)
+	@ConfigItem(
+		keyName = "debugLeapSplashSaturationHd",
+		name = "Splash saturation (117 HD)",
+		description = "How strong its colour is, 0 grey<br>to 7 full",
+		section = debugLeaps,
+		position = 18
+	)
+	default int debugLeapSplashSaturationHd()
+	{
+		return 1;
+	}
+
+	@Range(min = 0, max = 100)
+	@ConfigItem(
+		keyName = "debugLeapSplashLighterHd",
+		name = "Splash lightness (117 HD)",
+		description = "Lightness added to every face<br>(of 127)",
+		section = debugLeaps,
+		position = 19
+	)
+	default int debugLeapSplashLighterHd()
+	{
+		return 17;
 	}
 
 	@Range(min = 10, max = 90)

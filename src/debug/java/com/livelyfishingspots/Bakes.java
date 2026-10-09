@@ -263,9 +263,13 @@ final class Bakes
 		{
 			return null;
 		}
-		// Blockers and allowers replace each other, as do surfacers and divers.
-		saved.marks(kind / 2 * 2).remove(tile);
-		saved.marks(kind / 2 * 2 + 1).remove(tile);
+		// Blockers and allowers replace each other, as do surfacers and divers; hiding spots go with any.
+		if (kind < 4)
+		{
+			saved.marks(kind / 2 * 2).remove(tile);
+			saved.marks(kind / 2 * 2 + 1).remove(tile);
+		}
+		saved.marks(kind).remove(tile);
 		if (half != null)
 		{
 			saved.marks(kind).put(tile, half);

@@ -355,7 +355,7 @@ public class LivelyFishingSpotsDebugPlugin extends Plugin
 		}
 		// Fish blockers, allowers, surfacers and divers, the whole tile or a half, each in a submenu; or clearing the one
 		// there. Each shows what it would place or remove while hovered.
-		String[] markNames = {"Fish blocker", "Fish allower", "Fish surfacer", "Fish diver"};
+		String[] markNames = {"Fish blocker", "Fish allower", "Fish surfacer", "Fish diver", "Fish hiding spot"};
 		for (int k = 0; k < markNames.length; k++)
 		{
 			int kind = k;
@@ -606,6 +606,18 @@ public class LivelyFishingSpotsDebugPlugin extends Plugin
 		RiverSpotFish.LEAP_SPEED = config.debugLeapSpeed() / 100.0;
 		RiverSpotFish.LEAP_TIP_EASE = config.debugLeapTipEase() / 100.0;
 		RiverSpotFish.LEAP_CARRY = config.debugLeapCarry() / 100.0;
+		RiverSpotFish.SPLASH_MODEL[0] = config.debugLeapSplashOut().model;
+		RiverSpotFish.SPLASH_ANIMATION[0] = config.debugLeapSplashOut().animation;
+		RiverSpotFish.SPLASH_SIZE[0] = config.debugLeapSplashOutSize();
+		RiverSpotFish.SPLASH_MODEL[1] = config.debugLeapSplash().model;
+		RiverSpotFish.SPLASH_ANIMATION[1] = config.debugLeapSplash().animation;
+		RiverSpotFish.SPLASH_SIZE[1] = config.debugLeapSplashSize();
+		RiverSpotFish.SPLASH_HUE[0] = config.debugLeapSplashHue();
+		RiverSpotFish.SPLASH_SATURATION[0] = config.debugLeapSplashSaturation();
+		RiverSpotFish.SPLASH_LIGHTER[0] = config.debugLeapSplashLighter();
+		RiverSpotFish.SPLASH_HUE[1] = config.debugLeapSplashHueHd();
+		RiverSpotFish.SPLASH_SATURATION[1] = config.debugLeapSplashSaturationHd();
+		RiverSpotFish.SPLASH_LIGHTER[1] = config.debugLeapSplashLighterHd();
 		RiverSpotFish.LEAP_FALL_SHARE = config.debugLeapFallShare() / 100.0;
 		RiverSpotFish.LEAP_FALL_POWER = config.debugLeapFallPower() / 100.0;
 		RiverSpotFish.LEAP_SETTLE_TICKS = Math.max(1, config.debugLeapSettleMillis() / 20);

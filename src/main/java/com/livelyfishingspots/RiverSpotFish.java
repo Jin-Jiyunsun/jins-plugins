@@ -17,10 +17,12 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Actor;
+import net.runelite.api.AnimationController;
 import net.runelite.api.Client;
 import net.runelite.api.ItemContainer;
 import net.runelite.api.Model;
@@ -32,6 +34,7 @@ import net.runelite.api.RuneLiteObject;
 import net.runelite.api.WorldView;
 import net.runelite.api.coords.LocalPoint;
 import net.runelite.api.coords.WorldPoint;
+import net.runelite.api.gameval.AnimationID;
 import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.gameval.ItemID;
 import net.runelite.api.gameval.NpcID;
@@ -55,6 +58,27 @@ final class RiverSpotFish
 	private static final int[] LEAPING_FISH = {ItemID.BRUT_SPAWNING_TROUT, ItemID.BRUT_SPAWNING_SALMON, ItemID.BRUT_STURGEON};
 	// Sturgeon: always alone, never in a school; and with see-through water, as deep as fish go.
 	private static final int STURGEON = ItemID.BRUT_STURGEON;
+	// Leaping fish swim at their own depths with see-through water, as shares of the deepest: trout shallowest,
+	// salmon a little deeper, sturgeon deepest. Other kinds anywhere.
+	private static final Map<Integer, double[]> DEPTHS = Map.of(ItemID.BRUT_SPAWNING_TROUT, new double[]{0, 0.4},
+		ItemID.BRUT_SPAWNING_SALMON, new double[]{0.3, 0.7}, STURGEON, new double[]{1, 1});
+	// Leaping trout on a lake head for one of its hiding spots (marks near reeds and lilies) this share of the times
+	// they, or a school they're in, pick somewhere new; a school's trout break off to go.
+	static double LAKE_HIDE_CHANCE = 0.5;
+	// Trout pausing at a hiding spot pause this many times longer.
+	static double LAKE_HIDE_PAUSE = 3;
+	// Share of lone fish arriving at a lake that are sturgeon, where it has them (they're never in its schools).
+	private static final double LAKE_STURGEON_SHARE = 0.5;
+	// Splashes as a leaping fish leaves the water (0) and lands (1): models, animations and sizes (128 to 1).
+	// Leaving, a spray impact (spotanim 3076); landing, the small water splash, with its ripples (spotanim 2451).
+	static final int[] SPLASH_MODEL = {55576, 49226};
+	static final int[] SPLASH_ANIMATION = {AnimationID.STRIKE_IMPACT, AnimationID.VFX_WATER_SPLASH_01};
+	static final int[] SPLASH_SIZE = {30, 70};
+	// Its colour, if recoloured, without and with 117 HD (its water shows splashes differently): hue (0 to 63) and
+	// saturation (0 to 7) for every face, and lightness added; or a hue under 0 to leave it.
+	static final int[] SPLASH_HUE = {39, 39};
+	static final int[] SPLASH_SATURATION = {1, 1};
+	static final int[] SPLASH_LIGHTER = {36, 17};
 	// Each kind of river or lake's fish, by its bake's "kind" line (lure if none).
 	private static final Map<String, int[]> KIND_FISH = Map.of("lure", LURE_FISH, "barbarian", LEAPING_FISH);
 	// River spots with fish, by NPC id: the kind of river or lake they're on.
@@ -102,6 +126,9 @@ final class RiverSpotFish
 	// Rivers and lakes, from their bake files: each river's route (upstream start, waypoints, downstream end; spots
 	// near none get no fish) and each lake's spawn points; and each one's name, its file's, by its first point.
 	final List<WorldPoint[]> routes = new ArrayList<>();
+	// The splash model, made when first wanted, and which model and size it was made from.
+	private final Model[] splashModels = new Model[2];
+	private final int[] splashMadeFrom = {-1, -1};
 	final List<WorldPoint[]> lakes = new ArrayList<>();
 	static final Map<WorldPoint, String> NAMES = new HashMap<>();
 	// A lake is the connected water within LAKE_RADIUS tiles of its spawn points, mapped LAKE_MARGIN tiles past
@@ -731,6 +758,8 @@ final class RiverSpotFish
 		private int nextWindow;
 		// The bodies drifting down (one at most, more while testing), and when the next may come.
 		final List<Body> bodies = new ArrayList<>();
+		// Splashes showing, gone once played.
+		final List<RuneLiteObject> splashes = new ArrayList<>();
 		private int nextBody;
 		// Lakes: the client tick of the next check for too many fish.
 		private int nextTrim;
@@ -1014,8 +1043,10 @@ final class RiverSpotFish
 		// at its usual speed rather than seeming to rush up it.
 		private double along = 1;
 		private int dippingSince = -1;
-		// The client tick its leap started, or -1; and how far nose up it points from the leap, eased.
+		// The client tick its leap started, or -1; and how far nose up it points from the leap, eased; and the client
+		// tick it may first leap, so a newly filled river doesn't start with a burst.
 		private int leapingSince = -1;
+		private int leapsFrom;
 		private double leapTip;
 		// Caught: shrinks away once in its lane.
 		private boolean caught;
@@ -1269,9 +1300,9 @@ final class RiverSpotFish
 		return first;
 	}
 
-	// Each kind of mark's word in a baked file: fish blockers, allowers, surfacers and divers. Kinds 0 and 1 replace
-	// each other on a tile, as do 2 and 3.
-	static final String[] MARK_WORDS = {"block", "allow", "surface", "dive"};
+	// Each kind of mark's word in a baked file: fish blockers, allowers, surfacers, divers and hiding spots. Kinds 0
+	// and 1 replace each other on a tile, as do 2 and 3.
+	static final String[] MARK_WORDS = {"block", "allow", "surface", "dive", "hide"};
 
 	static Baked readBaked(String name, BufferedReader reader)
 	{
@@ -2578,6 +2609,96 @@ final class RiverSpotFish
 	}
 
 	/**
+	 * Whether a lake fish is a leaping trout, or in a school with any.
+	 */
+	private static boolean hasTrout(Swimmer swimmer, Group group)
+	{
+		if (group == null || group.members.size() < 2)
+		{
+			return swimmer.item == ItemID.BRUT_SPAWNING_TROUT;
+		}
+		return group.members.stream().anyMatch(member -> member.item == ItemID.BRUT_SPAWNING_TROUT);
+	}
+
+	/**
+	 * Sends a school's trout off to a goal: true if they're all trout (the school goes, the caller sets its goal);
+	 * otherwise they break off into their own school (or one alone) heading there, and false.
+	 */
+	private static boolean breakOffTrout(Group group, double[] goal, ThreadLocalRandom random)
+	{
+		List<Swimmer> trout = new ArrayList<>();
+		for (Swimmer member : group.members)
+		{
+			if (member.item == ItemID.BRUT_SPAWNING_TROUT)
+			{
+				trout.add(member);
+			}
+		}
+		if (trout.size() == group.members.size())
+		{
+			return true;
+		}
+		Group off = trout.size() > 1 ? new Group(random) : null;
+		for (Swimmer member : trout)
+		{
+			ungroup(member);
+			member.goalX = goal[0];
+			member.goalY = goal[1];
+			if (off != null)
+			{
+				join(off, member, random);
+			}
+		}
+		if (off != null)
+		{
+			off.goalX = goal[0];
+			off.goalY = goal[1];
+		}
+		return false;
+	}
+
+	/**
+	 * Whether a place on a lake (local units) is at one of its hiding spots.
+	 */
+	private boolean atHidingSpot(Shoal shoal, double x, double y)
+	{
+		Baked saved = baked.get(shoal.route[0]);
+		for (WorldPoint hide : saved == null ? Set.<WorldPoint>of() : saved.marks(4).keySet())
+		{
+			double dx = (hide.getX() - shoal.baseX) * 128 + 64 - x;
+			double dy = (hide.getY() - shoal.baseY) * 128 + 64 - y;
+			if (dx * dx + dy * dy < 4 * LAKE_GOAL_REACHED * LAKE_GOAL_REACHED)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * One of a lake's hiding spots at random, by way of a waypoint when it's out of sight; or null if it has none.
+	 */
+	private double[] hidingSpot(Shoal shoal, double fromX, double fromY, ThreadLocalRandom random)
+	{
+		Baked saved = baked.get(shoal.route[0]);
+		Map<WorldPoint, String> hides = saved == null ? Map.of() : saved.marks(4);
+		if (hides.isEmpty())
+		{
+			return null;
+		}
+		int pick = random.nextInt(hides.size());
+		for (WorldPoint hide : hides.keySet())
+		{
+			if (pick-- == 0)
+			{
+				return waypoint(shoal.river, fromX, fromY, (hide.getX() - shoal.baseX) * 128 + 64.0,
+					(hide.getY() - shoal.baseY) * 128 + 64.0, random);
+			}
+		}
+		return null;
+	}
+
+	/**
 	 * Fish per water cell round a place, each fish counted where it's heading: its school's goal, its own, or the
 	 * circle it's in.
 	 */
@@ -2731,7 +2852,15 @@ final class RiverSpotFish
 			}
 			else
 			{
-				goal = lakeGoal(shoal, fromX, fromY, random);
+				// Trout, now and then, to a hiding spot: a school's trout break off together to go, the rest carrying
+				// on anywhere.
+				goal = random.nextDouble() < LAKE_HIDE_CHANCE && hasTrout(swimmer, group)
+					? hidingSpot(shoal, fromX, fromY, random) : null;
+				if (goal != null && grouped && !breakOffTrout(group, goal, random))
+				{
+					goal = null;
+				}
+				goal = goal != null ? goal : lakeGoal(shoal, fromX, fromY, random);
 			}
 			if (goal != null)
 			{
@@ -2748,10 +2877,12 @@ final class RiverSpotFish
 					swimmer.goalY = goalY;
 				}
 			}
-			// Pause before the new leg, unless heading for a circle or just arrived.
+			// Pause before the new leg, unless heading for a circle or just arrived; trout at a hiding spot longer.
 			if (hadGoal && swimmer.bound == null)
 			{
-				pause(swimmer, grouped ? group : null, fromX, fromY, goalX, goalY, cycle, random);
+				boolean hiding = reached && hasTrout(swimmer, group) && atHidingSpot(shoal, fromX, fromY);
+				double longer = hiding ? LAKE_HIDE_PAUSE : 1;
+				pause(swimmer, grouped ? group : null, fromX, fromY, goalX, goalY, cycle, random, longer);
 				hover(river, swimmer, into);
 				return;
 			}
@@ -2848,10 +2979,11 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * Starts a lake fish, or its school, pausing: longer with pike, setting off front first towards the new goal.
+	 * Starts a lake fish, or its school, pausing: longer with pike, and so many times longer hiding; setting off front
+	 * first towards the new goal.
 	 */
 	private static void pause(Swimmer swimmer, Group group, double fromX, double fromY, double goalX, double goalY,
-		int cycle, ThreadLocalRandom random)
+		int cycle, ThreadLocalRandom random, double hiding)
 	{
 		List<Swimmer> members = group != null ? group.members : List.of(swimmer);
 		int pike = 0;
@@ -2859,7 +2991,7 @@ final class RiverSpotFish
 		{
 			pike += member.item == ItemID.RAW_PIKE ? 1 : 0;
 		}
-		double longer = group != null ? 1 + pike / (double) members.size() : pike > 0 ? LAKE_PIKE_PAUSE : 1;
+		double longer = hiding * (group != null ? 1 + pike / (double) members.size() : pike > 0 ? LAKE_PIKE_PAUSE : 1);
 		int until = cycle + (int) (random.nextInt(LAKE_PAUSE_LEAST, LAKE_PAUSE_MOST + 1) * longer);
 		double ux = swimmer.headX;
 		double uy = swimmer.headY;
@@ -3051,7 +3183,8 @@ final class RiverSpotFish
 		// surfacers' and divers': theirs bring deep fish up, or take them down.
 		river.surface = saved.marks(2).isEmpty() ? null : new boolean[width * river.height];
 		river.dive = saved.marks(3).isEmpty() ? null : new boolean[width * river.height];
-		for (int kind = 0; kind < MARK_WORDS.length; kind++)
+		// Hiding spots (kind 4) aren't cells: they're places to head for.
+		for (int kind = 0; kind < 4; kind++)
 		{
 			boolean[] cellsOf = kind == 2 ? river.surface : kind == 3 ? river.dive : water;
 			for (Map.Entry<WorldPoint, String> mark : saved.marks(kind).entrySet())
@@ -3501,7 +3634,9 @@ final class RiverSpotFish
 	{
 		if (most < GROUP_LEAST || schooled && random.nextDouble() < LAKE_SOLO_SHARE)
 		{
-			spawn(shoal, 0, place, true, cycle, random, kind(shoal.kinds, random, false), null, 0);
+			boolean sturgeon = has(shoal.kinds, STURGEON) && random.nextDouble() < LAKE_STURGEON_SHARE;
+			int item = sturgeon ? STURGEON : kind(shoal.kinds, random, false);
+			spawn(shoal, 0, place, true, cycle, random, item, null, 0);
 			return 1;
 		}
 		return spawnGroup(shoal, 0, place, true, cycle, random, most);
@@ -3581,6 +3716,7 @@ final class RiverSpotFish
 		swimmer.wantStep = step;
 		swimmer.s = s;
 		swimmer.growingSince = grow ? cycle + (stagger ? random.nextInt(GROW_STAGGER + 1) : 0) : -1;
+		swimmer.leapsFrom = cycle + random.nextInt((int) (LEAP_EVERY * 50) + 1);
 		// Skip circles it's already past.
 		for (Circle circle : shoal.circles.values())
 		{
@@ -3593,7 +3729,10 @@ final class RiverSpotFish
 		swimmer.slot = slot;
 		swimmer.scale = scale(item);
 		int deepest = Math.max(DEEP_LEAST, shoal.lake ? (int) (DEEP_MOST * LAKE_DEEPER) : DEEP_MOST);
-		swimmer.deep = !seeThrough || !deep ? 0 : item == STURGEON ? deepest : random.nextInt(DEEP_LEAST, deepest + 1);
+		double[] band = DEPTHS.getOrDefault(item, new double[]{0, 1});
+		int least = DEEP_LEAST + (int) ((deepest - DEEP_LEAST) * band[0]);
+		int most = DEEP_LEAST + (int) ((deepest - DEEP_LEAST) * band[1]);
+		swimmer.deep = seeThrough && deep ? random.nextInt(least, most + 1) : 0;
 		swimmer.depthNow = swimmer.deep;
 		if (group != null)
 		{
@@ -3972,6 +4111,8 @@ final class RiverSpotFish
 				shoal.nextSolo = Math.max(shoal.nextSolo + (int) (spawnGap(random) * SOLO_EVERY), cycle);
 			}
 			// Leaping fish swim up their rivers, so nothing drifts down them.
+			// Splashes go once played.
+			shoal.splashes.removeIf(splash -> !splash.isActive());
 			if (!shoal.lake && !onlyAtSpot && shoal.kinds != LEAPING_FISH)
 			{
 				drift(shoal, ticks, cycle, random);
@@ -4079,7 +4220,7 @@ final class RiverSpotFish
 				}
 				if (swimmer.leapingSince >= 0
 					? cycle - swimmer.leapingSince >= LEAP_RUN_TICKS + LEAP_TICKS + LEAP_SETTLE_TICKS
-					: mayLeap(shoal, swimmer) && random.nextDouble() < ticks / (LEAP_EVERY * 50))
+					: mayLeap(shoal, swimmer, cycle) && random.nextDouble() < ticks / (LEAP_EVERY * 50))
 				{
 					swimmer.leapingSince = swimmer.leapingSince >= 0 ? -1 : cycle;
 					// Done: its bob (held, and faded out) starts again from rest, so it doesn't jump back mid-bob.
@@ -4098,6 +4239,18 @@ final class RiverSpotFish
 					ungroup(swimmer);
 					swimmer.fish.setActive(false);
 					it.remove();
+					continue;
+				}
+				// A splash where it left the water and where it landed, if it's showing: moved on this step, so back
+				// along its way by however far past that it went (it can't turn in the air).
+				int leapAge = swimmer.leapingSince < 0 ? -1 : cycle - swimmer.leapingSince;
+				int left = over(leapAge, ticks, LEAP_RUN_TICKS);
+				int past = Math.max(left, over(leapAge, ticks, LEAP_RUN_TICKS + LEAP_TICKS));
+				if (past >= 0 && swimmer.shown)
+				{
+					double back = past * swimmer.swimming * LEAP_SPEED * swimmer.along;
+					splash(shoal, left >= 0 ? 0 : 1, swimmer.x - swimmer.headX * back, swimmer.y - swimmer.headY * back,
+						swimmer.surface);
 				}
 			}
 			probe.add(Probe.MOVING, started);
@@ -4160,14 +4313,68 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * Whether a fish may start a leap: a leaping fish at full size on its way (not circling or heading for a circle),
-	 * not dipping, climbing, on a fish surfacer, or (on a lake) slowing down for or in a pause.
+	 * How many client ticks past so many into its leap a fish is, if it got there in this step of so many; else -1.
 	 */
-	private static boolean mayLeap(Shoal shoal, Swimmer swimmer)
+	private static int over(int age, int ticks, int at)
+	{
+		return age >= at && age - ticks < at ? age - at : -1;
+	}
+
+	/**
+	 * Shows a splash on the water, leaving (0) or landing (1), at a place (local units) and height.
+	 */
+	private void splash(Shoal shoal, int kind, double x, double y, int height)
+	{
+		int hd = seeThrough ? 1 : 0;
+		int hue = SPLASH_HUE[hd];
+		int madeFrom = Objects.hash(SPLASH_MODEL[kind], SPLASH_SIZE[kind], hue, SPLASH_SATURATION[hd], SPLASH_LIGHTER[hd]);
+		if (splashModels[kind] == null || splashMadeFrom[kind] != madeFrom)
+		{
+			splashMadeFrom[kind] = madeFrom;
+			ModelData data = client.loadModelData(SPLASH_MODEL[kind]);
+			if (data == null)
+			{
+				return;
+			}
+			data = data.cloneVertices().cloneColors();
+			// Centred over where it's put (some splash models aren't), then sized.
+			float[] xs = data.getVerticesX();
+			float[] zs = data.getVerticesZ();
+			int count = data.getVerticesCount();
+			data.translate((int) -(FishModels.max(xs, count) + FishModels.min(xs, count)) / 2, 0,
+				(int) -(FishModels.max(zs, count) + FishModels.min(zs, count)) / 2);
+			data.scale(SPLASH_SIZE[kind], SPLASH_SIZE[kind], SPLASH_SIZE[kind]);
+			short[] colours = data.getFaceColors();
+			for (int f = 0; hue >= 0 && f < colours.length; f++)
+			{
+				int light = Math.min(127, (colours[f] & 127) + SPLASH_LIGHTER[hd]);
+				colours[f] = (short) (hue << 10 | SPLASH_SATURATION[hd] << 7 | light);
+			}
+			// Lit as the game lights spot animations.
+			splashModels[kind] = data.light(64, 850, -30, -50, -30);
+		}
+		RuneLiteObject splash = client.createRuneLiteObject();
+		splash.setModel(splashModels[kind]);
+		// Played once, then gone.
+		AnimationController played = new AnimationController(client, SPLASH_ANIMATION[kind]);
+		played.setOnFinished(done -> splash.setActive(false));
+		splash.setAnimationController(played);
+		splash.setLocation(new LocalPoint((int) x, (int) y, shoal.worldView), shoal.plane);
+		splash.setZ(height);
+		splash.setActive(true);
+		shoal.splashes.add(splash);
+	}
+
+	/**
+	 * Whether a fish may start a leap: a leaping fish at full size on its way (not circling or heading for a circle),
+	 * not dipping, climbing, on a fish surfacer, (on a lake) slowing down for or in a pause, or newly made.
+	 */
+	private static boolean mayLeap(Shoal shoal, Swimmer swimmer, int cycle)
 	{
 		return shoal.kinds == LEAPING_FISH && swimmer.circle == null && swimmer.bound == null
 			&& swimmer.growingSince < 0 && swimmer.shrinkingSince < 0 && swimmer.wantStep == GROW_STEPS
-			&& swimmer.dippingSince < 0 && !swimmer.surfacing && swimmer.slope <= 1 && swimmer.setOffAt < 0;
+			&& swimmer.dippingSince < 0 && !swimmer.surfacing && swimmer.slope <= 1 && swimmer.setOffAt < 0
+			&& cycle >= swimmer.leapsFrom;
 	}
 
 	/**
@@ -5255,6 +5462,7 @@ final class RiverSpotFish
 	{
 		shoal.fish.forEach(swimmer -> swimmer.fish.setActive(false));
 		shoal.bodies.forEach(body -> body.object.setActive(false));
+		shoal.splashes.forEach(splash -> splash.setActive(false));
 	}
 
 	/**
@@ -5532,6 +5740,9 @@ final class RiverSpotFish
 		{
 			return;
 		}
+		// Splashes are brief: just gone.
+		shoal.splashes.forEach(splash -> splash.setActive(false));
+		shoal.splashes.clear();
 		River river = shoal.river;
 		List<River> ways = new ArrayList<>();
 		ways.add(river);

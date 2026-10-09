@@ -941,7 +941,8 @@ class RiverBaker
 	 */
 	static Color markColour(int kind)
 	{
-		return kind == 0 ? Color.RED : kind == 1 ? Color.GREEN : kind == 2 ? Color.ORANGE : new Color(70, 110, 255);
+		return kind == 0 ? Color.RED : kind == 1 ? Color.GREEN : kind == 2 ? Color.ORANGE
+			: kind == 3 ? new Color(70, 110, 255) : Color.CYAN;
 	}
 
 	/**

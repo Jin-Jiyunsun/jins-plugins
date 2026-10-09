@@ -20,6 +20,8 @@ final class TickTimes
 {
 	// Client ticks per report: a second.
 	private static final int TICKS = 50;
+	// The mapping steps' names, then a new one's last: filling it with fish.
+	private static final String[] STEP_NAMES = {"box", "water", "banks", "path", "fish"};
 	// The parts, in the panel's order; river fish's own parts indented under it.
 	// The debug plugin's own parts, after the plugin's.
 	static final String DRAWING = "Debug drawing";
@@ -206,7 +208,7 @@ final class TickTimes
 			{
 				worst = steps[k] > steps[worst] ? k : worst;
 			}
-			what += ", worst step: " + RiverSpotFish.STEP_NAMES[worst];
+			what += ", worst step: " + STEP_NAMES[worst];
 			rounded = Math.round(steps[worst] * 10) / 10.0;
 		}
 		TIMINGS.addFirst(new String[]{what, rounded + " ms"});
@@ -235,7 +237,7 @@ final class TickTimes
 		rows.add(new String[]{"Last load: " + lastLoad, String.format("%.2f", Arrays.stream(steps).sum())});
 		for (int k = 0; k < steps.length; k++)
 		{
-			rows.add(new String[]{"  " + RiverSpotFish.STEP_NAMES[k], String.format("%.2f", steps[k])});
+			rows.add(new String[]{"  " + STEP_NAMES[k], String.format("%.2f", steps[k])});
 		}
 		rows.add(new String[]{"  over client ticks", String.valueOf(steps.length)});
 		return rows;

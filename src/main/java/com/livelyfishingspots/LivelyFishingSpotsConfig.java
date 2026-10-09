@@ -14,7 +14,8 @@ public interface LivelyFishingSpotsConfig extends Config
 	@ConfigItem(
 		keyName = "riverSwimming",
 		name = "River fish",
-		description = "How river fish swim down the river:<br>Schooled in groups, or Random,<br>each on its own",
+		description = "How river fish swim down the river:<br>Schooled in groups, or Random,<br>each on its own; or Only at my spot,<br>"
+			+ "just fish coming to the spot you're<br>fishing, lightest on slower computers",
 		position = 0
 	)
 	default RiverSwimming riverSwimming()

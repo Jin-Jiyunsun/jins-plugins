@@ -30,7 +30,7 @@ final class RiverDrawing
 	private final Client client;
 	private final RiverSpotFish rivers;
 	// Scratch for River.at.
-	private final double[] point = new double[6];
+	private final double[] point = new double[5];
 	// The route being picked.
 	private List<WorldPoint> picking = List.of();
 
@@ -55,7 +55,7 @@ final class RiverDrawing
 			double d = Math.max(1e-6, Math.hypot(way.pathX[ahead] - way.pathX[behind], way.pathY[ahead] - way.pathY[behind]));
 			double dx = (way.pathX[ahead] - way.pathX[behind]) / d;
 			double dy = (way.pathY[ahead] - way.pathY[behind]) / d;
-			double out = n < points ? way.left[k] : -way.right[k];
+			double out = n < points ? way.room[k] : -way.room[k];
 			mark(shoal, way.pathX[k] - dy * out, way.pathY[k] + dx * out);
 		}
 		project(view);
@@ -256,10 +256,9 @@ final class RiverDrawing
 	private void acrossLine(Graphics2D graphics, WorldView view, Shoal shoal, double s, Color colour)
 	{
 		shoal.river.at(s, point);
-		double left = point[4] + BANK_GAP;
-		double right = point[5] + BANK_GAP;
-		mark(shoal, point[0] - point[3] * left, point[1] + point[2] * left);
-		mark(shoal, point[0] + point[3] * right, point[1] - point[2] * right);
+		double room = point[4] + BANK_GAP;
+		mark(shoal, point[0] - point[3] * room, point[1] + point[2] * room);
+		mark(shoal, point[0] + point[3] * room, point[1] - point[2] * room);
 		graphics.setColor(colour);
 		line(graphics, view);
 	}

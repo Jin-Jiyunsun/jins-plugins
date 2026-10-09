@@ -558,6 +558,13 @@ public class LivelyFishingSpotsDebugPlugin extends Plugin
 		RiverSpotFish.CIRCLE_CLEARANCE = config.debugRiverCircleClearance();
 		RiverSpotFish.SCATTER_RATE = 1.0 / (config.debugRiverScatterSeconds() * 50.0);
 		RiverSpotFish.LAKE_JOIN_CHANCE = config.debugRiverLakeJoinChance();
+		// Eager circles: every passing fish joins, and fillers come at once.
+		boolean eager = config.debugRiverEagerCircles();
+		RiverSpotFish.JOIN_CHANCE = eager ? 100 : 60;
+		RiverSpotFish.LAKE_JOIN_CHANCE = eager ? 100 : RiverSpotFish.LAKE_JOIN_CHANCE;
+		RiverSpotFish.REFILL_AFTER = eager ? 50 : 500;
+		RiverSpotFish.REFILL_GAP_LEAST = eager ? 25 : 100;
+		RiverSpotFish.REFILL_GAP_MOST = eager ? 50 : 300;
 		RiverSpotFish.FISH_RANGE = config.debugRiverFishRange();
 		RiverSpotFish.LOAD_MORE = config.debugRiverLoadMore();
 		RiverSpotFish.LAKE_SPEED = config.debugRiverLakeSpeed() / 100.0;

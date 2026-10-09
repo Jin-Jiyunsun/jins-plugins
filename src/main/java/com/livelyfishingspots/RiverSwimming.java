@@ -1,12 +1,13 @@
 package com.livelyfishingspots;
 
 /**
- * How river fish swim down the river.
+ * How river fish swim down the river, or only at the spot being fished.
  */
 public enum RiverSwimming
 {
 	SCHOOLED("Schooled"),
-	RANDOM("Random");
+	RANDOM("Random"),
+	ONLY_AT_SPOT("Only at my spot");
 
 	private final String name;
 

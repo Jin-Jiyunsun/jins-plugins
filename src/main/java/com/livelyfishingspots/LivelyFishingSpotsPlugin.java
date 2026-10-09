@@ -31,10 +31,9 @@ import net.runelite.client.plugins.PluginManager;
  */
 @Slf4j
 @PluginDescriptor(
-	// TEMPORARY: dev name, back to "Lively Fishing Spots" before a Hub release.
-	name = "116-lively-fishing-spots",
+	name = "Lively Fishing Spots",
 	description = "Shows the fish each fishing spot gives swimming around it",
-	tags = {"fishing", "fish", "spot", "sailing", "sea", "shoal", "swimming", "visual"}
+	tags = {"fishing", "fish", "spot", "sailing", "sea", "river", "lake", "shoal", "swimming", "visual"}
 )
 public class LivelyFishingSpotsPlugin extends Plugin
 {
@@ -71,7 +70,7 @@ public class LivelyFishingSpotsPlugin extends Plugin
 	 */
 	private void riverSettings()
 	{
-		riverSpotFish.setSchooled(config.riverSwimming() == RiverSwimming.SCHOOLED);
+		riverSpotFish.setSwimming(config.riverSwimming());
 		riverSpotFish.setAmount(config.riverFishAmount());
 		riverSpotFish.setLakeAmount(config.lakeFishAmount());
 		riverSpotFish.setDeep(config.riverDeep());

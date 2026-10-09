@@ -47,6 +47,8 @@ class RiverBaker
 {
 	private static final int CELL = RiverSpotFish.CELL;
 	private static final int PER_TILE = RiverSpotFish.PER_TILE;
+	// Tiles round a route's line for picking: a point added, a lake or fork joining it.
+	static final int BOX_MARGIN = 8;
 	// A diagonal step between cells.
 	private static final double DIAGONAL = CELL * Math.sqrt(2);
 	// Floor textures of river water, seen in game: plain water, and Tirannwn's crystal water (WATER_CRYSTAL_OPEN,
@@ -777,7 +779,7 @@ class RiverBaker
 	{
 		WorldPoint[] best = null;
 		int after = 0;
-		double nearest = RiverSpotFish.BOX_MARGIN;
+		double nearest = BOX_MARGIN;
 		for (WorldPoint[] route : rivers.routesAndLakes())
 		{
 			for (int k = 0; !rivers.isLake(route) && route[0].getPlane() == tile.getPlane() && k + 1 < route.length; k++)
@@ -827,7 +829,7 @@ class RiverBaker
 	{
 		WorldPoint[] route = picked.toArray(new WorldPoint[0]);
 		// Not over another river that starts there (a lake there is replaced).
-		WorldPoint[] there = rivers.routeOf(route[0]);
+		WorldPoint[] there = Bakes.routeOf(rivers, route[0]);
 		if (there != null && !rivers.isLake(there))
 		{
 			log.debug("River start at {}: another river starts there", route[0]);
@@ -856,7 +858,7 @@ class RiverBaker
 			}
 		}
 		// Each river and lake goes by its first point, so a new one can't start on another's.
-		if (rivers.routeOf(spawn) != null)
+		if (Bakes.routeOf(rivers, spawn) != null)
 		{
 			log.debug("Lake spawn at {}: another river or lake starts there", spawn);
 			return;
@@ -865,7 +867,7 @@ class RiverBaker
 		for (WorldPoint[] river : rivers.routesAndLakes())
 		{
 			if (!rivers.isLake(river) && river[0].getPlane() == spawn.getPlane()
-				&& RiverSpotFish.toLine(river, spawn.getX(), spawn.getY()) <= RiverSpotFish.BOX_MARGIN)
+				&& RiverSpotFish.toLine(river, spawn.getX(), spawn.getY()) <= BOX_MARGIN)
 			{
 				name = Bakes.bakedName(river[0]);
 			}
@@ -911,12 +913,12 @@ class RiverBaker
 	 */
 	private boolean nearRiver(WorldPoint[] route, WorldPoint at)
 	{
-		if (RiverSpotFish.toLine(route, at.getX(), at.getY()) <= RiverSpotFish.BOX_MARGIN)
+		if (RiverSpotFish.toLine(route, at.getX(), at.getY()) <= BOX_MARGIN)
 		{
 			return true;
 		}
 		RiverSpotFish.Baked saved = rivers.baked.get(route[0]);
-		double reach = RiverSpotFish.BOX_MARGIN * 128.0;
+		double reach = BOX_MARGIN * 128.0;
 		double x = at.getX() * 128 + 64;
 		double y = at.getY() * 128 + 64;
 		for (int k = 0; saved != null && saved.pathX != null && k < saved.pathX.length; k++)

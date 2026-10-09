@@ -161,18 +161,16 @@ final class RiverSpotFish
 	// Tiles a spot may be from a route's line to use it; tiles of water mapped past its ends.
 	private static final int ROUTE_REACH = 8;
 	static final int ROUTE_MARGIN = 4;
-	// Tiles round a route's line for picking: a point added, a lake or fork joining it.
-	static final int BOX_MARGIN = 8;
 	// Tiles of water round a route: recorded round its line when baking (then kept to near its path), and looked for
 	// round its points when mapped (the box then shrunk to the water found).
 	static final int WATER_REACH = 16;
 	// Fish range, tiles (tuning spinner): rivers keep fish only within this far along the path either side of the
 	// player's nearest point; a river or lake starts within this plus ACTIVE_MORE tiles of the player, and goes LINGER
 	// client ticks after they're more than this plus LEAVE_MORE away.
-	static int FISH_RANGE = 28;
+	static int FISH_RANGE = 35;
 	// Tiles past the fish range rivers keep fish (tuning spinner): those swim on unseen and undrawn, so fish come into
 	// sight already swimming, and spawn, fill in and shrink away out of sight.
-	static int LOAD_MORE = 16;
+	static int LOAD_MORE = 10;
 	private static final int ACTIVE_MORE = 4;
 	private static final int LEAVE_MORE = 16;
 	private static final int LINGER = 500;
@@ -184,10 +182,8 @@ final class RiverSpotFish
 	// client ticks, all a shoal's on the same tick; they move every tick.
 	private static final int DECIDE_EVERY = 2;
 	// A new river or lake fills one school (or solo fish) a client tick, nearest the player first, not all in one frame.
-	// Mapping steps: box, baked water, bank distances, baked path (lakes: roomy water and spawn points); and for the
-	// debug panel, their names, then a new one's last: filling it with fish.
+	// Mapping steps: box, baked water, bank distances, baked path (lakes: roomy water and spawn points).
 	private static final int MAP_STEPS = 4;
-	static final String[] STEP_NAMES = {"box", "water", "banks", "path", "fish"};
 	private static final double WINDOW_SLACK = 256;
 	// Rivers are mapped only within the fish range plus MAP_MORE tiles of the player, and mapped again round them,
 	// keeping the fish, once the window comes within REMAP_EDGE tiles of a cut end and they've moved REMAP_MOVE tiles.
@@ -240,9 +236,8 @@ final class RiverSpotFish
 	private static final double SOLO_EVERY = 2;
 	// Couzin's zones: steer away from any fish within REPEL_RANGE; line up with groupmates within ALIGN_RANGE;
 	// steer back towards the group's middle when further than COHESION_RANGE. Weights are against the pull
-	// towards the path, 1.
+	// towards the path, 1, as is repulsion between groups.
 	private static final double REPEL_RANGE = 26;
-	private static final double REPEL = 1.0;
 	// Groupmates keep their spacing more firmly, from further.
 	private static final double GROUP_REPEL_RANGE = 28;
 	// How far along the river either side a fish looks for others to keep from: the widest repel range, plus room
@@ -335,15 +330,18 @@ final class RiverSpotFish
 	private static final double SPACING_PULL = 0.6;
 	// Join chance (percent), how far before the spot fish decide (local units), and average client
 	// ticks a circling fish stays once the player stops.
-	private static final int JOIN_CHANCE = 50;
+	static int JOIN_CHANCE = 60;
 	static final double JOIN_BEFORE = 256;
 	private static final double LEAVE_AFTER = 100;
 	// A fished circle not full and joined by no passing fish for this many client ticks gets filler fish, grown in
 	// this far upstream (local units) every so many client ticks at random, until one joins or it's full.
-	private static final int REFILL_AFTER = 500;
+	static int REFILL_AFTER = 500;
 	private static final double REFILL_BEHIND = 768;
-	private static final int REFILL_GAP_LEAST = 100;
-	private static final int REFILL_GAP_MOST = 300;
+	static int REFILL_GAP_LEAST = 100;
+	static int REFILL_GAP_MOST = 300;
+	// Only at my spot, with no passing fish to help: fillers come quicker, every 1 to 4 s.
+	private static final int SPOT_ONLY_GAP_LEAST = 50;
+	private static final int SPOT_ONLY_GAP_MOST = 200;
 	// Client ticks away from a circle after which fishing it again starts its wait afresh.
 	private static final int REFILL_BREAK = 50;
 
@@ -451,12 +449,11 @@ final class RiverSpotFish
 		// Cells where deep fish come up (fish surfacers), or go down (fish divers), or null if none.
 		boolean[] surface;
 		boolean[] dive;
-		// Path points, distance along, and room left and right (facing downstream).
+		// Path points, distance along, and room either side (to the nearest bank, less BANK_GAP).
 		double[] pathX;
 		double[] pathY;
 		double[] along;
-		double[] left;
-		double[] right;
+		double[] room;
 		double length;
 		// Bank cells' middles, and the room edge's (BANK_GAP in), x then y, for debug drawing; worked out when first
 		// drawn.
@@ -495,13 +492,22 @@ final class RiverSpotFish
 		}
 
 		/**
+		 * The cell a place is in, or -1 off the map.
+		 */
+		private int cellAt(double x, double y)
+		{
+			int i = (int) Math.floor((x - x0) / CELL);
+			int j = (int) Math.floor((y - y0) / CELL);
+			return i >= 0 && j >= 0 && i < width && j < height ? j * width + i : -1;
+		}
+
+		/**
 		 * Whether a place is on one of some marked cells (surface or dive).
 		 */
 		private boolean marked(boolean[] cells, double x, double y)
 		{
-			int i = (int) Math.floor((x - x0) / CELL);
-			int j = (int) Math.floor((y - y0) / CELL);
-			return cells != null && i >= 0 && j >= 0 && i < width && j < height && cells[j * width + i];
+			int c = cellAt(x, y);
+			return cells != null && c >= 0 && cells[c];
 		}
 
 		/**
@@ -509,9 +515,8 @@ final class RiverSpotFish
 		 */
 		private double clearanceAt(double x, double y)
 		{
-			int i = (int) Math.floor((x - x0) / CELL);
-			int j = (int) Math.floor((y - y0) / CELL);
-			return i >= 0 && j >= 0 && i < width && j < height ? clearance[j * width + i] : 0;
+			int c = cellAt(x, y);
+			return c >= 0 ? clearance[c] : 0;
 		}
 
 		/**
@@ -556,13 +561,11 @@ final class RiverSpotFish
 
 		private boolean isWater(double x, double y)
 		{
-			int i = (int) Math.floor((x - x0) / CELL);
-			int j = (int) Math.floor((y - y0) / CELL);
-			return i >= 0 && j >= 0 && i < width && j < height && clearance[j * width + i] > 0;
+			return clearanceAt(x, y) > 0;
 		}
 
 		/**
-		 * Fills x, y, direction x, direction y, room left, room right at a distance along the path.
+		 * Fills x, y, direction x, direction y and the room either side at a distance along the path.
 		 */
 		void at(double s, double[] into)
 		{
@@ -579,8 +582,7 @@ final class RiverSpotFish
 			into[1] = pathY[k] + dy * t;
 			into[2] = dx / d;
 			into[3] = dy / d;
-			into[4] = left[k] + (left[k + 1] - left[k]) * t;
-			into[5] = right[k] + (right[k + 1] - right[k]) * t;
+			into[4] = room[k] + (room[k + 1] - room[k]) * t;
 		}
 
 		/**
@@ -799,10 +801,9 @@ final class RiverSpotFish
 		final double[] lanes;
 		// Each lane's radius at LANE_ANGLES angles round, pulled in where it would come within BANK_GAP of a bank.
 		final double[][] pulled;
-		// Centre's offset across the path (left positive) and room either side there.
+		// Centre's offset across the path (left positive) and the room either side there.
 		private final double across;
-		private final double roomLeft;
-		private final double roomRight;
+		private final double room;
 		// Client tick it started waiting for a passing fish while fished and not full, or -1; the next filler
 		// fish's client tick once it's waited too long, or -1; and the client tick it was last fished.
 		private int waitingSince = -1;
@@ -838,16 +839,14 @@ final class RiverSpotFish
 			{
 				along = 0;
 				across = 0;
-				roomLeft = Double.MAX_VALUE;
-				roomRight = Double.MAX_VALUE;
+				room = Double.MAX_VALUE;
 				return;
 			}
 			along = river.nearest(x, y);
-			double[] at = new double[6];
+			double[] at = new double[5];
 			river.at(along, at);
 			across = (x - at[0]) * -at[3] + (y - at[1]) * at[2];
-			roomLeft = at[4];
-			roomRight = at[5];
+			room = at[4];
 		}
 	}
 
@@ -998,8 +997,9 @@ final class RiverSpotFish
 	// Spot whose menu option the player last chose, and the fish that option draws (null for all).
 	private NPC chosenSpot;
 	private int[] chosenFish;
-	// Stretches of each baked river mapped while the plugin starts, to warm the mapping code up.
-	private static final int WARM_ROUNDS = 12;
+	// Stretches mapped while the plugin starts, to warm the mapping code up: a fixed total shared out among the
+	// rivers, so more bakes don't make starting slower.
+	private static final int WARM_STRETCHES = 80;
 	// Baked water and paths, by each river or lake's first point.
 	final Map<WorldPoint, Baked> baked = new HashMap<>();
 	// The warm-up's time at plugin start, ms, for the debug plugin.
@@ -1019,8 +1019,10 @@ final class RiverSpotFish
 	final Set<WorldPoint[]> unmappable = new HashSet<>();
 	// Rivers and lakes (by first point) logged as out of sight, so it's logged once until they're next mapped.
 	private final Set<WorldPoint> saidOutOfSight = new HashSet<>();
-	// Whether fish swim in groups (schooled) or each on its own (random).
+	// Whether fish swim in groups (schooled) or each on its own (random); and whether only fish coming to the spot
+	// being fished swim (none down the rivers or round the lakes).
 	private boolean schooled = true;
+	private boolean onlyAtSpot;
 	// Fish spacing times this, from the player's River fish amount.
 	private double spacingScale = 1;
 	// The same for lakes, from the player's Lake fish amount.
@@ -1040,7 +1042,7 @@ final class RiverSpotFish
 	// The body model at each grow step, made when first needed.
 	private final Model[] bodyModels = new Model[GROW_STEPS + 1];
 	// Scratch for River.at.
-	private final double[] point = new double[6];
+	private final double[] point = new double[5];
 
 	RiverSpotFish(Client client, FishModels models)
 	{
@@ -1071,33 +1073,37 @@ final class RiverSpotFish
 	private void warmUp()
 	{
 		int reach = loadRange() + MAP_MORE;
+		List<Baked> rivers = new ArrayList<>();
 		for (Baked saved : baked.values())
 		{
-			if (saved.pathX == null)
+			if (saved.pathX != null)
 			{
-				continue;
+				rivers.add(saved);
 			}
+		}
+		// Each river in turn, a stretch at a time, further along it each time round.
+		int rounds = rivers.isEmpty() ? 0 : (WARM_STRETCHES + rivers.size() - 1) / rivers.size();
+		for (int k = 0; k < WARM_STRETCHES && !rivers.isEmpty(); k++)
+		{
+			Baked saved = rivers.get(k % rivers.size());
 			int points = saved.pathX.length;
-			for (int round = 0; round < WARM_ROUNDS; round++)
+			// A stretch round a place along the river, in world coordinates (a scene based at 0).
+			int middle = points * (k / rivers.size() + 1) / (rounds + 1);
+			int from = Math.max(0, middle - 2 * reach);
+			int to = Math.min(points - 1, middle + 2 * reach);
+			int tileX = (int) saved.pathX[middle] / 128;
+			int tileY = (int) saved.pathY[middle] / 128;
+			River river = new River((tileX - reach) * 128, (tileY - reach) * 128, (2 * reach + 1) * PER_TILE,
+				(2 * reach + 1) * PER_TILE);
+			bakedWet(saved, 0, 0, river);
+			clearances(river);
+			int[] ends = {(int) saved.pathX[from], (int) saved.pathY[from], (int) saved.pathX[to], (int) saved.pathY[to]};
+			if (bakedPath(river, saved, 0, 0, ends))
 			{
-				// A stretch round a place along the river, in world coordinates (a scene based at 0).
-				int middle = points * (round + 1) / (WARM_ROUNDS + 1);
-				int from = Math.max(0, middle - 2 * reach);
-				int to = Math.min(points - 1, middle + 2 * reach);
-				int tileX = (int) saved.pathX[middle] / 128;
-				int tileY = (int) saved.pathY[middle] / 128;
-				River river = new River((tileX - reach) * 128, (tileY - reach) * 128, (2 * reach + 1) * PER_TILE,
-					(2 * reach + 1) * PER_TILE);
-				bakedWet(saved, 0, 0, river);
-				clearances(river);
-				int[] ends = {(int) saved.pathX[from], (int) saved.pathY[from], (int) saved.pathX[to], (int) saved.pathY[to]};
-				if (bakedPath(river, saved, 0, 0, ends))
-				{
-					bakedBranches(river, saved, 0, 0);
-					river.at(river.nearest(river.pathX[0], river.pathY[0]), point);
-					double[] away = awayFromBank(river, point[0], point[1]);
-					roundRing(river, point[0] + away[0] * CIRCLE_OFFSET, point[1] + away[1] * CIRCLE_OFFSET);
-				}
+				bakedBranches(river, saved, 0, 0);
+				river.at(river.nearest(river.pathX[0], river.pathY[0]), point);
+				double[] away = awayFromBank(river, point[0], point[1]);
+				roundRing(river, point[0] + away[0] * CIRCLE_OFFSET, point[1] + away[1] * CIRCLE_OFFSET);
 			}
 		}
 	}
@@ -1189,8 +1195,6 @@ final class RiverSpotFish
 	// Each kind of mark's word in a baked file: fish blockers, allowers, surfacers and divers. Kinds 0 and 1 replace
 	// each other on a tile, as do 2 and 3.
 	static final String[] MARK_WORDS = {"block", "allow", "surface", "dive"};
-	// Longest line in a baked file, characters, so a river takes few lines.
-	static final int BAKED_WIDTH = 150;
 
 	static Baked readBaked(String name, BufferedReader reader)
 	{
@@ -1683,7 +1687,10 @@ final class RiverSpotFish
 		// Fish spread evenly along the stretch round the player, a school a tick, nearest first.
 		shoal.spacing = riverSpacing(shoal.route);
 		updateWindow(shoal);
-		fillStretch(shoal, shoal.windowFrom, shoal.windowTo, random);
+		if (!onlyAtSpot)
+		{
+			fillStretch(shoal, shoal.windowFrom, shoal.windowTo, random);
+		}
 		shoal.nextSpawn = cycle + spawnGap(random);
 		shoal.nextSolo = cycle + (int) (spawnGap(random) * SOLO_EVERY);
 		shoal.nextBody = cycle + bodyGap(random);
@@ -1873,6 +1880,10 @@ final class RiverSpotFish
 	 */
 	private int fishCount(WorldPoint[] route, River river, boolean lake)
 	{
+		if (onlyAtSpot)
+		{
+			return 0;
+		}
 		Baked saved = baked.get(route[0]);
 		double share = saved == null ? 1 : saved.fishShare / 100.0;
 		return Math.max(1, (int) Math.round(share * (lake
@@ -1952,21 +1963,6 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * The river or lake whose first point this is, or null.
-	 */
-	WorldPoint[] routeOf(WorldPoint first)
-	{
-		for (WorldPoint[] route : routesAndLakes())
-		{
-			if (route[0].equals(first))
-			{
-				return route;
-			}
-		}
-		return null;
-	}
-
-	/**
 	 * Every river and lake.
 	 */
 	List<WorldPoint[]> routesAndLakes()
@@ -1987,13 +1983,12 @@ final class RiverSpotFish
 	private void attach(Shoal shoal, NPC spot, LocalPoint at)
 	{
 		// The tuning spinners' fixed offset, else away from the nearest bank.
-		int[] fixed = RING_MANUAL ? new int[]{RING_EAST, RING_NORTH} : null;
 		double x;
 		double y;
-		if (fixed != null)
+		if (RING_MANUAL)
 		{
-			x = at.getX() + fixed[0];
-			y = at.getY() + fixed[1];
+			x = at.getX() + RING_EAST;
+			y = at.getY() + RING_NORTH;
 		}
 		else
 		{
@@ -2007,12 +2002,6 @@ final class RiverSpotFish
 			});
 			x = at.getX() + offset[0];
 			y = at.getY() + offset[1];
-		}
-		if (RING_MANUAL)
-		{
-			WorldPoint key = shoal.route[0];
-			log.debug("Ring offset: Map.entry(new WorldPoint({}, {}, {}), new int[]{{}, {}})", key.getX(), key.getY(),
-				key.getPlane(), RING_EAST, RING_NORTH);
 		}
 		Circle circle = new Circle(spot, shoal.river, x, y, ThreadLocalRandom.current().nextBoolean() ? 1 : -1);
 		shoal.circles.put(spot, circle);
@@ -2482,6 +2471,22 @@ final class RiverSpotFish
 	}
 
 	/**
+	 * The lake spawn point nearest a place.
+	 */
+	private static double[] nearestSpawn(Shoal shoal, double x, double y)
+	{
+		double[] best = shoal.spawns[0];
+		for (double[] spawn : shoal.spawns)
+		{
+			if (Math.hypot(spawn[0] - x, spawn[1] - y) < Math.hypot(best[0] - x, best[1] - y))
+			{
+				best = spawn;
+			}
+		}
+		return best;
+	}
+
+	/**
 	 * The way towards a place on a lake: the place itself when in sight, else a roomy place in sight of both.
 	 */
 	private static double[] waypoint(River river, double fromX, double fromY, double toX, double toY,
@@ -2595,8 +2600,7 @@ final class RiverSpotFish
 		}
 		double ux = swimmer.headX;
 		double uy = swimmer.headY;
-		double apart = Double.isNaN(goalX) ? 0
-			: Math.sqrt((goalX - fromX) * (goalX - fromX) + (goalY - fromY) * (goalY - fromY));
+		double apart = Double.isNaN(goalX) ? 0 : Math.hypot(goalX - fromX, goalY - fromY);
 		if (apart > 1)
 		{
 			ux = (goalX - fromX) / apart;
@@ -2699,8 +2703,8 @@ final class RiverSpotFish
 		}
 		double longer = group != null ? 1 + pike / (double) members.size() : pike > 0 ? LAKE_PIKE_PAUSE : 1;
 		int until = cycle + (int) (random.nextInt(LAKE_PAUSE_LEAST, LAKE_PAUSE_MOST + 1) * longer);
-		double ux = Math.cos(swimmer.facing);
-		double uy = Math.sin(swimmer.facing);
+		double ux = swimmer.headX;
+		double uy = swimmer.headY;
 		double apart = Double.isNaN(goalX) ? 0 : Math.hypot(goalX - fromX, goalY - fromY);
 		if (apart > 1)
 		{
@@ -3004,9 +3008,9 @@ final class RiverSpotFish
 			}
 			// Its share: its room against the river's own over the same stretch.
 			double branchRoom = 0;
-			for (double room : line.left)
+			for (double room : line.room)
 			{
-				branchRoom += room / line.left.length;
+				branchRoom += room / line.room.length;
 			}
 			double mainRoom = 0;
 			int mainPoints = 0;
@@ -3014,7 +3018,7 @@ final class RiverSpotFish
 			{
 				if (river.along[k] >= fromS && river.along[k] <= toS)
 				{
-					mainRoom += river.left[k];
+					mainRoom += river.room[k];
 					mainPoints++;
 				}
 			}
@@ -3159,8 +3163,8 @@ final class RiverSpotFish
 		river.pathX = pathX;
 		river.pathY = pathY;
 		river.along = new double[points];
-		river.left = new double[points];
-		river.right = new double[points];
+		river.room = new double[points];
+		double[] bank = new double[points];
 		double walked = 0;
 		for (int p = 0; p < points; p++)
 		{
@@ -3168,8 +3172,7 @@ final class RiverSpotFish
 			river.along[p] = walked;
 			// The room either side: the distance to the nearest bank, which changes smoothly, can't run on through a
 			// gap, and can't fold back on a bend, as the path keeps to the middle.
-			double room = Math.max(0, river.smoothClearance(pathX[p], pathY[p]) - BANK_GAP);
-			river.left[p] = room;
+			bank[p] = Math.max(0, river.smoothClearance(pathX[p], pathY[p]) - BANK_GAP);
 		}
 		river.length = walked;
 		// Smoothed along the river, over ROOM_SMOOTH points either side, so it doesn't step from cell to cell; rising at
@@ -3178,24 +3181,23 @@ final class RiverSpotFish
 		int in = 0;
 		for (int p = 0; p < Math.min(ROOM_SMOOTH, points); p++)
 		{
-			sum += river.left[p];
+			sum += bank[p];
 			in++;
 		}
 		for (int p = 0; p < points; p++)
 		{
 			if (p + ROOM_SMOOTH < points)
 			{
-				sum += river.left[p + ROOM_SMOOTH];
+				sum += bank[p + ROOM_SMOOTH];
 				in++;
 			}
 			if (p - ROOM_SMOOTH - 1 >= 0)
 			{
-				sum -= river.left[p - ROOM_SMOOTH - 1];
+				sum -= bank[p - ROOM_SMOOTH - 1];
 				in--;
 			}
-			river.right[p] = Math.min(sum / in, river.left[p] + ROOM_SLACK);
+			river.room[p] = Math.min(sum / in, bank[p] + ROOM_SLACK);
 		}
-		System.arraycopy(river.right, 0, river.left, 0, points);
 	}
 
 	// Room smoothing: path points averaged either side (16 local units apart), and the most it may rise past the bank
@@ -3443,7 +3445,7 @@ final class RiverSpotFish
 		else
 		{
 			shoal.river.at(s, point);
-			double offset = group != null ? share(group.across, point) + slot : share(swimmer.across, point);
+			double offset = group != null ? group.across * point[4] + slot : swimmer.across * point[4];
 			swimmer.x = point[0] - point[3] * offset;
 			swimmer.y = point[1] + point[2] * offset;
 			swimmer.facing = Math.atan2(point[3], point[2]);
@@ -3457,14 +3459,6 @@ final class RiverSpotFish
 		show(shoal, swimmer, 0, cycle);
 		shoal.fish.add(swimmer);
 		return swimmer;
-	}
-
-	/**
-	 * Converts a share of the room (-1 to 1) to an offset across the path, local units.
-	 */
-	private static double share(double share, double[] at)
-	{
-		return share >= 0 ? share * at[4] : share * at[5];
 	}
 
 	/**
@@ -3773,7 +3767,7 @@ final class RiverSpotFish
 				{
 					shoal.remapping = new Mapping(view, shoal.route, shoal.plane);
 				}
-				if (shoal.toFill.isEmpty())
+				if (shoal.toFill.isEmpty() && !onlyAtSpot)
 				{
 					fillGaps(shoal, random);
 				}
@@ -3781,13 +3775,14 @@ final class RiverSpotFish
 			}
 			started = probe.add(Probe.WINDOW, started);
 			// Rivers spawn at the window's upstream edge on a steady timer so no gaps open, capped at twice the target.
-			if (!shoal.lake && shoal.ready && !shoal.leaving && cycle >= shoal.nextSpawn)
+			boolean flowing = !shoal.lake && shoal.ready && !shoal.leaving && !onlyAtSpot;
+			if (flowing && cycle >= shoal.nextSpawn)
 			{
 				int count = travelling < 2 * windowFish(shoal)
 					? spawnGroup(shoal, shoal.windowFrom, null, true, cycle, random, Integer.MAX_VALUE) : 1;
 				shoal.nextSpawn = Math.max(shoal.nextSpawn + spawnGap(random) * count, cycle);
 			}
-			if (!shoal.lake && shoal.ready && !shoal.leaving && schooled && cycle >= shoal.nextSolo)
+			if (flowing && schooled && cycle >= shoal.nextSolo)
 			{
 				if (travelling < 2 * windowFish(shoal))
 				{
@@ -3795,7 +3790,7 @@ final class RiverSpotFish
 				}
 				shoal.nextSolo = Math.max(shoal.nextSolo + (int) (spawnGap(random) * SOLO_EVERY), cycle);
 			}
-			if (!shoal.lake)
+			if (!shoal.lake && !onlyAtSpot)
 			{
 				drift(shoal, ticks, cycle, random);
 			}
@@ -4045,7 +4040,7 @@ final class RiverSpotFish
 		double speed = TRAVEL_SPEED * BODY_SPEED;
 		// Its place on the path, and how narrow the river is there: 0 wide, 1 narrow.
 		shoal.river.at(body.s, point);
-		double narrow = Math.max(0, Math.min(1, (BODY_WIDE - point[4] - point[5]) / (BODY_WIDE - BODY_NARROW)));
+		double narrow = Math.max(0, Math.min(1, (BODY_WIDE - 2 * point[4]) / (BODY_WIDE - BODY_NARROW)));
 		body.narrow = narrow;
 		body.s += speed * (1 + BODY_NARROW_SPEED * narrow) * ticks;
 		// Spins freely unless at least half narrow; then lines up with the river, whichever end is already more
@@ -4073,7 +4068,7 @@ final class RiverSpotFish
 				body.step = step;
 			}
 		}
-		double offset = share(body.across, point);
+		double offset = body.across * point[4];
 		double toX = point[0] - point[3] * offset;
 		double toY = point[1] + point[2] * offset;
 		if (Double.isNaN(body.x))
@@ -4170,11 +4165,12 @@ final class RiverSpotFish
 			{
 				circle.waitingSince = cycle;
 			}
-			if (cycle - circle.waitingSince < REFILL_AFTER || cycle < circle.nextFill)
+			if (cycle - circle.waitingSince < (onlyAtSpot ? 0 : REFILL_AFTER) || cycle < circle.nextFill)
 			{
 				continue;
 			}
-			circle.nextFill = cycle + random.nextInt(REFILL_GAP_LEAST, REFILL_GAP_MOST + 1);
+			circle.nextFill = cycle + (onlyAtSpot ? random.nextInt(SPOT_ONLY_GAP_LEAST, SPOT_ONLY_GAP_MOST + 1)
+				: random.nextInt(REFILL_GAP_LEAST, REFILL_GAP_MOST + 1));
 			List<Integer> wanted = new ArrayList<>();
 			for (int kind : shoal.kinds)
 			{
@@ -4189,7 +4185,7 @@ final class RiverSpotFish
 			}
 			// New fish even on a full lake; trimLake() evens the count out later.
 			double s = shoal.lake ? 0 : Math.max(0, circle.along - REFILL_BEHIND);
-			double[] place = shoal.lake ? emptiestSpawn(shoal) : null;
+			double[] place = !shoal.lake ? null : onlyAtSpot ? nearestSpawn(shoal, circle.x, circle.y) : emptiestSpawn(shoal);
 			Swimmer swimmer = spawn(shoal, s, place, true, cycle, random, wanted.get(random.nextInt(wanted.size())), null,
 				0);
 			if (swimmer != null)
@@ -4233,6 +4229,7 @@ final class RiverSpotFish
 			weights += weight(kind);
 			others += kind == RAINBOW ? 0 : 1;
 		}
+		double rest = 1 - (rainbows ? RAINBOW_SHARE : 0);
 		Player player = client.getLocalPlayer();
 		LocalPoint me = player == null ? null : player.getLocalLocation();
 		for (int n = 0; n < excess; n++)
@@ -4246,7 +4243,6 @@ final class RiverSpotFish
 				{
 					continue;
 				}
-				double rest = 1 - (rainbows ? RAINBOW_SHARE : 0);
 				double share = kind == RAINBOW ? RAINBOW_SHARE
 					: rest * (weights > 0 ? weight(kind) / (double) weights : 1.0 / Math.max(1, others));
 				double over = count - share * all;
@@ -4339,11 +4335,11 @@ final class RiverSpotFish
 		}
 		double clear = nearest.radius + CIRCLE_CLEARANCE;
 		double own = swimmer.lateral - nearest.across;
-		int roomier = nearest.roomLeft - nearest.across >= nearest.roomRight + nearest.across ? 1 : -1;
+		int roomier = nearest.across <= 0 ? 1 : -1;
 		int first = Math.abs(own) > 1 ? (int) Math.signum(own) : roomier;
 		for (int way : new int[]{first, -first})
 		{
-			if (way > 0 ? nearest.across + clear <= nearest.roomLeft : nearest.across - clear >= -nearest.roomRight)
+			if (way * nearest.across + clear <= nearest.room)
 			{
 				swimmer.passSide = way;
 				return;
@@ -4434,10 +4430,9 @@ final class RiverSpotFish
 		double travel = shoal.lake ? TRAVEL_SPEED * LAKE_SPEED : TRAVEL_SPEED;
 		double base = swimmer.circle != null ? travel + (CIRCLE_SPEED - travel) * near : travel;
 		double want = base * own * look.pace / 100.0 * (1 + SURGE * look.surge / 100.0 * surging);
-		if (swimmer.burstUntil >= 0)
+		if (cycle < swimmer.burstUntil)
 		{
-			want *= cycle < swimmer.burstUntil ? BURST_SPEED : 1;
-			swimmer.burstUntil = cycle < swimmer.burstUntil ? swimmer.burstUntil : -1;
+			want *= BURST_SPEED;
 		}
 		// Keep to its place along the group: speed up behind it, ease off ahead.
 		double middleX = 0;
@@ -4488,13 +4483,12 @@ final class RiverSpotFish
 			}
 			want *= (1 - in * (1 - lane)) * (1 + in * (swimmer.evening - 1));
 		}
-		// Paused lake fish hover.
-		if (shoal.lake && swimmer.circle == null && swimmer.setOffAt >= 0 && cycle < swimmer.setOffAt)
+		// Paused lake fish hover, easing to a stop; circling fish change speed more gently once in their lane.
+		boolean pausing = shoal.lake && swimmer.circle == null && cycle < swimmer.setOffAt;
+		if (pausing)
 		{
 			want = travel * LAKE_HOVER * own;
 		}
-		// Circling fish change speed more gently once in their lane.
-		boolean pausing = shoal.lake && swimmer.circle == null && swimmer.setOffAt >= 0 && cycle < swimmer.setOffAt;
 		double ease = pausing ? LAKE_STOP_EASE : in >= 1 ? 0.02 : 0.05;
 		swimmer.swimming += (want - swimmer.swimming) * Math.min(1, ease * ticks);
 		double moved = swimmer.swimming * ticks;
@@ -4737,7 +4731,7 @@ final class RiverSpotFish
 			double wander = WANDER * (group != null ? group.wander : swimmer.wander).at(cycle);
 			way.at(aim + LOOK_AHEAD, point);
 			double across = group != null ? group.across : swimmer.across;
-			double offset = share(Math.max(-1, Math.min(1, across + wander)), point) + (group != null ? swimmer.slot : 0);
+			double offset = Math.max(-1, Math.min(1, across + wander)) * point[4] + (group != null ? swimmer.slot : 0);
 			// Keep outside any circle being passed.
 			pass(shoal, swimmer);
 			if (swimmer.passing != null)
@@ -4746,7 +4740,7 @@ final class RiverSpotFish
 				offset = swimmer.passSide > 0 ? Math.max(offset, edge) : Math.min(offset, edge);
 			}
 			// Stay within the room.
-			offset = Math.max(-point[5], Math.min(point[4], offset));
+			offset = Math.max(-point[4], Math.min(point[4], offset));
 			swimmer.lateral = offset;
 			targetX = point[0] - point[3] * offset;
 			targetY = point[1] + point[2] * offset;
@@ -4830,8 +4824,8 @@ final class RiverSpotFish
 		swimmer.repelY = ease(swimmer.repelY, repelY, REPEL_EASE * DECIDE_EVERY);
 		swimmer.groupRepelX = ease(swimmer.groupRepelX, groupRepelX, GROUP_REPEL_EASE * DECIDE_EVERY);
 		swimmer.groupRepelY = ease(swimmer.groupRepelY, groupRepelY, GROUP_REPEL_EASE * DECIDE_EVERY);
-		x += REPEL * swimmer.repelX + GROUP_REPEL * swimmer.groupRepelX;
-		y += REPEL * swimmer.repelY + GROUP_REPEL * swimmer.groupRepelY;
+		x += swimmer.repelX + GROUP_REPEL * swimmer.groupRepelX;
+		y += swimmer.repelY + GROUP_REPEL * swimmer.groupRepelY;
 		if (group != null && group.members.size() > 1)
 		{
 			double alignX = 0;
@@ -4895,8 +4889,8 @@ final class RiverSpotFish
 		{
 			swimmer.surface = waterHeight(x, y, shoal.plane);
 			// The drop along its heading (heights grow downwards): nose down going down.
-			int dx = (int) Math.round(SLOPE_LOOK * Math.cos(swimmer.facing));
-			int dy = (int) Math.round(SLOPE_LOOK * Math.sin(swimmer.facing));
+			int dx = (int) Math.round(SLOPE_LOOK * swimmer.headX);
+			int dy = (int) Math.round(SLOPE_LOOK * swimmer.headY);
 			int drop = waterHeight(x + dx, y + dy, shoal.plane) - waterHeight(x - dx, y - dy, shoal.plane);
 			double angle = Math.toDegrees(Math.atan2(drop, 2 * SLOPE_LOOK));
 			swimmer.slopeWant = -Math.signum(angle) * Math.min(SLOPE_MOST, Math.max(0, Math.abs(angle) - SLOPE_MIN));
@@ -4998,11 +4992,12 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * Sets whether fish swim in groups or each on its own, for shoals made from now on.
+	 * Sets how fish swim, for shoals made from now on: in groups, each on its own, or only at the spot being fished.
 	 */
-	void setSchooled(boolean schooled)
+	void setSwimming(RiverSwimming swimming)
 	{
-		this.schooled = schooled;
+		schooled = swimming != RiverSwimming.RANDOM;
+		onlyAtSpot = swimming == RiverSwimming.ONLY_AT_SPOT;
 	}
 
 	/**

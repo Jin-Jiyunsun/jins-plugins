@@ -17,6 +17,9 @@ import static com.livelyfishingspots.RiverSpotFish.*;
 @Slf4j
 final class Bakes
 {
+	// Longest line in a baked file, characters, so a river takes few lines.
+	private static final int BAKED_WIDTH = 150;
+
 	private Bakes()
 	{
 	}
@@ -335,7 +338,7 @@ final class Bakes
 			return null;
 		}
 		saved.route = spawns;
-		int index = rivers.lakes.indexOf(rivers.baked.get(first) == saved ? rivers.routeOf(first) : null);
+		int index = rivers.lakes.indexOf(rivers.baked.get(first) == saved ? routeOf(rivers, first) : null);
 		if (index >= 0)
 		{
 			rivers.lakes.set(index, spawns);
@@ -404,5 +407,20 @@ final class Bakes
 			line.append(' ').append(point.getX()).append(' ').append(point.getY());
 		}
 		return line.toString();
+	}
+
+	/**
+	 * The river or lake whose first point this is, or null.
+	 */
+	static WorldPoint[] routeOf(RiverSpotFish rivers, WorldPoint first)
+	{
+		for (WorldPoint[] route : rivers.routesAndLakes())
+		{
+			if (route[0].equals(first))
+			{
+				return route;
+			}
+		}
+		return null;
 	}
 }

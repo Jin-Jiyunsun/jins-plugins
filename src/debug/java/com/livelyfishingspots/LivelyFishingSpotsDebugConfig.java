@@ -299,6 +299,18 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 		return 58;
 	}
 
+	@ConfigItem(
+		keyName = "debugRiverEagerCircles",
+		name = "Eager circles",
+		description = "Every passing fish joins a fished spot,<br>and fillers come after 1 s, every 0.5-1 s",
+		section = debugRiverLanes,
+		position = 0
+	)
+	default boolean debugRiverEagerCircles()
+	{
+		return false;
+	}
+
 	@Range(min = 1, max = 50)
 	@ConfigItem(
 		keyName = "debugRiverCircleMost",
@@ -1514,7 +1526,7 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 	)
 	default int debugRiverFishRange()
 	{
-		return 28;
+		return 35;
 	}
 
 	@Range(max = 40)
@@ -1527,7 +1539,7 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 	)
 	default int debugRiverLoadMore()
 	{
-		return 16;
+		return 10;
 	}
 
 	@ConfigItem(

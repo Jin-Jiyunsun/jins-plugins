@@ -1043,6 +1043,14 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 	String debugWaterfalls = "debugWaterfalls";
 
 	@ConfigSection(
+		name = "Debug: leaps",
+		description = "Temporary tuning of leaping fish<br>jumping out of the water",
+		position = 115,
+		closedByDefault = true
+	)
+	String debugLeaps = "debugLeaps";
+
+	@ConfigSection(
 		name = "Debug: river lanes",
 		description = "Temporary tuning of the circles and spacing",
 		position = 105,
@@ -2320,31 +2328,6 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 		return 150;
 	}
 
-	@Range(min = 16, max = 512)
-	@ConfigItem(
-		keyName = "debugRiverClimbLook",
-		name = "Climb look ahead",
-		description = "How far ahead climbing fish look<br>for the top, to level out before it,<br>local units (128 a tile)",
-		section = debugWaterfalls,
-		position = 1
-	)
-	default int debugRiverClimbLook()
-	{
-		return 50;
-	}
-
-	@Range(min = 16, max = 1024)
-	@ConfigItem(
-		keyName = "debugRiverClimbSpeedAhead",
-		name = "Climb speed look ahead",
-		description = "How far ahead climbing fish look<br>for the top, to start speeding up<br>before it, local units (128 a tile)",
-		section = debugWaterfalls,
-		position = 2
-	)
-	default int debugRiverClimbSpeedAhead()
-	{
-		return 40;
-	}
 
 	@Range(min = 50, max = 500)
 	@Units(Units.PERCENT)
@@ -2360,6 +2343,170 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 		return 150;
 	}
 
+	@Range(min = 1, max = 600)
+	@Units(Units.SECONDS)
+	@ConfigItem(
+		keyName = "debugLeapEvery",
+		name = "Leap every",
+		description = "Seconds between each leaping<br>fish's leaps, on average",
+		section = debugLeaps,
+		position = 0
+	)
+	default int debugLeapEvery()
+	{
+		return 20;
+	}
+
+	@Range(min = 100, max = 5000)
+	@Units(Units.MILLISECONDS)
+	@ConfigItem(
+		keyName = "debugLeapMillis",
+		name = "Leap length",
+		description = "How long a leap is in the air",
+		section = debugLeaps,
+		position = 1
+	)
+	default int debugLeapMillis()
+	{
+		return 700;
+	}
+
+	@Range(min = 0, max = 1000)
+	@ConfigItem(
+		keyName = "debugLeapHeight",
+		name = "Leap height",
+		description = "How high over the water<br>a leap goes, local units",
+		section = debugLeaps,
+		position = 2
+	)
+	default int debugLeapHeight()
+	{
+		return 75;
+	}
+
+	@Range(min = 0, max = 89)
+	@ConfigItem(
+		keyName = "debugLeapPitch",
+		name = "Leap tilt",
+		description = "Most degrees nose up or down,<br>pointing along its way",
+		section = debugLeaps,
+		position = 3
+	)
+	default int debugLeapPitch()
+	{
+		return 80;
+	}
+
+	@Range(min = 0, max = 200)
+	@Units(Units.PERCENT)
+	@ConfigItem(
+		keyName = "debugLeapLanding",
+		name = "Landing dive",
+		description = "How much of the speed it falls<br>in at carries it on down past<br>its depth",
+		section = debugLeaps,
+		position = 4
+	)
+	default int debugLeapLanding()
+	{
+		return 30;
+	}
+
+	@Range(min = 20, max = 5000)
+	@Units(Units.MILLISECONDS)
+	@ConfigItem(
+		keyName = "debugLeapSettleMillis",
+		name = "Landing settle",
+		description = "How long a landed fish takes<br>to ease back to its depth and level",
+		section = debugLeaps,
+		position = 5
+	)
+	default int debugLeapSettleMillis()
+	{
+		return 1500;
+	}
+
+	@Range(min = 20, max = 5000)
+	@Units(Units.MILLISECONDS)
+	@ConfigItem(
+		keyName = "debugLeapRunMillis",
+		name = "Leap run-up",
+		description = "How long a fish takes to curve<br>up to the surface, speeding up",
+		section = debugLeaps,
+		position = 6
+	)
+	default int debugLeapRunMillis()
+	{
+		return 500;
+	}
+
+	@Range(min = 100, max = 500)
+	@Units(Units.PERCENT)
+	@ConfigItem(
+		keyName = "debugLeapSpeed",
+		name = "Leap speed",
+		description = "Its speed in the air, of its<br>usual; reached in the run-up,<br>eased off after landing",
+		section = debugLeaps,
+		position = 7
+	)
+	default int debugLeapSpeed()
+	{
+		return 200;
+	}
+
+	@Range(min = 1, max = 100)
+	@Units(Units.PERCENT)
+	@ConfigItem(
+		keyName = "debugLeapTipEase",
+		name = "Leap turn smoothing",
+		description = "How quickly a leaping fish's<br>nose follows its way, each<br>client tick; lower is smoother",
+		section = debugLeaps,
+		position = 8
+	)
+	default int debugLeapTipEase()
+	{
+		return 25;
+	}
+
+	@Range(min = 0, max = 90)
+	@Units(Units.PERCENT)
+	@ConfigItem(
+		keyName = "debugLeapCarry",
+		name = "Landing carry",
+		description = "How much of the landing settle<br>a fish keeps its leaping speed<br>before easing down",
+		section = debugLeaps,
+		position = 9
+	)
+	default int debugLeapCarry()
+	{
+		return 90;
+	}
+
+	@Range(min = 10, max = 90)
+	@Units(Units.PERCENT)
+	@ConfigItem(
+		keyName = "debugLeapFallShare",
+		name = "Leap fall time",
+		description = "How much of the time in the air<br>is spent falling from the top",
+		section = debugLeaps,
+		position = 10
+	)
+	default int debugLeapFallShare()
+	{
+		return 45;
+	}
+
+	@Range(min = 100, max = 600)
+	@ConfigItem(
+		keyName = "debugLeapFallPower",
+		name = "Leap fall speed-up",
+		description = "How hard the fall picks up speed<br>after the top: 200 as if thrown,<br>higher speeds up more at the end",
+		section = debugLeaps,
+		position = 11
+	)
+	default int debugLeapFallPower()
+	{
+		return 175;
+	}
 
 
 	@Range(min = 50, max = 200)

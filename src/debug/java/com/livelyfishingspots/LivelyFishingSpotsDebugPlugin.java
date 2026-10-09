@@ -205,7 +205,7 @@ public class LivelyFishingSpotsDebugPlugin extends Plugin
 			return;
 		}
 		boolean look = key.startsWith("debugLook");
-		if (look || key.startsWith("debugRiver"))
+		if (look || key.startsWith("debugRiver") || key.startsWith("debugLeap"))
 		{
 			clientThread.invoke(() ->
 			{
@@ -596,9 +596,19 @@ public class LivelyFishingSpotsDebugPlugin extends Plugin
 		RiverSpotFish.DIVE_DEPTH = config.debugRiverDiveDepth();
 		RiverSpotFish.DIVE_EASE = config.debugRiverDiveSpeed() / 100.0;
 		RiverSpotFish.CLIMB_TILT = config.debugRiverClimbTilt() / 100.0;
-		RiverSpotFish.CLIMB_LOOK = config.debugRiverClimbLook();
-		RiverSpotFish.CLIMB_SPEED_LOOK = config.debugRiverClimbSpeedAhead();
 		RiverSpotFish.CLIMB_WAG = config.debugRiverClimbWag() / 100.0;
+		RiverSpotFish.LEAP_EVERY = config.debugLeapEvery();
+		RiverSpotFish.LEAP_TICKS = Math.max(1, config.debugLeapMillis() / 20);
+		RiverSpotFish.LEAP_HEIGHT = config.debugLeapHeight();
+		RiverSpotFish.LEAP_PITCH = config.debugLeapPitch();
+		RiverSpotFish.LEAP_LANDING = config.debugLeapLanding() / 100.0;
+		RiverSpotFish.LEAP_RUN_TICKS = Math.max(1, config.debugLeapRunMillis() / 20);
+		RiverSpotFish.LEAP_SPEED = config.debugLeapSpeed() / 100.0;
+		RiverSpotFish.LEAP_TIP_EASE = config.debugLeapTipEase() / 100.0;
+		RiverSpotFish.LEAP_CARRY = config.debugLeapCarry() / 100.0;
+		RiverSpotFish.LEAP_FALL_SHARE = config.debugLeapFallShare() / 100.0;
+		RiverSpotFish.LEAP_FALL_POWER = config.debugLeapFallPower() / 100.0;
+		RiverSpotFish.LEAP_SETTLE_TICKS = Math.max(1, config.debugLeapSettleMillis() / 20);
 		RiverSpotFish.CIRCLE_LANES = config.debugRiverCircleLanes();
 		RiverSpotFish.CIRCLE_LANE_SPACING = config.debugRiverCircleLaneSpacing();
 		RiverSpotFish.CIRCLE_SIZE = config.debugRiverCircleSize();

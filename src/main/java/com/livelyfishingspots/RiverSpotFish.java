@@ -400,14 +400,29 @@ final class RiverSpotFish
 	// Climbing, fish point up more than the slope, by this share, up to CLIMB_MOST degrees.
 	static double CLIMB_TILT = 1.5;
 	private static final double CLIMB_MOST = 80;
-	// Climbing fish point no steeper than the water from them to this far ahead (local units), so they level out
-	// as they near the top.
-	static int CLIMB_LOOK = 50;
-	// And go no slower along the ground than the water from them to this far ahead asks, so they speed up before it.
-	static int CLIMB_SPEED_LOOK = 40;
 	// Climbing, tails wag this much faster, fully by CLIMB_WAG_SLOPE degrees nose up.
 	static double CLIMB_WAG = 1.5;
 	private static final double CLIMB_WAG_SLOPE = 30;
+	// Leaps: leaping fish on their way (not circling) now and then jump clear of the water, every so many seconds
+	// on average each. A run-up of so many client ticks, curving up to the surface and speeding up to LEAP_SPEED
+	// times its speed; so many in the air, up to so high over the water (local units) and back; then landed, carried
+	// on down past where it swims by LEAP_LANDING of the speed it fell in at and back, easing down to its speed over
+	// so many. It points along its way, at most LEAP_PITCH degrees up or down.
+	static double LEAP_EVERY = 20;
+	static int LEAP_RUN_TICKS = 25;
+	static int LEAP_TICKS = 35;
+	static int LEAP_SETTLE_TICKS = 75;
+	static int LEAP_HEIGHT = 75;
+	static double LEAP_SPEED = 2;
+	static double LEAP_LANDING = 0.3;
+	static double LEAP_PITCH = 80;
+	// In the air: this share of the time falling, picking up speed as the fall's share to this power (2 as thrown).
+	static double LEAP_FALL_SHARE = 0.45;
+	static double LEAP_FALL_POWER = 1.75;
+	// Landed, it keeps its leaping speed for this share of the settle before easing down.
+	static double LEAP_CARRY = 0.9;
+	// Its pointing eased this much each client tick, so it turns smoothly.
+	static double LEAP_TIP_EASE = 0.25;
 	// Bobs and dips fade out climbing, gone by this slope (degrees nose up).
 	private static final double CLIMB_CALM = 10;
 
@@ -997,6 +1012,9 @@ final class RiverSpotFish
 		// at its usual speed rather than seeming to rush up it.
 		private double along = 1;
 		private int dippingSince = -1;
+		// The client tick its leap started, or -1; and how far nose up it points from the leap, eased.
+		private int leapingSince = -1;
+		private double leapTip;
 		// Caught: shrinks away once in its lane.
 		private boolean caught;
 		// Whether it's drawn, and how far it's grown into sight (0 to 1): fish grow in coming within the fish range
@@ -1747,6 +1765,7 @@ final class RiverSpotFish
 			}
 			Look look = FishModels.look(item);
 			double most = look.tip / 100.0 * ((look.rise > 0 ? BOB_PITCH : 0) + (look.dipDepth > 0 ? DIP_PITCH : 0));
+			most = kinds == LEAPING_FISH ? Math.max(most, LEAP_PITCH) : most;
 			int steps = (int) Math.ceil(most / FishModels.PITCH_STEP);
 			for (int pitch = -steps; pitch <= steps; pitch++)
 			{
@@ -4040,14 +4059,31 @@ final class RiverSpotFish
 				Look look = swimmer.look;
 				boolean resting = swimmer.bobClock % (BOB_CYCLES + BOB_REST_CYCLES) >= BOB_CYCLES;
 				if (swimmer.dippingSince >= 0 ? cycle - swimmer.dippingSince >= Math.max(1, look.dipMillis / 20)
-					: resting && !swimmer.surfacing && look.dipDepth > 0
+					: resting && !swimmer.surfacing && look.dipDepth > 0 && swimmer.leapingSince < 0
 						&& random.nextDouble() < ticks / (look.dipEvery * 50.0))
 				{
 					swimmer.dippingSince = swimmer.dippingSince >= 0 ? -1 : cycle;
 				}
-				if (swimmer.dippingSince < 0 && !(swimmer.surfacing && resting))
+				// Bobs wait, at rest, until a leap is done.
+				if (swimmer.dippingSince < 0 && !(swimmer.surfacing && resting) && swimmer.leapingSince < 0)
 				{
 					swimmer.bobClock += ticks;
+				}
+				if (swimmer.leapingSince >= 0
+					? cycle - swimmer.leapingSince >= LEAP_RUN_TICKS + LEAP_TICKS + LEAP_SETTLE_TICKS
+					: mayLeap(shoal, swimmer) && random.nextDouble() < ticks / (LEAP_EVERY * 50))
+				{
+					swimmer.leapingSince = swimmer.leapingSince >= 0 ? -1 : cycle;
+					// Done: its bob (held, and faded out) starts again from rest, so it doesn't jump back mid-bob.
+					int period = BOB_CYCLES + BOB_REST_CYCLES;
+					swimmer.bobClock = swimmer.leapingSince >= 0 ? swimmer.bobClock
+						: swimmer.bobClock / period * period + BOB_CYCLES;
+					// Starting: every tilt the leap goes through, made ahead, as it goes through them too fast to wait.
+					int steps = swimmer.leapingSince < 0 ? -1 : (int) Math.ceil(LEAP_PITCH / FishModels.PITCH_STEP);
+					for (int pitch = -steps; pitch <= steps; pitch++)
+					{
+						models.queue(swimmer.item, size(swimmer.item, GROW_STEPS), pitch, 0, false);
+					}
 				}
 				if (!move(shoal, swimmer, ticks, cycle))
 				{
@@ -4063,6 +4099,67 @@ final class RiverSpotFish
 			remove(npc);
 			add(npc);
 		}
+	}
+
+	/**
+	 * A leaping fish's depth under the surface (less than 0 over it) so many client ticks into its leap, given how
+	 * deep it swims: curving up to the surface faster and faster; up and back down in the air; then carried on down
+	 * past where it swims by the speed it fell in at, and back, easing to a stop.
+	 */
+	private static double leapDepth(int age, double under)
+	{
+		if (age < LEAP_RUN_TICKS)
+		{
+			double u = age / (double) LEAP_RUN_TICKS;
+			return under * (1 - u * u);
+		}
+		age -= LEAP_RUN_TICKS;
+		if (age < LEAP_TICKS)
+		{
+			// Up slowing to the top, then down faster and faster.
+			double fall = LEAP_TICKS * LEAP_FALL_SHARE;
+			double rise = LEAP_TICKS - fall;
+			if (age < rise)
+			{
+				double u = 1 - age / rise;
+				return -LEAP_HEIGHT * (1 - u * u);
+			}
+			return -LEAP_HEIGHT * (1 - Math.pow((age - rise) / fall, LEAP_FALL_POWER));
+		}
+		double s = Math.min(1, (age - LEAP_TICKS) / (double) LEAP_SETTLE_TICKS);
+		// Down to where it swims, easing in, plus a bowl (deepest a third of the way through) starting it down at
+		// LEAP_LANDING of the speed it fell in at (both per settle).
+		double fellIn = LEAP_HEIGHT * LEAP_FALL_POWER / (LEAP_TICKS * LEAP_FALL_SHARE) * LEAP_SETTLE_TICKS;
+		double bowl = Math.max(0, LEAP_LANDING * fellIn - 2 * under);
+		return under * (1 - (1 - s) * (1 - s)) + bowl * s * (1 - s) * (1 - s);
+	}
+
+	/**
+	 * A leaping fish's speed so many client ticks into its leap, against its usual: speeding up to LEAP_SPEED in the
+	 * run-up, at it in the air, then easing back down.
+	 */
+	private static double leapPace(int age)
+	{
+		if (age < LEAP_RUN_TICKS)
+		{
+			return 1 + (LEAP_SPEED - 1) * age / LEAP_RUN_TICKS;
+		}
+		age -= LEAP_RUN_TICKS + LEAP_TICKS;
+		double settled = age < 0 ? 0 : Math.min(1, age / (double) LEAP_SETTLE_TICKS);
+		// Carrying on at speed a while, then easing off gently at first and last.
+		double s = Math.max(0, (settled - LEAP_CARRY) / (1 - LEAP_CARRY));
+		return 1 + (LEAP_SPEED - 1) * (1 - s * s * (3 - 2 * s));
+	}
+
+	/**
+	 * Whether a fish may start a leap: a leaping fish at full size on its way (not circling or heading for a circle),
+	 * not dipping, climbing, on a fish surfacer, or (on a lake) slowing down for or in a pause.
+	 */
+	private static boolean mayLeap(Shoal shoal, Swimmer swimmer)
+	{
+		return shoal.kinds == LEAPING_FISH && swimmer.circle == null && swimmer.bound == null
+			&& swimmer.growingSince < 0 && swimmer.shrinkingSince < 0 && swimmer.wantStep == GROW_STEPS
+			&& swimmer.dippingSince < 0 && !swimmer.surfacing && swimmer.slope <= 1 && swimmer.setOffAt < 0;
 	}
 
 	/**
@@ -4664,7 +4761,8 @@ final class RiverSpotFish
 			want *= (1 - in * (1 - lane)) * (1 + in * (swimmer.evening - 1));
 		}
 		// Paused lake fish hover, easing to a stop; circling fish change speed more gently once in their lane.
-		boolean pausing = shoal.lake && swimmer.circle == null && cycle < swimmer.setOffAt;
+		// Not mid-leap: it slows once landed.
+		boolean pausing = shoal.lake && swimmer.circle == null && cycle < swimmer.setOffAt && swimmer.leapingSince < 0;
 		if (pausing)
 		{
 			want = travel * LAKE_HOVER * own;
@@ -4673,6 +4771,9 @@ final class RiverSpotFish
 		swimmer.swimming += (want - swimmer.swimming) * Math.min(1, ease * ticks);
 		// Up steep water, only some of it goes along the ground.
 		double moved = swimmer.swimming * ticks * swimmer.along;
+		// Leaping, faster.
+		int leapAge = swimmer.leapingSince < 0 ? -1 : cycle - swimmer.leapingSince;
+		moved *= leapAge < 0 ? 1 : leapPace(leapAge);
 		double toward = swimmer.aim;
 		if (shoal.deciding || Double.isNaN(toward))
 		{
@@ -4696,7 +4797,9 @@ final class RiverSpotFish
 		}
 		double turn = wrap(toward - swimmer.facing);
 		// Swimming in, it turns gently while far and tightens as it nears.
-		double most = TURN_RATE * ticks * (swimmer.circle != null ? JOIN_TURN + (1 - JOIN_TURN) * near : 1);
+		// In the air, it can't turn.
+		boolean air = leapAge >= LEAP_RUN_TICKS && leapAge < LEAP_RUN_TICKS + LEAP_TICKS;
+		double most = air ? 0 : TURN_RATE * ticks * (swimmer.circle != null ? JOIN_TURN + (1 - JOIN_TURN) * near : 1);
 		swimmer.facing = wrap(swimmer.facing + Math.max(-most, Math.min(most, turn)));
 		swimmer.headX = Math.cos(swimmer.facing);
 		swimmer.headY = Math.sin(swimmer.facing);
@@ -4707,6 +4810,12 @@ final class RiverSpotFish
 			// Heading onto land: step straight for the target instead, still turning smoothly.
 			x = swimmer.x + Math.cos(toward) * moved;
 			y = swimmer.y + Math.sin(toward) * moved;
+		}
+		if (air && !river.isWater(x, y))
+		{
+			// Nor land on the bank.
+			x = swimmer.x;
+			y = swimmer.y;
 		}
 		if (shoal.lake && !river.isWater(x, y))
 		{
@@ -5074,31 +5183,43 @@ final class RiverSpotFish
 			// The drop along its heading (heights grow downwards): nose down going down.
 			int dx = (int) Math.round(SLOPE_LOOK * swimmer.headX);
 			int dy = (int) Math.round(SLOPE_LOOK * swimmer.headY);
-			int drop = waterHeight(x + dx, y + dy, shoal.plane) - waterHeight(x - dx, y - dy, shoal.plane);
+			int ahead = waterHeight(x + dx, y + dy, shoal.plane);
+			int drop = ahead - waterHeight(x - dx, y - dy, shoal.plane);
 			double angle = Math.toDegrees(Math.atan2(drop, 2 * SLOPE_LOOK));
 			swimmer.slopeWant = -Math.signum(angle) * Math.min(SLOPE_MOST, Math.max(0, Math.abs(angle) - SLOPE_MIN));
-			swimmer.slopeWant = swimmer.slopeWant > 0 ? Math.min(CLIMB_MOST, swimmer.slopeWant * CLIMB_TILT)
-				: swimmer.slopeWant;
-			// Climbing, no steeper than the water from here on ahead: levelling out nearing the top.
-			int ax = (int) Math.round(CLIMB_LOOK * swimmer.headX);
-			int ay = (int) Math.round(CLIMB_LOOK * swimmer.headY);
-			int rise = swimmer.surface - waterHeight(x + ax, y + ay, shoal.plane);
-			double ahead = Math.toDegrees(Math.atan2(rise, CLIMB_LOOK));
-			ahead = Math.min(CLIMB_MOST, Math.max(0, ahead - SLOPE_MIN) * CLIMB_TILT);
-			swimmer.slopeWant = swimmer.slopeWant > 0 ? Math.min(swimmer.slopeWant, ahead) : swimmer.slopeWant;
-			int sx = (int) Math.round(CLIMB_SPEED_LOOK * swimmer.headX);
-			int sy = (int) Math.round(CLIMB_SPEED_LOOK * swimmer.headY);
-			double speedAhead = Math.toDegrees(Math.atan2(swimmer.surface - waterHeight(x + sx, y + sy, shoal.plane),
-				CLIMB_SPEED_LOOK));
-			swimmer.along = Math.cos(Math.toRadians(Math.max(0, Math.min(-angle, speedAhead))));
+			swimmer.along = 1;
+			// Climbing: tilted up more, but no steeper than the water from here to just ahead (read above), so it
+			// levels out nearing the top; and only some of its speed going along the ground, as little as the water
+			// ahead allows, so it speeds up nearing the top.
+			if (angle < 0)
+			{
+				double up = Math.toDegrees(Math.atan2(swimmer.surface - ahead, SLOPE_LOOK));
+				double steepest = Math.max(0, up - SLOPE_MIN);
+				swimmer.slopeWant = Math.min(CLIMB_MOST, Math.min(swimmer.slopeWant, steepest) * CLIMB_TILT);
+				swimmer.along = Math.cos(Math.toRadians(Math.max(0, Math.min(-angle, up))));
+			}
 		}
 		swimmer.slope += (swimmer.slopeWant - swimmer.slope) * SLOPE_EASE;
 		// No bobs or dips while climbing.
 		double calm = Math.max(0, 1 - Math.max(0, swimmer.slope) / CLIMB_CALM);
-		swimmer.fish.setZ(swimmer.surface + look.sink + (int) Math.round(calm * (bobbed + look.dipDepth * dip * dip)
-			+ swimmer.depthNow));
+		// Leaping: its depth under the surface from the leap, and nose up or down along its way; no bobs or dips.
+		int leapAge = swimmer.leapingSince < 0 ? -1 : cycle - swimmer.leapingSince;
+		calm *= leapAge < 0 ? 1 : leapAge < LEAP_RUN_TICKS ? 1 - leapAge / (double) LEAP_RUN_TICKS : 0;
+		double swimZ = swimmer.surface + look.sink + calm * (bobbed + look.dipDepth * dip * dip) + swimmer.depthNow;
+		double under = swimZ - swimmer.surface;
+		swimmer.fish.setZ((int) Math.round(leapAge < 0 ? swimZ : swimmer.surface + leapDepth(leapAge, under)));
+		double leapTip = 0;
+		if (leapAge >= 0)
+		{
+			// Along its way: how far it rises next client tick against how far it goes along.
+			double rises = leapDepth(leapAge, under) - leapDepth(leapAge + 1, under);
+			double along = Math.max(1, swimmer.swimming * leapPace(leapAge));
+			leapTip = Math.max(-LEAP_PITCH, Math.min(LEAP_PITCH, Math.toDegrees(Math.atan2(rises, along))));
+		}
+		swimmer.leapTip += (leapTip - swimmer.leapTip) * LEAP_TIP_EASE;
+		leapTip = swimmer.leapTip;
 		// Tip with the water's slope, bob and dip; only at full size.
-		double tip = swimmer.slope + calm * look.tip / 100.0 * ((look.rise > 0 && bobAt >= 0 ? -BOB_PITCH * Perspective.SINE[bobAt] / 65536 : 0)
+		double tip = swimmer.slope + leapTip + calm * look.tip / 100.0 * ((look.rise > 0 && bobAt >= 0 ? -BOB_PITCH * Perspective.SINE[bobAt] / 65536 : 0)
 			- (swimmer.dippingSince >= 0 && look.dipDepth > 0 ? DIP_PITCH * Math.sin(2 * through) : 0));
 		int pitch = swimmer.wantStep == GROW_STEPS ? (int) Math.round(tip / FishModels.PITCH_STEP) : 0;
 		if (pitch != swimmer.pitch || swimmer.wantStep != swimmer.step)

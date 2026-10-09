@@ -28,6 +28,7 @@ renderers draw the water solid, so only the fish at the surface are shown there.
 
 ## Settings
 
+- **Sea fish**: fish swimming round the fishing spots at sea, on or off.
 - **River fish**: Schooled (groups of fish swimming together), Random (each fish on its own), or Only at
   my spot (no fish swimming down the rivers or round the lakes, just those coming to the spot you're fishing;
   lightest on slower computers).

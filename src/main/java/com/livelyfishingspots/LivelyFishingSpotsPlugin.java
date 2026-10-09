@@ -32,7 +32,7 @@ import net.runelite.client.plugins.PluginManager;
 @Slf4j
 @PluginDescriptor(
 	name = "Lively Fishing Spots",
-	description = "Shows the fish each fishing spot gives swimming around it",
+	description = "Fish swimming at fishing spots, rivers and lakes",
 	tags = {"fishing", "fish", "spot", "sailing", "sea", "river", "lake", "shoal", "swimming", "visual"}
 )
 public class LivelyFishingSpotsPlugin extends Plugin
@@ -181,7 +181,10 @@ public class LivelyFishingSpotsPlugin extends Plugin
 	public void onNpcSpawned(NpcSpawned event)
 	{
 		long started = RiverSpotFish.probe.start();
-		seaSpotFish.add(event.getNpc());
+		if (config.seaFish())
+		{
+			seaSpotFish.add(event.getNpc());
+		}
 		riverSpotFish.add(event.getNpc());
 		RiverSpotFish.probe.add(Probe.SPOTS, started);
 	}
@@ -237,6 +240,15 @@ public class LivelyFishingSpotsPlugin extends Plugin
 				refresh();
 			});
 		}
+		// Sea fish on or off: the sea spots' fish go, then come back at the spots in sight if on.
+		if (LivelyFishingSpotsConfig.GROUP.equals(event.getGroup()) && "seaFish".equals(key))
+		{
+			clientThread.invoke(() ->
+			{
+				seaSpotFish.clear();
+				addSpotFish();
+			});
+		}
 	}
 
 	/**
@@ -278,7 +290,10 @@ public class LivelyFishingSpotsPlugin extends Plugin
 		}
 		for (NPC npc : top.npcs())
 		{
-			seaSpotFish.add(npc);
+			if (config.seaFish())
+			{
+				seaSpotFish.add(npc);
+			}
 			riverSpotFish.add(npc);
 		}
 	}

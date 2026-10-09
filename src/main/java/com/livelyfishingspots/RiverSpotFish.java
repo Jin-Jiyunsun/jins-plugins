@@ -163,8 +163,8 @@ final class RiverSpotFish
 	static final int ROUTE_MARGIN = 4;
 	// Tiles round a route's line for picking: a point added, a lake or fork joining it.
 	static final int BOX_MARGIN = 8;
-	// Tiles of water round a route: looked for round its points when mapped (the box then shrunk to the baked water
-	// found), and baked round its line; wide enough for its widest water, round islands too.
+	// Tiles of water round a route: recorded round its line when baking (then kept to near its path), and looked for
+	// round its points when mapped (the box then shrunk to the water found).
 	static final int WATER_REACH = 16;
 	// Fish range, tiles (tuning spinner): rivers keep fish only within this far along the path either side of the
 	// player's nearest point; a river or lake starts within this plus ACTIVE_MORE tiles of the player, and goes LINGER
@@ -219,7 +219,7 @@ final class RiverSpotFish
 	private static final double LOOK_AHEAD = 48;
 	private static final double TURN_RATE = 0.08;
 	// Average gap between fish down the river, local units.
-	static double TRAVEL_SPACING = 100;
+	static double TRAVEL_SPACING = 120;
 	// Lane spread and wander, as shares of the room either side; wander glides between random points
 	// over this many client ticks.
 	static double SPREAD = 0.4;
@@ -1192,7 +1192,7 @@ final class RiverSpotFish
 	// Longest line in a baked file, characters, so a river takes few lines.
 	static final int BAKED_WIDTH = 150;
 
-	private static Baked readBaked(String name, BufferedReader reader)
+	static Baked readBaked(String name, BufferedReader reader)
 	{
 		List<int[]> runs = new ArrayList<>();
 		double[] path = new double[0];
@@ -5006,7 +5006,7 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * Sets how many river fish there are, 25-100%: 50% gives twice the spacing, so half the fish.
+	 * Sets how many river fish there are, 25-125%: 50% gives twice the spacing, so half the fish.
 	 */
 	void setAmount(int percent)
 	{
@@ -5014,7 +5014,7 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * Sets how many lake fish there are, 25-100%: 50% gives half the fish.
+	 * Sets how many lake fish there are, 25-125%: 50% gives half the fish.
 	 */
 	void setLakeAmount(int percent)
 	{

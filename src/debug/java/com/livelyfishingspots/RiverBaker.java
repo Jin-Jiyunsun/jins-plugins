@@ -53,10 +53,13 @@ class RiverBaker
 	// 170, to its deepest, 174).
 	private static final Set<Integer> WATER_TEXTURES = Set.of(1, 170, 171, 172, 173, 174);
 	// Floor overlays of untextured water, seen in game: plain water's (6, untextured in places along Kourend's
-	// rivers), and the Water Ravine Dungeon's.
-	private static final Set<Integer> WATER_OVERLAYS = Set.of(6, 130);
+	// rivers), the Water Ravine Dungeon's (130) and the cave's round 1303, 9799 (41).
+	private static final Set<Integer> WATER_OVERLAYS = Set.of(6, 41, 130);
 	// How far inside an object's rough outline a cell's middle must be to count as blocked, local units.
 	private static final double OBJECT_INSET = 16;
+	// Tiles from a river's laid path (or a fork's) its water is saved within: its whole width round any bend, but not
+	// side water further off (other rivers' arms, inlets, the sea).
+	private static final int PATH_KEEP = 10;
 	// How near water a route point or fork point must be to count as recorded, local units (two tiles).
 	private static final int POINT_REACH = 256;
 	// Smoothing passes over the path.
@@ -218,6 +221,42 @@ class RiverBaker
 	}
 
 	/**
+	 * Keeps a river's water to within PATH_KEEP tiles of its path and its forks' paths (world local units).
+	 */
+	private static void keepNear(River river, List<int[]> points, List<int[]> branchPaths)
+	{
+		boolean[] near = new boolean[river.width * river.height];
+		int reach = PATH_KEEP * PER_TILE;
+		List<int[]> all = new ArrayList<>(points);
+		for (int[] branch : branchPaths)
+		{
+			for (int k = 0; k + 1 < branch.length; k += 2)
+			{
+				all.add(new int[]{branch[k], branch[k + 1]});
+			}
+		}
+		// Each path point marks the cells within reach of it.
+		for (int[] point : all)
+		{
+			int ci = Math.floorDiv(point[0] - river.x0, CELL);
+			int cj = Math.floorDiv(point[1] - river.y0, CELL);
+			for (int j = Math.max(0, cj - reach); j <= Math.min(river.height - 1, cj + reach); j++)
+			{
+				for (int i = Math.max(0, ci - reach); i <= Math.min(river.width - 1, ci + reach); i++)
+				{
+					int di = i - ci;
+					int dj = j - cj;
+					near[j * river.width + i] |= di * di + dj * dj <= reach * reach;
+				}
+			}
+		}
+		for (int c = 0; c < near.length; c++)
+		{
+			river.water[c] &= near[c];
+		}
+	}
+
+	/**
 	 * A tile's water cells as bits, a bit per cell, row by row.
 	 */
 	private static int cellBits(boolean[] wet, int width, int tx, int ty)
@@ -344,8 +383,9 @@ class RiverBaker
 				texts.put(route[0], text);
 			}
 		}
-		// All in the bakes now, so the next baking starts from them, with nothing walked yet.
-		recorded.clear();
+		// The water walked past is in the bakes now, so the next baking starts with nothing walked yet. Each river and
+		// lake keeps the water recorded for it, though: a bake keeps only the water joined to its start, so one cut short
+		// (a waterfall not yet allowed through, say) would lose the rest.
 		walked.clear();
 		changed.clear();
 		log.debug("Baked {} in {} ms", texts.size(), (System.nanoTime() - started) / 1_000_000);
@@ -357,9 +397,19 @@ class RiverBaker
 	 * when it's played, so they can be taken off again), and a river's path laid through the water with them applied.
 	 * Null if none of its points have water.
 	 */
-	private String bakeRoute(WorldPoint[] route, Map<Integer, Integer> tiles)
+	private String bakeRoute(WorldPoint[] route, Map<Integer, Integer> recordedTiles)
 	{
 		boolean lake = rivers.isLake(route);
+		// Only the water it reaches: any further out, as in older bakes, is left out.
+		int[] bounds = boundsOf(route);
+		Map<Integer, Integer> tiles = new HashMap<>();
+		recordedTiles.forEach((key, bits) ->
+		{
+			if (inBounds(bounds, key >> 14, key & 0x3FFF) && reaches(route, key >> 14, key & 0x3FFF))
+			{
+				tiles.put(key, bits);
+			}
+		});
 		int minX = Integer.MAX_VALUE;
 		int minY = Integer.MAX_VALUE;
 		int maxX = Integer.MIN_VALUE;
@@ -456,36 +506,6 @@ class RiverBaker
 		{
 			saved.water[c] |= read[c] && river.water[c];
 		}
-		// Each row's runs of water (world cells, end exclusive), from the first row with water to the last.
-		List<int[]> rows = new ArrayList<>();
-		int firstRow = -1;
-		for (int j = 0; j < river.height; j++)
-		{
-			List<Integer> row = new ArrayList<>();
-			for (int i = 0; i < river.width; i++)
-			{
-				if (saved.water[j * river.width + i] && (i == 0 || !saved.water[j * river.width + i - 1]))
-				{
-					int end = i;
-					while (end < river.width && saved.water[j * river.width + end])
-					{
-						end++;
-					}
-					row.add(minX * PER_TILE + i);
-					row.add(minX * PER_TILE + end);
-				}
-			}
-			if (firstRow < 0 && row.isEmpty())
-			{
-				continue;
-			}
-			firstRow = firstRow < 0 ? j : firstRow;
-			rows.add(row.stream().mapToInt(Integer::intValue).toArray());
-		}
-		while (!rows.isEmpty() && rows.get(rows.size() - 1).length == 0)
-		{
-			rows.remove(rows.size() - 1);
-		}
 		List<int[]> points = new ArrayList<>();
 		if (!lake && cells.size() >= 2)
 		{
@@ -531,6 +551,41 @@ class RiverBaker
 					branch[0], branch[1]);
 			}
 			branchPaths.add(laid);
+		}
+		// A river keeps only the water near its path and its forks' paths.
+		if (!points.isEmpty())
+		{
+			keepNear(saved, points, branchPaths);
+		}
+		// Each row's runs of water (world cells, end exclusive), from the first row with water to the last.
+		List<int[]> rows = new ArrayList<>();
+		int firstRow = -1;
+		for (int j = 0; j < river.height; j++)
+		{
+			List<Integer> row = new ArrayList<>();
+			for (int i = 0; i < river.width; i++)
+			{
+				if (saved.water[j * river.width + i] && (i == 0 || !saved.water[j * river.width + i - 1]))
+				{
+					int end = i;
+					while (end < river.width && saved.water[j * river.width + end])
+					{
+						end++;
+					}
+					row.add(minX * PER_TILE + i);
+					row.add(minX * PER_TILE + end);
+				}
+			}
+			if (firstRow < 0 && row.isEmpty())
+			{
+				continue;
+			}
+			firstRow = firstRow < 0 ? j : firstRow;
+			rows.add(row.stream().mapToInt(Integer::intValue).toArray());
+		}
+		while (!rows.isEmpty() && rows.get(rows.size() - 1).length == 0)
+		{
+			rows.remove(rows.size() - 1);
 		}
 		log.debug("Bake {}: {} of {} points recorded, {} tiles", route[0], cells.size(), route.length, tiles.size());
 		return Bakes.bakedText(Bakes.headLine(route, lake), rivers.bakedFishShare(route[0]),
@@ -830,8 +885,7 @@ class RiverBaker
 		for (WorldPoint[] route : rivers.routesAndLakes())
 		{
 			if (rivers.isLake(route) || route[0].getPlane() != start.getPlane()
-				|| RiverSpotFish.toLine(route, start.getX(), start.getY()) > RiverSpotFish.BOX_MARGIN
-				|| RiverSpotFish.toLine(route, end.getX(), end.getY()) > RiverSpotFish.BOX_MARGIN)
+				|| !nearRiver(route, start) || !nearRiver(route, end))
 			{
 				continue;
 			}
@@ -848,6 +902,31 @@ class RiverBaker
 			relay(route);
 			log.debug("Branch added to {}", Bakes.bakedName(route[0]));
 			return true;
+		}
+		return false;
+	}
+
+	/**
+	 * Whether a tile is within BOX_MARGIN of a river's line or its laid path (which may bend well off the line).
+	 */
+	private boolean nearRiver(WorldPoint[] route, WorldPoint at)
+	{
+		if (RiverSpotFish.toLine(route, at.getX(), at.getY()) <= RiverSpotFish.BOX_MARGIN)
+		{
+			return true;
+		}
+		RiverSpotFish.Baked saved = rivers.baked.get(route[0]);
+		double reach = RiverSpotFish.BOX_MARGIN * 128.0;
+		double x = at.getX() * 128 + 64;
+		double y = at.getY() * 128 + 64;
+		for (int k = 0; saved != null && saved.pathX != null && k < saved.pathX.length; k++)
+		{
+			double dx = saved.pathX[k] - x;
+			double dy = saved.pathY[k] - y;
+			if (dx * dx + dy * dy <= reach * reach)
+			{
+				return true;
+			}
 		}
 		return false;
 	}

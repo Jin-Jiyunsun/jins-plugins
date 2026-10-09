@@ -22,7 +22,7 @@ public interface LivelyFishingSpotsConfig extends Config
 		return RiverSwimming.SCHOOLED;
 	}
 
-	@Range(min = 25, max = 100)
+	@Range(min = 25, max = 125)
 	@Units(Units.PERCENT)
 	@ConfigItem(
 		keyName = "riverFishAmount",
@@ -35,7 +35,7 @@ public interface LivelyFishingSpotsConfig extends Config
 		return 100;
 	}
 
-	@Range(min = 25, max = 100)
+	@Range(min = 25, max = 125)
 	@Units(Units.PERCENT)
 	@ConfigItem(
 		keyName = "lakeFishAmount",

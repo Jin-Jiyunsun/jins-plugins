@@ -11,3 +11,8 @@ river-water-ravine
 river-great-conch
 river-ortus
 river-tlati
+river-auburnvale
+river-custodia-pass
+river-stalker-den
+river-molch
+river-hosidius

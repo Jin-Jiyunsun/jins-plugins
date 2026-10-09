@@ -322,7 +322,7 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 	)
 	default int debugRiverTravelSpacing()
 	{
-		return 100;
+		return 120;
 	}
 
 	@Range(min = -512, max = 512)

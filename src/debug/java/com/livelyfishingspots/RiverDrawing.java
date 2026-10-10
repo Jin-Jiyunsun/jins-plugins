@@ -295,6 +295,10 @@ final class RiverDrawing
 		}
 	}
 
+	// Points drawn round each circle lane.
+	private static final int LANE_ANGLES = 64;
+	private static final double[][] LANE_WAYS = RiverSpotFish.ways(LANE_ANGLES);
+
 	// which parts of the debug drawing to show (toggles).
 	static boolean drawRanges = true;
 	static boolean drawShade = true;
@@ -644,7 +648,7 @@ final class RiverDrawing
 					for (int a = 0; a <= LANE_ANGLES; a++)
 					{
 						double[] way = LANE_WAYS[a % LANE_ANGLES];
-						double out = circle.pulled[lane][a % LANE_ANGLES];
+						double out = circle.lanes[lane];
 						mark(shoal, circle.x + out * way[0], circle.y + out * way[1]);
 					}
 					line(graphics, view);

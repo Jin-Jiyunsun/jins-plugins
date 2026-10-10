@@ -22,8 +22,8 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 		"debugRiverRingEast", "debugRiverRingNorth");
 
 	@ConfigSection(
-		name = "Debug: rivers",
-		description = "Temporary settings for setting up the river spots",
+		name = "Debug: drawing and baking",
+		description = "Debug drawing, the picking menu<br>and baking water bodies",
 		position = 99
 	)
 	String debugRivers = "debugRivers";
@@ -141,7 +141,7 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 		name = "Wag and tip points",
 		description = "Line from each fish's middle to<br>the point it wags about (orange)<br>and tips about (magenta)",
 		section = debugRivers,
-		position = 8
+		position = 9
 	)
 	default boolean debugRiverDrawPivots()
 	{
@@ -153,7 +153,7 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 		name = "Picked points",
 		description = "Yellow tiles numbered in order: each<br>route's start, waypoints and end<br>(magenta while picking one). Yellow<br>rings at lake spawns. Red outlines<br>on fish blockers",
 		section = debugRivers,
-		position = 9
+		position = 10
 	)
 	default boolean debugRiverDrawPoints()
 	{
@@ -165,7 +165,7 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 		name = "Picking menu",
 		description = "Adds River and Fork start, waypoint<br>and end, Lake spawn, Clear lake,<br>Fish blocker and Fish allower to<br>the right-click menu on tiles. A fork<br>is a side channel of a baked river",
 		section = debugRivers,
-		position = 10
+		position = 11
 	)
 	default boolean debugPick()
 	{
@@ -177,7 +177,7 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 		name = "Bake water bodies",
 		description = "Records the water round you near<br>each river and lake as you walk;<br>turning it off saves them to<br>.runelite/plugin-data/<br>lively-fishing-spots-debug/baked.<br>Only baked rivers and lakes have fish",
 		section = debugRivers,
-		position = 11
+		position = 12
 	)
 	default boolean debugRiverBake()
 	{
@@ -185,17 +185,25 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 	}
 
 	@ConfigSection(
-		name = "Debug: river fish shares",
+		name = "Debug: fish shares",
 		description = "Temporary tuning of which fish swim<br>down the rivers, for fish spawned<br>from now on",
-		position = 106,
+		position = 100,
 		closedByDefault = true
 	)
 	String debugRiverShares = "debugRiverShares";
 
 	@ConfigSection(
+		name = "Debug: splashes",
+		description = "Temporary tuning of the splashes<br>leaping fish make",
+		position = 114,
+		closedByDefault = true
+	)
+	String debugSplashes = "debugSplashes";
+
+	@ConfigSection(
 		name = "Debug: dead bodies",
 		description = "Temporary tuning of the dead bodies<br>drifting down the rivers",
-		position = 107,
+		position = 115,
 		closedByDefault = true
 	)
 	String debugBodies = "debugBodies";
@@ -203,15 +211,15 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 	@ConfigSection(
 		name = "Debug: lakes",
 		description = "Temporary tuning of the lake fish",
-		position = 108,
+		position = 111,
 		closedByDefault = true
 	)
 	String debugLakes = "debugLakes";
 
 	@ConfigSection(
-		name = "Debug: fish range",
-		description = "Temporary tuning of how far<br>from you fish are kept",
-		position = 109,
+		name = "Debug: range and performance",
+		description = "Temporary tuning of how far from<br>you fish are kept, and how often<br>they decide",
+		position = 116,
 		closedByDefault = true
 	)
 	String debugRange = "debugRange";
@@ -227,7 +235,7 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 	@ConfigSection(
 		name = "Debug: trout look",
 		description = "Temporary tuning of the trout's look and dips",
-		position = 100,
+		position = 101,
 		closedByDefault = true
 	)
 	String debugLookTrout = "debugLookTrout";
@@ -235,7 +243,7 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 	@ConfigSection(
 		name = "Debug: salmon look",
 		description = "Temporary tuning of the salmon's look and dips",
-		position = 101,
+		position = 102,
 		closedByDefault = true
 	)
 	String debugLookSalmon = "debugLookSalmon";
@@ -243,7 +251,7 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 	@ConfigSection(
 		name = "Debug: pike look",
 		description = "Temporary tuning of the pike's look and dips",
-		position = 102,
+		position = 103,
 		closedByDefault = true
 	)
 	String debugLookPike = "debugLookPike";
@@ -251,7 +259,7 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 	@ConfigSection(
 		name = "Debug: rainbow fish look",
 		description = "Temporary tuning of the rainbow fish's look and dips",
-		position = 103,
+		position = 104,
 		closedByDefault = true
 	)
 	String debugLookRainbow = "debugLookRainbow";
@@ -259,7 +267,7 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 	@ConfigSection(
 		name = "Debug: leaping trout look",
 		description = "Temporary tuning of the leaping trout's look and dips",
-		position = 111,
+		position = 105,
 		closedByDefault = true
 	)
 	String debugLookLeapTrout = "debugLookLeapTrout";
@@ -274,7 +282,7 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 	)
 	default int debugLookLeapTroutSink()
 	{
-		return 9;
+		return 11;
 	}
 
 	@Range(min = 0, max = 500)
@@ -326,7 +334,7 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 	)
 	default int debugLookLeapTroutSize()
 	{
-		return 38;
+		return 45;
 	}
 
 	@Range(min = -360, max = 360)
@@ -516,7 +524,7 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 	@ConfigSection(
 		name = "Debug: leaping salmon look",
 		description = "Temporary tuning of the leaping salmon's look and dips",
-		position = 112,
+		position = 106,
 		closedByDefault = true
 	)
 	String debugLookLeapSalmon = "debugLookLeapSalmon";
@@ -531,7 +539,7 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 	)
 	default int debugLookLeapSalmonSink()
 	{
-		return 13;
+		return 15;
 	}
 
 	@Range(min = 0, max = 500)
@@ -583,7 +591,7 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 	)
 	default int debugLookLeapSalmonSize()
 	{
-		return 33;
+		return 39;
 	}
 
 	@Range(min = -360, max = 360)
@@ -773,7 +781,7 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 	@ConfigSection(
 		name = "Debug: leaping sturgeon look",
 		description = "Temporary tuning of the leaping sturgeon's look and dips",
-		position = 113,
+		position = 107,
 		closedByDefault = true
 	)
 	String debugLookSturgeon = "debugLookSturgeon";
@@ -788,7 +796,7 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 	)
 	default int debugLookSturgeonSink()
 	{
-		return 13;
+		return 15;
 	}
 
 	@Range(min = 0, max = 500)
@@ -840,7 +848,7 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 	)
 	default int debugLookSturgeonSize()
 	{
-		return 51;
+		return 60;
 	}
 
 	@Range(min = -360, max = 360)
@@ -1028,9 +1036,9 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 	}
 
 	@ConfigSection(
-		name = "Debug: river bobs and depth",
-		description = "Temporary tuning of bob timing, all river fish",
-		position = 104,
+		name = "Debug: bobs and depth",
+		description = "Temporary tuning of bob timing and<br>depths, all river and lake fish",
+		position = 108,
 		closedByDefault = true
 	)
 	String debugRiverDips = "debugRiverDips";
@@ -1038,7 +1046,7 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 	@ConfigSection(
 		name = "Debug: waterfalls",
 		description = "Temporary tuning of fish climbing<br>up waterfalls",
-		position = 114,
+		position = 112,
 		closedByDefault = true
 	)
 	String debugWaterfalls = "debugWaterfalls";
@@ -1046,15 +1054,15 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 	@ConfigSection(
 		name = "Debug: leaps",
 		description = "Temporary tuning of leaping fish<br>jumping out of the water",
-		position = 115,
+		position = 113,
 		closedByDefault = true
 	)
 	String debugLeaps = "debugLeaps";
 
 	@ConfigSection(
-		name = "Debug: river lanes",
-		description = "Temporary tuning of the circles and spacing",
-		position = 105,
+		name = "Debug: rings and spacing",
+		description = "Temporary tuning of the circles<br>at spots and fish spacing",
+		position = 109,
 		closedByDefault = true
 	)
 	String debugRiverLanes = "debugRiverLanes";
@@ -1103,7 +1111,7 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 		name = "Eager circles",
 		description = "Every passing fish joins a fished spot,<br>and fillers come after 1 s, every 0.5-1 s",
 		section = debugRiverLanes,
-		position = 0
+		position = 20
 	)
 	default boolean debugRiverEagerCircles()
 	{
@@ -1197,7 +1205,7 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 		name = "Fish bob time",
 		description = "Client ticks a bob takes,<br>down and back up (50 a second)",
 		section = debugRiverDips,
-		position = 3
+		position = 0
 	)
 	default int debugRiverBobCycles()
 	{
@@ -1210,7 +1218,7 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 		name = "Fish bob rest",
 		description = "Client ticks it holds still<br>between bobs (50 a second)",
 		section = debugRiverDips,
-		position = 4
+		position = 1
 	)
 	default int debugRiverBobRestCycles()
 	{
@@ -2262,13 +2270,27 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 		return 70;
 	}
 
+	@Range(min = 0, max = 100)
+	@Units(Units.PERCENT)
+	@ConfigItem(
+		keyName = "debugRiverLakeSturgeon",
+		name = "Lake sturgeon share",
+		description = "About how many of a barbarian<br>lake's fish are sturgeon",
+		section = debugLakes,
+		position = 2
+	)
+	default int debugRiverLakeSturgeon()
+	{
+		return 15;
+	}
+
 	@Range(min = 0, max = 400)
 	@ConfigItem(
 		keyName = "debugRiverDeepLeast",
 		name = "Least depth (117 HD)",
 		description = "Shallowest a fish swims under the<br>surface with 117 HD, local units",
 		section = debugRiverDips,
-		position = 5
+		position = 2
 	)
 	default int debugRiverDeepLeast()
 	{
@@ -2281,7 +2303,7 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 		name = "Most depth (117 HD)",
 		description = "Deepest a river fish swims under the<br>surface with 117 HD, local units;<br>each fish picks a depth between",
 		section = debugRiverDips,
-		position = 6
+		position = 3
 	)
 	default int debugRiverDeepMost()
 	{
@@ -2294,7 +2316,7 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 		name = "Diver depth",
 		description = "How far under the surface fish go<br>on a fish diver, local units<br>(only fish not swimming deep)",
 		section = debugRiverDips,
-		position = 7
+		position = 4
 	)
 	default int debugRiverDiveDepth()
 	{
@@ -2308,11 +2330,52 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 		name = "Diver speed",
 		description = "Share of the way down (and back up)<br>a fish goes each client tick<br>on a fish diver",
 		section = debugRiverDips,
-		position = 8
+		position = 5
 	)
 	default int debugRiverDiveSpeed()
 	{
 		return 1;
+	}
+
+	@Range(min = 0, max = 300)
+	@Units(Units.PERCENT)
+	@ConfigItem(
+		keyName = "debugRiverDepthTilt",
+		name = "Depth tilt",
+		description = "How far fish point up rising and<br>down sinking, of the angle<br>they move at (most 35 degrees)",
+		section = debugRiverDips,
+		position = 6
+	)
+	default int debugRiverDepthTilt()
+	{
+		return 100;
+	}
+
+	@Range(min = 50, max = 400)
+	@Units(Units.PERCENT)
+	@ConfigItem(
+		keyName = "debugRiverJoinSpeed",
+		name = "Join speed",
+		description = "How fast fish come in to a circle<br>while far off, of their usual;<br>they slow to circling speed<br>as they near their lane",
+		section = debugRiverLanes,
+		position = 19
+	)
+	default int debugRiverJoinSpeed()
+	{
+		return 160;
+	}
+
+	@Range(min = 1, max = 10)
+	@ConfigItem(
+		keyName = "debugRiverDecideEvery",
+		name = "Decide every",
+		description = "Client ticks between river and<br>lake fish deciding where to steer,<br>reading the water's height and<br>so on (they move every tick)",
+		section = debugRange,
+		position = 2
+	)
+	default int debugRiverDecideEvery()
+	{
+		return 5;
 	}
 
 	@Range(min = 50, max = 400)
@@ -2336,7 +2399,7 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 		name = "Climb wag",
 		description = "How fast tails wag climbing,<br>of how fast on the flat",
 		section = debugWaterfalls,
-		position = 3
+		position = 1
 	)
 	default int debugRiverClimbWag()
 	{
@@ -2364,7 +2427,7 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 		name = "Leap length",
 		description = "How long a leap is in the air",
 		section = debugLeaps,
-		position = 1
+		position = 2
 	)
 	default int debugLeapMillis()
 	{
@@ -2377,11 +2440,24 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 		name = "Leap height",
 		description = "How high over the water<br>a leap goes, local units",
 		section = debugLeaps,
-		position = 2
+		position = 3
 	)
 	default int debugLeapHeight()
 	{
-		return 75;
+		return 70;
+	}
+
+	@Range(min = 0, max = 100)
+	@ConfigItem(
+		keyName = "debugLeapHeightSpread",
+		name = "Leap height spread",
+		description = "Each leap up to this much higher<br>or lower, at random, local units",
+		section = debugLeaps,
+		position = 3
+	)
+	default int debugLeapHeightSpread()
+	{
+		return 5;
 	}
 
 	@Range(min = 0, max = 89)
@@ -2390,7 +2466,7 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 		name = "Leap tilt",
 		description = "Most degrees nose up or down,<br>pointing along its way",
 		section = debugLeaps,
-		position = 3
+		position = 7
 	)
 	default int debugLeapPitch()
 	{
@@ -2404,11 +2480,11 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 		name = "Landing dive",
 		description = "How much of the speed it falls<br>in at carries it on down past<br>its depth",
 		section = debugLeaps,
-		position = 4
+		position = 10
 	)
 	default int debugLeapLanding()
 	{
-		return 30;
+		return 60;
 	}
 
 	@Range(min = 20, max = 5000)
@@ -2418,7 +2494,7 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 		name = "Landing settle",
 		description = "How long a landed fish takes<br>to ease back to its depth and level",
 		section = debugLeaps,
-		position = 5
+		position = 12
 	)
 	default int debugLeapSettleMillis()
 	{
@@ -2432,7 +2508,7 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 		name = "Leap run-up",
 		description = "How long a fish takes to curve<br>up to the surface, speeding up",
 		section = debugLeaps,
-		position = 6
+		position = 1
 	)
 	default int debugLeapRunMillis()
 	{
@@ -2446,39 +2522,68 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 		name = "Leap speed",
 		description = "Its speed in the air, of its<br>usual; reached in the run-up,<br>eased off after landing",
 		section = debugLeaps,
-		position = 7
+		position = 4
 	)
 	default int debugLeapSpeed()
 	{
 		return 200;
 	}
 
-	@Range(min = 100, max = 300)
+
+	@Range(min = 0, max = 100)
 	@Units(Units.PERCENT)
 	@ConfigItem(
-		keyName = "debugLeapSturgeonSpeed",
-		name = "Sturgeon leap speed",
-		description = "Sturgeon, slow swimmers, leap<br>this much faster again",
+		keyName = "debugLeapSchoolChance",
+		name = "School leap chance",
+		description = "How often a school leaps together,<br>as a share of how often one fish<br>leaps on its own",
 		section = debugLeaps,
-		position = 7
+		position = 13
 	)
-	default int debugLeapSturgeonSpeed()
+	default int debugLeapSchoolChance()
 	{
-		return 130;
+		return 15;
 	}
 
-	@Range(min = 10, max = 150)
+	@Range(min = 20, max = 3000)
+	@Units(Units.MILLISECONDS)
+	@ConfigItem(
+		keyName = "debugLeapSchoolSpreadMillis",
+		name = "School leap spread",
+		description = "How far behind the first the<br>rest of a school may leap",
+		section = debugLeaps,
+		position = 14
+	)
+	default int debugLeapSchoolSpreadMillis()
+	{
+		return 400;
+	}
+
+	@Range(min = 0, max = 30000)
+	@Units(Units.MILLISECONDS)
+	@ConfigItem(
+		keyName = "debugLeapAfterScatterMillis",
+		name = "No leaps after scatter",
+		description = "How long scattered fish wait<br>before they may leap",
+		section = debugLeaps,
+		position = 15
+	)
+	default int debugLeapAfterScatterMillis()
+	{
+		return 5000;
+	}
+
+	@Range(min = 0, max = 100)
 	@Units(Units.PERCENT)
 	@ConfigItem(
-		keyName = "debugLeapSturgeonTilt",
-		name = "Sturgeon leap tilt",
-		description = "How far sturgeon point down<br>coming down from a leap,<br>of other fish",
+		keyName = "debugLeapLureShare",
+		name = "Lure fish leaps",
+		description = "How often ordinary trout and<br>salmon leap, of leaping fish",
 		section = debugLeaps,
-		position = 7
+		position = 16
 	)
-	default int debugLeapSturgeonTilt()
+	default int debugLeapLureShare()
 	{
-		return 60;
+		return 5;
 	}
 
 	@Range(min = 1, max = 100)
@@ -2488,7 +2593,7 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 		name = "Leap turn smoothing",
 		description = "How quickly a leaping fish's<br>nose follows its way, each<br>client tick; lower is smoother",
 		section = debugLeaps,
-		position = 8
+		position = 9
 	)
 	default int debugLeapTipEase()
 	{
@@ -2516,7 +2621,7 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 		name = "Landing carry",
 		description = "How much of the landing settle<br>a fish keeps its leaping speed<br>before easing down",
 		section = debugLeaps,
-		position = 9
+		position = 11
 	)
 	default int debugLeapCarry()
 	{
@@ -2549,8 +2654,8 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 		keyName = "debugLeapSplashOut",
 		name = "Leaving splash",
 		description = "Which splash leaping fish make<br>leaving the water (as for the<br>landing splash)",
-		section = debugLeaps,
-		position = 11
+		section = debugSplashes,
+		position = 0
 	)
 	default Splash debugLeapSplashOut()
 	{
@@ -2562,8 +2667,8 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 		keyName = "debugLeapSplashOutSize",
 		name = "Leaving splash size",
 		description = "The leaving splash's size, 128<br>as the model is",
-		section = debugLeaps,
-		position = 11
+		section = debugSplashes,
+		position = 1
 	)
 	default int debugLeapSplashOutSize()
 	{
@@ -2574,8 +2679,8 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 		keyName = "debugLeapSplash",
 		name = "Landing splash",
 		description = "Which splash leaping fish make<br>landing: aerial fishing's, a<br>skipped stone's, the newer water<br>splash (or its spray), the minnow<br>spot's, or a water spray impact",
-		section = debugLeaps,
-		position = 12
+		section = debugSplashes,
+		position = 2
 	)
 	default Splash debugLeapSplash()
 	{
@@ -2587,8 +2692,8 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 		keyName = "debugLeapSplashSize",
 		name = "Landing splash size",
 		description = "The landing splash's size, 128<br>as the model is",
-		section = debugLeaps,
-		position = 13
+		section = debugSplashes,
+		position = 3
 	)
 	default int debugLeapSplashSize()
 	{
@@ -2600,8 +2705,8 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 		keyName = "debugLeapSplashHue",
 		name = "Splash hue (GPU)",
 		description = "The splash's colour, 0 to 63<br>(about 32 cyan, 40 blue);<br>-1 leaves it as it is",
-		section = debugLeaps,
-		position = 14
+		section = debugSplashes,
+		position = 4
 	)
 	default int debugLeapSplashHue()
 	{
@@ -2613,8 +2718,8 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 		keyName = "debugLeapSplashSaturation",
 		name = "Splash saturation (GPU)",
 		description = "How strong its colour is, 0 grey<br>to 7 full",
-		section = debugLeaps,
-		position = 15
+		section = debugSplashes,
+		position = 5
 	)
 	default int debugLeapSplashSaturation()
 	{
@@ -2626,8 +2731,8 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 		keyName = "debugLeapSplashLighter",
 		name = "Splash lightness (GPU)",
 		description = "Lightness added to every face<br>(of 127)",
-		section = debugLeaps,
-		position = 16
+		section = debugSplashes,
+		position = 6
 	)
 	default int debugLeapSplashLighter()
 	{
@@ -2639,8 +2744,8 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 		keyName = "debugLeapSplashHueHd",
 		name = "Splash hue (117 HD)",
 		description = "The splash's colour, 0 to 63<br>(about 32 cyan, 40 blue);<br>-1 leaves it as it is",
-		section = debugLeaps,
-		position = 17
+		section = debugSplashes,
+		position = 7
 	)
 	default int debugLeapSplashHueHd()
 	{
@@ -2652,8 +2757,8 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 		keyName = "debugLeapSplashSaturationHd",
 		name = "Splash saturation (117 HD)",
 		description = "How strong its colour is, 0 grey<br>to 7 full",
-		section = debugLeaps,
-		position = 18
+		section = debugSplashes,
+		position = 8
 	)
 	default int debugLeapSplashSaturationHd()
 	{
@@ -2665,8 +2770,8 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 		keyName = "debugLeapSplashLighterHd",
 		name = "Splash lightness (117 HD)",
 		description = "Lightness added to every face<br>(of 127)",
-		section = debugLeaps,
-		position = 19
+		section = debugSplashes,
+		position = 9
 	)
 	default int debugLeapSplashLighterHd()
 	{
@@ -2680,7 +2785,7 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 		name = "Leap fall time",
 		description = "How much of the time in the air<br>is spent falling from the top",
 		section = debugLeaps,
-		position = 10
+		position = 5
 	)
 	default int debugLeapFallShare()
 	{
@@ -2693,7 +2798,7 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 		name = "Leap fall speed-up",
 		description = "How hard the fall picks up speed<br>after the top: 200 as if thrown,<br>higher speeds up more at the end",
 		section = debugLeaps,
-		position = 11
+		position = 6
 	)
 	default int debugLeapFallPower()
 	{

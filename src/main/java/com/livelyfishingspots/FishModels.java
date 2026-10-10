@@ -180,10 +180,10 @@ final class FishModels
 	private static final Look SALMON = riverLook(28, 8);
 	private static final Look PIKE = riverLook(30, 9);
 	// Leaping fish: the river look, tilted level (their models leap); trout and salmon face the other way.
-	private static final Look LEAPING_TROUT = riverLook(38, 9, -39, 180, 100);
-	private static final Look LEAPING_SALMON = riverLook(33, 13, -40, 180, 100);
+	private static final Look LEAPING_TROUT = riverLook(45, 11, -39, 180, 100);
+	private static final Look LEAPING_SALMON = riverLook(39, 15, -40, 180, 100);
 	// The sturgeon slower too.
-	private static final Look STURGEON = riverLook(51, 13, -52, -90, 70);
+	private static final Look STURGEON = riverLook(60, 15, -52, -90, 70);
 	// Rainbow fish: smaller, nearer the surface, stretched longer.
 	private static final Look RAINBOW = new Look(new int[]{-90, 0, 17, 17, 6, 3, 16, -90, 0, 40, 60, 30, 3, 7, 1500,
 		7, 100, 100, 0, 150, 50, 0, 0, 100, 100, 0, 35, 0, 6, 0, 0, 50, 100, 0, 0, 100});

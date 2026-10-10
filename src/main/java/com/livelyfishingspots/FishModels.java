@@ -2,6 +2,7 @@ package com.livelyfishingspots;
 
 import java.util.ArrayDeque;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Deque;
 import java.util.HashMap;
@@ -227,6 +228,14 @@ final class FishModels
 	int count()
 	{
 		return models.size();
+	}
+
+	/**
+	 * The made models, for the debug panel.
+	 */
+	Collection<Model> made()
+	{
+		return models.values();
 	}
 
 	// Models waiting to be made, and their keys, so none is queued twice.

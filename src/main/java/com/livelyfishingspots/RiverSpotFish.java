@@ -258,6 +258,16 @@ final class RiverSpotFish
 	private static final double TURN_RATE = 0.08;
 	// Average gap between fish down the river, local units.
 	static double TRAVEL_SPACING = 120;
+	// Fish all rivers together aim to keep (tuning spinner): over it, spacing grows a step a game tick, so fewer
+	// spawn than leave; under it, it eases back. Held while the count's already heading for the target over the last
+	// CROWDING_LOOK game ticks (fish take a minute to swim out or fill in, so it'd overshoot). At most CROWDING_MOST.
+	static int RIVER_FISH_TARGET = 150;
+	private static final double CROWDING_STEP = 0.02;
+	private static final double CROWDING_MOST = 3;
+	private static final int CROWDING_LOOK = 10;
+	// Over the target, this many river fish a game tick shrink away, the furthest along from the player out of sight,
+	// so the count drops at once rather than waiting for fish to swim out.
+	private static final int RIVER_TRIM_MOST = 2;
 	// Lane spread and wander, as shares of the room either side; wander glides between random points
 	// over this many client ticks.
 	static double SPREAD = 0.4;
@@ -1139,6 +1149,15 @@ final class RiverSpotFish
 	private double spacingScale = 1;
 	// The same for lakes, from the player's Lake fish amount.
 	private double lakeSpacingScale = 1;
+	// River spacing times this too: grows while all rivers together have more fish than RIVER_FISH_TARGET.
+	double crowding = 1;
+	int riverFish;
+	private int nextCrowding;
+	// Set when a river or lake goes, so the plugin frees models no longer needed.
+	boolean shoalGone;
+	// The river fish CROWDING_LOOK game ticks ago, and game ticks since.
+	private int lookedFish;
+	private int lookedAgo;
 	// While a shoal comes into sight: start each fish growing up to GROW_STAGGER client ticks late.
 	private boolean stagger;
 	private static final int GROW_STAGGER = 25;
@@ -2057,7 +2076,74 @@ final class RiverSpotFish
 	 */
 	private double riverSpacing(WorldPoint[] route)
 	{
-		return TRAVEL_SPACING * spacingScale * 100 / Math.max(1, bakedFishShare(route[0]));
+		return TRAVEL_SPACING * spacingScale * crowding * 100 / Math.max(1, bakedFishShare(route[0]));
+	}
+
+	/**
+	 * Every game tick: counts the river fish (not lakes, not shrinking) and widens or eases back the spacing.
+	 */
+	private void crowd(int cycle)
+	{
+		if (cycle < nextCrowding)
+		{
+			return;
+		}
+		nextCrowding = cycle + WINDOW_EVERY;
+		int count = 0;
+		for (Shoal shoal : shoals)
+		{
+			for (Swimmer swimmer : shoal.lake ? List.<Swimmer>of() : shoal.fish)
+			{
+				count += swimmer.shrinkingSince < 0 ? 1 : 0;
+			}
+		}
+		riverFish = count;
+		boolean falling = count < lookedFish;
+		boolean rising = count > lookedFish;
+		if (++lookedAgo >= CROWDING_LOOK)
+		{
+			lookedFish = count;
+			lookedAgo = 0;
+		}
+		for (int n = 0; n < Math.min(RIVER_TRIM_MOST, count - RIVER_FISH_TARGET); n++)
+		{
+			trimRiver(cycle);
+		}
+		if (count > RIVER_FISH_TARGET && !falling)
+		{
+			crowding = Math.min(CROWDING_MOST, crowding * (1 + CROWDING_STEP));
+		}
+		else if (count < RIVER_FISH_TARGET && !rising)
+		{
+			crowding = Math.max(1, crowding * (1 - CROWDING_STEP));
+		}
+	}
+
+	/**
+	 * Shrinks away the free river fish furthest along from the player, if out of sight.
+	 */
+	private void trimRiver(int cycle)
+	{
+		Swimmer furthest = null;
+		double furthestApart = FISH_RANGE * 128.0;
+		for (Shoal shoal : shoals)
+		{
+			for (Swimmer swimmer : shoal.lake ? List.<Swimmer>of() : shoal.fish)
+			{
+				double apart = Math.abs(swimmer.s - shoal.playerAt);
+				if (apart > furthestApart && swimmer.circle == null && swimmer.bound == null
+					&& swimmer.shrinkingSince < 0)
+				{
+					furthestApart = apart;
+					furthest = swimmer;
+				}
+			}
+		}
+		if (furthest != null)
+		{
+			ungroup(furthest);
+			furthest.shrinkingSince = cycle;
+		}
 	}
 
 	/**
@@ -3584,7 +3670,8 @@ final class RiverSpotFish
 	 */
 	private int spawnGap(ThreadLocalRandom random)
 	{
-		return (int) Math.max(1, TRAVEL_SPACING * spacingScale / TRAVEL_SPEED * (1 + random.nextDouble(-SPAWN_STRAY, SPAWN_STRAY)));
+		return (int) Math.max(1, TRAVEL_SPACING * spacingScale * crowding / TRAVEL_SPEED
+			* (1 + random.nextDouble(-SPAWN_STRAY, SPAWN_STRAY)));
 	}
 
 	/**
@@ -4053,6 +4140,7 @@ final class RiverSpotFish
 			return;
 		}
 		int cycle = client.getGameCycle();
+		crowd(cycle);
 		ThreadLocalRandom random = ThreadLocalRandom.current();
 		Player player = client.getLocalPlayer();
 		Actor fishing = player == null ? null : player.getInteracting();
@@ -4075,6 +4163,7 @@ final class RiverSpotFish
 			{
 				hide(shoal);
 				all.remove();
+				shoalGone = true;
 				continue;
 			}
 			// Re-add spots that moved.
@@ -4142,6 +4231,7 @@ final class RiverSpotFish
 			// Rivers keep fish round the player, filling empty stretches.
 			if (!shoal.lake && !shoal.leaving && cycle >= shoal.nextWindow)
 			{
+				shoal.spacing = riverSpacing(shoal.route);
 				updateWindow(shoal);
 				// Walked towards the end of what's mapped: map again round the player, a step a tick, keeping the fish.
 				WorldView view = client.getTopLevelWorldView();
@@ -5800,6 +5890,7 @@ final class RiverSpotFish
 			{
 				hide(shoal);
 				all.remove();
+				shoalGone = true;
 				continue;
 			}
 			for (Swimmer swimmer : shoal.fish)

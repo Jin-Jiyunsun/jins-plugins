@@ -9,6 +9,7 @@ import java.util.Arrays;
 import java.util.List;
 import javax.inject.Inject;
 import net.runelite.api.MenuAction;
+import net.runelite.api.Model;
 import net.runelite.client.ui.FontManager;
 import net.runelite.client.ui.overlay.OverlayMenuEntry;
 import net.runelite.client.ui.overlay.OverlayPanel;
@@ -67,6 +68,9 @@ class FishCountOverlay extends OverlayPanel
 		}
 		heading("Fish loaded", "Fish loaded", String.valueOf(total));
 		line("  Sea", String.valueOf(seaFish));
+		// All rivers' fish against the target, and how far their spacing's widened.
+		line("  All rivers / target", rivers.riverFish + " / " + RiverSpotFish.RIVER_FISH_TARGET);
+		line("  Dynamic spacing", String.format("%.0f%%", rivers.crowding * 100));
 		// Each river and lake: fish now / most it keeps.
 		for (String[] shoal : shoals)
 		{
@@ -108,6 +112,7 @@ class FishCountOverlay extends OverlayPanel
 		line("Java heap used", String.format("%d / %d MB", heap.getUsed() >> 20, heap.getMax() >> 20));
 		line("Garbage collections (last s)", TickTimes.collected());
 		line("River and lake maps", String.format("%.1f MB", RiverDrawing.mapsMb(rivers)));
+		line("Fish models", String.format("%.1f MB", modelsMb(models)));
 		line("Warm-up at plugin start", String.format("%.1f ms", rivers.warmUpMs));
 		return super.render(graphics);
 	}
@@ -134,6 +139,51 @@ class FishCountOverlay extends OverlayPanel
 			getMenuEntries().add(new OverlayMenuEntry(MenuAction.RUNELITE_OVERLAY,
 				folded.contains(name) ? "Expand" : "Collapse", name));
 		}
+	}
+
+	/**
+	 * The memory the made fish models' arrays hold, MB.
+	 */
+	private static double modelsMb(FishModels models)
+	{
+		long bytes = 0;
+		for (Model model : models.made())
+		{
+			if (model == null)
+			{
+				continue;
+			}
+			bytes += 4L * (length(model.getVerticesX()) + length(model.getVerticesY()) + length(model.getVerticesZ())
+				+ length(model.getVertexNormalsX()) + length(model.getVertexNormalsY())
+				+ length(model.getVertexNormalsZ()) + length(model.getFaceIndices1())
+				+ length(model.getFaceIndices2()) + length(model.getFaceIndices3()) + length(model.getFaceColors1())
+				+ length(model.getFaceColors2()) + length(model.getFaceColors3()) + length(model.getTexIndices1())
+				+ length(model.getTexIndices2()) + length(model.getTexIndices3()));
+			bytes += 2L * (length(model.getFaceTextures()) + length(model.getUnlitFaceColors()));
+			bytes += length(model.getFaceTransparencies()) + length(model.getFaceRenderPriorities())
+				+ length(model.getFaceBias()) + length(model.getTextureFaces());
+		}
+		return bytes / 1e6;
+	}
+
+	private static int length(int[] array)
+	{
+		return array == null ? 0 : array.length;
+	}
+
+	private static int length(float[] array)
+	{
+		return array == null ? 0 : array.length;
+	}
+
+	private static int length(short[] array)
+	{
+		return array == null ? 0 : array.length;
+	}
+
+	private static int length(byte[] array)
+	{
+		return array == null ? 0 : array.length;
 	}
 
 	private void line(String left, String right)

@@ -601,6 +601,7 @@ public class LivelyFishingSpotsDebugPlugin extends Plugin
 		RiverSpotFish.CLIMB_TILT = config.debugRiverClimbTilt() / 100.0;
 		RiverSpotFish.CLIMB_WAG = config.debugRiverClimbWag() / 100.0;
 		RiverSpotFish.DECIDE_EVERY = config.debugRiverDecideEvery();
+		RiverSpotFish.RIVER_FISH_TARGET = config.debugRiverFishTarget();
 		RiverSpotFish.LEAP_EVERY = config.debugLeapEvery();
 		RiverSpotFish.LEAP_TICKS = Math.max(1, config.debugLeapMillis() / 20);
 		RiverSpotFish.LEAP_HEIGHT = config.debugLeapHeight();

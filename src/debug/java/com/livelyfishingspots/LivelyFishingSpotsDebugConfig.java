@@ -2378,6 +2378,19 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 		return 5;
 	}
 
+	@Range(min = 20, max = 500)
+	@ConfigItem(
+		keyName = "debugRiverFishTarget",
+		name = "River fish target",
+		description = "Fish all rivers together aim to keep;<br>over it, river spacing widens a little<br>each game tick (up to 3x), so fewer<br>spawn than leave; under it, it eases back",
+		section = debugRange,
+		position = 3
+	)
+	default int debugRiverFishTarget()
+	{
+		return 150;
+	}
+
 	@Range(min = 50, max = 400)
 	@Units(Units.PERCENT)
 	@ConfigItem(

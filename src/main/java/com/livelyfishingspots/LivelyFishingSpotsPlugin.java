@@ -192,17 +192,25 @@ public class LivelyFishingSpotsPlugin extends Plugin
 	@Subscribe
 	public void onNpcDespawned(NpcDespawned event)
 	{
-		// Only a fishing spot going can leave a kind out of sight; then free its models.
+		// A fishing spot going can leave a kind out of sight; then free its models.
 		long started = RiverSpotFish.probe.start();
 		boolean sea = seaSpotFish.remove(event.getNpc());
 		if (riverSpotFish.remove(event.getNpc()) || sea)
 		{
-			Set<Integer> swimming = new HashSet<>();
-			seaSpotFish.addKinds(swimming);
-			riverSpotFish.addKinds(swimming);
-			fishModels.keepOnly(swimming);
+			freeModels();
 		}
 		RiverSpotFish.probe.add(Probe.SPOTS, started);
+	}
+
+	/**
+	 * Drops the models of every kind no sea spot, river or lake shows.
+	 */
+	private void freeModels()
+	{
+		Set<Integer> swimming = new HashSet<>();
+		seaSpotFish.addKinds(swimming);
+		riverSpotFish.addKinds(swimming);
+		fishModels.keepOnly(swimming);
 	}
 
 	@Subscribe
@@ -210,6 +218,12 @@ public class LivelyFishingSpotsPlugin extends Plugin
 	{
 		long started = RiverSpotFish.probe.start();
 		riverSpotFish.activate();
+		// So does a river or lake going.
+		if (riverSpotFish.shoalGone)
+		{
+			riverSpotFish.shoalGone = false;
+			freeModels();
+		}
 		RiverSpotFish.probe.add(Probe.STARTING, started);
 	}
 

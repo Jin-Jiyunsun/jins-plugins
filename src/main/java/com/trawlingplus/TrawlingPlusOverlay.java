@@ -43,6 +43,7 @@ import net.runelite.client.game.SpriteManager;
 import net.runelite.client.ui.overlay.Overlay;
 import net.runelite.client.ui.overlay.OverlayLayer;
 import net.runelite.client.ui.overlay.OverlayPosition;
+import net.runelite.client.ui.overlay.outline.ModelOutlineRenderer;
 import net.runelite.client.ui.overlay.OverlayUtil;
 
 class TrawlingPlusOverlay extends Overlay
@@ -52,6 +53,17 @@ class TrawlingPlusOverlay extends Overlay
 	// A round stop is the circle through the middle of each side of that square: a smooth curve through
 	// STOP_CURVE_POINTS points of it, into the same polygon and path each time.
 	private static final int STOP_CURVE_POINTS = 8;
+	// How wide the cargo hold's outline is, and how far it feathers out, in pixels.
+	private static final int HOLD_OUTLINE_WIDTH = 2;
+	private static final int HOLD_OUTLINE_FEATHER = 2;
+	// Its pulse: how long each takes, how many pixels it grows out by, and how soft its edge is. It starts as strong
+	// as the outline and fades to nothing.
+	private static final long HOLD_PULSE_MILLIS = 1500;
+	private static final int HOLD_PULSE_GROWTH = 8;
+	private static final int HOLD_PULSE_FEATHER = 4;
+	// How far faded in the hold's outline is and when that was worked out, or -1 once faded out.
+	private double holdOutlineFade;
+	private long lastHoldOutlineMillis = -1;
 	private final Polygon stopCircle = new Polygon();
 	private final Path2D.Double stopCurve = new Path2D.Double();
 	// Which of a circle's points each placed corner is, so a gap where some were off the map is known.
@@ -342,6 +354,7 @@ class TrawlingPlusOverlay extends Overlay
 	private final TrawlingPlusPlugin plugin;
 	private final TrawlingPlusConfig config;
 	private final SpriteManager spriteManager;
+	private final ModelOutlineRenderer outlineRenderer;
 
 	// The bar's two pictures this frame, and the replacements they were made from when a skin or resource pack has
 	// swapped them, so each is only turned into an image once. How full it last was, kept while it fades out.
@@ -436,13 +449,15 @@ class TrawlingPlusOverlay extends Overlay
 	private ShoalDepth fadingDepth = ShoalDepth.UNKNOWN;
 
 	@Inject
-	TrawlingPlusOverlay(Client client, TrawlingPlusPlugin plugin, TrawlingPlusConfig config, SpriteManager spriteManager)
+	TrawlingPlusOverlay(Client client, TrawlingPlusPlugin plugin, TrawlingPlusConfig config,
+		SpriteManager spriteManager, ModelOutlineRenderer outlineRenderer)
 	{
 		super(plugin);
 		this.client = client;
 		this.plugin = plugin;
 		this.config = config;
 		this.spriteManager = spriteManager;
+		this.outlineRenderer = outlineRenderer;
 		setPosition(OverlayPosition.DYNAMIC);
 		setLayer(OverlayLayer.ABOVE_SCENE);
 	}
@@ -450,6 +465,7 @@ class TrawlingPlusOverlay extends Overlay
 	@Override
 	public Dimension render(Graphics2D graphics)
 	{
+		drawHoldOutline();
 		WorldView top = client.getTopLevelWorldView();
 		frameBeyond = top == null ? 0 : tilesBeyondScene(top);
 		arrowStyle = config.arrowStyle();
@@ -947,6 +963,8 @@ class TrawlingPlusOverlay extends Overlay
 		lastHoldFadeMillis = -1;
 		spotArrowFade = 0;
 		lastSpotArrowMillis = -1;
+		holdOutlineFade = 0;
+		lastHoldOutlineMillis = -1;
 		spotArrowBlocked = false;
 		spotCheckTick = -1;
 	}
@@ -1853,6 +1871,44 @@ class TrawlingPlusOverlay extends Overlay
 	 * arrow on the water off the hull, on the side nearest the spot, going round the boat as it moves. Fades in and
 	 * out like the display on the boat, where it is, the spot's place being kept once the arrow's rules hide it.
 	 */
+	/**
+	 * Outlines the cargo hold while sea spot fishing with a full inventory, fading in and out with Animated.
+	 */
+	private void drawHoldOutline()
+	{
+		boolean wanted = plugin.isHoldHighlighted();
+		// Nothing to show or fade out, as nearly always: no further work this frame.
+		if (!wanted && holdOutlineFade <= 0)
+		{
+			lastHoldOutlineMillis = -1;
+			return;
+		}
+		long now = System.currentTimeMillis();
+		GameObject hold = plugin.getOwnHold();
+		wanted &= hold != null;
+		double step = !config.animatedHud() ? 1 : lastHoldOutlineMillis < 0 ? 0
+			: Math.max(0, now - lastHoldOutlineMillis) / HELM_FADE_MILLIS;
+		holdOutlineFade = wanted ? Math.min(1, holdOutlineFade + step) : Math.max(0, holdOutlineFade - step);
+		// Faded out, it starts from nothing next time.
+		lastHoldOutlineMillis = wanted || holdOutlineFade > 0 ? now : -1;
+		if (hold == null || holdOutlineFade <= 0)
+		{
+			return;
+		}
+		double shown = holdOutlineFade * holdOutlineFade * (3 - 2 * holdOutlineFade);
+		Color colour = config.cargoHoldHighlightColour();
+		// A glowing copy of the outline, behind it, that grows outwards and fades away, again and again; only with
+		// Animated.
+		if (config.animatedHud())
+		{
+			double through = now % HOLD_PULSE_MILLIS / (double) HOLD_PULSE_MILLIS;
+			int pulseWidth = HOLD_OUTLINE_WIDTH + (int) Math.round(HOLD_PULSE_GROWTH * through);
+			outlineRenderer.drawOutline(hold, pulseWidth, withOpacity(colour, shown * (1 - through)),
+				HOLD_PULSE_FEATHER);
+		}
+		outlineRenderer.drawOutline(hold, HOLD_OUTLINE_WIDTH, withOpacity(colour, shown), HOLD_OUTLINE_FEATHER);
+	}
+
 	private void drawSpotArrow(Graphics2D graphics, WorldView top)
 	{
 		long now = System.currentTimeMillis();

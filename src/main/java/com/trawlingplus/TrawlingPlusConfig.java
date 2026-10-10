@@ -744,6 +744,31 @@ public interface TrawlingPlusConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "highlightCargoHold",
+		name = "Cargo hold highlight",
+		description = "While sea spot fishing, outline the cargo hold<br>when your inventory is full.",
+		position = 50,
+		section = hudSection
+	)
+	default boolean highlightCargoHold()
+	{
+		return true;
+	}
+
+	@Alpha
+	@ConfigItem(
+		keyName = "cargoHoldHighlightColour",
+		name = "Cargo hold highlight colour",
+		description = "Colour of the cargo hold's outline.",
+		position = 51,
+		section = hudSection
+	)
+	default Color cargoHoldHighlightColour()
+	{
+		return new Color(255, 221, 0);
+	}
+
+	@ConfigItem(
 		keyName = "shallowDepthColour",
 		name = "Shallow",
 		description = "Colour of shallow depth.",

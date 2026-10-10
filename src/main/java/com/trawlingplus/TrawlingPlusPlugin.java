@@ -207,6 +207,42 @@ public class TrawlingPlusPlugin extends Plugin
 		NpcID.FISHING_BOAT_RAREFISH, NpcID.FISHING_BOAT_KARAMBWANFISH, NpcID.FISHING_BOAT_PISCARILIUSFISH,
 		NpcID.FISHING_BOAT_MONKFISH);
 	private static final double SEA_SPOT_REACH_TILES = 20;
+	// Every boat's cargo hold, of each wood and size, as built and with or without cargo showing.
+	private static final Set<Integer> CARGO_HOLDS = Set.of(
+		ObjectID.SAILING_BOAT_CARGO_HOLD_REGULAR_RAFT, ObjectID.SAILING_BOAT_CARGO_HOLD_REGULAR_RAFT_CARGO,
+		ObjectID.SAILING_BOAT_CARGO_HOLD_REGULAR_RAFT_NO_CARGO, ObjectID.SAILING_BOAT_CARGO_HOLD_REGULAR_2X5,
+		ObjectID.SAILING_BOAT_CARGO_HOLD_REGULAR_2X5_CARGO, ObjectID.SAILING_BOAT_CARGO_HOLD_REGULAR_2X5_NO_CARGO,
+		ObjectID.SAILING_BOAT_CARGO_HOLD_REGULAR_LARGE, ObjectID.SAILING_BOAT_CARGO_HOLD_REGULAR_LARGE_CARGO,
+		ObjectID.SAILING_BOAT_CARGO_HOLD_REGULAR_LARGE_NO_CARGO, ObjectID.SAILING_BOAT_CARGO_HOLD_OAK_RAFT,
+		ObjectID.SAILING_BOAT_CARGO_HOLD_OAK_RAFT_CARGO, ObjectID.SAILING_BOAT_CARGO_HOLD_OAK_RAFT_NO_CARGO,
+		ObjectID.SAILING_BOAT_CARGO_HOLD_OAK_2X5, ObjectID.SAILING_BOAT_CARGO_HOLD_OAK_2X5_CARGO,
+		ObjectID.SAILING_BOAT_CARGO_HOLD_OAK_2X5_NO_CARGO, ObjectID.SAILING_BOAT_CARGO_HOLD_OAK_LARGE,
+		ObjectID.SAILING_BOAT_CARGO_HOLD_OAK_LARGE_CARGO, ObjectID.SAILING_BOAT_CARGO_HOLD_OAK_LARGE_NO_CARGO,
+		ObjectID.SAILING_BOAT_CARGO_HOLD_TEAK_RAFT, ObjectID.SAILING_BOAT_CARGO_HOLD_TEAK_RAFT_CARGO,
+		ObjectID.SAILING_BOAT_CARGO_HOLD_TEAK_RAFT_NO_CARGO, ObjectID.SAILING_BOAT_CARGO_HOLD_TEAK_2X5,
+		ObjectID.SAILING_BOAT_CARGO_HOLD_TEAK_2X5_CARGO, ObjectID.SAILING_BOAT_CARGO_HOLD_TEAK_2X5_NO_CARGO,
+		ObjectID.SAILING_BOAT_CARGO_HOLD_TEAK_LARGE, ObjectID.SAILING_BOAT_CARGO_HOLD_TEAK_LARGE_CARGO,
+		ObjectID.SAILING_BOAT_CARGO_HOLD_TEAK_LARGE_NO_CARGO, ObjectID.SAILING_BOAT_CARGO_HOLD_MAHOGANY_RAFT,
+		ObjectID.SAILING_BOAT_CARGO_HOLD_MAHOGANY_RAFT_CARGO, ObjectID.SAILING_BOAT_CARGO_HOLD_MAHOGANY_RAFT_NO_CARGO,
+		ObjectID.SAILING_BOAT_CARGO_HOLD_MAHOGANY_2X5, ObjectID.SAILING_BOAT_CARGO_HOLD_MAHOGANY_2X5_CARGO,
+		ObjectID.SAILING_BOAT_CARGO_HOLD_MAHOGANY_2X5_NO_CARGO, ObjectID.SAILING_BOAT_CARGO_HOLD_MAHOGANY_LARGE,
+		ObjectID.SAILING_BOAT_CARGO_HOLD_MAHOGANY_LARGE_CARGO, ObjectID.SAILING_BOAT_CARGO_HOLD_MAHOGANY_LARGE_NO_CARGO,
+		ObjectID.SAILING_BOAT_CARGO_HOLD_CAMPHOR_RAFT, ObjectID.SAILING_BOAT_CARGO_HOLD_CAMPHOR_RAFT_CARGO,
+		ObjectID.SAILING_BOAT_CARGO_HOLD_CAMPHOR_RAFT_NO_CARGO, ObjectID.SAILING_BOAT_CARGO_HOLD_CAMPHOR_2X5,
+		ObjectID.SAILING_BOAT_CARGO_HOLD_CAMPHOR_2X5_CARGO, ObjectID.SAILING_BOAT_CARGO_HOLD_CAMPHOR_2X5_NO_CARGO,
+		ObjectID.SAILING_BOAT_CARGO_HOLD_CAMPHOR_LARGE, ObjectID.SAILING_BOAT_CARGO_HOLD_CAMPHOR_LARGE_CARGO,
+		ObjectID.SAILING_BOAT_CARGO_HOLD_CAMPHOR_LARGE_NO_CARGO, ObjectID.SAILING_BOAT_CARGO_HOLD_IRONWOOD_RAFT,
+		ObjectID.SAILING_BOAT_CARGO_HOLD_IRONWOOD_RAFT_CARGO, ObjectID.SAILING_BOAT_CARGO_HOLD_IRONWOOD_RAFT_NO_CARGO,
+		ObjectID.SAILING_BOAT_CARGO_HOLD_IRONWOOD_2X5, ObjectID.SAILING_BOAT_CARGO_HOLD_IRONWOOD_2X5_CARGO,
+		ObjectID.SAILING_BOAT_CARGO_HOLD_IRONWOOD_2X5_NO_CARGO, ObjectID.SAILING_BOAT_CARGO_HOLD_IRONWOOD_LARGE,
+		ObjectID.SAILING_BOAT_CARGO_HOLD_IRONWOOD_LARGE_CARGO, ObjectID.SAILING_BOAT_CARGO_HOLD_IRONWOOD_LARGE_NO_CARGO,
+		ObjectID.SAILING_BOAT_CARGO_HOLD_ROSEWOOD_RAFT, ObjectID.SAILING_BOAT_CARGO_HOLD_ROSEWOOD_RAFT_CARGO,
+		ObjectID.SAILING_BOAT_CARGO_HOLD_ROSEWOOD_RAFT_NO_CARGO, ObjectID.SAILING_BOAT_CARGO_HOLD_ROSEWOOD_2X5,
+		ObjectID.SAILING_BOAT_CARGO_HOLD_ROSEWOOD_2X5_CARGO, ObjectID.SAILING_BOAT_CARGO_HOLD_ROSEWOOD_2X5_NO_CARGO,
+		ObjectID.SAILING_BOAT_CARGO_HOLD_ROSEWOOD_LARGE, ObjectID.SAILING_BOAT_CARGO_HOLD_ROSEWOOD_LARGE_CARGO,
+		ObjectID.SAILING_BOAT_CARGO_HOLD_ROSEWOOD_LARGE_NO_CARGO);
+	// How many slots the inventory has.
+	private static final int INVENTORY_SLOTS = 28;
 	// How far, in tiles, the boat has to move after fishing for the arrow to show again.
 	private static final double SPOT_MOVED_TILES = 0.5;
 	// How often, in ticks, that and the 3 minute away timer are looked at, there being no hurry for either.
@@ -412,6 +448,8 @@ public class TrawlingPlusPlugin extends Plugin
 	// entity to its clickbox object.
 	private final Map<Integer, WorldEntity> entities = new HashMap<>();
 	private final Map<Integer, Integer> clickboxByView = new HashMap<>();
+	// The cargo hold on each boat in sight, by its world view.
+	private final Map<Integer, GameObject> holdByView = new HashMap<>();
 	private final Map<Integer, Shoal> shoals = new HashMap<>();
 
 	@Override
@@ -1052,6 +1090,7 @@ public class TrawlingPlusPlugin extends Plugin
 		{
 			entities.remove(view.getId());
 			clickboxByView.remove(view.getId());
+			holdByView.remove(view.getId());
 			shoals.remove(view.getId());
 		}
 	}
@@ -1064,6 +1103,10 @@ public class TrawlingPlusPlugin extends Plugin
 		{
 			clickboxByView.put(object.getWorldView().getId(), object.getId());
 		}
+		if (CARGO_HOLDS.contains(object.getId()) && object.getWorldView() != null)
+		{
+			holdByView.put(object.getWorldView().getId(), object);
+		}
 	}
 
 	@Subscribe
@@ -1074,6 +1117,7 @@ public class TrawlingPlusPlugin extends Plugin
 		{
 			// Only clear it if it's still the current clickbox; mixed shoals swap objects in place.
 			clickboxByView.remove(object.getWorldView().getId(), object.getId());
+			holdByView.remove(object.getWorldView().getId(), object);
 		}
 	}
 
@@ -1950,6 +1994,25 @@ public class TrawlingPlusPlugin extends Plugin
 		}
 	}
 
+	/**
+	 * The cargo hold on the player's own boat, or null if not aboard or it isn't in sight.
+	 */
+	GameObject getOwnHold()
+	{
+		WorldEntity own = ownBoat;
+		return own == null ? null : holdByView.get(own.getWorldView().getId());
+	}
+
+	/**
+	 * Whether the hold is to be outlined: while sea spot fishing with a full inventory, but not once the hold is 90%
+	 * full, as for the spot arrow, as then it's time to bank.
+	 */
+	boolean isHoldHighlighted()
+	{
+		// The plain fields first, so the setting is only looked up while it could matter.
+		return seaFishing && inventoryFilled >= INVENTORY_SLOTS && !spotHoldFull && config.highlightCargoHold();
+	}
+
 	private void countInventory(ItemContainer inventory)
 	{
 		int filled = 0;
@@ -2481,6 +2544,7 @@ public class TrawlingPlusPlugin extends Plugin
 	{
 		entities.clear();
 		clickboxByView.clear();
+		holdByView.clear();
 		shoals.clear();
 		showGuides = false;
 		stopTracking();

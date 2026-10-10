@@ -5759,12 +5759,13 @@ final class RiverSpotFish
 		calm *= leapAge < 0 ? 1 : leapAge < LEAP_RUN_TICKS ? 1 - leapAge / (double) LEAP_RUN_TICKS : 0;
 		double under = look.sink + calm * (bobbed + look.dipDepth * dip * dip) + swimmer.depthNow;
 		double height = swimmer.leapHeight;
-		swimmer.fish.setZ((int) Math.round(swimmer.surface + (leapAge < 0 ? under : leapDepth(leapAge, under, height))));
+		double below = leapAge < 0 ? under : leapDepth(leapAge, under, height);
+		swimmer.fish.setZ((int) Math.round(swimmer.surface + below));
 		double leapTip = 0;
 		if (leapAge >= 0)
 		{
 			// Along its way: how far it rises next client tick against how far it goes along.
-			double rises = leapDepth(leapAge, under, height) - leapDepth(leapAge + 1, under, height);
+			double rises = below - leapDepth(leapAge + 1, under, height);
 			double along = Math.max(1, swimmer.swimming * leapPace(leapAge));
 			double way = Math.toDegrees(Math.atan2(rises, along));
 			// Coming down, steeper.

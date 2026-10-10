@@ -17,3 +17,4 @@ river-stalker-den
 river-molch
 river-hosidius
 river-ottos-grotto
+river-mount-quidamortem

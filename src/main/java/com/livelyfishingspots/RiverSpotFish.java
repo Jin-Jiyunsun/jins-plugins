@@ -3773,12 +3773,13 @@ final class RiverSpotFish
 	{
 		if (most < GROUP_LEAST || schooled && random.nextDouble() < LAKE_SOLO_SHARE)
 		{
+			boolean hasSturgeon = has(shoal.kinds, STURGEON);
 			int sturgeon = 0;
-			for (Swimmer swimmer : has(shoal.kinds, STURGEON) ? shoal.fish : List.<Swimmer>of())
+			for (Swimmer swimmer : hasSturgeon ? shoal.fish : List.<Swimmer>of())
 			{
 				sturgeon += swimmer.item == STURGEON ? 1 : 0;
 			}
-			boolean few = sturgeon < LAKE_STURGEON_SHARE * (shoal.fish.size() + 1);
+			boolean few = hasSturgeon && sturgeon < LAKE_STURGEON_SHARE * (shoal.fish.size() + 1);
 			int item = few && random.nextBoolean() ? STURGEON : notSturgeon(shoal.kinds, random, false);
 			spawn(shoal, 0, place, true, cycle, random, item, null, 0);
 			return 1;

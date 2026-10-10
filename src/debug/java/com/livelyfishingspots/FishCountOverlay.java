@@ -39,7 +39,7 @@ class FishCountOverlay extends OverlayPanel
 		this.config = config;
 		setPosition(OverlayPosition.TOP_LEFT);
 		menu(config.debugPanelCollapsed());
-		panelComponent.setPreferredSize(new Dimension(230, 0));
+		panelComponent.setPreferredSize(new Dimension(250, 0));
 	}
 
 	void setSources(SeaSpotFish sea, RiverSpotFish rivers, FishModels models)
@@ -100,10 +100,14 @@ class FishCountOverlay extends OverlayPanel
 			}
 		}
 		// Each part a client tick, over the last second; and what it allocated (garbage to collect later).
-		heading("Each client tick", "Each client tick", "avg / worst ms, KB/s");
-		for (String[] part : TickTimes.rows())
+		// Columns, so each number sits under its header.
+		section = "Each client tick";
+		boolean folded = collapsed.contains(section);
+		panelComponent.getChildren().add(new ColumnLine((folded ? "+ " : "") + "Each client tick (ms)", Color.YELLOW,
+			"avg", "worst", "KB/s"));
+		for (String[] part : folded ? List.<String[]>of() : TickTimes.rows())
 		{
-			line(part[0], part[1] + ", " + part[2]);
+			panelComponent.getChildren().add(new ColumnLine(part[0], Color.WHITE, part[1], part[2], part[3]));
 		}
 		// Memory: all of RuneLite's heap, Java's garbage collections (a pause shows as a spike anywhere), and what
 		// the river and lake maps hold.

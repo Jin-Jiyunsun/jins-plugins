@@ -147,8 +147,8 @@ final class TickTimes
 		for (Map.Entry<String, long[]> part : PARTS.entrySet())
 		{
 			long[] times = part.getValue();
-			report.add(new String[]{part.getKey(), String.format("%.2f / %.2f", times[1] / 1e6 / ticks, times[2] / 1e6),
-				String.valueOf(times[3] >> 10)});
+			report.add(new String[]{part.getKey(), String.format("%.2f", times[1] / 1e6 / ticks),
+				String.format("%.2f", times[2] / 1e6), String.valueOf(times[3] >> 10)});
 			times[1] = 0;
 			times[2] = 0;
 			times[3] = 0;

@@ -38,6 +38,8 @@ final class CargoHold
 	private final int[] fish = new int[SEA_FISH.length];
 	private int others = -1;
 	private int capacity = -1;
+	// How many trawled fish it holds, from its screen or the nets emptied into it since, or -1 if not known.
+	private int trawled = -1;
 	// How many times any of those has changed, which the display goes by to only write its lines out again then.
 	private int changes;
 	// Which went in most recently: by SEA_FISH, the number of the deposit that last brought each, or 0 if none has
@@ -75,6 +77,27 @@ final class CargoHold
 	int fish(int kind)
 	{
 		return fish[kind];
+	}
+
+	/**
+	 * How many trawled fish it holds, or -1 if not known.
+	 */
+	int trawled()
+	{
+		return trawled;
+	}
+
+	void setTrawled(int count)
+	{
+		trawled = count;
+	}
+
+	/**
+	 * Notes fish from the nets going in: at least that many trawled fish, even if it wasn't known before.
+	 */
+	void addTrawled(int count)
+	{
+		trawled = Math.max(0, trawled) + count;
 	}
 
 	/**
@@ -187,6 +210,7 @@ final class CargoHold
 	void empty()
 	{
 		Arrays.fill(fish, 0);
+		trawled = 0;
 		changes++;
 		if (others >= 0)
 		{

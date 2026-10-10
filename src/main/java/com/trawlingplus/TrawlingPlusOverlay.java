@@ -1023,6 +1023,12 @@ class TrawlingPlusOverlay extends Overlay
 		wanted[FISH_LINE] = boat != null && config.showFishInNets() && plugin.netsFitted() && plugin.fishLineWanted(now);
 		// The hold's own display says when it is full, when that is up.
 		wanted[HOLD_LINE] = boat != null && config.showFishInNets() && plugin.isHoldFull() && !hold;
+		// "Fish: 0" or "Fish: ?" on its own, while not trawling, isn't worth showing, so the display fades out.
+		if (wanted[FISH_LINE] && !wanted[DEPTH_LINE] && !wanted[TIME_LINE] && !wanted[BAR_LINE] && !wanted[BAITED_LINE]
+			&& !wanted[HOLD_LINE] && !plugin.isTrawling())
+		{
+			wanted[FISH_LINE] = false;
+		}
 
 		// A line going while another holds the pill up goes at once, and one coming waits for room to be made for it
 		// and then fades in. The display itself arriving or leaving fades as a whole.

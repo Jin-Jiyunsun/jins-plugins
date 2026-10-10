@@ -19,7 +19,9 @@ and keeps track of your nets, bait and cargo hold from a HUD on the boat.
   that attack boats spawn are marked with a skull icon, alongside the stretch of route they
   threaten.
 - **Heads up display**: a pill on the boat showing time left at the current stop, fish caught in
-  the nets, bait remaining, a hold-full warning and each net's depth.
+  the nets, bait remaining, a hold-full warning and each net's depth. When all it would show is an
+  empty or unknown fish count, it hides while you're not trawling: no net lowered, no fish in the
+  nets or hold, and no catch for 3 minutes.
 - **Cargo hold display**: while fishing the fishing spots at sea with a rod, net, harpoon, lobster
   pot or karambwan vessel, a second pill shows how many fish are in your boat's hold, out of how
   many fit alongside the rest of your cargo, and how many of each of the last three kinds you put

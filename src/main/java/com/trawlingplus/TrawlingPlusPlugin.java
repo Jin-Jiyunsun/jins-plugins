@@ -243,6 +243,12 @@ public class TrawlingPlusPlugin extends Plugin
 		ObjectID.SAILING_BOAT_CARGO_HOLD_ROSEWOOD_LARGE_NO_CARGO);
 	// How many slots the inventory has.
 	private static final int INVENTORY_SLOTS = 28;
+	// The trawled fish, as they come out of the nets.
+	private static final int[] TRAWLED_FISH = {ItemID.RAW_GIANT_KRILL, ItemID.RAW_HADDOCK, ItemID.RAW_YELLOWFIN,
+		ItemID.RAW_HALIBUT, ItemID.RAW_BLUEFIN, ItemID.RAW_MARLIN};
+	// How long, in ticks, after the last trawling catch the display at the helm stays up with nothing else to keep
+	// it: 3 minutes.
+	private static final int TRAWL_AWAY_TICKS = 300;
 	// How far, in tiles, the boat has to move after fishing for the arrow to show again.
 	private static final double SPOT_MOVED_TILES = 0.5;
 	// How often, in ticks, that and the 3 minute away timer are looked at, there being no hurry for either.
@@ -379,6 +385,8 @@ public class TrawlingPlusPlugin extends Plugin
 	// hold, so this adds up what it says is caught and taken, and is put right whenever a net's menu
 	// gives the true number.
 	private int fishInNets = -1;
+	// The tick of the last trawling catch, or -1 if none since starting.
+	private int lastCatchTick = -1;
 	private String fishLabel = fishLabel(-1);
 	// When the nets were last emptied, found empty or raised, or -1.
 	private long fishActivityMillis = -1;
@@ -937,6 +945,12 @@ public class TrawlingPlusPlugin extends Plugin
 		{
 			record.setFish(kind, contents == null ? 0 : contents.count(CargoHold.SEA_FISH[kind]), tick);
 		}
+		int trawled = 0;
+		for (int fish : TRAWLED_FISH)
+		{
+			trawled += contents == null ? 0 : contents.count(fish);
+		}
+		record.setTrawled(trawled);
 		plainBait = contents == null ? 0 : contents.count(ItemID.BRUT_FISH_CUTS);
 		fineBait = contents == null ? 0 : contents.count(ItemID.SAILING_FINE_FISH_OFFCUTS);
 		holdTick = client.getTickCount();
@@ -1857,6 +1871,10 @@ public class TrawlingPlusPlugin extends Plugin
 			}
 			else
 			{
+				if (fishInNets > 0)
+				{
+					record.addTrawled(fishInNets);
+				}
 				noteFish(0);
 			}
 		}
@@ -1896,6 +1914,10 @@ public class TrawlingPlusPlugin extends Plugin
 			// match either, which is right: that fish is already in the number of the catch line after it.
 			Matcher caught = CATCH.matcher(message);
 			int fish = caught.find() ? number(caught.group(1)) : -1;
+			if (fish > 0)
+			{
+				lastCatchTick = client.getTickCount();
+			}
 			if (fish >= 0 && fishInNets >= 0)
 			{
 				setFish(Math.min(NET_CAPACITY, fishInNets + fish));
@@ -2001,6 +2023,18 @@ public class TrawlingPlusPlugin extends Plugin
 	{
 		WorldEntity own = ownBoat;
 		return own == null ? null : holdByView.get(own.getWorldView().getId());
+	}
+
+	/**
+	 * Whether trawling is under way: a net lowered, fish in the nets, a catch in the last 3 minutes, or trawled fish
+	 * known to be in the hold. Without it, a display at the helm showing only "Fish: 0" or "Fish: ?" hides.
+	 */
+	boolean isTrawling()
+	{
+		CargoHold hold = boatHold;
+		return netsLowered || fishInNets > 0
+			|| lastCatchTick >= 0 && client.getTickCount() - lastCatchTick <= TRAWL_AWAY_TICKS
+			|| hold != null && hold.trawled() > 0;
 	}
 
 	/**

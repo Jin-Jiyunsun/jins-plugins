@@ -1204,6 +1204,9 @@ final class RiverSpotFish
 	{
 		long started = System.nanoTime();
 		int reach = range() + MAP_MORE;
+		// Starting a river's fish too, on a throwaway shoal: models queued on a spare list never made.
+		FishModels spare = new FishModels(client);
+		ThreadLocalRandom random = ThreadLocalRandom.current();
 		List<Baked> rivers = new ArrayList<>();
 		List<Baked> lakes = new ArrayList<>();
 		for (Baked saved : baked.values())
@@ -1240,6 +1243,12 @@ final class RiverSpotFish
 				river.at(river.nearest(river.pathX[0], river.pathY[0]), point);
 				double[] away = awayFromBank(river, point[0], point[1]);
 				roundRing(river, point[0] + away[0] * CIRCLE_OFFSET, point[1] + away[1] * CIRCLE_OFFSET);
+				Shoal shoal = new Shoal(saved.route, 0, 0, river, KIND_FISH.get(bakedKind(saved.route[0])), 0,
+					fishCount(saved.route, river, false), null);
+				queueModels(spare, shoal.kinds);
+				shoal.spacing = riverSpacing(saved.route);
+				updateWindow(shoal);
+				fillStretch(shoal, shoal.windowFrom, shoal.windowTo, random);
 			}
 		}
 		// Each lake in turn, whole, as it's mapped.
@@ -1822,19 +1831,13 @@ final class RiverSpotFish
 	/**
 	 * Fills a newly mapped river or lake with fish.
 	 */
-	private Shoal startShoal(Mapping mapping)
+	/**
+	 * Every size queued, to be made a couple a tick rather than all in one frame: the growing ones first, the
+	 * smallest at the very front, as new fish start at it and none come until it's made; then the tipped
+	 * full-size ones.
+	 */
+	private static void queueModels(FishModels models, int[] kinds)
 	{
-		WorldView view = mapping.view;
-		WorldPoint[] route = mapping.route;
-		saidOutOfSight.remove(route[0]);
-		int plane = mapping.plane;
-		boolean lake = mapping.lake;
-		River river = mapping.river;
-		List<double[]> spawns = mapping.spawns;
-		int[] kinds = KIND_FISH.get(bakedKind(route[0]));
-		// Every size queued, to be made a couple a tick rather than all in one frame: the growing ones first, the
-		// smallest at the very front, as new fish start at it and none come until it's made; then the tipped
-		// full-size ones.
 		for (int item : kinds)
 		{
 			for (int step = GROW_STEPS; step >= 1; step--)
@@ -1854,6 +1857,19 @@ final class RiverSpotFish
 		{
 			models.queue(item, size(item, 1), 0, 0, true);
 		}
+	}
+
+	private Shoal startShoal(Mapping mapping)
+	{
+		WorldView view = mapping.view;
+		WorldPoint[] route = mapping.route;
+		saidOutOfSight.remove(route[0]);
+		int plane = mapping.plane;
+		boolean lake = mapping.lake;
+		River river = mapping.river;
+		List<double[]> spawns = mapping.spawns;
+		int[] kinds = KIND_FISH.get(bakedKind(route[0]));
+		queueModels(models, kinds);
 		int cycle = client.getGameCycle();
 		Shoal shoal = new Shoal(route, plane, view.getId(), river, kinds, cycle, fishCount(route, river, lake),
 			lake ? spawns.toArray(new double[0][]) : null);

@@ -1,9 +1,9 @@
 # Poison Ring
 
-A lightweight RuneLite plugin that adds a visual 'countdown' ring around the HP minimap orb, similar to the 'count up' healing indicator, to track poison and venom damage ticks.
+A lightweight RuneLite plugin that adds a visual 'countdown' ring around the HP minimap orb, similar to the 'count up' regen-meter, to track poison and venom damage ticks.
 
 ## Features
-* **Visual Countdown:** A green arc that tracks the 30-tick cycle between poison/venom hits.
+* **Visual Countdown:** A green or purple arc that tracks the 30-tick cycle between poison/venom hits.
 * **Smart Tracking:** Automatically resyncs with hitsplats and handles immunity states (anti-venoms) correctly.
 * **Customizable:** Integrated with RuneLite's config panel to allow users to adjust:
     * Ring X/Y offsets
@@ -12,6 +12,6 @@ A lightweight RuneLite plugin that adds a visual 'countdown' ring around the HP 
     * Custom colors for both Poison and Venom states
 
 ## Background
-After fighting zulrah for my 50kc's, i was trining to save anti-posions by only
-using anti's at the mast moment, and wantd a more intuitive, "at-a-glance" than hovering
-ove rthe orb, similar to the built-in health regeneration ring, allowing me to focus on high-intensity combat (like Vorkath or Zulrah) without checking infobox timers.
+The plugin was originally created by [corhen](https://github.com/corhen/poison-ring) while killing Zulrah, to efficiently time usage of anti-poisons.
+
+Since October 2026 the plugin is maintained by Jin-Jiyunsun, with AI assistance.

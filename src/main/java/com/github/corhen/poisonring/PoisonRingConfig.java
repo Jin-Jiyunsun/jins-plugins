@@ -4,6 +4,7 @@ import java.awt.Color;
 import net.runelite.client.config.Config;
 import net.runelite.client.config.ConfigGroup;
 import net.runelite.client.config.ConfigItem;
+import net.runelite.client.config.Range;
 
 @ConfigGroup("poisonring")
 public interface PoisonRingConfig extends Config {
@@ -14,6 +15,7 @@ public interface PoisonRingConfig extends Config {
         description = "Shifts the ring left (negative) or right (positive)",
         position = 1
     )
+    @Range(min = -50, max = 50)
     default int shiftX() {
         return 0;
     }
@@ -24,6 +26,7 @@ public interface PoisonRingConfig extends Config {
         description = "Shifts the ring up (negative) or down (positive)",
         position = 2
     )
+    @Range(min = -50, max = 50)
     default int shiftY() {
         return 0;
     }
@@ -34,6 +37,7 @@ public interface PoisonRingConfig extends Config {
         description = "Shrinks (negative) or expands (positive) the circle diameter",
         position = 3
     )
+    @Range(min = -31, max = 100)
     default int diameter() {
         return 0;
     }
@@ -44,6 +48,7 @@ public interface PoisonRingConfig extends Config {
         description = "Changes the thickness of the ring",
         position = 4
     )
+    @Range(min = 1, max = 32)
     default int lineThickness() {
         return 2;
     }

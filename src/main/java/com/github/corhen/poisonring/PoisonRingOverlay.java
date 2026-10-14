@@ -53,18 +53,20 @@ public class PoisonRingOverlay extends Overlay {
         // Diameter grows and shrinks around the orb's centre, then the shifts move the whole ring.
         // The box is kept on whole pixels, like the Regen Meter's, so the anti-aliased edge stays
         // even all the way round instead of sharp on one side and smeared on the other.
-        int diameter = Math.max(1, BASE_DIAMETER + config.diameter());
-        int x = bounds.x + CENTER_X_OFFSET + config.shiftX() - diameter / 2;
-        int y = bounds.y + bounds.height / 2 + config.shiftY() - diameter / 2;
+        // Settings are clamped to their ranges, since values saved before the ranges existed are used as-is
+        int diameter = BASE_DIAMETER + clamp(config.diameter(), -31, 100);
+        int x = bounds.x + CENTER_X_OFFSET + clamp(config.shiftX(), -50, 50) - diameter / 2;
+        int y = bounds.y + bounds.height / 2 + clamp(config.shiftY(), -50, 50) - diameter / 2;
+        int thickness = clamp(config.lineThickness(), 1, 32);
         // An odd thickness straddles the path, so move the path onto pixel centres to keep it crisp
-        double align = config.lineThickness() % 2 == 1 ? 0.5 : 0;
+        double align = thickness % 2 == 1 ? 0.5 : 0;
 
         double progress = (double) plugin.getTicksUntilDamage() / plugin.getPoisonTickRate();
 
         graphics.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE);
         graphics.setColor(plugin.isVenom() ? config.venomColor() : config.poisonColor());
         // Butt caps so the arc's ends stop exactly where the arc does, no square nub past them
-        graphics.setStroke(new BasicStroke(config.lineThickness(), BasicStroke.CAP_BUTT, BasicStroke.JOIN_MITER));
+        graphics.setStroke(new BasicStroke(thickness, BasicStroke.CAP_BUTT, BasicStroke.JOIN_MITER));
 
         Arc2D.Double arc = new Arc2D.Double(
             x + align,
@@ -79,5 +81,9 @@ public class PoisonRingOverlay extends Overlay {
         graphics.draw(arc);
 
         return null;
+    }
+
+    private static int clamp(int value, int min, int max) {
+        return Math.max(min, Math.min(max, value));
     }
 }

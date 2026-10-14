@@ -1,5 +1,9 @@
 # Poison Ring
 
+<p align="center">
+<img width="132" height="86" alt="poison-orb-splash" src="https://github.com/user-attachments/assets/971bd0af-2dac-4cc5-9c48-fe10232d38c0" />
+</p>
+
 A lightweight RuneLite plugin that adds a visual 'countdown' ring around the HP minimap orb, similar to the 'count up' regen-meter, to track poison and venom damage ticks.
 
 ## Features

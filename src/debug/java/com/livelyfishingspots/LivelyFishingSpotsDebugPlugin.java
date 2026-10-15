@@ -559,6 +559,8 @@ public class LivelyFishingSpotsDebugPlugin extends Plugin
 		main.fishModels().tuneLook(FishModels.SHORE_SHRIMP, LOOK_PLACES, krill);
 		main.fishModels().tuneLook(FishModels.SHORE_ANCHOVIES, LOOK_PLACES, krill);
 		ShoreFish.KRILL_BACKWARDS = config.debugLookKrillBackwards() / 100.0;
+		FishModels.THICKNESS.put(ItemID.RAW_SHARK, config.debugLookSharkThickness());
+		main.fishModels().remake(ItemID.RAW_SHARK);
 	}
 
 	/**
@@ -657,6 +659,7 @@ public class LivelyFishingSpotsDebugPlugin extends Plugin
 		RiverSpotFish.LOAD_MORE = config.debugRiverLoadMore();
 		RiverSpotFish.LAKE_SPEED = config.debugRiverLakeSpeed() / 100.0;
 		RiverSpotFish.HIDE_FISH = config.debugRiverHideFish();
+		RiverSpotFish.RING_COME_IN = config.debugRiverRingComeIn();
 		RiverSpotFish.NO_TILT = config.debugRiverNoTilt();
 		RiverSpotFish.CIRCLE_OFFSET = config.debugRiverCircleOffset();
 		RiverSpotFish.RING_MANUAL = config.debugRiverRingManual();

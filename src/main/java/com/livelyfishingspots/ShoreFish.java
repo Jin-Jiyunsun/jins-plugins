@@ -2,7 +2,6 @@ package com.livelyfishingspots;
 
 import java.util.Arrays;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
@@ -52,17 +51,22 @@ final class ShoreFish
 			"harpoon", new int[]{ItemID.RAW_SHARK}));
 	// Lakes baked with "rings grow" (places too tight for fish to swim in to a spot): there none join or head for
 	// one; while a spot is fished, fish of the kinds it draws grow in on its lanes, and shrink away once it isn't,
-	// apart from the lake's own fish. At most so many shrimps and anchovies grown in, and client ticks between fish
-	// grown in (shrimps and anchovies quicker; after a shark or swordfish, no other for a while).
-	static final int RING_SPAWN_KRILL_MOST = 30;
-	static final int RING_SPAWN_GAP_LEAST = 25;
-	static final int RING_SPAWN_GAP_MOST = 75;
-	static final int RING_SPAWN_KRILL_GAP_LEAST = 8;
-	static final int RING_SPAWN_KRILL_GAP_MOST = 20;
+	// apart from the lake's own fish. At most so many shrimps and anchovies grown in.
+	static final int RING_SPAWN_KRILL_MOST = 40;
+	// Client ticks between fish of a kind grown in on a ring, each kind on its own: shrimps and anchovies, sharks and
+	// swordfish, and the rest (lobsters too).
+	static final int RING_SPAWN_KRILL_GAP_LEAST = 15;
+	static final int RING_SPAWN_KRILL_GAP_MOST = 35;
 	static final int RING_SPAWN_BIG_GAP_LEAST = 125;
 	static final int RING_SPAWN_BIG_GAP_MOST = 250;
-	// Swordfish turn this share as fast, so they take wider turns.
-	static final double SWORDFISH_TURN = 0.7;
+	static final int RING_SPAWN_OTHER_GAP_LEAST = 80;
+	static final int RING_SPAWN_OTHER_GAP_MOST = 180;
+	// Lobsters swim in to a ring this share as fast as other fish.
+	static final double LOBSTER_COME_IN = 0.4;
+	// Water cells a shore needs for sharks to roam it (they still grow in on its rings).
+	static final int SHARK_ROOM = 1000;
+	// Swordfish and sharks turn this share as fast, so they take wider turns.
+	static final double BIG_TURN = 0.7;
 	// Lobsters circle this much higher than their sink, shrimps and anchovies this much (local units).
 	static final double CIRCLE_RISE = 12;
 	static final double KRILL_CIRCLE_RISE = 30;
@@ -98,33 +102,21 @@ final class ShoreFish
 	}
 
 	/**
+	 * Client ticks until the next fish of a kind grows in on a ring, at random within its sort's gap.
+	 */
+	static int ringGap(int item, ThreadLocalRandom random)
+	{
+		return isKrill(item) ? random.nextInt(RING_SPAWN_KRILL_GAP_LEAST, RING_SPAWN_KRILL_GAP_MOST + 1)
+			: isBig(item) ? random.nextInt(RING_SPAWN_BIG_GAP_LEAST, RING_SPAWN_BIG_GAP_MOST + 1)
+			: random.nextInt(RING_SPAWN_OTHER_GAP_LEAST, RING_SPAWN_OTHER_GAP_MOST + 1);
+	}
+
+	/**
 	 * Whether a kind is a shark or swordfish.
 	 */
 	static boolean isBig(int item)
 	{
 		return BIG_FISH.contains(item);
-	}
-
-	/**
-	 * Of the kinds wanted in a ring, the one furthest below its target (ties by chance), so catches can't leave it
-	 * all one kind.
-	 */
-	static int neediestInRing(List<Integer> wanted, Map<Integer, Integer> targets, Map<Integer, Integer> there,
-		ThreadLocalRandom random)
-	{
-		int best = wanted.get(0);
-		double most = Double.NEGATIVE_INFINITY;
-		for (int item : wanted)
-		{
-			double need = 1 - there.getOrDefault(item, 0) / (double) targets.getOrDefault(item, 1)
-				+ random.nextDouble() * 0.01;
-			if (need > most)
-			{
-				most = need;
-				best = item;
-			}
-		}
-		return best;
 	}
 
 	/**

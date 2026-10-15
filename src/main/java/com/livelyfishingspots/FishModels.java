@@ -42,6 +42,8 @@ final class FishModels
 	// Their depth from the back, percent, by kind; 50 if none (the debug plugin may tune it).
 	static final Map<Integer, Integer> ONE_SIDED_DEPTH = new HashMap<>(Map.of(ItemID.BRUT_SPAWNING_TROUT, 100,
 		ItemID.BRUT_SPAWNING_SALMON, 100));
+	// Kinds squashed side to side, percent of their width (the debug plugin may tune it).
+	static final Map<Integer, Integer> THICKNESS = new HashMap<>(Map.of(ItemID.RAW_SHARK, 60));
 	// Kinds that keep their untipped height when tipped, so a long nose doesn't lift out.
 	private static final Set<Integer> KEEP_HEIGHT = Set.of(ItemID.RAW_SWORDFISH);
 	// Hue range (of 64) and least saturation (of 8) counted as green, never lightened.
@@ -285,6 +287,11 @@ final class FishModels
 		{
 			onePiece(model);
 		}
+		Integer thickness = THICKNESS.get(item);
+		if (thickness != null && thickness != 100)
+		{
+			thinner(model, thickness);
+		}
 		Integer hue = HUES.get(item);
 		short[] colours = model.getFaceColors();
 		for (int i = 0; hue != null && colours != null && i < colours.length; i++)
@@ -353,6 +360,26 @@ final class FishModels
 			x[v] = keep ? x[v] - midX : 0;
 			y[v] = keep ? y[v] : midY;
 			z[v] = keep ? z[v] - midZ : 0;
+		}
+	}
+
+	/**
+	 * Squashes a model along its thinnest way (side to side for a fish lying on its side) about its middle, by percent.
+	 */
+	private static void thinner(ModelData model, int percent)
+	{
+		int count = model.getVerticesCount();
+		float[][] ways = {model.getVerticesX(), model.getVerticesY(), model.getVerticesZ()};
+		int thin = 0;
+		for (int way = 1; way < 3; way++)
+		{
+			thin = spread(ways[way], count) < spread(ways[thin], count) ? way : thin;
+		}
+		float[] values = ways[thin];
+		double middle = (min(values, count) + max(values, count)) / 2.0;
+		for (int i = 0; i < count; i++)
+		{
+			values[i] = (float) (middle + (values[i] - middle) * percent / 100.0);
 		}
 	}
 
@@ -1121,6 +1148,14 @@ final class FishModels
 			look[places[i]] = values[i];
 		}
 		TUNED.put(item, new Look(look));
+		remake(item);
+	}
+
+	/**
+	 * Drops a kind's models, so they're made again.
+	 */
+	void remake(int item)
+	{
 		models.keySet().removeIf(key -> itemOf(key) == item);
 		toMake.removeIf(wanted -> wanted[0] == item);
 		queued.removeIf(key -> itemOf(key) == item);

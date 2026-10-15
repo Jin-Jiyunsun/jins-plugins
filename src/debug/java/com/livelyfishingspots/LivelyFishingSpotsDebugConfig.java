@@ -1044,6 +1044,14 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 	String debugLookKrill = "debugLookKrill";
 
 	@ConfigSection(
+		name = "Debug: shark look",
+		description = "Temporary tuning of the shark model",
+		position = 118,
+		closedByDefault = true
+	)
+	String debugLookShark = "debugLookShark";
+
+	@ConfigSection(
 		name = "Debug: bobs and depth",
 		description = "Temporary tuning of bob timing and<br>depths, all river and lake fish",
 		position = 109,
@@ -3150,6 +3158,20 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 		return 10;
 	}
 
+	@Range(min = 5, max = 200)
+	@Units(Units.PERCENT)
+	@ConfigItem(
+		keyName = "debugLookSharkThickness",
+		name = "Shark thickness",
+		description = "How wide sharks are side to<br>side, of their model's width",
+		section = debugLookShark,
+		position = 1
+	)
+	default int debugLookSharkThickness()
+	{
+		return 60;
+	}
+
 	@ConfigItem(
 		keyName = "debugLookKrillOneShrimp",
 		name = "Krill as one shrimp",
@@ -3160,6 +3182,19 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 	default boolean debugLookKrillOneShrimp()
 	{
 		return true;
+	}
+
+	@Range(max = 4)
+	@ConfigItem(
+		keyName = "debugRiverRingComeIn",
+		name = "Ring fish come from",
+		description = "Tiles outside a ring that filler<br>fish grow in at, then swim in to<br>their lane; 0: on the lane",
+		section = debugRange,
+		position = 29
+	)
+	default int debugRiverRingComeIn()
+	{
+		return 2;
 	}
 
 	@ConfigItem(

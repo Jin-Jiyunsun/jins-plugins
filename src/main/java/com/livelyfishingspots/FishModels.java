@@ -165,7 +165,14 @@ final class FishModels
 		0, 100, 0, 0, 100, 50, 0, 0, 100, 100, 0, 35, 0, 6, 200, 0, 50, 100, 0, 0, 100});
 	private static final Look SHRIMP = new Look(new int[]{0, 5, 35, 17, 50, 20, 16, 126, 300, 40, 60, 30, 1, 10, 1500,
 		0, 0, 100, 0, 100, 50, 0, 0, 100, 100, 0, 35, 0, 6, 0, 0, 50, 100, 0, 0, 100});
-	private static final Look SARDINE = new Look(new int[]{90, 0, 30, 17, 5, 4, 16, -90, 0, 40, 60, 30, 10, 10, 1500,
+	// Shore shrimps and anchovies: giant krill (the sea keeps the shrimp model), anchovies tinted blue. Their own item
+	// ids keep their models apart from the sea's; the anchovies' is a stand-in, drawn with the raw krill's model.
+	static final int SHORE_SHRIMP = ItemID.RAW_GIANT_KRILL;
+	static final int SHORE_ANCHOVIES = ItemID.GIANT_KRILL;
+	// Giant krill (shore shrimps and anchovies).
+	private static final Look KRILL = new Look(new int[]{90, -80, 15, 17, 50, 0, 16, 90, 0, 40, 60, 30, 7, 0, 1500,
+		0, 0, 100, 0, 100, 50, 0, 0, 100, 100, 0, 35, 0, 6, 0, 0, 50, 100, 0, 0, 100});
+	private static final Look SARDINE =new Look(new int[]{90, 0, 30, 17, 5, 4, 16, -90, 0, 40, 60, 30, 10, 10, 1500,
 		30, 100, 100, 0, 100, 50, 0, 0, 100, 100, 0, 35, 0, 6, 0, 0, 50, 100, 0, 0, 100});
 	private static final Look HERRING = new Look(new int[]{-90, 0, 45, 17, 10, 3, 16, -90, 0, 40, 60, 30, 3, 15, 1500,
 		35, 100, 100, 0, 100, 50, 0, 0, 100, 100, 0, 35, 0, 6, 0, 0, 50, 100, 0, 0, 100});
@@ -198,6 +205,8 @@ final class FishModels
 			1500, 0, 100, 100, 0, 110, 13, 37, -13, 50, 25, 100, 33, 17, 6, 250, 0, 50, 100, 0, 0, 100})),
 		Map.entry(ItemID.RAW_SHRIMP, SHRIMP),
 		Map.entry(ItemID.RAW_ANCHOVIES, SHRIMP),
+		Map.entry(SHORE_SHRIMP, KRILL),
+		Map.entry(SHORE_ANCHOVIES, KRILL),
 		Map.entry(ItemID.RAW_SARDINE, SARDINE),
 		Map.entry(ItemID.RAW_HERRING, HERRING),
 		Map.entry(ItemID.RAW_MACKEREL, new Look(new int[]{-90, 0, 30, 17, 10, 6, 16, -90, 0, 40, 60, 30, 10, 12, 1500,
@@ -218,6 +227,13 @@ final class FishModels
 		Map.entry(ItemID.RAW_BASS, BASS),
 		Map.entry(ItemID.RAW_SHARK, new Look(new int[]{-90, 37, 67, 30, 29, 3, 45, -90, 0, 40, 60, 30, 3, 17, 2500,
 			10, 60, 0, 5, 85, 54, 98, 0, 40, 75, 0, 0, 0, 6, 0, 15, 81, 55, 80, 36, 200})));
+
+	// Kinds drawn with another item's model.
+	private static final Map<Integer, Integer> MODEL_FROM = Map.of(SHORE_ANCHOVIES, ItemID.RAW_GIANT_KRILL);
+	// Shore krill drawn as one shrimp from the shrimp model, not the giant krill model (debug toggle to compare).
+	static boolean KRILL_ONE_SHRIMP = true;
+	// Kinds whose every face takes this hue (0 to 63).
+	private static final Map<Integer, Integer> HUES = Map.of(SHORE_ANCHOVIES, 42);
 
 	// Made models, by item, size, tip and frame.
 	private final Map<Long, Model> models = new HashMap<>();
@@ -253,14 +269,104 @@ final class FishModels
 	 */
 	private ModelData loadItem(int item)
 	{
-		ItemComposition fish = client.getItemDefinition(item);
+		boolean oneShrimp = KRILL_ONE_SHRIMP && (item == SHORE_SHRIMP || item == SHORE_ANCHOVIES);
+		ItemComposition fish = client.getItemDefinition(oneShrimp ? ItemID.RAW_SHRIMP : MODEL_FROM.getOrDefault(item, item));
 		ModelData model = client.loadModelData(fish.getInventoryModel());
 		if (model != null && ONE_SIDED.contains(item))
 		{
 			model = bothSides(model, ONE_SIDED_DEPTH.getOrDefault(item, 50));
 		}
-		return model == null ? null : recolor(model.cloneVertices().cloneColors(), fish.getColorToReplace(),
-			fish.getColorToReplaceWith());
+		if (model == null)
+		{
+			return null;
+		}
+		model = recolor(model.cloneVertices().cloneColors(), fish.getColorToReplace(), fish.getColorToReplaceWith());
+		if (oneShrimp)
+		{
+			onePiece(model);
+		}
+		Integer hue = HUES.get(item);
+		short[] colours = model.getFaceColors();
+		for (int i = 0; hue != null && colours != null && i < colours.length; i++)
+		{
+			// 6 bits hue, 3 saturation, 7 lightness: only the hue changes.
+			colours[i] = (short) (hue << 10 | colours[i] & 0x3ff);
+		}
+		return model;
+	}
+
+	/**
+	 * Keeps only the largest piece (faces joined by shared corners) of a model made of several, like the shrimp model's
+	 * shrimps: moved to the middle, the other pieces' corners pulled onto it so their faces vanish.
+	 */
+	private static void onePiece(ModelData model)
+	{
+		int vertices = model.getVerticesCount();
+		int[] a = model.getFaceIndices1();
+		int[] b = model.getFaceIndices2();
+		int[] c = model.getFaceIndices3();
+		int[] root = new int[vertices];
+		for (int v = 0; v < vertices; v++)
+		{
+			root[v] = v;
+		}
+		for (int f = 0; f < model.getFaceCount(); f++)
+		{
+			root[piece(root, b[f])] = piece(root, a[f]);
+			root[piece(root, c[f])] = piece(root, a[f]);
+		}
+		// The piece with the most faces.
+		int[] faces = new int[vertices];
+		int best = 0;
+		for (int f = 0; f < model.getFaceCount(); f++)
+		{
+			int r = piece(root, a[f]);
+			best = ++faces[r] > faces[best] ? r : best;
+		}
+		float[] x = model.getVerticesX();
+		float[] y = model.getVerticesY();
+		float[] z = model.getVerticesZ();
+		float lowX = Float.MAX_VALUE;
+		float highX = -Float.MAX_VALUE;
+		float lowZ = Float.MAX_VALUE;
+		float highZ = -Float.MAX_VALUE;
+		float midY = 0;
+		int kept = 0;
+		for (int v = 0; v < vertices; v++)
+		{
+			if (piece(root, v) == best)
+			{
+				lowX = Math.min(lowX, x[v]);
+				highX = Math.max(highX, x[v]);
+				lowZ = Math.min(lowZ, z[v]);
+				highZ = Math.max(highZ, z[v]);
+				midY += y[v];
+				kept++;
+			}
+		}
+		float midX = (lowX + highX) / 2;
+		float midZ = (lowZ + highZ) / 2;
+		midY /= Math.max(1, kept);
+		for (int v = 0; v < vertices; v++)
+		{
+			boolean keep = piece(root, v) == best;
+			x[v] = keep ? x[v] - midX : 0;
+			y[v] = keep ? y[v] : midY;
+			z[v] = keep ? z[v] - midZ : 0;
+		}
+	}
+
+	/**
+	 * The piece a corner is in (onePiece), its root.
+	 */
+	private static int piece(int[] root, int v)
+	{
+		while (root[v] != v)
+		{
+			root[v] = root[root[v]];
+			v = root[v];
+		}
+		return v;
 	}
 
 	/**

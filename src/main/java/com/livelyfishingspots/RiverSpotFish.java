@@ -10,6 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -20,6 +21,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.function.IntPredicate;
+import java.util.stream.IntStream;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Actor;
 import net.runelite.api.AnimationController;
@@ -38,6 +41,7 @@ import net.runelite.api.gameval.AnimationID;
 import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.gameval.ItemID;
 import net.runelite.api.gameval.NpcID;
+import net.runelite.client.util.Text;
 
 /**
  * Fish swimming down rivers along hand-picked routes, in small groups that keep apart, line up and stay
@@ -58,12 +62,14 @@ final class RiverSpotFish
 	private static final int[] LEAPING_FISH = {ItemID.BRUT_SPAWNING_TROUT, ItemID.BRUT_SPAWNING_SALMON, ItemID.BRUT_STURGEON};
 	// Sturgeon: always alone, never in a school; and with see-through water, as deep as fish go.
 	private static final int STURGEON = ItemID.BRUT_STURGEON;
-	// At most this many circle a spot at once.
-	private static final int STURGEON_MOST = 2;
+	// Loners circling a spot: at most this many of each at once.
+	static final Map<Integer, Integer> RING_MOST = Map.of(STURGEON, 2, ItemID.RAW_SHARK, 2, ItemID.RAW_SWORDFISH, 3);
 	// Leaping fish swim at their own depths with see-through water, as shares of the deepest: trout shallowest,
-	// salmon a little deeper, sturgeon deepest. Other kinds anywhere.
+	// salmon a little deeper, sturgeon deepest; shore shrimps and anchovies shallow, off the seabed. Other kinds
+	// anywhere.
 	private static final Map<Integer, double[]> DEPTHS = Map.of(ItemID.BRUT_SPAWNING_TROUT, new double[]{0, 0.4},
-		ItemID.BRUT_SPAWNING_SALMON, new double[]{0.3, 0.7}, STURGEON, new double[]{1, 1});
+		ItemID.BRUT_SPAWNING_SALMON, new double[]{0.3, 0.7}, STURGEON, new double[]{1, 1},
+		FishModels.SHORE_SHRIMP, new double[]{0, 0.3}, FishModels.SHORE_ANCHOVIES, new double[]{0, 0.3});
 	// Leaping trout on a lake head for one of its hiding spots (marks near reeds and lilies) this share of the times
 	// they, or a school they're in, pick somewhere new; a school's trout break off to go.
 	static double LAKE_HIDE_CHANCE = 0.5;
@@ -85,8 +91,9 @@ final class RiverSpotFish
 	static final int[] SPLASH_SATURATION = {1, 1};
 	static final int[] SPLASH_LIGHTER = {36, 17};
 	// Each kind of river or lake's fish, by its bake's "kind" line (lure if none).
-	private static final Map<String, int[]> KIND_FISH = Map.of("lure", LURE_FISH, "barbarian", LEAPING_FISH);
-	// River spots with fish, by NPC id: the kind of river or lake they're on.
+	private static final Map<String, int[]> KIND_FISH = Map.of("lure", LURE_FISH, "barbarian", LEAPING_FISH,
+		"sea", ShoreFish.FISH);
+	// River and lake spots with fish, by NPC id: the kind of river or lake they're on (shore spots: see spotKind).
 	private static final Map<Integer, String> SPOT_KINDS = Map.ofEntries(
 		Map.entry(NpcID._0_39_54_BRUT_FISHING_SPOT, "barbarian"),
 		Map.entry(NpcID._0_19_55_BRUT_FISHING_SPOT, "barbarian"),
@@ -256,8 +263,12 @@ final class RiverSpotFish
 	// Steering: look-ahead along the path (local units) and turn rate (radians per client tick).
 	private static final double LOOK_AHEAD = 48;
 	private static final double TURN_RATE = 0.08;
+	// Debug toggle: every river, lake and shore fish hidden but still swimming, to see what drawing them costs.
+	static boolean HIDE_FISH = false;
+	// Debug toggle: every river, lake and shore fish kept level (no tilt models swapped in), to see what swapping costs.
+	static boolean NO_TILT = false;
 	// Average gap between fish down the river, local units.
-	static double TRAVEL_SPACING = 120;
+	static double TRAVEL_SPACING = 150;
 	// Fish all rivers together aim to keep (tuning spinner): over it, spacing grows a step a game tick, so fewer
 	// spawn than leave; under it, it eases back. Held while the count's already heading for the target over the last
 	// CROWDING_LOOK game ticks (fish take a minute to swim out or fill in, so it'd overshoot). At most CROWDING_MOST.
@@ -506,6 +517,8 @@ final class RiverSpotFish
 		int fishShare = 100;
 		// Its kind of fish ("kind" line; lure if none), a key of KIND_FISH.
 		String kind = "lure";
+		// Whether fish grow in on its rings rather than joining them ("rings grow" line).
+		boolean ringsGrow;
 		// Its marks, each kind's (MARK_WORDS order) tiles or halves of them (WHOLE, WEST, EAST, SOUTH, NORTH): fish
 		// blockers count as land, allowers as water; on surfacers deep fish (117 HD) come up to their usual depth; on
 		// divers other fish go down to the deepest, under logs across the water.
@@ -808,6 +821,9 @@ final class RiverSpotFish
 		// A lake (no path), and its spawn points.
 		final boolean lake;
 		double[][] spawns;
+		// A shore, and whether fish grow in on its rings rather than joining them (its bake's "rings grow").
+		final boolean shore;
+		boolean ringsGrow;
 
 		private Shoal(WorldPoint[] route, int plane, int worldView, River river, int[] kinds, int cycle, int travelling,
 			double[][] spawns)
@@ -817,6 +833,7 @@ final class RiverSpotFish
 			this.worldView = worldView;
 			this.river = river;
 			this.kinds = kinds;
+			shore = kinds == ShoreFish.FISH;
 			this.travelling = travelling;
 			lake = spawns != null;
 			this.spawns = spawns;
@@ -906,6 +923,8 @@ final class RiverSpotFish
 		private final int way;
 		// Each lane's radius: always round, never fitted to the banks (fitted lanes dented or shrank, and looked broken).
 		final double[] lanes;
+		// Whether lane 0 is for shrimps and anchovies only.
+		private final boolean krillLane;
 		// Centre's offset across the path (left positive) and the room either side there.
 		private final double across;
 		private final double room;
@@ -913,6 +932,10 @@ final class RiverSpotFish
 		// fish's client tick once it's waited too long, or -1; and the client tick it was last fished.
 		private int waitingSince = -1;
 		private int nextFill = -1;
+		// Rings that grow their own fish: the client tick the next shark or swordfish may grow in; and the next shrimp
+		// or anchovy (any shore's).
+		private int nextBig = -1;
+		private int nextKrill = -1;
 		private int fishedAt = -1;
 
 		private Circle(NPC npc, River river, double x, double y, int way)
@@ -923,10 +946,14 @@ final class RiverSpotFish
 			this.y = y;
 			this.way = way;
 			radius = CIRCLE_SIZE;
-			lanes = new double[CIRCLE_LANES];
-			for (int lane = 0; lane < CIRCLE_LANES; lane++)
+			// Spots with shrimps and anchovies have one more lane inside the others, for them only (lane 0).
+			int[][] shore = ShoreFish.SPOTS.get(npc.getId());
+			krillLane = shore != null && Arrays.stream(shore[0]).anyMatch(ShoreFish::isKrill);
+			int count = CIRCLE_LANES + (krillLane ? 1 : 0);
+			lanes = new double[count];
+			for (int lane = 0; lane < count; lane++)
 			{
-				lanes[lane] = Math.max(8, radius - (CIRCLE_LANES - 1 - lane) * CIRCLE_LANE_SPACING);
+				lanes[lane] = Math.max(8, radius - (count - 1 - lane) * CIRCLE_LANE_SPACING);
 			}
 			if (river.pathX == null)
 			{
@@ -998,6 +1025,8 @@ final class RiverSpotFish
 		// Circle and lane, or null; circles already decided about.
 		Circle circle;
 		private int circleLane;
+		// Shrimps and anchovies circling: how far up between their ring height and the surface, 0 to 1.
+		private final double height = ThreadLocalRandom.current().nextDouble();
 		private final Set<Circle> decided = new HashSet<>();
 		// A filler fish's circle, joined when it gets there, or null.
 		private Circle bound;
@@ -1088,6 +1117,8 @@ final class RiverSpotFish
 		// along the river and shrink going out of it, then swim on unseen; apart from growing in and shrinking away.
 		boolean shown;
 		double inSight;
+		// Which way it circles: 1 with its ring, -1 against it (a few shrimps and anchovies).
+		int ringWay = 1;
 		private double wag;
 		// Bob timer, paused during dips so they never overlap.
 		private int bobClock;
@@ -1296,8 +1327,8 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * Takes each river and lake from a bake file's text (each starts at its "route" or "lake" line), under the file's
-	 * name. Returns their first points.
+	 * Takes each river, lake and shore from a bake file's text (each starts at its "route", "lake" or "shore" line),
+	 * under the file's name. Returns their first points.
 	 */
 	List<WorldPoint> addBaked(String name, String text)
 	{
@@ -1305,7 +1336,7 @@ final class RiverSpotFish
 		StringBuilder part = new StringBuilder();
 		for (String line : (text + "\nroute").split("\n"))
 		{
-			if ((line.startsWith("route") || line.startsWith("lake")) && part.length() > 0)
+			if ((line.startsWith("route") || line.startsWith("lake") || line.startsWith("shore")) && part.length() > 0)
 			{
 				WorldPoint first = addOneBaked(name, part.toString());
 				if (first != null)
@@ -1375,6 +1406,7 @@ final class RiverSpotFish
 		boolean lake = false;
 		int fishShare = 100;
 		String kind = "lure";
+		boolean ringsGrow = false;
 		try
 		{
 			int x0 = 0;
@@ -1401,9 +1433,15 @@ final class RiverSpotFish
 				{
 					kind = parts[1];
 				}
-				else if (parts[0].equals("route") || parts[0].equals("lake"))
+				else if (parts[0].equals("rings") && parts.length > 1 && parts[1].equals("grow"))
 				{
-					lake = parts[0].equals("lake");
+					ringsGrow = true;
+				}
+				else if (parts[0].equals("route") || parts[0].equals("lake") || parts[0].equals("shore"))
+				{
+					// A shore is a lake of shore fish (its water along a coast).
+					lake = !parts[0].equals("route");
+					kind = parts[0].equals("shore") ? "sea" : kind;
 					int plane = Integer.parseInt(parts[1]);
 					route = new WorldPoint[(parts.length - 2) / 2];
 					for (int k = 0; k < route.length; k++)
@@ -1534,6 +1572,7 @@ final class RiverSpotFish
 		saved.lake = lake;
 		saved.fishShare = fishShare;
 		saved.kind = kind;
+		saved.ringsGrow = ringsGrow;
 		saved.branchStops.addAll(branchStops);
 		saved.branchPaths.addAll(branchPaths);
 		saved.branchShares.addAll(branchShares);
@@ -1545,7 +1584,7 @@ final class RiverSpotFish
 	 */
 	void add(NPC spot)
 	{
-		if (!SPOT_KINDS.containsKey(spot.getId()))
+		if (spotKind(spot.getId()) == null)
 		{
 			return;
 		}
@@ -1874,11 +1913,13 @@ final class RiverSpotFish
 		Shoal shoal = new Shoal(route, plane, view.getId(), river, kinds, cycle, fishCount(route, river, lake),
 			lake ? spawns.toArray(new double[0][]) : null);
 		shoal.mappedAround = playerTile();
+		shoal.ringsGrow = lake && bakedRingsGrow(route[0]);
 		shoal.baseX = view.getBaseX();
 		shoal.baseY = view.getBaseY();
 		if (lake)
 		{
-			log.debug("Lake {}: {} water cells, {} fish", route[0], river.waterCells, shoal.travelling);
+			log.debug("{}: {} water cells, {} fish, rings grow {}", label(route), river.waterCells, shoal.travelling,
+				shoal.ringsGrow);
 		}
 		else
 		{
@@ -1969,20 +2010,12 @@ final class RiverSpotFish
 		}
 		else if (arrival != null)
 		{
-			spawnGroup(shoal, arrival[0], null, true, cycle, random, (int) arrival[1]);
+			spawnGroup(shoal, shoal.kinds, arrival[0], null, true, cycle, random, (int) arrival[1]);
 		}
 		if (shoal.lakeFilling)
 		{
-			int all = 0;
-			for (Swimmer swimmer : shoal.fish)
-			{
-				all += swimmer.shrinkingSince < 0 ? 1 : 0;
-			}
-			if (all < shoal.travelling)
-			{
-				all += lakeArrival(shoal, openPlace(shoal.river, random), shoal.travelling - all, cycle, random);
-			}
-			shoal.lakeFilling = all < shoal.travelling;
+			// Until nothing more comes: full, or no fish to fill with (top-ups carry on from there).
+			shoal.lakeFilling = topUp(shoal, openPlace(shoal.river, random), cycle, random) > 0;
 		}
 		stagger = false;
 	}
@@ -2188,6 +2221,15 @@ final class RiverSpotFish
 	}
 
 	/**
+	 * Whether fish grow in on a lake's rings rather than joining them; false if it has no bake.
+	 */
+	boolean bakedRingsGrow(WorldPoint first)
+	{
+		Baked saved = baked.get(first);
+		return saved != null && saved.ringsGrow;
+	}
+
+	/**
 	 * A river or lake's kind of fish, lure if it has no bake.
 	 */
 	String bakedKind(WorldPoint first)
@@ -2217,7 +2259,7 @@ final class RiverSpotFish
 	private WorldPoint[] routeFor(NPC npc)
 	{
 		WorldPoint spot = npc.getWorldLocation();
-		String kind = SPOT_KINDS.get(npc.getId());
+		String kind = spotKind(npc.getId());
 		WorldPoint[] best = null;
 		double nearest = ROUTE_REACH;
 		for (WorldPoint[] route : routes)
@@ -2237,19 +2279,22 @@ final class RiverSpotFish
 		{
 			return best;
 		}
-		// Or a lake whose spawn points it's among.
+		// Or the lake with the spawn point nearest it (lakes side by side, like Catherby's, each take their own spots).
+		WorldPoint[] nearestLake = null;
+		int nearestSpawn = LAKE_REACH + 1;
 		for (WorldPoint[] lake : lakes)
 		{
 			for (WorldPoint spawn : lake)
 			{
-				if (spawn.getPlane() == spot.getPlane() && spot.distanceTo2D(spawn) <= LAKE_REACH
-					&& bakedKind(lake[0]).equals(kind))
+				int apart = spot.distanceTo2D(spawn);
+				if (spawn.getPlane() == spot.getPlane() && apart < nearestSpawn && bakedKind(lake[0]).equals(kind))
 				{
-					return lake;
+					nearestSpawn = apart;
+					nearestLake = lake;
 				}
 			}
 		}
-		return null;
+		return nearestLake;
 	}
 
 	/**
@@ -2749,6 +2794,20 @@ final class RiverSpotFish
 	}
 
 	/**
+	 * Whether a lake fish, or any of its school, is a kind the circle draws.
+	 */
+	private boolean anyDrawn(Circle circle, Swimmer swimmer, Group group)
+	{
+		// Not shrimps and anchovies: they grow in on rings instead of joining.
+		if (group == null || group.members.size() < 2)
+		{
+			return !ShoreFish.isKrill(swimmer.item) && drawn(circle, swimmer.item);
+		}
+		return group.members.stream()
+			.anyMatch(member -> !ShoreFish.isKrill(member.item) && drawn(circle, member.item));
+	}
+
+	/**
 	 * Sends a school's trout off to a goal: true if they're all trout (the school goes, the caller sets its goal);
 	 * otherwise they break off into their own school (or one alone) heading there, and false.
 	 */
@@ -2985,7 +3044,9 @@ final class RiverSpotFish
 			{
 				goal = waypoint(river, fromX, fromY, swimmer.bound.x, swimmer.bound.y, random);
 			}
-			else if (lure != null && random.nextDouble() < LAKE_LURE_CHANCE)
+			else if (lure != null && !shoal.ringsGrow
+				&& random.nextDouble() < LAKE_LURE_CHANCE
+				&& anyDrawn(lure, swimmer, group))
 			{
 				// Towards the edge of the circle being fished, on this side.
 				double apart = Math.max(1, Math.hypot(fromX - lure.x, fromY - lure.y));
@@ -3020,8 +3081,9 @@ final class RiverSpotFish
 					swimmer.goalY = goalY;
 				}
 			}
-			// Pause before the new leg, unless heading for a circle or just arrived; trout at a hiding spot longer.
-			if (hadGoal && swimmer.bound == null)
+			// Pause before the new leg, unless heading for a circle or just arrived; trout at a hiding spot longer; sharks
+			// never (always on the move).
+			if (hadGoal && swimmer.bound == null && swimmer.item != ItemID.RAW_SHARK)
 			{
 				boolean hiding = reached && hasTrout(swimmer, group) && atHidingSpot(shoal, fromX, fromY);
 				double longer = hiding ? LAKE_HIDE_PAUSE : 1;
@@ -3694,18 +3756,26 @@ final class RiverSpotFish
 	 * Adds a group of fish (at most so many) from a distance along the path, or round a place on a lake, growing in or
 	 * full size. Returns how many.
 	 */
-	private int spawnGroup(Shoal shoal, double s, double[] place, boolean grow, int cycle, ThreadLocalRandom random,
-		int most)
+	private int spawnGroup(Shoal shoal, int[] kinds, double s, double[] place, boolean grow, int cycle,
+		ThreadLocalRandom random, int most)
 	{
 		if (!schooled)
 		{
-			spawn(shoal, s, place, grow, cycle, random, kind(shoal.kinds, random, rainbow(shoal.kinds, random)), null, 0);
+			spawn(shoal, s, place, grow, cycle, random, kind(kinds, random, rainbow(kinds, random)), null, 0);
 			return 1;
 		}
 		Group group = new Group(random);
+		// Sharks and swordfish never school, like sturgeon: one picked comes alone.
+		int lead = shoal.shore ? neediest(shoal, kinds) : kind(kinds, random, false);
+		if (ShoreFish.isBig(lead))
+		{
+			spawn(shoal, s, place, grow, cycle, random, lead, null, 0);
+			return 1;
+		}
+		kinds = Arrays.stream(kinds).filter(item -> !ShoreFish.isBig(item)).toArray();
 		// A rainbow fish group is all rainbow fish, and tighter, being smaller.
-		boolean rainbow = rainbow(shoal.kinds, random);
-		double radius = GROUP_RADIUS * scale(kind(shoal.kinds, random, rainbow));
+		boolean rainbow = rainbow(kinds, random);
+		double radius = GROUP_RADIUS * scale(kind(kinds, random, rainbow));
 		// Mostly round, a little oval either way; sometimes flat, and then small.
 		boolean flat = random.nextDouble() < FLAT_CHANCE;
 		int count = Math.min(most, random.nextInt(GROUP_LEAST, (flat ? FLAT_MOST : GROUP_MOST) + 1));
@@ -3740,7 +3810,9 @@ final class RiverSpotFish
 				at = new double[]{place[0] + ux * ahead - uy * across, place[1] + uy * ahead + ux * across};
 				at = shoal.river.isWater(at[0], at[1]) ? at : place;
 			}
-			Swimmer added = spawn(shoal, along, at, grow, cycle, random, notSturgeon(shoal.kinds, random, rainbow), group,
+			// The first is the kind picked to lead (one a shore is short of), the rest any.
+			int item = n == 0 && !rainbow ? lead : notSturgeon(kinds, random, rainbow);
+			Swimmer added = spawn(shoal, along, at, grow, cycle, random, item, group,
 				across);
 			if (added != null)
 			{
@@ -3767,24 +3839,156 @@ final class RiverSpotFish
 	}
 
 	/**
+	 * Adds a lake school or solo fish at a place if the lake is short of fish, or a shore has none of a kind its spots
+	 * bring. Returns how many came.
+	 */
+	private int topUp(Shoal shoal, double[] place, int cycle, ThreadLocalRandom random)
+	{
+		int all = 0;
+		for (Swimmer swimmer : shoal.fish)
+		{
+			// Fish grown in on a ring aren't the lake's own.
+			all += ownFish(shoal, swimmer) ? 1 : 0;
+		}
+		int missing = shoal.travelling - all;
+		if (shoal.shore && !missingKinds(shoal, shoreWants(shoal).keySet()).isEmpty())
+		{
+			missing = Math.max(missing, 1);
+		}
+		return missing > 0 ? lakeArrival(shoal, place, missing, cycle, random) : 0;
+	}
+
+	/**
 	 * Adds a lake school, or a solo fish, at a place, with at most so many fish. Returns how many.
 	 */
 	private int lakeArrival(Shoal shoal, double[] place, int most, int cycle, ThreadLocalRandom random)
 	{
+		int[] kinds = !shoal.shore ? shoal.kinds : shoreWants(shoal).entrySet().stream()
+			.flatMapToInt(want -> IntStream.generate(want::getKey).limit(want.getValue())).toArray();
+		if (kinds.length == 0)
+		{
+			return 0;
+		}
 		if (most < GROUP_LEAST || schooled && random.nextDouble() < LAKE_SOLO_SHARE)
 		{
-			boolean hasSturgeon = has(shoal.kinds, STURGEON);
+			boolean hasSturgeon = has(kinds, STURGEON);
 			int sturgeon = 0;
 			for (Swimmer swimmer : hasSturgeon ? shoal.fish : List.<Swimmer>of())
 			{
 				sturgeon += swimmer.item == STURGEON ? 1 : 0;
 			}
 			boolean few = hasSturgeon && sturgeon < LAKE_STURGEON_SHARE * (shoal.fish.size() + 1);
-			int item = few && random.nextBoolean() ? STURGEON : notSturgeon(shoal.kinds, random, false);
+			int item = few && random.nextBoolean() ? STURGEON
+				: shoal.shore ? neediest(shoal, kinds) : notSturgeon(kinds, random, false);
 			spawn(shoal, 0, place, true, cycle, random, item, null, 0);
 			return 1;
 		}
-		return spawnGroup(shoal, 0, place, true, cycle, random, most);
+		return spawnGroup(shoal, kinds, 0, place, true, cycle, random, most);
+	}
+
+	/**
+	 * The kinds among these a shore has fewer than its least of (ShoreFish.least), counting its own fish only, not
+	 * those grown in on a ring.
+	 */
+	private static Set<Integer> missingKinds(Shoal shoal, Set<Integer> kinds)
+	{
+		Map<Integer, Integer> counts = new HashMap<>();
+		for (Swimmer swimmer : shoal.fish)
+		{
+			if (ownFish(shoal, swimmer))
+			{
+				counts.merge(swimmer.item, 1, Integer::sum);
+			}
+		}
+		Set<Integer> missing = new HashSet<>();
+		for (int item : kinds)
+		{
+			if (counts.getOrDefault(item, 0) < ShoreFish.least(item))
+			{
+				missing.add(item);
+			}
+		}
+		return missing;
+	}
+
+	/**
+	 * A shore's expected mix: each kind's odds summed over every shore spot within LAKE_REACH of its spawn points, so
+	 * shores side by side (Catherby's) each get all their spots' kinds, whichever shore a spot's ring is on. Shrimps,
+	 * anchovies and lobsters are left out: they only grow in on rings.
+	 */
+	private Map<Integer, Integer> shoreWants(Shoal shoal)
+	{
+		Map<Integer, Integer> wants = new HashMap<>();
+		for (NPC spot : riverSpots)
+		{
+			int[][] shore = ShoreFish.SPOTS.get(spot.getId());
+			WorldPoint at = spot.getWorldLocation();
+			if (shore == null || Arrays.stream(shoal.route).noneMatch(spawn -> spawn.getPlane() == at.getPlane()
+				&& spawn.distanceTo2D(at) <= LAKE_REACH))
+			{
+				continue;
+			}
+			for (int k = 0; k < shore[0].length; k++)
+			{
+				int item = shore[0][k];
+				if (shoreShown(item) && !ShoreFish.RING_ONLY.contains(item))
+				{
+					wants.merge(item, shore[1][k], Integer::sum);
+				}
+			}
+		}
+		return wants;
+	}
+
+	/**
+	 * Of the kinds an arrival may be (repeated by their odds: the shore's expected mix), one the shore has none of,
+	 * else the one furthest below its share, so a shore keeps every kind its spots have.
+	 */
+	private static int neediest(Shoal shoal, int[] kinds)
+	{
+		Map<Integer, Integer> wants = new HashMap<>();
+		for (int item : kinds)
+		{
+			wants.merge(item, 1, Integer::sum);
+		}
+		Map<Integer, Integer> counts = new HashMap<>();
+		int total = 0;
+		for (Swimmer swimmer : shoal.fish)
+		{
+			if (wants.containsKey(swimmer.item) && ownFish(shoal, swimmer))
+			{
+				counts.merge(swimmer.item, 1, Integer::sum);
+				total++;
+			}
+		}
+		// A kind with fewer than its least comes first, so rare ones (sharks, swordfish) are always there.
+		List<Integer> none = new ArrayList<>(wants.keySet());
+		none.removeIf(item -> counts.getOrDefault(item, 0) >= ShoreFish.least(item));
+		if (!none.isEmpty())
+		{
+			return none.get(ThreadLocalRandom.current().nextInt(none.size()));
+		}
+		int best = kinds[0];
+		double most = Double.NEGATIVE_INFINITY;
+		for (int item : wants.keySet())
+		{
+			// Its share of the mix, of the fish there once this one has come, less those there.
+			double need = wants.get(item) / (double) kinds.length * (total + 1) - counts.getOrDefault(item, 0);
+			if (need > most)
+			{
+				most = need;
+				best = item;
+			}
+		}
+		return best;
+	}
+
+	/**
+	 * Whether a shore fish shows: those under the water only with see-through, deep water.
+	 */
+	private boolean shoreShown(int item)
+	{
+		return !ShoreFish.UNDER_WATER.contains(item) || seeThrough && deep;
 	}
 
 	/**
@@ -3889,9 +4093,12 @@ final class RiverSpotFish
 		swimmer.scale = scale(item);
 		int deepest = Math.max(DEEP_LEAST, shoal.lake ? (int) (DEEP_MOST * LAKE_DEEPER) : DEEP_MOST);
 		double[] band = DEPTHS.getOrDefault(item, ANY_DEPTH);
-		int least = DEEP_LEAST + (int) ((deepest - DEEP_LEAST) * band[0]);
+		// Shrimps and anchovies spread up to KRILL_TOP under the surface (above their sink).
+		int least = ShoreFish.isKrill(item) ? ShoreFish.KRILL_TOP - FishModels.look(item).sink
+			: DEEP_LEAST + (int) ((deepest - DEEP_LEAST) * band[0]);
 		int most = DEEP_LEAST + (int) ((deepest - DEEP_LEAST) * band[1]);
-		swimmer.deep = seeThrough && deep ? random.nextInt(least, most + 1) : 0;
+		// Sharks keep to their own sink.
+		swimmer.deep = seeThrough && deep && item != ItemID.RAW_SHARK ? random.nextInt(least, most + 1) : 0;
 		swimmer.depthNow = swimmer.deep;
 		if (group != null)
 		{
@@ -3949,7 +4156,12 @@ final class RiverSpotFish
 		Circle circle = shoal.circles.remove(spot);
 		for (Swimmer swimmer : shoal.fish)
 		{
-			if (swimmer.circle == circle)
+			if (swimmer.circle == circle && grows(shoal, swimmer.item))
+			{
+				// Grown in on the ring: shrinks away, still circling.
+				swimmer.shrinkingSince = swimmer.shrinkingSince < 0 ? client.getGameCycle() : swimmer.shrinkingSince;
+			}
+			else if (swimmer.circle == circle)
 			{
 				leave(shoal, swimmer);
 			}
@@ -4034,7 +4246,8 @@ final class RiverSpotFish
 
 	/**
 	 * Lakes: scattered fish, once alone a while, join a nearby school with room, or pair up with another scattered
-	 * fish into a new one. Rainbow fish school only with rainbow fish.
+	 * fish into a new one. Rainbow fish school only with rainbow fish, shrimps and anchovies only with each other,
+	 * lobsters only with lobsters.
 	 */
 	private static void regroup(Shoal shoal, int cycle, ThreadLocalRandom random)
 	{
@@ -4214,14 +4427,16 @@ final class RiverSpotFish
 			circling.clear();
 			for (Swimmer swimmer : shoal.fish)
 			{
+				// Lane fish only: shrimps and anchovies grow in to targets of their own.
+				int lane = ShoreFish.isKrill(swimmer.item) ? 0 : 1;
 				if (swimmer.circle != null && swimmer.shrinkingSince < 0)
 				{
-					circling.merge(swimmer.circle, 1, Integer::sum);
+					circling.merge(swimmer.circle, lane, Integer::sum);
 				}
 				else if (swimmer.bound != null && swimmer.shrinkingSince < 0)
 				{
 					// Filler fish on the way hold their place.
-					circling.merge(swimmer.bound, 1, Integer::sum);
+					circling.merge(swimmer.bound, lane, Integer::sum);
 				}
 				else if (swimmer.shrinkingSince < 0)
 				{
@@ -4234,9 +4449,9 @@ final class RiverSpotFish
 			{
 				everyFish += count;
 			}
-			if (shoal.lake && shoal.ready && !shoal.leaving && cycle >= shoal.nextSpawn && everyFish < shoal.travelling)
+			if (shoal.lake && shoal.ready && !shoal.leaving && cycle >= shoal.nextSpawn)
 			{
-				lakeArrival(shoal, emptiestSpawn(shoal), shoal.travelling - everyFish, cycle, random);
+				topUp(shoal, emptiestSpawn(shoal), cycle, random);
 				shoal.nextSpawn = cycle + random.nextInt(LAKE_SPAWN_LEAST, LAKE_SPAWN_MOST + 1);
 			}
 			if (shoal.lake && cycle >= shoal.nextTrim)
@@ -4268,7 +4483,7 @@ final class RiverSpotFish
 			if (flowing && cycle >= shoal.nextSpawn)
 			{
 				int count = travelling < 2 * windowFish(shoal)
-					? spawnGroup(shoal, shoal.windowFrom, null, true, cycle, random, Integer.MAX_VALUE) : 1;
+					? spawnGroup(shoal, shoal.kinds, shoal.windowFrom, null, true, cycle, random, Integer.MAX_VALUE) : 1;
 				shoal.nextSpawn = Math.max(shoal.nextSpawn + spawnGap(random) * count, cycle);
 			}
 			if (flowing && schooled && cycle >= shoal.nextSolo)
@@ -4321,7 +4536,7 @@ final class RiverSpotFish
 				{
 					// Not mid-leap: it'd join at its leaping speed, unable to turn, and then swerve in.
 					boolean deciding = shoal.deciding && swimmer.leapingSince < 0;
-					for (Circle circle : deciding ? shoal.circles.values() : List.<Circle>of())
+					for (Circle circle : deciding && !shoal.ringsGrow ? shoal.circles.values() : List.<Circle>of())
 					{
 						// Lake fish may decide again once they've swum well away.
 						double dx = swimmer.x - circle.x;
@@ -4335,22 +4550,30 @@ final class RiverSpotFish
 							&& (shoal.lake ? apartSquared <= LAKE_JOIN_RANGE * LAKE_JOIN_RANGE
 							: swimmer.s >= circle.along - JOIN_BEFORE))
 						{
-							swimmer.decided.add(circle);
+							// Lake fish only decide once they could join (fished, their kind, room, clear water to the
+							// ring), so ones nearby before then, held back to keep the kinds even, or behind land, still
+							// can later; river fish decide once, as they pass.
+							boolean could = !ShoreFish.isKrill(swimmer.item) && fishing == circle.npc
+								&& drawn(circle, swimmer.item)
+								&& fewest(shoal, circle, swimmer.item) && circling.getOrDefault(circle, 0) < CIRCLE_MOST
+								&& (!shoal.lake || inSight(shoal.river, swimmer.x, swimmer.y, circle.x, circle.y));
+							if (!shoal.lake || could || swimmer.bound == circle)
+							{
+								swimmer.decided.add(circle);
+							}
 							if (swimmer.bound == circle)
 							{
 								swimmer.bound = null;
 								if (fishing == circle.npc && drawn(circle, swimmer.item))
 								{
 									swimmer.circle = circle;
-									swimmer.circleLane = roomiestLane(shoal, circle);
+									swimmer.circleLane = roomiestLane(shoal, circle, swimmer.item);
 								}
 							}
-							else if (fishing == circle.npc && drawn(circle, swimmer.item) && fewest(shoal, circle, swimmer.item)
-								&& circling.getOrDefault(circle, 0) < CIRCLE_MOST
-								&& random.nextInt(100) < (shoal.lake ? LAKE_JOIN_CHANCE : JOIN_CHANCE))
+							else if (could && random.nextInt(100) < (shoal.lake ? LAKE_JOIN_CHANCE : JOIN_CHANCE))
 							{
 								swimmer.circle = circle;
-								swimmer.circleLane = roomiestLane(shoal, circle);
+								swimmer.circleLane = roomiestLane(shoal, circle, swimmer.item);
 								ungroup(swimmer);
 								circling.merge(circle, 1, Integer::sum);
 								circle.waitingSince = cycle;
@@ -4362,7 +4585,15 @@ final class RiverSpotFish
 				else if (swimmer.shrinkingSince < 0 && (fishing != swimmer.circle.npc || !drawn(swimmer.circle, swimmer.item))
 					&& random.nextDouble() < ticks / LEAVE_AFTER)
 				{
-					leave(shoal, swimmer);
+					// Grown in on a ring: shrinks away where it is.
+					if (grows(shoal, swimmer.item))
+					{
+						swimmer.shrinkingSince = cycle;
+					}
+					else
+					{
+						leave(shoal, swimmer);
+					}
 				}
 				// Only at my spot, a lake fish that's left its circle shrinks away after a few seconds, as no others roam.
 				if (onlyAtSpot && shoal.lake)
@@ -4664,10 +4895,13 @@ final class RiverSpotFish
 	 */
 	void chose(NPC spot, String option)
 	{
-		if (spot != null && SPOT_KINDS.containsKey(spot.getId()))
+		if (spot != null && spotKind(spot.getId()) != null)
 		{
 			chosenSpot = spot;
-			chosenFish = option == null ? null : OPTION_FISH.get(option.toLowerCase());
+			// Plain text, lower case; the small net is "Net".
+			String picked = option == null ? null : Text.removeTags(option).toLowerCase().replace("small net", "net");
+			chosenFish = picked == null ? null
+				: ShoreFish.OPTIONS.getOrDefault(spot.getId(), OPTION_FISH).get(picked);
 			if ("lure".equalsIgnoreCase(option))
 			{
 				ItemContainer inventory = client.getItemContainer(InventoryID.INV);
@@ -4684,6 +4918,12 @@ final class RiverSpotFish
 	 */
 	private boolean drawn(Circle circle, int item)
 	{
+		// Shore spots only draw their own fish.
+		int[][] shore = ShoreFish.SPOTS.get(circle.npc.getId());
+		if (shore != null && (!has(shore[0], item) || !shoreShown(item)))
+		{
+			return false;
+		}
 		if (circle.npc != chosenSpot || chosenFish == null)
 		{
 			return item != RAINBOW;
@@ -4703,10 +4943,11 @@ final class RiverSpotFish
 		{
 			return;
 		}
-		// Prefer one already in its lane; otherwise mark one still coming in.
+		// Prefer one already in its lane; otherwise mark one still coming in. Only the option's fish can be the
+		// catch (shore fish share XP across options).
 		for (Shoal shoal : shoals)
 		{
-			Integer item = caughtKind(xp, shoal.kinds);
+			Integer item = caughtKind(xp, fishing == chosenSpot && chosenFish != null ? chosenFish : shoal.kinds);
 			if (item == null)
 			{
 				continue;
@@ -4732,6 +4973,23 @@ final class RiverSpotFish
 	}
 
 	/**
+	 * A kind's Fishing XP per catch (river and lake kinds here, shore ones in ShoreFish).
+	 */
+	private static int catchXp(int item)
+	{
+		return CATCH_XP.getOrDefault(item, ShoreFish.CATCH_XP.getOrDefault(item, 0));
+	}
+
+	/**
+	 * The kind of river, lake or shore a spot is on (a key of KIND_FISH), or null if it's no river, lake or shore
+	 * spot.
+	 */
+	private static String spotKind(int npc)
+	{
+		return ShoreFish.SPOTS.containsKey(npc) ? "sea" : SPOT_KINDS.get(npc);
+	}
+
+	/**
 	 * The kind among these a catch of so much Fishing XP was, or null.
 	 */
 	private static Integer caughtKind(int xp, int[] kinds)
@@ -4739,9 +4997,9 @@ final class RiverSpotFish
 		Integer item = null;
 		for (int kind : kinds)
 		{
-			int kindXp = CATCH_XP.get(kind);
+			int kindXp = catchXp(kind);
 			if (Math.abs(xp - kindXp) <= kindXp * CATCH_XP_SPREAD
-				&& (item == null || Math.abs(xp - kindXp) < Math.abs(xp - CATCH_XP.get(item))))
+				&& (item == null || Math.abs(xp - kindXp) < Math.abs(xp - catchXp(item))))
 			{
 				item = kind;
 			}
@@ -4920,9 +5178,10 @@ final class RiverSpotFish
 			{
 				continue;
 			}
-			// Fished again after a break, or full: start waiting afresh.
+			growRingOnly(shoal, circle, cycle, random);
+			// Fished again after a break, or full: start waiting afresh. Rings that grow their own fish only fill.
 			boolean back = cycle - circle.fishedAt > REFILL_BREAK;
-			boolean full = circling.getOrDefault(circle, 0) >= CIRCLE_MOST;
+			boolean full = circling.getOrDefault(circle, 0) >= CIRCLE_MOST && !shoal.ringsGrow;
 			circle.fishedAt = cycle;
 			if (back || full)
 			{
@@ -4937,16 +5196,26 @@ final class RiverSpotFish
 			{
 				circle.waitingSince = cycle;
 			}
-			if (cycle - circle.waitingSince < (onlyAtSpot ? 0 : REFILL_AFTER) || cycle < circle.nextFill)
+			int after = onlyAtSpot || shoal.ringsGrow ? 0 : REFILL_AFTER;
+			if (cycle - circle.waitingSince < after || cycle < circle.nextFill)
 			{
 				continue;
 			}
-			circle.nextFill = cycle + (onlyAtSpot ? random.nextInt(SPOT_ONLY_GAP_LEAST, SPOT_ONLY_GAP_MOST + 1)
+			circle.nextFill = cycle + (shoal.ringsGrow
+				? random.nextInt(ShoreFish.RING_SPAWN_GAP_LEAST, ShoreFish.RING_SPAWN_GAP_MOST + 1)
+				: onlyAtSpot ? random.nextInt(SPOT_ONLY_GAP_LEAST, SPOT_ONLY_GAP_MOST + 1)
 				: random.nextInt(REFILL_GAP_LEAST, REFILL_GAP_MOST + 1));
+			// Rings growing their own fish fill each kind to its target (sharks and swordfish one at a time); others
+			// take any kind they draw.
+			Map<Integer, Integer> targets = shoal.ringsGrow
+				? ShoreFish.ringTargets(circle.npc.getId(), item -> drawn(circle, item)) : Map.of();
+			Map<Integer, Integer> there = shoal.ringsGrow ? ringCounts(shoal, circle) : Map.of();
 			List<Integer> wanted = new ArrayList<>();
 			for (int kind : shoal.kinds)
 			{
-				if (drawn(circle, kind) && fewest(shoal, circle, kind))
+				boolean room = !shoal.ringsGrow || there.getOrDefault(kind, 0) < targets.getOrDefault(kind, 0)
+					&& (!ShoreFish.isBig(kind) || cycle >= circle.nextBig);
+				if (room && !ShoreFish.RING_ONLY.contains(kind) && drawn(circle, kind) && fewest(shoal, circle, kind))
 				{
 					wanted.add(kind);
 				}
@@ -4955,11 +5224,25 @@ final class RiverSpotFish
 			{
 				continue;
 			}
+			int item = shoal.ringsGrow ? ShoreFish.neediestInRing(wanted, targets, there, random)
+				: wanted.get(random.nextInt(wanted.size()));
+			if (shoal.ringsGrow)
+			{
+				// Grows in on its lane, in the middle of its widest gap; sharks and swordfish come slowly (no other
+				// for a while after one, the rest carrying on meanwhile).
+				int lane = roomiestLane(shoal, circle, item);
+				if (growIn(shoal, circle, item, lane, widestGap(shoal, circle, lane, random), cycle, random)
+					&& ShoreFish.isBig(item))
+				{
+					circle.nextBig = cycle
+						+ random.nextInt(ShoreFish.RING_SPAWN_BIG_GAP_LEAST, ShoreFish.RING_SPAWN_BIG_GAP_MOST + 1);
+				}
+				continue;
+			}
 			// New fish even on a full lake; trimLake() evens the count out later.
 			double s = shoal.lake ? 0 : Math.max(0, circle.along - REFILL_BEHIND);
 			double[] place = !shoal.lake ? null : onlyAtSpot ? nearestSpawn(shoal, circle.x, circle.y) : emptiestSpawn(shoal);
-			Swimmer swimmer = spawn(shoal, s, place, true, cycle, random, wanted.get(random.nextInt(wanted.size())), null,
-				0);
+			Swimmer swimmer = spawn(shoal, s, place, true, cycle, random, item, null, 0);
 			if (swimmer != null)
 			{
 				swimmer.bound = circle;
@@ -4969,20 +5252,146 @@ final class RiverSpotFish
 	}
 
 	/**
+	 * Shrimps, anchovies and lobsters never roam a shore: on any shore, while a ring is fished, they grow in on its
+	 * lanes up to their targets, quickly, and shrink away once it isn't. Shrimps and anchovies anywhere round it (they
+	 * don't mind room), lobsters in the widest gap.
+	 */
+	private void growRingOnly(Shoal shoal, Circle circle, int cycle, ThreadLocalRandom random)
+	{
+		if (cycle < circle.nextKrill || !ShoreFish.SPOTS.containsKey(circle.npc.getId()))
+		{
+			return;
+		}
+		circle.nextKrill = cycle
+			+ random.nextInt(ShoreFish.RING_SPAWN_KRILL_GAP_LEAST, ShoreFish.RING_SPAWN_KRILL_GAP_MOST + 1);
+		Map<Integer, Integer> targets = ShoreFish.ringTargets(circle.npc.getId(), item -> drawn(circle, item));
+		Map<Integer, Integer> there = ringCounts(shoal, circle);
+		List<Integer> wanted = new ArrayList<>();
+		for (int kind : ShoreFish.RING_ONLY)
+		{
+			if (there.getOrDefault(kind, 0) < targets.getOrDefault(kind, 0))
+			{
+				wanted.add(kind);
+			}
+		}
+		if (!wanted.isEmpty())
+		{
+			int item = ShoreFish.neediestInRing(wanted, targets, there, random);
+			int lane = roomiestLane(shoal, circle, item);
+			double angle = ShoreFish.isKrill(item) ? random.nextDouble(2 * Math.PI) : widestGap(shoal, circle, lane, random);
+			growIn(shoal, circle, item, lane, angle, cycle, random);
+		}
+	}
+
+	/**
+	 * A fish growing in on a ring's lane at an angle round it (from its middle), already circling at its lane's speed
+	 * (not the travelling speed it'd ease down from in a burst). Returns whether it came (its model made).
+	 */
+	private boolean growIn(Shoal shoal, Circle circle, int item, int lane, double angle, int cycle,
+		ThreadLocalRandom random)
+	{
+		double[] at = {circle.x + circle.lanes[lane] * Math.cos(angle), circle.y + circle.lanes[lane] * Math.sin(angle)};
+		Swimmer grown = spawn(shoal, 0, at, true, cycle, random, item, null, 0);
+		if (grown == null)
+		{
+			return false;
+		}
+		grown.circle = circle;
+		grown.circleLane = lane;
+		grown.ringWay = ShoreFish.isKrill(item) && random.nextDouble() < ShoreFish.KRILL_BACKWARDS ? -1 : 1;
+		grown.facing = angle + circle.way * grown.ringWay * Math.PI / 2;
+		grown.swimming = CIRCLE_SPEED * grown.speed * grown.look.pace / 100.0 * laneSpeed(circle, lane);
+		circling.merge(circle, ShoreFish.isKrill(item) ? 0 : 1, Integer::sum);
+		return true;
+	}
+
+	/**
+	 * Whether a fish is a lake's or shore's own: not shrinking away, nor grown in on a ring.
+	 */
+	private static boolean ownFish(Shoal shoal, Swimmer swimmer)
+	{
+		return swimmer.shrinkingSince < 0 && !(swimmer.circle != null && grows(shoal, swimmer.item));
+	}
+
+	/**
+	 * Whether a kind grows in on a shore's rings rather than joining them: every kind on one baked "rings grow",
+	 * shrimps, anchovies and lobsters everywhere.
+	 */
+	private static boolean grows(Shoal shoal, int item)
+	{
+		return shoal.ringsGrow || ShoreFish.RING_ONLY.contains(item);
+	}
+
+	/**
+	 * The angle round a ring (from its middle) halfway along the widest gap between the fish in a lane, shrimps and
+	 * anchovies aside; at random if the lane is empty.
+	 */
+	private static double widestGap(Shoal shoal, Circle circle, int lane, ThreadLocalRandom random)
+	{
+		List<Double> angles = new ArrayList<>();
+		for (Swimmer swimmer : shoal.fish)
+		{
+			if (swimmer.circle == circle && swimmer.circleLane == lane && swimmer.shrinkingSince < 0
+				&& !ShoreFish.isKrill(swimmer.item))
+			{
+				angles.add(Math.atan2(swimmer.y - circle.y, swimmer.x - circle.x));
+			}
+		}
+		if (angles.isEmpty())
+		{
+			return random.nextDouble(2 * Math.PI);
+		}
+		Collections.sort(angles);
+		double best = angles.get(0);
+		double widest = -1;
+		for (int k = 0; k < angles.size(); k++)
+		{
+			double from = angles.get(k);
+			double to = k + 1 < angles.size() ? angles.get(k + 1) : angles.get(0) + 2 * Math.PI;
+			if (to - from > widest)
+			{
+				widest = to - from;
+				best = from + widest / 2;
+			}
+		}
+		return best;
+	}
+
+	/**
+	 * How many of each kind are in, or on their way to, a ring.
+	 */
+	private static Map<Integer, Integer> ringCounts(Shoal shoal, Circle circle)
+	{
+		Map<Integer, Integer> counts = new HashMap<>();
+		for (Swimmer swimmer : shoal.fish)
+		{
+			if ((swimmer.circle == circle || swimmer.bound == circle) && swimmer.shrinkingSince < 0)
+			{
+				counts.merge(swimmer.item, 1, Integer::sum);
+			}
+		}
+		return counts;
+	}
+
+	/**
 	 * Lets a few free fish of a lake over its count shrink away: each of the kind most over its share (from the share
 	 * spinners), the one furthest from the player. Fish in or bound for a circle stay.
 	 */
 	private void trimLake(Shoal shoal, int cycle)
 	{
+		Player player = client.getLocalPlayer();
+		LocalPoint me = player == null ? null : player.getLocalLocation();
 		int all = 0;
 		Map<Integer, Integer> free = new HashMap<>();
+		Map<Integer, Integer> live = new HashMap<>();
 		for (Swimmer swimmer : shoal.fish)
 		{
-			if (swimmer.shrinkingSince >= 0)
+			if (!ownFish(shoal, swimmer))
 			{
 				continue;
 			}
 			all++;
+			live.merge(swimmer.item, 1, Integer::sum);
 			if (swimmer.circle == null && swimmer.bound == null)
 			{
 				free.merge(swimmer.item, 1, Integer::sum);
@@ -4993,6 +5402,9 @@ final class RiverSpotFish
 		{
 			return;
 		}
+		// Shores: each kind's share of the expected mix.
+		Map<Integer, Integer> wants = shoal.shore ? shoreWants(shoal) : Map.of();
+		int wanted = wants.values().stream().mapToInt(Integer::intValue).sum();
 		boolean rainbows = has(shoal.kinds, RAINBOW);
 		int weights = 0;
 		int others = 0;
@@ -5003,8 +5415,6 @@ final class RiverSpotFish
 			others += kind == RAINBOW || kind == STURGEON ? 0 : 1;
 		}
 		double rest = 1 - (rainbows ? RAINBOW_SHARE : 0) - (sturgeon ? LAKE_STURGEON_SHARE : 0);
-		Player player = client.getLocalPlayer();
-		LocalPoint me = player == null ? null : player.getLocalLocation();
 		for (int n = 0; n < excess; n++)
 		{
 			int worst = -1;
@@ -5012,11 +5422,15 @@ final class RiverSpotFish
 			for (int kind : shoal.kinds)
 			{
 				int count = free.getOrDefault(kind, 0);
-				if (count == 0)
+				// Never below a kind's least on a shore.
+				if (count == 0 || shoal.shore && live.getOrDefault(kind, 0) <= ShoreFish.least(kind))
 				{
 					continue;
 				}
-				double share = kind == RAINBOW ? RAINBOW_SHARE : kind == STURGEON ? LAKE_STURGEON_SHARE
+				double share = shoal.shore
+					? wants.getOrDefault(kind, 0) / (double) Math.max(1, wanted)
+					: kind == RAINBOW ? RAINBOW_SHARE
+					: kind == STURGEON ? LAKE_STURGEON_SHARE
 					: rest * (weights > 0 ? weight(kind) / (double) weights : 1.0 / Math.max(1, others));
 				double over = count - share * all;
 				if (over > most)
@@ -5025,21 +5439,8 @@ final class RiverSpotFish
 					worst = kind;
 				}
 			}
-			Swimmer furthest = null;
-			double furthestApart = -1;
-			for (Swimmer swimmer : shoal.fish)
-			{
-				if (swimmer.item != worst || swimmer.circle != null || swimmer.bound != null || swimmer.shrinkingSince >= 0)
-				{
-					continue;
-				}
-				double apart = me == null ? 0 : Math.hypot(swimmer.x - me.getX(), swimmer.y - me.getY());
-				if (apart > furthestApart)
-				{
-					furthestApart = apart;
-					furthest = swimmer;
-				}
-			}
+			int kind = worst;
+			Swimmer furthest = furthestFree(shoal, me, item -> item == kind);
 			if (furthest == null)
 			{
 				return;
@@ -5052,25 +5453,56 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * Whether a kind is among the fewest circling, to keep the kinds even. Sturgeon, rare loners, aren't counted, so
-	 * the others don't wait for one; they join whenever they come, while fewer than STURGEON_MOST are there.
+	 * The free fish (not shrinking, nor in or bound for a circle) of the kinds wanted furthest from the player, or null.
+	 */
+	private static Swimmer furthestFree(Shoal shoal, LocalPoint me, IntPredicate wanted)
+	{
+		Swimmer furthest = null;
+		double furthestApart = -1;
+		for (Swimmer swimmer : shoal.fish)
+		{
+			if (!wanted.test(swimmer.item) || swimmer.circle != null || swimmer.bound != null
+				|| swimmer.shrinkingSince >= 0)
+			{
+				continue;
+			}
+			double apart = me == null ? 0 : Math.hypot(swimmer.x - me.getX(), swimmer.y - me.getY());
+			if (apart > furthestApart)
+			{
+				furthestApart = apart;
+				furthest = swimmer;
+			}
+		}
+		return furthest;
+	}
+
+	/**
+	 * Whether a kind is among the fewest circling, to keep the kinds even. Sturgeon, sharks and swordfish (loners)
+	 * aren't counted, so the others don't wait for one; they join whenever they come, while fewer than RING_MOST are
+	 * there.
 	 */
 	private boolean fewest(Shoal shoal, Circle circle, int item)
 	{
-		if (item == STURGEON)
+		// Shrimps and anchovies aren't evened out against the rest (grown-in rings give them their own targets).
+		if (ShoreFish.isKrill(item))
 		{
-			int sturgeon = 0;
+			return true;
+		}
+		Integer cap = RING_MOST.get(item);
+		if (cap != null)
+		{
+			int there = 0;
 			for (Swimmer swimmer : shoal.fish)
 			{
-				sturgeon += swimmer.item == STURGEON && (swimmer.circle == circle || swimmer.bound == circle)
+				there += swimmer.item == item && (swimmer.circle == circle || swimmer.bound == circle)
 					&& swimmer.shrinkingSince < 0 ? 1 : 0;
 			}
-			return sturgeon < STURGEON_MOST;
+			return there < cap;
 		}
 		Map<Integer, Integer> counts = new HashMap<>();
 		for (int kind : shoal.kinds)
 		{
-			if (kind != STURGEON && drawn(circle, kind))
+			if (!RING_MOST.containsKey(kind) && !ShoreFish.isKrill(kind) && drawn(circle, kind))
 			{
 				counts.put(kind, 0);
 			}
@@ -5133,20 +5565,30 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * The circle lane with the fewest fish for its length.
+	 * The circle lane with the fewest fish for its length; sharks and swordfish always the outer one; shrimps and
+	 * anchovies any at random (the krill lane too), and the others never the krill lane.
 	 */
-	private static int roomiestLane(Shoal shoal, Circle circle)
+	private static int roomiestLane(Shoal shoal, Circle circle, int item)
 	{
+		if (ShoreFish.isKrill(item))
+		{
+			return krillLane(shoal, circle);
+		}
 		int[] in = new int[circle.lanes.length];
 		for (Swimmer swimmer : shoal.fish)
 		{
-			if (swimmer.circle == circle)
+			if (swimmer.circle == circle && !ShoreFish.isKrill(swimmer.item))
 			{
 				in[swimmer.circleLane]++;
 			}
 		}
 		int best = circle.lanes.length - 1;
-		for (int lane = best - 1; lane >= 0; lane--)
+		if (ShoreFish.isBig(item))
+		{
+			return best;
+		}
+		int least = circle.krillLane ? 1 : 0;
+		for (int lane = best - 1; lane >= least; lane--)
 		{
 			if (in[lane] / circle.lanes[lane] < in[best] / circle.lanes[best])
 			{
@@ -5154,6 +5596,48 @@ final class RiverSpotFish
 			}
 		}
 		return best;
+	}
+
+	/**
+	 * A lane for a shrimp or anchovy: any at random still under its share of RING_SPAWN_KRILL_MOST, shared by lane
+	 * length so inner lanes hold fewer; once all are, the one least full for its share.
+	 */
+	private static int krillLane(Shoal shoal, Circle circle)
+	{
+		int lanes = circle.lanes.length;
+		int[] in = new int[lanes];
+		for (Swimmer swimmer : shoal.fish)
+		{
+			if (swimmer.circle == circle && swimmer.shrinkingSince < 0 && ShoreFish.isKrill(swimmer.item))
+			{
+				in[swimmer.circleLane]++;
+			}
+		}
+		double length = Arrays.stream(circle.lanes).sum();
+		List<Integer> open = new ArrayList<>();
+		int least = 0;
+		for (int lane = 0; lane < lanes; lane++)
+		{
+			double share = ShoreFish.RING_SPAWN_KRILL_MOST * circle.lanes[lane] / length;
+			if (in[lane] < share)
+			{
+				open.add(lane);
+			}
+			if (in[lane] / circle.lanes[lane] < in[least] / circle.lanes[least])
+			{
+				least = lane;
+			}
+		}
+		return open.isEmpty() ? least : open.get(ThreadLocalRandom.current().nextInt(open.size()));
+	}
+
+	/**
+	 * A lane's speed against the outermost's: INNER_LANE_SPEED for the innermost, rising evenly outwards.
+	 */
+	private static double laneSpeed(Circle circle, int lane)
+	{
+		int lanes = circle.lanes.length;
+		return lanes > 1 ? INNER_LANE_SPEED + (1 - INNER_LANE_SPEED) * lane / (lanes - 1) : 1;
 	}
 
 	/**
@@ -5168,12 +5652,13 @@ final class RiverSpotFish
 		int count = 1;
 		for (Swimmer other : shoal.fish)
 		{
-			if (other == swimmer || other.circle != circle || other.circleLane != swimmer.circleLane)
+			if (other == swimmer || other.circle != circle || other.circleLane != swimmer.circleLane
+				|| ShoreFish.isKrill(other.item))
 			{
 				continue;
 			}
 			count++;
-			double turn = (Math.atan2(other.y - circle.y, other.x - circle.x) - own) * circle.way;
+			double turn = (Math.atan2(other.y - circle.y, other.x - circle.x) - own) * circle.way * swimmer.ringWay;
 			turn -= 2 * Math.PI * Math.floor(turn / (2 * Math.PI));
 			ahead = Math.min(ahead, turn);
 			behind = Math.min(behind, 2 * Math.PI - turn);
@@ -5262,12 +5747,11 @@ final class RiverSpotFish
 		{
 			// Inner lanes are slower, and gaps are evened out, but only once the fish has reached its lane.
 			Circle circle = swimmer.circle;
-			int lanes = circle.lanes.length;
-			double out = lanes > 1 ? swimmer.circleLane / (double) (lanes - 1) : 1;
-			double lane = INNER_LANE_SPEED + (1 - INNER_LANE_SPEED) * out;
+			double lane = laneSpeed(circle, swimmer.circleLane);
 			if (shoal.deciding)
 			{
-				swimmer.evening = spacing(shoal, swimmer);
+				// Shrimps and anchovies don't make room for each other.
+				swimmer.evening = ShoreFish.isKrill(swimmer.item) ? 1 : spacing(shoal, swimmer);
 			}
 			want *= (1 - in * (1 - lane)) * (1 + in * (swimmer.evening - 1));
 		}
@@ -5304,6 +5788,12 @@ final class RiverSpotFish
 			// jumping round it a decision at a time. Swimming in, curve round to it; once in its lane, follow it
 			// closely, still eased.
 			toward = circleAim(swimmer);
+			if (shoal.lake && off > LANE_ARRIVED)
+			{
+				// Swimming in to a lake's circle: kept off the banks, as roaming lake fish are.
+				offBanks(river, swimmer, circlePoint);
+				toward = Math.atan2(circlePoint[1] - swimmer.y, circlePoint[0] - swimmer.x);
+			}
 			double from = Double.isNaN(swimmer.steer) ? swimmer.facing : swimmer.steer;
 			double steering = off <= LANE_ARRIVED ? STEER_EASE : JOIN_STEER_EASE + (STEER_EASE - JOIN_STEER_EASE) * near;
 			swimmer.steer = wrap(from + wrap(toward - from) * Math.min(1, steering * ticks));
@@ -5315,14 +5805,19 @@ final class RiverSpotFish
 		// swimming, to land on it.
 		boolean air = leapAge >= LEAP_RUN_TICKS && leapAge < LEAP_RUN_TICKS + LEAP_TICKS;
 		boolean holding = air && landsOnWater(river, swimmer, leapAge);
-		double most = holding ? 0 : TURN_RATE * ticks * (swimmer.circle != null ? JOIN_TURN + (1 - JOIN_TURN) * near : 1);
+		// Swordfish turn wider while roaming; not joining or round a circle (they'd swing wide, over land).
+		double turnRate = swimmer.circle == null && swimmer.bound == null && swimmer.item == ItemID.RAW_SWORDFISH
+			? TURN_RATE * ShoreFish.SWORDFISH_TURN
+			: TURN_RATE;
+		double most = holding ? 0 : turnRate * ticks * (swimmer.circle != null ? JOIN_TURN + (1 - JOIN_TURN) * near : 1);
 		swimmer.facing = wrap(swimmer.facing + Math.max(-most, Math.min(most, turn)));
 		swimmer.headX = Math.cos(swimmer.facing);
 		swimmer.headY = Math.sin(swimmer.facing);
 		double x = swimmer.x + swimmer.headX * moved;
 		double y = swimmer.y + swimmer.headY * moved;
-		// Circling fish keep round their circle whatever's under it (rings are nudged off the banks when placed).
-		boolean keepOff = swimmer.circle == null;
+		// Circling fish keep round their circle whatever's under it (rings are nudged off the banks when placed); lake
+		// fish swimming in to one still keep off land.
+		boolean keepOff = swimmer.circle == null || shoal.lake && off > LANE_ARRIVED;
 		if (keepOff && !river.isWater(x, y))
 		{
 			// Heading onto land: step straight for the target instead, still turning smoothly.
@@ -5344,19 +5839,29 @@ final class RiverSpotFish
 		}
 		// Wagging faster climbing.
 		double wagFaster = 1 + (CLIMB_WAG - 1) * Math.min(1, Math.max(0, swimmer.slope) / CLIMB_WAG_SLOPE);
-		// Slow kinds (sturgeon) wag as often at their own pace as others at theirs.
-		swimmer.wag += 2 * Math.PI * swimmer.swimming / ownPace(swimmer.look) * ticks * wagFaster / WAG_DISTANCE;
+		// Slow kinds (sturgeon, sharks) wag as often at their own pace as others at theirs; coming in to a circle at
+		// full speed, as others do.
+		swimmer.wag += 2 * Math.PI * swimmer.swimming / Math.max(0.1, pace / 100) * ticks * wagFaster / WAG_DISTANCE;
 		while (swimmer.wag >= 2 * Math.PI)
 		{
 			swimmer.wag -= 2 * Math.PI;
 		}
 		// Deep fish (117 HD) swim deep, shallower near banks, quickly up on fish surfacers (no bobs or dips there). Other
 		// fish stay at the surface, but go down DIVE_DEPTH on fish divers, under logs across the water. All come up to
-		// circle.
+		// circle, lobsters and krill a little above their sink.
 		swimmer.surfacing = river.marked(river.surface, x, y);
 		boolean diving = swimmer.deep == 0 && river.marked(river.dive, x, y);
-		double depth = swimmer.circle != null ? 0 : diving ? DIVE_DEPTH
-			: swimmer.deep == 0 || swimmer.surfacing ? 0 : swimmer.deep * Math.min(1, river.clearanceAt(x, y) / SHALLOW_ROOM);
+		// Shrimps and anchovies above their sink keep their own height (only depth below it is squeezed near banks), and
+		// circling spread between KRILL_TOP under the surface and KRILL_CIRCLE_RISE above their sink.
+		boolean krill = ShoreFish.isKrill(swimmer.item);
+		double depth = swimmer.circle != null ? (krill
+			? -ShoreFish.KRILL_CIRCLE_RISE
+			- swimmer.height * (swimmer.look.sink - ShoreFish.KRILL_CIRCLE_RISE - ShoreFish.KRILL_TOP)
+			: swimmer.item == ItemID.RAW_LOBSTER ? -ShoreFish.CIRCLE_RISE : 0)
+			: diving ? DIVE_DEPTH
+			: swimmer.deep == 0 || swimmer.surfacing ? 0
+			: krill && swimmer.deep < 0 ? swimmer.deep
+			: swimmer.deep * Math.min(1, river.clearanceAt(x, y) / SHALLOW_ROOM);
 		// Divers' own pace both ways, for fish not swimming deep.
 		double depthEase = swimmer.deep == 0 ? DIVE_EASE : swimmer.surfacing ? SURFACE_EASE : DEPTH_EASE;
 		double wasDepth = swimmer.depthNow;
@@ -5366,8 +5871,8 @@ final class RiverSpotFish
 		// Pointing up rising and down sinking, by how fast against how fast it swims (not while leaping, which has its
 		// own way).
 		double rise = ticks > 0 ? (wasDepth - swimmer.depthNow) / ticks : 0;
-		// Most fish hold their depth: no angle to work out then.
-		double wantTip = rise == 0 || swimmer.leapingSince >= 0 ? 0
+		// Most fish hold their depth: no angle to work out then. Shrimps and anchovies never tip (tiny; fewer models).
+		double wantTip = rise == 0 || krill || swimmer.leapingSince >= 0 ? 0
 			: Math.toDegrees(Math.atan2(rise, Math.max(1, swimmer.swimming))) * DEPTH_TILT;
 		wantTip = Math.max(-DEPTH_TIP_MOST, Math.min(DEPTH_TIP_MOST, wantTip));
 		swimmer.depthTip += (wantTip - swimmer.depthTip) * Math.min(1, DEPTH_TIP_EASE * ticks);
@@ -5430,10 +5935,12 @@ final class RiverSpotFish
 			swimmer.wantStep = Math.min(swimmer.wantStep, Math.max(1, (int) Math.ceil(GROW_STEPS * swimmer.inSight)));
 			place(shoal, swimmer, cycle);
 		}
-		if (drawn != swimmer.shown)
+		swimmer.shown = drawn;
+		// Hidden while HIDE_FISH (debug), still swimming, to time drawing them.
+		boolean active = drawn && !HIDE_FISH;
+		if (swimmer.fish.isActive() != active)
 		{
-			swimmer.shown = drawn;
-			swimmer.fish.setActive(drawn);
+			swimmer.fish.setActive(active);
 		}
 	}
 
@@ -5585,7 +6092,8 @@ final class RiverSpotFish
 	{
 		Circle circle = swimmer.circle;
 		double out = circle.lanes[swimmer.circleLane];
-		double angle = Math.atan2(swimmer.y - circle.y, swimmer.x - circle.x) + circle.way * CIRCLE_LEAD / out;
+		double angle = Math.atan2(swimmer.y - circle.y, swimmer.x - circle.x)
+			+ circle.way * swimmer.ringWay * CIRCLE_LEAD / out;
 		circlePoint[0] = circle.x + out * Math.cos(angle);
 		circlePoint[1] = circle.y + out * Math.sin(angle);
 		return Math.atan2(circlePoint[1] - swimmer.y, circlePoint[0] - swimmer.x);
@@ -5776,7 +6284,7 @@ final class RiverSpotFish
 		// Tip with the water's slope, bob and dip; only at full size.
 		double tip = swimmer.slope + leapTip + swimmer.depthTip + calm * look.tip / 100.0 * ((look.rise > 0 && bobAt >= 0 ? -BOB_PITCH * Perspective.SINE[bobAt] / 65536 : 0)
 			- (swimmer.dippingSince >= 0 && look.dipDepth > 0 ? DIP_PITCH * Math.sin(2 * through) : 0));
-		int pitch = swimmer.wantStep == GROW_STEPS ? (int) Math.round(tip / FishModels.PITCH_STEP) : 0;
+		int pitch = swimmer.wantStep == GROW_STEPS && !NO_TILT ? (int) Math.round(tip / FishModels.PITCH_STEP) : 0;
 		if (pitch != swimmer.pitch || swimmer.wantStep != swimmer.step)
 		{
 			// Use only made models; queue a missing one and keep the current model meanwhile.
@@ -6123,9 +6631,11 @@ final class RiverSpotFish
 		String name = NAMES.get(route[0]);
 		if (name == null)
 		{
-			return (isLake(route) ? "Lake " : "River ") + route[0].getX() + "," + route[0].getY();
+			return (!isLake(route) ? "River " : bakedKind(route[0]).equals("sea") ? "Shore " : "Lake ") + route[0].getX()
+				+ "," + route[0].getY();
 		}
-		name = name.replace('-', ' ') + (isLake(route) && !name.startsWith("lake") ? " lake" : "");
+		name = name.replace('-', ' ')
+			+ (isLake(route) && !name.startsWith("lake") && !name.startsWith("shore") ? " lake" : "");
 		return Character.toUpperCase(name.charAt(0)) + name.substring(1);
 	}
 

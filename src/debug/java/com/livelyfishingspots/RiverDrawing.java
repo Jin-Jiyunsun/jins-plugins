@@ -787,7 +787,9 @@ final class RiverDrawing
 		{
 			Shoal shoal = rivers.shoals.get(k);
 			int most = shoal.lake ? shoal.travelling : windowFish(shoal);
-			rows[k] = new String[]{rivers.label(shoal.route), shoal.fish.size() + " / " + most,
+			// Fish now / most kept, and how many are drawn (in sight, not hidden).
+			long drawn = shoal.fish.stream().filter(swimmer -> swimmer.fish.isActive()).count();
+			rows[k] = new String[]{rivers.label(shoal.route), shoal.fish.size() + " / " + most + ", " + drawn + " drawn",
 				String.valueOf(shoal.fish.size())};
 		}
 		return rows;

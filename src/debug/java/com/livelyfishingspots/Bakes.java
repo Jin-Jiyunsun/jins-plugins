@@ -26,7 +26,8 @@ final class Bakes
 
 	/**
 	 * A baked river or lake as text: its head line (see headLine), then "fish N" if it has N% of the fish its size would
-	 * give, then "kind K" if its fish aren't lure/bait ones (barbarian: leaping fish), then "water X Y" gives the first
+	 * give, then "kind K" if its fish aren't lure/bait ones (barbarian: leaping fish; sea: shore fish), then "rings grow" if
+	 * fish grow in on its rings rather than joining them (places too tight to swim in to a spot), then "water X Y" gives the first
 	 * row's world cell (y) and the cell the rows count from (x); the lines after hold the rows, going north, split by commas: each row's water as gap, length, gap,
 	 * length..., each gap from the end of the run before (the first from X); "N*" in front repeats the row N times, and
 	 * "-" is a row with none. "path X Y" gives the first path point (world local units), and each "step" line the steps
@@ -35,17 +36,24 @@ final class Bakes
 	 * deep fish come up; each "dive" line a fish diver, where they go down. Each "branch X Y X Y ..." line is a side
 	 * channel's picked tiles, first and last on the river, followed by its laid path as "bpath" and "bstep" lines.
 	 */
-	static String bakedText(String head, int fishShare, String fishKind, int x0, int y0, List<int[]> rows, List<int[]> path,
-		List<Map<WorldPoint, String>> marks, List<int[]> branchStops, List<int[]> branchPaths, List<Integer> branchShares)
+	static String bakedText(String head, int fishShare, String fishKind, boolean ringsGrow, int x0, int y0, List<int[]> rows,
+		List<int[]> path, List<Map<WorldPoint, String>> marks, List<int[]> branchStops, List<int[]> branchPaths,
+		List<Integer> branchShares)
 	{
-		StringBuilder text = new StringBuilder(head).append('\n');
+		// A shore (sea fish) starts with "shore", which says its kind.
+		boolean shore = fishKind.equals("sea") && head.startsWith("lake ");
+		StringBuilder text = new StringBuilder(shore ? "shore " + head.substring(5) : head).append('\n');
 		if (fishShare != 100)
 		{
 			text.append("fish ").append(fishShare).append('\n');
 		}
-		if (!fishKind.equals("lure"))
+		if (!fishKind.equals("lure") && !shore)
 		{
 			text.append("kind ").append(fishKind).append('\n');
+		}
+		if (ringsGrow)
+		{
+			text.append("rings grow").append('\n');
 		}
 		text.append("water ").append(x0).append(' ').append(y0).append('\n');
 		StringBuilder line = new StringBuilder();
@@ -294,7 +302,8 @@ final class Bakes
 		{
 			path.add(new int[]{(int) Math.round(saved.pathX[k]), (int) Math.round(saved.pathY[k])});
 		}
-		return bakedText(headLine(saved.route, saved.lake), saved.fishShare, saved.kind, x0, saved.y0, rows, path, saved.marks,
+		return bakedText(headLine(saved.route, saved.lake), saved.fishShare, saved.kind, saved.ringsGrow, x0, saved.y0, rows,
+			path, saved.marks,
 			saved.branchStops, saved.branchPaths, saved.branchShares);
 	}
 
@@ -308,6 +317,12 @@ final class Bakes
 		rivers.unmappable.removeIf(route -> firsts.contains(route[0]));
 		log.debug("Reloaded the bake {}", fileName);
 		remapAll(rivers);
+		// Spots added before the bake was read (a restarted plugin gets these a moment later) get their rings now.
+		WorldView view = rivers.client.getTopLevelWorldView();
+		if (view != null)
+		{
+			view.npcs().forEach(rivers::add);
+		}
 	}
 
 	/**
@@ -327,8 +342,8 @@ final class Bakes
 		});
 		Map<WorldPoint, String> all = new HashMap<>(texts);
 		firsts.forEach(first -> all.computeIfAbsent(first, f -> textOf(rivers.baked.get(f))));
-		firsts.sort((a, b) -> all.get(a).startsWith("lake") != all.get(b).startsWith("lake")
-			? (all.get(a).startsWith("lake") ? 1 : -1)
+		firsts.sort((a, b) -> !all.get(a).startsWith("route") != !all.get(b).startsWith("route")
+			? (!all.get(a).startsWith("route") ? 1 : -1)
 			: a.getX() != b.getX() ? Integer.compare(a.getX(), b.getX()) : Integer.compare(a.getY(), b.getY()));
 		StringBuilder file = new StringBuilder();
 		firsts.forEach(first -> file.append(all.get(first)));
@@ -405,7 +420,7 @@ final class Bakes
 
 	/**
 	 * A bake's first line: "route PLANE X Y X Y ..." for a river, its route's tiles, or "lake ..." for a lake,
-	 * its spawn points.
+	 * its spawn points (bakedText writes a shore's as "shore ...").
 	 */
 	static String headLine(WorldPoint[] route, boolean lake)
 	{

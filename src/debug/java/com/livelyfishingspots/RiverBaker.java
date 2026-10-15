@@ -593,6 +593,7 @@ class RiverBaker
 		}
 		log.debug("Bake {}: {} of {} points recorded, {} tiles", route[0], cells.size(), route.length, tiles.size());
 		return Bakes.bakedText(Bakes.headLine(route, lake), rivers.bakedFishShare(route[0]), rivers.bakedKind(route[0]),
+			rivers.bakedRingsGrow(route[0]),
 			minX * PER_TILE, minY * PER_TILE + firstRow, rows, points,
 			Bakes.bakedMarks(rivers, route[0]), branchStops, branchPaths,
 			Bakes.bakedBranchShares(rivers, route[0]));

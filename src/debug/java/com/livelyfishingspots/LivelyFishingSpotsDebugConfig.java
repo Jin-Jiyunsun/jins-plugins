@@ -195,7 +195,7 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 	@ConfigSection(
 		name = "Debug: splashes",
 		description = "Temporary tuning of the splashes<br>leaping fish make",
-		position = 114,
+		position = 115,
 		closedByDefault = true
 	)
 	String debugSplashes = "debugSplashes";
@@ -203,7 +203,7 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 	@ConfigSection(
 		name = "Debug: dead bodies",
 		description = "Temporary tuning of the dead bodies<br>drifting down the rivers",
-		position = 115,
+		position = 116,
 		closedByDefault = true
 	)
 	String debugBodies = "debugBodies";
@@ -211,7 +211,7 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 	@ConfigSection(
 		name = "Debug: lakes",
 		description = "Temporary tuning of the lake fish",
-		position = 111,
+		position = 112,
 		closedByDefault = true
 	)
 	String debugLakes = "debugLakes";
@@ -219,7 +219,7 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 	@ConfigSection(
 		name = "Debug: range and performance",
 		description = "Temporary tuning of how far from<br>you fish are kept, and how often<br>they decide",
-		position = 116,
+		position = 117,
 		closedByDefault = true
 	)
 	String debugRange = "debugRange";
@@ -227,7 +227,7 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 	@ConfigSection(
 		name = "Debug: schools",
 		description = "Temporary tuning of the schools<br>of river and lake fish",
-		position = 110,
+		position = 111,
 		closedByDefault = true
 	)
 	String debugSchools = "debugSchools";
@@ -1036,9 +1036,17 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 	}
 
 	@ConfigSection(
+		name = "Debug: krill look",
+		description = "Temporary tuning of the shore<br>shrimps and anchovies (giant krill)",
+		position = 108,
+		closedByDefault = true
+	)
+	String debugLookKrill = "debugLookKrill";
+
+	@ConfigSection(
 		name = "Debug: bobs and depth",
 		description = "Temporary tuning of bob timing and<br>depths, all river and lake fish",
-		position = 108,
+		position = 109,
 		closedByDefault = true
 	)
 	String debugRiverDips = "debugRiverDips";
@@ -1046,7 +1054,7 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 	@ConfigSection(
 		name = "Debug: waterfalls",
 		description = "Temporary tuning of fish climbing<br>up waterfalls",
-		position = 112,
+		position = 113,
 		closedByDefault = true
 	)
 	String debugWaterfalls = "debugWaterfalls";
@@ -1054,7 +1062,7 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 	@ConfigSection(
 		name = "Debug: leaps",
 		description = "Temporary tuning of leaping fish<br>jumping out of the water",
-		position = 113,
+		position = 114,
 		closedByDefault = true
 	)
 	String debugLeaps = "debugLeaps";
@@ -1062,7 +1070,7 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 	@ConfigSection(
 		name = "Debug: rings and spacing",
 		description = "Temporary tuning of the circles<br>at spots and fish spacing",
-		position = 109,
+		position = 110,
 		closedByDefault = true
 	)
 	String debugRiverLanes = "debugRiverLanes";
@@ -1141,7 +1149,7 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 	)
 	default int debugRiverTravelSpacing()
 	{
-		return 120;
+		return 150;
 	}
 
 	@Range(min = -512, max = 512)
@@ -2905,5 +2913,276 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 	default String debugPanelCollapsed()
 	{
 		return "";
+	}
+
+	@Range(min = -500, max = 500)
+	@ConfigItem(
+		keyName = "debugLookKrillSink",
+		name = "Fish sink",
+		description = "How far under the water<br>it rests, local units",
+		section = debugLookKrill,
+		position = 0
+	)
+	default int debugLookKrillSink()
+	{
+		return 50;
+	}
+
+	@Range(min = 0, max = 500)
+	@ConfigItem(
+		keyName = "debugLookKrillRise",
+		name = "Fish bob",
+		description = "How far down from where<br>it rests it bobs, local units",
+		section = debugLookKrill,
+		position = 1
+	)
+	default int debugLookKrillRise()
+	{
+		return 0;
+	}
+
+	@Range(min = -180, max = 180)
+	@ConfigItem(
+		keyName = "debugLookKrillRoll",
+		name = "Fish roll",
+		description = "Degrees rolled up off its side",
+		section = debugLookKrill,
+		position = 2
+	)
+	default int debugLookKrillRoll()
+	{
+		return 90;
+	}
+
+	@Range(min = -180, max = 180)
+	@ConfigItem(
+		keyName = "debugLookKrillTilt",
+		name = "Fish tilt",
+		description = "Degrees tilted head up",
+		section = debugLookKrill,
+		position = 3
+	)
+	default int debugLookKrillTilt()
+	{
+		return -80;
+	}
+
+	@Range(min = 1, max = 500)
+	@ConfigItem(
+		keyName = "debugLookKrillSize",
+		name = "Fish size",
+		description = "Percent of the item's size",
+		section = debugLookKrill,
+		position = 4
+	)
+	default int debugLookKrillSize()
+	{
+		return 15;
+	}
+
+	@Range(min = -360, max = 360)
+	@ConfigItem(
+		keyName = "debugLookKrillTurn",
+		name = "Fish turn",
+		description = "Degrees turned to face<br>the way it swims",
+		section = debugLookKrill,
+		position = 5
+	)
+	default int debugLookKrillTurn()
+	{
+		return 90;
+	}
+
+	@Range(min = 0, max = 127)
+	@ConfigItem(
+		keyName = "debugLookKrillLightest",
+		name = "Fish min lightness",
+		description = "Lightest every face is,<br>of 127",
+		section = debugLookKrill,
+		position = 6
+	)
+	default int debugLookKrillLightest()
+	{
+		return 0;
+	}
+
+	@Range(min = 0, max = 500)
+	@ConfigItem(
+		keyName = "debugLookKrillWag",
+		name = "Fish wag",
+		description = "Percent of the tail wag",
+		section = debugLookKrill,
+		position = 7
+	)
+	default int debugLookKrillWag()
+	{
+		return 0;
+	}
+
+	@Range(min = 0, max = 500)
+	@ConfigItem(
+		keyName = "debugLookKrillTip",
+		name = "Fish tipping",
+		description = "Percent of the tip<br>as it bobs and dips",
+		section = debugLookKrill,
+		position = 8
+	)
+	default int debugLookKrillTip()
+	{
+		return 100;
+	}
+
+	@Range(min = 1, max = 500)
+	@ConfigItem(
+		keyName = "debugLookKrillPace",
+		name = "Fish speed",
+		description = "Percent of the river speed",
+		section = debugLookKrill,
+		position = 9
+	)
+	default int debugLookKrillPace()
+	{
+		return 100;
+	}
+
+	@Range(min = 0, max = 500)
+	@ConfigItem(
+		keyName = "debugLookKrillSurge",
+		name = "Fish surge",
+		description = "Percent of the surge",
+		section = debugLookKrill,
+		position = 10
+	)
+	default int debugLookKrillSurge()
+	{
+		return 100;
+	}
+
+	@Range(min = -500, max = 500)
+	@ConfigItem(
+		keyName = "debugLookKrillTipPivot",
+		name = "Fish tip pivot",
+		description = "How far ahead of its middle<br>it tips about, local units",
+		section = debugLookKrill,
+		position = 11
+	)
+	default int debugLookKrillTipPivot()
+	{
+		return 0;
+	}
+
+	@Range(min = -500, max = 500)
+	@ConfigItem(
+		keyName = "debugLookKrillTipPivotUp",
+		name = "Fish tip pivot height",
+		description = "How far above its middle<br>it tips about, local units",
+		section = debugLookKrill,
+		position = 13
+	)
+	default int debugLookKrillTipPivotUp()
+	{
+		return 0;
+	}
+
+	@Range(min = -500, max = 500)
+	@ConfigItem(
+		keyName = "debugLookKrillPivot",
+		name = "Fish wag pivot",
+		description = "How far ahead of its middle<br>it wags about, local units",
+		section = debugLookKrill,
+		position = 12
+	)
+	default int debugLookKrillPivot()
+	{
+		return 16;
+	}
+
+	@Range(min = 1, max = 600)
+	@ConfigItem(
+		keyName = "debugLookKrillDipEvery",
+		name = "Fish dip every",
+		description = "Seconds between dips,<br>on average",
+		section = debugLookKrill,
+		position = 20
+	)
+	default int debugLookKrillDipEvery()
+	{
+		return 7;
+	}
+
+	@Range(min = 0, max = 500)
+	@ConfigItem(
+		keyName = "debugLookKrillDipDepth",
+		name = "Fish dip depth",
+		description = "How much deeper a dip goes,<br>local units",
+		section = debugLookKrill,
+		position = 21
+	)
+	default int debugLookKrillDipDepth()
+	{
+		return 0;
+	}
+
+	@Range(min = 1, max = 10000)
+	@ConfigItem(
+		keyName = "debugLookKrillDipMillis",
+		name = "Fish dip length",
+		description = "Milliseconds a dip takes,<br>down and back up",
+		section = debugLookKrill,
+		position = 22
+	)
+	default int debugLookKrillDipMillis()
+	{
+		return 1500;
+	}
+
+	@Range(max = 100)
+	@Units(Units.PERCENT)
+	@ConfigItem(
+		keyName = "debugLookKrillBackwards",
+		name = "Ring backwards",
+		description = "Share of krill growing in on a<br>ring that circle it the other way",
+		section = debugLookKrill,
+		position = 31
+	)
+	default int debugLookKrillBackwards()
+	{
+		return 10;
+	}
+
+	@ConfigItem(
+		keyName = "debugLookKrillOneShrimp",
+		name = "Krill as one shrimp",
+		description = "Shore krill drawn as one shrimp<br>from the shrimp model; off: the<br>giant krill model",
+		section = debugLookKrill,
+		position = 26
+	)
+	default boolean debugLookKrillOneShrimp()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "debugRiverHideFish",
+		name = "Hide fish (still swimming)",
+		description = "Hides every river, lake and shore<br>fish while they keep swimming, to<br>see what drawing them costs",
+		section = debugRange,
+		position = 30
+	)
+	default boolean debugRiverHideFish()
+	{
+		return false;
+	}
+
+	@ConfigItem(
+		keyName = "debugRiverNoTilt",
+		name = "Keep fish level",
+		description = "River, lake and shore fish never<br>tilt (no models swapped for bobs,<br>dips or slopes), to see what<br>swapping costs",
+		section = debugRange,
+		position = 35
+	)
+	default boolean debugRiverNoTilt()
+	{
+		return false;
 	}
 }

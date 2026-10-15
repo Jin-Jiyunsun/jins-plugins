@@ -172,7 +172,7 @@ final class FishModels
 	static final int SHORE_SHRIMP = ItemID.RAW_GIANT_KRILL;
 	static final int SHORE_ANCHOVIES = ItemID.GIANT_KRILL;
 	// Giant krill (shore shrimps and anchovies).
-	private static final Look KRILL = new Look(new int[]{90, -80, 15, 17, 50, 0, 16, 90, 0, 40, 60, 30, 7, 0, 1500,
+	private static final Look KRILL = new Look(new int[]{90, -80, 25, 17, 50, 0, 16, 90, 0, 40, 60, 30, 7, 0, 1500,
 		0, 0, 100, 0, 100, 50, 0, 0, 100, 100, 0, 35, 0, 6, 0, 0, 50, 100, 0, 0, 100});
 	private static final Look SARDINE =new Look(new int[]{90, 0, 30, 17, 5, 4, 16, -90, 0, 40, 60, 30, 10, 10, 1500,
 		30, 100, 100, 0, 100, 50, 0, 0, 100, 100, 0, 35, 0, 6, 0, 0, 50, 100, 0, 0, 100});

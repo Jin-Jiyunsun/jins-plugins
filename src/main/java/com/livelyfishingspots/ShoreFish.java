@@ -83,10 +83,9 @@ final class ShoreFish
 	// Sharks and swordfish: never school (one picked to lead a school comes alone, like sturgeon), always take a
 	// circle's outer lane, and grow in on a ring one at a time.
 	private static final Set<Integer> BIG_FISH = Set.of(ItemID.RAW_SHARK, ItemID.RAW_SWORDFISH);
-	// Places a ring drawing swordfish keeps free for them; rings that grow their own fish grow at least this many.
+	// Swordfish a shore keeps while its spots bring them (other kinds 1), and places a ring drawing them keeps free for
+	// them; rings that grow their own fish grow at least this many.
 	static final int SWORDFISH_ROOM = 2;
-	// Fewest of a kind a shore keeps while its spots bring it (others 1).
-	private static final Map<Integer, Integer> LEAST = Map.of(ItemID.RAW_SWORDFISH, 2);
 	// Shrimps and anchovies (giant krill): only while their spot is fished, growing in on its ring (any shore), and
 	// there take any lane at random, without spacing out (spots with them have a third, innermost lane for them only).
 	private static final Set<Integer> KRILL_FISH = Set.of(SHRIMP, ANCHOVIES);
@@ -109,7 +108,7 @@ final class ShoreFish
 	 */
 	static int least(int item)
 	{
-		return LEAST.getOrDefault(item, 1);
+		return item == ItemID.RAW_SWORDFISH ? SWORDFISH_ROOM : 1;
 	}
 
 	/**
@@ -149,7 +148,7 @@ final class ShoreFish
 	/**
 	 * How many of each kind a ring growing its own fish holds (drawn: the kinds the ring draws): each drawn kind's
 	 * share of its spot's odds, of CIRCLE_MOST for lane fish (at most its RING_MOST) and of RING_SPAWN_KRILL_MOST
-	 * for shrimps and anchovies; at least one each, and SWORDFISH_ROOM swordfish.
+	 * for shrimps and anchovies; at least each kind's least.
 	 */
 	static Map<Integer, Integer> ringTargets(int spot, IntPredicate drawn)
 	{
@@ -172,7 +171,7 @@ final class ShoreFish
 				boolean krill = isKrill(item);
 				double share = shore[1][k] / (double) odds[krill ? 1 : 0];
 				int most = krill ? RING_SPAWN_KRILL_MOST : RiverSpotFish.CIRCLE_MOST;
-				int target = Math.max(item == ItemID.RAW_SWORDFISH ? SWORDFISH_ROOM : 1, (int) Math.round(share * most));
+				int target = Math.max(least(item), (int) Math.round(share * most));
 				targets.put(item, Math.min(target, RiverSpotFish.RING_MOST.getOrDefault(item, target)));
 			}
 		}

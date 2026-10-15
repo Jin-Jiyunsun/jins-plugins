@@ -5,7 +5,8 @@
 </p>
 
 Brings fishing spots to life: the spots at sea each have a small shoal of the fish you can catch at them, the rivers and lakes with lure and bait spots have trout, salmon and pike swimming
-through and around them, and barbarian fishing spots have leaping trout, salmon and sturgeon.
+through and around them, barbarian fishing spots have leaping trout, salmon and sturgeon, and the shores at
+Catherby and Karamja have the sea's fish swimming along the coast.
 
 ## Features
 
@@ -23,9 +24,10 @@ through and around them, and barbarian fishing spots have leaping trout, salmon 
   - Now and then a trout or salmon leaps out of the water.
 - **Barbarian fishing**: at Otto's Grotto and Mount Quidamortem, leaping trout and salmon swim up
   the river and its waterfalls, and even **leap** and land with a splash!
+- **Shore fish**: at Catherby and Karamja, the fish swim around the shore, and join the rings as you fish.
 
-With 117 HD, since it has transparent water, fish swim deeper. Other
-renderers draw the water solid, so only fish at the surface are shown.
+With 117 HD, since it has transparent water, fish swim deeper, and lobsters, shrimps and anchovies
+appear. Other renderers draw the water solid, so only fish at the surface are shown.
 
 ## Settings
 
@@ -33,7 +35,8 @@ renderers draw the water solid, so only fish at the surface are shown.
 - **River fish**: Schooled (groups of fish swimming together), Random (each fish on its own), or Only at
   my spot (no fish swimming down the rivers or round the lakes, just those coming to the spot you're fishing;
   lightest on slower computers).
-- **River fish amount** and **Lake fish amount**: how many fish there are, from 25% to 125%.
+- **River fish amount** and **Lake fish amount**: how many fish there are, from 25% to 125% (shores
+  count as lakes).
 - **Deep river fish (117 HD)**: river and lake fish swim deeper, rising to circle the spot being
   fished.
 

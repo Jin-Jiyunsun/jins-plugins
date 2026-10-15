@@ -2985,7 +2985,7 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 	)
 	default int debugLookKrillSize()
 	{
-		return 15;
+		return 25;
 	}
 
 	@Range(min = -360, max = 360)

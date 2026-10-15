@@ -844,21 +844,29 @@ class RiverBaker
 	}
 
 	/**
-	 * Adds a spawn point to the lake whose first is within LAKE_PICK_REACH tiles, or makes a new lake there: in the
-	 * bake of a river whose line is within BOX_MARGIN tiles, else its own.
+	 * Adds a spawn point to the nearest lake (by its spawn points) whose first is within LAKE_PICK_REACH tiles, or
+	 * makes a new lake there: in the bake of a river whose line is within BOX_MARGIN tiles, else its own.
 	 */
 	void addLakeSpawn(WorldPoint spawn)
 	{
+		WorldPoint[] nearest = null;
+		double nearestApart = Double.MAX_VALUE;
 		for (WorldPoint[] lake : rivers.routesAndLakes())
 		{
+			double apart = RiverSpotFish.toSpawns(lake, spawn.getX(), spawn.getY());
 			if (rivers.isLake(lake) && lake[0].getPlane() == spawn.getPlane()
-				&& lake[0].distanceTo2D(spawn) <= RiverSpotFish.LAKE_PICK_REACH)
+				&& lake[0].distanceTo2D(spawn) <= RiverSpotFish.LAKE_PICK_REACH && apart < nearestApart)
 			{
-				WorldPoint[] spawns = Arrays.copyOf(lake, lake.length + 1);
-				spawns[lake.length] = spawn;
-				saveBake(Bakes.bakedName(lake[0]), lake[0], Bakes.setLakeSpawns(rivers, lake[0], spawns));
-				return;
+				nearest = lake;
+				nearestApart = apart;
 			}
+		}
+		if (nearest != null)
+		{
+			WorldPoint[] spawns = Arrays.copyOf(nearest, nearest.length + 1);
+			spawns[nearest.length] = spawn;
+			saveBake(Bakes.bakedName(nearest[0]), nearest[0], Bakes.setLakeSpawns(rivers, nearest[0], spawns));
+			return;
 		}
 		// Each river and lake goes by its first point, so a new one can't start on another's.
 		if (Bakes.routeOf(rivers, spawn) != null)

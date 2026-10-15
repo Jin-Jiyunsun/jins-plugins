@@ -2025,8 +2025,10 @@ final class RiverSpotFish
 		}
 		if (shoal.lakeFilling)
 		{
-			// Until nothing more comes: full, or no fish to fill with (top-ups carry on from there).
-			shoal.lakeFilling = topUp(shoal, openPlace(shoal.river, random), cycle, random) > 0;
+			// Until nothing more comes: full, or no fish to fill with (top-ups carry on from there). A shore waits
+			// for its spots to load, as its fish come from them.
+			int came = topUp(shoal, openPlace(shoal.river, random), cycle, random);
+			shoal.lakeFilling = came > 0 || shoal.shore && shoreWants(shoal).isEmpty();
 		}
 		stagger = false;
 	}

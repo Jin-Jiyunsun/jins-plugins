@@ -167,8 +167,8 @@ final class FishModels
 		0, 100, 0, 0, 100, 50, 0, 0, 100, 100, 0, 35, 0, 6, 200, 0, 50, 100, 0, 0, 100});
 	private static final Look SHRIMP = new Look(new int[]{0, 5, 35, 17, 50, 20, 16, 126, 300, 40, 60, 30, 1, 10, 1500,
 		0, 0, 100, 0, 100, 50, 0, 0, 100, 100, 0, 35, 0, 6, 0, 0, 50, 100, 0, 0, 100});
-	// Shore shrimps and anchovies: giant krill (the sea keeps the shrimp model), anchovies tinted blue. Their own item
-	// ids keep their models apart from the sea's; the anchovies' is a stand-in, drawn with the raw krill's model.
+	// Shore shrimps and anchovies: one shrimp from the shrimp model, anchovies tinted blue. Giant krill item ids, as
+	// stand-ins, keep their looks and models apart from the sea's.
 	static final int SHORE_SHRIMP = ItemID.RAW_GIANT_KRILL;
 	static final int SHORE_ANCHOVIES = ItemID.GIANT_KRILL;
 	// Giant krill (shore shrimps and anchovies).
@@ -230,10 +230,6 @@ final class FishModels
 		Map.entry(ItemID.RAW_SHARK, new Look(new int[]{-90, 37, 67, 30, 29, 3, 45, -90, 0, 40, 60, 30, 3, 17, 2500,
 			10, 60, 0, 5, 85, 54, 98, 0, 40, 75, 0, 0, 0, 6, 0, 15, 81, 55, 80, 36, 200})));
 
-	// Kinds drawn with another item's model.
-	private static final Map<Integer, Integer> MODEL_FROM = Map.of(SHORE_ANCHOVIES, ItemID.RAW_GIANT_KRILL);
-	// Shore krill drawn as one shrimp from the shrimp model, not the giant krill model (debug toggle to compare).
-	static boolean KRILL_ONE_SHRIMP = true;
 	// Kinds whose every face takes this hue (0 to 63).
 	private static final Map<Integer, Integer> HUES = Map.of(SHORE_ANCHOVIES, 42);
 
@@ -271,8 +267,8 @@ final class FishModels
 	 */
 	private ModelData loadItem(int item)
 	{
-		boolean oneShrimp = KRILL_ONE_SHRIMP && (item == SHORE_SHRIMP || item == SHORE_ANCHOVIES);
-		ItemComposition fish = client.getItemDefinition(oneShrimp ? ItemID.RAW_SHRIMP : MODEL_FROM.getOrDefault(item, item));
+		boolean oneShrimp = item == SHORE_SHRIMP || item == SHORE_ANCHOVIES;
+		ItemComposition fish = client.getItemDefinition(oneShrimp ? ItemID.RAW_SHRIMP : item);
 		ModelData model = client.loadModelData(fish.getInventoryModel());
 		if (model != null && ONE_SIDED.contains(item))
 		{
@@ -369,13 +365,7 @@ final class FishModels
 	private static void thinner(ModelData model, int percent)
 	{
 		int count = model.getVerticesCount();
-		float[][] ways = {model.getVerticesX(), model.getVerticesY(), model.getVerticesZ()};
-		int thin = 0;
-		for (int way = 1; way < 3; way++)
-		{
-			thin = spread(ways[way], count) < spread(ways[thin], count) ? way : thin;
-		}
-		float[] values = ways[thin];
+		float[] values = axis(model, thinnest(model));
 		double middle = (min(values, count) + max(values, count)) / 2.0;
 		for (int i = 0; i < count; i++)
 		{
@@ -404,14 +394,7 @@ final class FishModels
 		int vertices = model.getVerticesCount();
 		int faces = model.getFaceCount();
 		float[][] ways = {model.getVerticesX(), model.getVerticesY(), model.getVerticesZ()};
-		int thin = 0;
-		for (int way = 1; way < 3; way++)
-		{
-			if (max(ways[way], vertices) - min(ways[way], vertices) < max(ways[thin], vertices) - min(ways[thin], vertices))
-			{
-				thin = way;
-			}
-		}
+		int thin = thinnest(model);
 		// Which way the faces look along the thin axis; the back is the other side.
 		int[] first = model.getFaceIndices1();
 		int[] second = model.getFaceIndices2();
@@ -448,6 +431,20 @@ final class FishModels
 			bothThird[face] = swap;
 		}
 		return both;
+	}
+
+	/**
+	 * The way a model is thinnest along (0 x, 1 y, 2 z).
+	 */
+	private static int thinnest(ModelData model)
+	{
+		int count = model.getVerticesCount();
+		int thin = 0;
+		for (int way = 1; way < 3; way++)
+		{
+			thin = spread(axis(model, way), count) < spread(axis(model, thin), count) ? way : thin;
+		}
+		return thin;
 	}
 
 	private static float[] axis(ModelData model, int way)

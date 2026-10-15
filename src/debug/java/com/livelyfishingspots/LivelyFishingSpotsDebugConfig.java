@@ -3172,23 +3172,11 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 		return 60;
 	}
 
-	@ConfigItem(
-		keyName = "debugLookKrillOneShrimp",
-		name = "Krill as one shrimp",
-		description = "Shore krill drawn as one shrimp<br>from the shrimp model; off: the<br>giant krill model",
-		section = debugLookKrill,
-		position = 26
-	)
-	default boolean debugLookKrillOneShrimp()
-	{
-		return true;
-	}
-
-	@Range(max = 4)
+	@Range(min = 1, max = 4)
 	@ConfigItem(
 		keyName = "debugRiverRingComeIn",
 		name = "Ring fish come from",
-		description = "Tiles outside a ring that filler<br>fish grow in at, then swim in to<br>their lane; 0: on the lane",
+		description = "Tiles outside a ring that filler<br>fish grow in at, then swim in to<br>their lane",
 		section = debugRange,
 		position = 29
 	)
@@ -3197,27 +3185,30 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 		return 2;
 	}
 
+	@Range(max = 100)
+	@Units(Units.PERCENT)
 	@ConfigItem(
-		keyName = "debugRiverHideFish",
-		name = "Hide fish (still swimming)",
-		description = "Hides every river, lake and shore<br>fish while they keep swimming, to<br>see what drawing them costs",
+		keyName = "debugRiverLobsterHome",
+		name = "Lobsters head home",
+		description = "Share of a roaming lobster's goals<br>near its cage spot",
 		section = debugRange,
 		position = 30
 	)
-	default boolean debugRiverHideFish()
+	default int debugRiverLobsterHome()
 	{
-		return false;
+		return 100;
 	}
 
+	@Range(min = 1, max = 12)
 	@ConfigItem(
-		keyName = "debugRiverNoTilt",
-		name = "Keep fish level",
-		description = "River, lake and shore fish never<br>tilt (no models swapped for bobs,<br>dips or slopes), to see what<br>swapping costs",
+		keyName = "debugRiverLobsterHomeRadius",
+		name = "Lobster home radius",
+		description = "Tiles from its cage spot a<br>lobster's home goals are within",
 		section = debugRange,
-		position = 35
+		position = 31
 	)
-	default boolean debugRiverNoTilt()
+	default int debugRiverLobsterHomeRadius()
 	{
-		return false;
+		return 2;
 	}
 }

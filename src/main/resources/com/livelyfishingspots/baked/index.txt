@@ -19,3 +19,4 @@ river-hosidius
 river-ottos-grotto
 river-mount-quidamortem
 shore-catherby
+shore-karamja

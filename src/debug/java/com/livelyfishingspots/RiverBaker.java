@@ -51,9 +51,9 @@ class RiverBaker
 	static final int BOX_MARGIN = 8;
 	// A diagonal step between cells.
 	private static final double DIAGONAL = CELL * Math.sqrt(2);
-	// Floor textures of river water, seen in game: plain water, and Tirannwn's crystal water (WATER_CRYSTAL_OPEN,
-	// 170, to its deepest, 174).
-	private static final Set<Integer> WATER_TEXTURES = Set.of(1, 170, 171, 172, 173, 174);
+	// Floor textures of water, seen in game: plain water, the sea's shallow shelf off Karamja (WATER_SHELF, 130), and
+	// Tirannwn's crystal water (WATER_CRYSTAL_OPEN, 170, to its deepest, 174).
+	private static final Set<Integer> WATER_TEXTURES = Set.of(1, 130, 170, 171, 172, 173, 174);
 	// Floor overlays of untextured water, seen in game: plain water's (6, untextured in places along Kourend's
 	// rivers), the Water Ravine Dungeon's (130) and the cave's round 1303, 9799 (41).
 	private static final Set<Integer> WATER_OVERLAYS = Set.of(6, 41, 130);
@@ -593,7 +593,7 @@ class RiverBaker
 		}
 		log.debug("Bake {}: {} of {} points recorded, {} tiles", route[0], cells.size(), route.length, tiles.size());
 		return Bakes.bakedText(Bakes.headLine(route, lake), rivers.bakedFishShare(route[0]), rivers.bakedKind(route[0]),
-			rivers.bakedRingsGrow(route[0]),
+			rivers.bakedRingsGrow(route[0]), rivers.bakedLobstersRoam(route[0]),
 			minX * PER_TILE, minY * PER_TILE + firstRow, rows, points,
 			Bakes.bakedMarks(rivers, route[0]), branchStops, branchPaths,
 			Bakes.bakedBranchShares(rivers, route[0]));

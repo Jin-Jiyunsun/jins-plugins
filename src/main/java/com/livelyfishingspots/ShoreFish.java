@@ -20,17 +20,25 @@ final class ShoreFish
 	{
 	}
 
-	// Shore shrimps and anchovies (giant krill models, kept apart from the sea's).
+	// Shore shrimps and anchovies (giant krill ids, kept apart from the sea's).
 	static final int SHRIMP = FishModels.SHORE_SHRIMP;
 	static final int ANCHOVIES = FishModels.SHORE_ANCHOVIES;
-	// Shore spots, by NPC id: their fish and odds (each spot's odds sum to 100, so spots count evenly in a mix).
-	static final Map<Integer, int[][]> SPOTS = Map.of(
-		NpcID._0_44_53_SALTFISH, new int[][]{
-			{SHRIMP, ANCHOVIES, ItemID.RAW_SARDINE, ItemID.RAW_HERRING}, {12, 4, 42, 42}},
-		NpcID._0_44_53_RAREFISH, new int[][]{
-			{ItemID.RAW_LOBSTER, ItemID.RAW_TUNA, ItemID.RAW_SWORDFISH}, {15, 70, 15}},
-		NpcID._0_44_53_MEMBERFISH, new int[][]{
-			{ItemID.RAW_MACKEREL, ItemID.RAW_COD, ItemID.RAW_BASS, ItemID.RAW_SHARK}, {32, 32, 32, 4}});
+	// Each spot type's fish and odds (each type's odds sum to 100, so spots count evenly in a mix): net/bait,
+	// cage/harpoon and big net/harpoon.
+	private static final int[][] SALT = {{SHRIMP, ANCHOVIES, ItemID.RAW_SARDINE, ItemID.RAW_HERRING}, {12, 4, 42, 42}};
+	private static final int[][] RARE = {{ItemID.RAW_LOBSTER, ItemID.RAW_TUNA, ItemID.RAW_SWORDFISH}, {25, 60, 15}};
+	private static final int[][] MEMBER = {{ItemID.RAW_MACKEREL, ItemID.RAW_COD, ItemID.RAW_BASS, ItemID.RAW_SHARK},
+		{32, 32, 32, 4}};
+	// The fish each menu option draws, by spot type (Harpoon differs between them).
+	private static final Map<String, int[]> SALT_OPTIONS = Map.of("net", new int[]{SHRIMP, ANCHOVIES},
+		"bait", new int[]{ItemID.RAW_SARDINE, ItemID.RAW_HERRING});
+	private static final Map<String, int[]> RARE_OPTIONS = Map.of("cage", new int[]{ItemID.RAW_LOBSTER},
+		"harpoon", new int[]{ItemID.RAW_TUNA, ItemID.RAW_SWORDFISH});
+	private static final Map<String, int[]> MEMBER_OPTIONS = Map.of(
+		"big net", new int[]{ItemID.RAW_MACKEREL, ItemID.RAW_COD, ItemID.RAW_BASS}, "harpoon", new int[]{ItemID.RAW_SHARK});
+	// Shore spots, by NPC id: Catherby and Karamja (Musa Point).
+	static final Map<Integer, int[][]> SPOTS = Map.of(NpcID._0_44_53_SALTFISH, SALT, NpcID._0_44_53_RAREFISH, RARE,
+		NpcID._0_44_53_MEMBERFISH, MEMBER, NpcID._0_45_49_SALTFISH, SALT, NpcID._0_45_49_RAREFISH, RARE);
 	// Every shore fish (any spot's), for the "sea" kind.
 	static final int[] FISH = SPOTS.values().stream().flatMapToInt(spot -> Arrays.stream(spot[0]))
 		.distinct().toArray();
@@ -41,14 +49,10 @@ final class ShoreFish
 		Map.entry(ItemID.RAW_SARDINE, 20), Map.entry(ItemID.RAW_HERRING, 30), Map.entry(ItemID.RAW_MACKEREL, 20),
 		Map.entry(ItemID.RAW_COD, 45), Map.entry(ItemID.RAW_BASS, 100), Map.entry(ItemID.RAW_SHARK, 110),
 		Map.entry(ItemID.RAW_LOBSTER, 90), Map.entry(ItemID.RAW_TUNA, 80), Map.entry(ItemID.RAW_SWORDFISH, 100));
-	// The fish each menu option draws at shore spots, by spot (Harpoon differs between them).
-	static final Map<Integer, Map<String, int[]>> OPTIONS = Map.of(
-		NpcID._0_44_53_SALTFISH, Map.of("net", new int[]{SHRIMP, ANCHOVIES},
-			"bait", new int[]{ItemID.RAW_SARDINE, ItemID.RAW_HERRING}),
-		NpcID._0_44_53_RAREFISH, Map.of("cage", new int[]{ItemID.RAW_LOBSTER},
-			"harpoon", new int[]{ItemID.RAW_TUNA, ItemID.RAW_SWORDFISH}),
-		NpcID._0_44_53_MEMBERFISH, Map.of("big net", new int[]{ItemID.RAW_MACKEREL, ItemID.RAW_COD, ItemID.RAW_BASS},
-			"harpoon", new int[]{ItemID.RAW_SHARK}));
+	// The fish each menu option draws at shore spots, by spot.
+	static final Map<Integer, Map<String, int[]>> OPTIONS = Map.of(NpcID._0_44_53_SALTFISH, SALT_OPTIONS,
+		NpcID._0_44_53_RAREFISH, RARE_OPTIONS, NpcID._0_44_53_MEMBERFISH, MEMBER_OPTIONS,
+		NpcID._0_45_49_SALTFISH, SALT_OPTIONS, NpcID._0_45_49_RAREFISH, RARE_OPTIONS);
 	// Lakes baked with "rings grow" (places too tight for fish to swim in to a spot): there none join or head for
 	// one; while a spot is fished, fish of the kinds it draws grow in on its lanes, and shrink away once it isn't,
 	// apart from the lake's own fish. At most so many shrimps and anchovies grown in.
@@ -61,6 +65,10 @@ final class ShoreFish
 	static final int RING_SPAWN_BIG_GAP_MOST = 250;
 	static final int RING_SPAWN_OTHER_GAP_LEAST = 80;
 	static final int RING_SPAWN_OTHER_GAP_MOST = 180;
+	// Where lobsters roam: this share of their goals are near the nearest cage spot, within this far of it (local
+	// units; tuning spinners).
+	static double LOBSTER_HOME_CHANCE = 1;
+	static double LOBSTER_HOME_RADIUS = 256;
 	// Lobsters swim in to a ring this share as fast as other fish.
 	static final double LOBSTER_COME_IN = 0.4;
 	// Water cells a shore needs for sharks to roam it (they still grow in on its rings).
@@ -74,13 +82,16 @@ final class ShoreFish
 	static final int KRILL_TOP = 15;
 	// Sharks and swordfish: never school (one picked to lead a school comes alone, like sturgeon), always take a
 	// circle's outer lane, and grow in on a ring one at a time.
-	static final Set<Integer> BIG_FISH = Set.of(ItemID.RAW_SHARK, ItemID.RAW_SWORDFISH);
+	private static final Set<Integer> BIG_FISH = Set.of(ItemID.RAW_SHARK, ItemID.RAW_SWORDFISH);
+	// Places a ring drawing swordfish keeps free for them; rings that grow their own fish grow at least this many.
+	static final int SWORDFISH_ROOM = 2;
 	// Fewest of a kind a shore keeps while its spots bring it (others 1).
 	private static final Map<Integer, Integer> LEAST = Map.of(ItemID.RAW_SWORDFISH, 2);
 	// Shrimps and anchovies (giant krill): only while their spot is fished, growing in on its ring (any shore), and
 	// there take any lane at random, without spacing out (spots with them have a third, innermost lane for them only).
-	static final Set<Integer> KRILL_FISH = Set.of(SHRIMP, ANCHOVIES);
-	// Kinds that never roam a shore: they only grow in on a fished spot's ring, on any shore.
+	private static final Set<Integer> KRILL_FISH = Set.of(SHRIMP, ANCHOVIES);
+	// Kinds that never roam a shore: they only grow in on a fished spot's ring, on any shore (lobsters roam a shore
+	// baked "lobsters roam").
 	static final Set<Integer> RING_ONLY = Set.of(SHRIMP, ANCHOVIES, ItemID.RAW_LOBSTER);
 	// Share of shrimps and anchovies growing in on a ring that circle it the other way (tuning spinner).
 	static double KRILL_BACKWARDS = 0.1;
@@ -112,6 +123,22 @@ final class ShoreFish
 	}
 
 	/**
+	 * Which kinds a kind schools with: sardines and herring together (1), tuna only with tuna (2), the rest (0).
+	 */
+	static int schoolSort(int item)
+	{
+		return item == ItemID.RAW_SARDINE || item == ItemID.RAW_HERRING ? 1 : item == ItemID.RAW_TUNA ? 2 : 0;
+	}
+
+	/**
+	 * Whether a kind never schools: sharks, swordfish and (where they roam) lobsters.
+	 */
+	static boolean alone(int item)
+	{
+		return isBig(item) || item == ItemID.RAW_LOBSTER;
+	}
+
+	/**
 	 * Whether a kind is a shark or swordfish.
 	 */
 	static boolean isBig(int item)
@@ -122,7 +149,7 @@ final class ShoreFish
 	/**
 	 * How many of each kind a ring growing its own fish holds (drawn: the kinds the ring draws): each drawn kind's
 	 * share of its spot's odds, of CIRCLE_MOST for lane fish (at most its RING_MOST) and of RING_SPAWN_KRILL_MOST
-	 * for shrimps and anchovies; at least one each.
+	 * for shrimps and anchovies; at least one each, and SWORDFISH_ROOM swordfish.
 	 */
 	static Map<Integer, Integer> ringTargets(int spot, IntPredicate drawn)
 	{
@@ -145,7 +172,7 @@ final class ShoreFish
 				boolean krill = isKrill(item);
 				double share = shore[1][k] / (double) odds[krill ? 1 : 0];
 				int most = krill ? RING_SPAWN_KRILL_MOST : RiverSpotFish.CIRCLE_MOST;
-				int target = Math.max(1, (int) Math.round(share * most));
+				int target = Math.max(item == ItemID.RAW_SWORDFISH ? SWORDFISH_ROOM : 1, (int) Math.round(share * most));
 				targets.put(item, Math.min(target, RiverSpotFish.RING_MOST.getOrDefault(item, target)));
 			}
 		}

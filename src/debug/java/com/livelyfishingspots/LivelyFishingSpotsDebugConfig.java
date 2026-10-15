@@ -3158,6 +3158,46 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 		return 10;
 	}
 
+	@Range(min = 1, max = 200)
+	@ConfigItem(
+		keyName = "debugLookKrillRingMost",
+		name = "Ring most",
+		description = "Most shrimps and anchovies<br>grown in on a ring",
+		section = debugLookKrill,
+		position = 32
+	)
+	default int debugLookKrillRingMost()
+	{
+		return 60;
+	}
+
+	@Range(min = 1, max = 120)
+	@Units(Units.SECONDS)
+	@ConfigItem(
+		keyName = "debugLookKrillLaneEvery",
+		name = "Lane change every",
+		description = "Seconds on average between a<br>ring shrimp moving to a lane<br>next to its own",
+		section = debugLookKrill,
+		position = 33
+	)
+	default int debugLookKrillLaneEvery()
+	{
+		return 1;
+	}
+
+	@Range(max = 180)
+	@ConfigItem(
+		keyName = "debugLookKrillComeSpread",
+		name = "Come in spread",
+		description = "Degrees either side of one way<br>that ring shrimps grow in at<br>when fishing starts",
+		section = debugLookKrill,
+		position = 34
+	)
+	default int debugLookKrillComeSpread()
+	{
+		return 60;
+	}
+
 	@Range(min = 5, max = 200)
 	@Units(Units.PERCENT)
 	@ConfigItem(

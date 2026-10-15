@@ -10,6 +10,7 @@ import java.util.List;
 import javax.inject.Inject;
 import net.runelite.api.MenuAction;
 import net.runelite.api.Model;
+import net.runelite.api.RuneLiteObject;
 import net.runelite.client.ui.FontManager;
 import net.runelite.client.ui.overlay.OverlayMenuEntry;
 import net.runelite.client.ui.overlay.OverlayPanel;
@@ -77,6 +78,7 @@ class FishCountOverlay extends OverlayPanel
 			line("  " + shoal[0], shoal[1]);
 		}
 		line("Models made", String.valueOf(models.count()));
+		line("Splashes alive", String.valueOf(splashes(rivers)));
 		// The last river or lake started: each step's time.
 		List<String[]> last = TickTimes.lastLoad();
 		for (int k = 0; k < last.size(); k++)
@@ -117,6 +119,7 @@ class FishCountOverlay extends OverlayPanel
 		line("Garbage collections (last s)", TickTimes.collected());
 		line("River and lake maps", String.format("%.1f MB", RiverDrawing.mapsMb(rivers)));
 		line("Fish models", String.format("%.1f MB", modelsMb(models)));
+		line("Transparent models", transparent(models) + " / " + models.made().size());
 		line("Warm-up at plugin start", String.format("%.1f ms", rivers.warmUpMs));
 		return super.render(graphics);
 	}
@@ -168,6 +171,38 @@ class FishCountOverlay extends OverlayPanel
 				+ length(model.getFaceBias()) + length(model.getTextureFaces());
 		}
 		return bytes / 1e6;
+	}
+
+	/**
+	 * How many leap splashes are showing now.
+	 */
+	private static int splashes(RiverSpotFish rivers)
+	{
+		int count = 0;
+		for (RiverSpotFish.Shoal shoal : rivers.shoals)
+		{
+			for (RuneLiteObject splash : shoal.splashes)
+			{
+				count += splash.isActive() ? 1 : 0;
+			}
+		}
+		return count;
+	}
+
+	/**
+	 * How many made fish models have any transparency (117 HD sorts those every frame).
+	 */
+	private static int transparent(FishModels models)
+	{
+		int count = 0;
+		for (Model model : models.made())
+		{
+			if (model != null && (model.getTransparency() != 0 || model.getFaceTransparencies() != null))
+			{
+				count++;
+			}
+		}
+		return count;
 	}
 
 	private static int length(int[] array)

@@ -5285,7 +5285,8 @@ final class RiverSpotFish
 	 * Grows fish in on a fished shore ring, each kind to its target on its own timer (ShoreFish.ringGap), so kinds come
 	 * independently and can overlap: on rings that grow their own fish, every kind it draws; on any shore, shrimps,
 	 * anchovies and lobsters, which never roam. A kind's first comes a random part of its gap after fishing starts.
-	 * Lane fish come in the widest gap of their lane, shrimps and anchovies anywhere round it (they don't mind room).
+	 * Lane fish come in the widest gap of their lane, shrimps and anchovies anywhere round it (they don't mind room);
+	 * but when fishing starts, shrimps and anchovies all come at once, from one way.
 	 */
 	private void growRing(Shoal shoal, Circle circle, int cycle, ThreadLocalRandom random)
 	{
@@ -5295,6 +5296,7 @@ final class RiverSpotFish
 		}
 		Map<Integer, Integer> targets = ShoreFish.ringTargets(circle.npc.getId(), item -> drawn(circle, item));
 		Map<Integer, Integer> there = null;
+		double way = Double.NaN;
 		for (Map.Entry<Integer, Integer> target : targets.entrySet())
 		{
 			int item = target.getKey();
@@ -5307,6 +5309,27 @@ final class RiverSpotFish
 			{
 				circle.nextOf.put(item, cycle + (next == null ? random.nextInt(ShoreFish.ringGap(item, random) + 1)
 					: ShoreFish.ringGap(item, random)));
+			}
+			if (next == null && ShoreFish.isKrill(item))
+			{
+				// One way for the whole ring, on the open water side (away from the spot).
+				if (Double.isNaN(way))
+				{
+					LocalPoint spot = circle.npc.getLocalLocation();
+					double ax = spot == null ? 0 : circle.x - spot.getX();
+					double ay = spot == null ? 0 : circle.y - spot.getY();
+					way = Math.hypot(ax, ay) > 1 ? Math.atan2(ay, ax) + random.nextDouble(-Math.PI / 3, Math.PI / 3)
+						: random.nextDouble(2 * Math.PI);
+				}
+				there = there != null ? there : ringCounts(shoal, circle);
+				for (int n = there.getOrDefault(item, 0); n < target.getValue(); n++)
+				{
+					double spread = Math.toRadians(ShoreFish.KRILL_COME_SPREAD);
+					growIn(shoal, circle, item, roomiestLane(shoal, circle, item),
+						way + (spread > 0 ? random.nextDouble(-spread, spread) : 0), cycle, random);
+				}
+				there = null;
+				continue;
 			}
 			there = there != null ? there : ringCounts(shoal, circle);
 			if (next == null || cycle < next || there.getOrDefault(item, 0) >= target.getValue()
@@ -5876,6 +5899,13 @@ final class RiverSpotFish
 			// Circling: aim at the lane just ahead, found every tick (it's cheap) so it follows the curve rather than
 			// jumping round it a decision at a time. Swimming in, curve round to it; once in its lane, follow it
 			// closely, still eased.
+			// Shrimps and anchovies in their lane move to one next to it now and then.
+			if (shoal.deciding && off <= LANE_ARRIVED && ShoreFish.isKrill(swimmer.item) && swimmer.circle.lanes.length > 1
+				&& ThreadLocalRandom.current().nextInt(ShoreFish.KRILL_LANE_EVERY) < DECIDE_EVERY)
+			{
+				int lane = swimmer.circleLane + (ThreadLocalRandom.current().nextBoolean() ? 1 : -1);
+				swimmer.circleLane = lane < 0 || lane >= swimmer.circle.lanes.length ? swimmer.circleLane * 2 - lane : lane;
+			}
 			toward = circleAim(swimmer);
 			// Filler fish grown in near a ring swim in as circling fish do, over land too (lanes can cross it).
 			boolean filler = grows(shoal, swimmer.item);

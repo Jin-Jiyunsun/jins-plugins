@@ -55,8 +55,13 @@ final class ShoreFish
 		NpcID._0_45_49_SALTFISH, SALT_OPTIONS, NpcID._0_45_49_RAREFISH, RARE_OPTIONS);
 	// Lakes baked with "rings grow" (places too tight for fish to swim in to a spot): there none join or head for
 	// one; while a spot is fished, fish of the kinds it draws grow in on its lanes, and shrink away once it isn't,
-	// apart from the lake's own fish. At most so many shrimps and anchovies grown in.
-	static final int RING_SPAWN_KRILL_MOST = 40;
+	// apart from the lake's own fish. At most so many shrimps and anchovies grown in (tuning spinner).
+	static int RING_SPAWN_KRILL_MOST = 60;
+	// Client ticks on average between a circling shrimp or anchovy moving to a lane next to its own (tuning spinner).
+	static int KRILL_LANE_EVERY = 50;
+	// Degrees either side of their one way that shrimps and anchovies grow in at, when fishing starts (tuning
+	// spinner; each also lands within about 23 degrees of its own way).
+	static int KRILL_COME_SPREAD = 60;
 	// Client ticks between fish of a kind grown in on a ring, each kind on its own: shrimps and anchovies, sharks and
 	// swordfish, and the rest (lobsters too).
 	static final int RING_SPAWN_KRILL_GAP_LEAST = 15;

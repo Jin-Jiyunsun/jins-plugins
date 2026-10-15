@@ -558,6 +558,9 @@ public class LivelyFishingSpotsDebugPlugin extends Plugin
 		main.fishModels().tuneLook(FishModels.SHORE_SHRIMP, LOOK_PLACES, krill);
 		main.fishModels().tuneLook(FishModels.SHORE_ANCHOVIES, LOOK_PLACES, krill);
 		ShoreFish.KRILL_BACKWARDS = config.debugLookKrillBackwards() / 100.0;
+		ShoreFish.RING_SPAWN_KRILL_MOST = config.debugLookKrillRingMost();
+		ShoreFish.KRILL_LANE_EVERY = config.debugLookKrillLaneEvery() * 50;
+		ShoreFish.KRILL_COME_SPREAD = config.debugLookKrillComeSpread();
 		FishModels.THICKNESS.put(ItemID.RAW_SHARK, config.debugLookSharkThickness());
 		main.fishModels().remake(ItemID.RAW_SHARK);
 	}

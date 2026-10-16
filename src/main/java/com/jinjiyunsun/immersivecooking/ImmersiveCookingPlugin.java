@@ -1,31 +1,43 @@
 package com.jinjiyunsun.immersivecooking;
 
+import java.awt.event.KeyEvent;
+import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
 import javax.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Actor;
+import net.runelite.api.ChatMessageType;
 import net.runelite.api.Client;
-import net.runelite.api.InventoryID;
+import net.runelite.api.GameState;
 import net.runelite.api.ItemComposition;
 import net.runelite.api.ItemContainer;
 import net.runelite.api.MenuAction;
 import net.runelite.api.MenuEntry;
 import net.runelite.api.Model;
 import net.runelite.api.ModelData;
+import net.runelite.api.ObjectComposition;
 import net.runelite.api.RuneLiteObject;
 import net.runelite.api.coords.LocalPoint;
 import net.runelite.api.events.AnimationChanged;
 import net.runelite.api.events.ChatMessage;
 import net.runelite.api.events.ClientTick;
+import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.events.MenuOptionClicked;
 import net.runelite.api.gameval.AnimationID;
 import net.runelite.api.gameval.InterfaceID;
+import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.gameval.ItemID;
 import net.runelite.api.widgets.Widget;
+import net.runelite.client.callback.ClientThread;
 import net.runelite.client.eventbus.Subscribe;
+import net.runelite.client.input.KeyListener;
+import net.runelite.client.input.KeyManager;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.util.Text;
@@ -37,22 +49,24 @@ import net.runelite.client.util.Text;
 )
 public class ImmersiveCookingPlugin extends Plugin
 {
-	// How far above the range the fish model hovers, in local-coordinate height units.
 	private static final int HOVER_HEIGHT = 120;
-
-	// Nudges the fish east of the range's clicked tile, to sit over the cooking surface.
 	private static final int EAST_OFFSET = 25;
 
-	// Model scale is fixed-point with 128 as 100%; 96 is 75%.
+	// 128 is 100%.
 	private static final int MODEL_SCALE = 96;
 
-	// How long the cooked/burnt result shows before the range clears, in game ticks.
 	private static final int RESULT_DISPLAY_TICKS = 2;
-
-	// How long the range sits empty between raw -> result and result -> next raw, in game ticks.
 	private static final int GAP_TICKS = 1;
 
-	// Raw fish -> cooked fish. Covers every fish in RAW_FISH_ITEM_IDS.
+	// How close counts as "at the range", in local units (128 per tile).
+	private static final int NEAR_RANGE_DISTANCE = 3 * 128;
+
+	private static final int SPACE_SLOT = -2;
+
+	private static final int FADE_DURATION_MS = 150;
+	// Shrinks to nearly nothing rather than a zero-size mesh.
+	private static final int MIN_SCALE_PERCENT = 4;
+
 	private static final Map<Integer, Integer> COOKED_BY_RAW = Map.ofEntries(
 		Map.entry(ItemID.RAW_SHRIMP, ItemID.SHRIMP), Map.entry(ItemID.RAW_ANCHOVIES, ItemID.ANCHOVIES),
 		Map.entry(ItemID.RAW_SARDINE, ItemID.SARDINE), Map.entry(ItemID.RAW_SALMON, ItemID.SALMON),
@@ -74,9 +88,8 @@ public class ImmersiveCookingPlugin extends Plugin
 		Map.entry(ItemID.TBWT_RAW_KARAMBWAN, ItemID.TBWT_COOKED_KARAMBWAN)
 	);
 
-	// Raw fish -> burnt fish. Only the fish with their own distinct burnt item are covered;
-	// the rest share a handful of generic "Burnt fish" items that can't be told apart by name,
-	// so those just clear the range without a burnt model (see onChatMessage).
+	// Only fish with their own burnt item. The rest share generic "Burnt fish" items,
+	// so a burn just clears the range for them.
 	private static final Map<Integer, Integer> BURNT_BY_RAW = Map.ofEntries(
 		Map.entry(ItemID.RAW_SWORDFISH, ItemID.BURNT_SWORDFISH), Map.entry(ItemID.RAW_LOBSTER, ItemID.BURNT_LOBSTER),
 		Map.entry(ItemID.RAW_SHARK, ItemID.BURNT_SHARK), Map.entry(ItemID.RAW_MANTARAY, ItemID.BURNT_MANTARAY),
@@ -92,177 +105,362 @@ public class ImmersiveCookingPlugin extends Plugin
 
 	private static final Set<Integer> RAW_FISH_ITEM_IDS = COOKED_BY_RAW.keySet();
 
+	private static final Set<MenuAction> GAME_OBJECT_OPTIONS = EnumSet.of(
+		MenuAction.GAME_OBJECT_FIRST_OPTION, MenuAction.GAME_OBJECT_SECOND_OPTION, MenuAction.GAME_OBJECT_THIRD_OPTION,
+		MenuAction.GAME_OBJECT_FOURTH_OPTION, MenuAction.GAME_OBJECT_FIFTH_OPTION
+	);
+
+	// The dialog's food buttons, in hotkey order (1 = A).
+	private static final int[] DIALOG_SLOTS = {
+		InterfaceID.Skillmulti.A, InterfaceID.Skillmulti.B, InterfaceID.Skillmulti.C, InterfaceID.Skillmulti.D,
+		InterfaceID.Skillmulti.E, InterfaceID.Skillmulti.F, InterfaceID.Skillmulti.G, InterfaceID.Skillmulti.H,
+		InterfaceID.Skillmulti.I, InterfaceID.Skillmulti.J, InterfaceID.Skillmulti.K, InterfaceID.Skillmulti.L,
+		InterfaceID.Skillmulti.M, InterfaceID.Skillmulti.N, InterfaceID.Skillmulti.O, InterfaceID.Skillmulti.P,
+		InterfaceID.Skillmulti.Q, InterfaceID.Skillmulti.R
+	};
+
 	@Inject
 	private Client client;
 
+	@Inject
+	private ClientThread clientThread;
+
+	@Inject
+	private KeyManager keyManager;
+
 	private RuneLiteObject fishObject;
 
-	// Set when a raw fish is used on a range; stays set for the whole batch.
+	// The raw fish being cooked, and the range it's on. Location can be set before the fish is known.
 	private int pendingCookItemId = -1;
 	private LocalPoint pendingCookLocation;
+	// Kept after a batch ends, as a fallback if a cook message arrives with no session.
+	private LocalPoint lastCookLocation;
+	// Fish was used on the range from a distance; it shows once the player gets there.
+	private boolean waitingForArrival = false;
 
-	// Item id of whichever model is currently loaded on fishObject, or -1 if none.
+	// Item shown on fishObject, or -1 if nothing (or it's shrinking away).
 	private int displayedItemId = -1;
 
-	// Game tick at which the cooked/burnt result should be cleared, or -1 if nothing pending.
 	private int hideAtTick = -1;
-
-	// Game tick at which pendingShowItemId should appear, or -1 if nothing scheduled. When it's
-	// a result (not the raw fish for the next item), pendingShowIsResult says so, since a result
-	// reveal needs its own hide timer afterward and a raw reveal doesn't.
 	private int showAtTick = -1;
 	private int pendingShowItemId = -1;
+	// A result reveal gets its own hide timer; a raw reveal stays until the next result.
 	private boolean pendingShowIsResult = false;
 
-	// Item id currently previewed from hovering the "how many" dialog, or -1 if none.
 	private int hoverPreviewItemId = -1;
+	// Fish to grow in once the current shrink-out finishes.
+	private int pendingHoverSwapItemId = -1;
 
-	// Lazily-built, cached: lowercase raw fish name -> raw fish item id.
+	// Catches the quantity dialog being closed with Escape before cooking starts.
+	private boolean dialogSeenOpen = false;
+	private boolean cookingAnimationSeen = false;
+	private int dialogCloseCheckTick = -1;
+
+	// Animation can blip off for a frame mid-batch, so a stop is confirmed a tick later.
+	private int clearCheckTick = -1;
+
+	// Lowercase raw, unprefixed and cooked names -> raw item id.
 	private Map<String, Integer> rawFishByName;
 
-	// Last cook-result chat message processed, and the tick it arrived on - for de-duplication.
+	// The same chat line can arrive twice on one tick.
 	private String lastChatMessage = "";
 	private int lastChatMessageTick = -1;
+
+	private enum FadeState { NONE, IN, OUT }
+	private FadeState fadeState = FadeState.NONE;
+	private long fadeStartMs;
+	private int fadeItemId = -1;
+
+	// Only watches key presses; never consumes or sends input.
+	private final KeyListener dialogHotkeyListener = new KeyListener()
+	{
+		@Override
+		public void keyTyped(KeyEvent e)
+		{
+		}
+
+		@Override
+		public void keyPressed(KeyEvent e)
+		{
+			int slot = slotForKey(e.getKeyCode());
+			if (slot != -1)
+			{
+				clientThread.invoke(() -> onDialogHotkey(slot));
+			}
+		}
+
+		@Override
+		public void keyReleased(KeyEvent e)
+		{
+		}
+	};
 
 	@Override
 	protected void startUp()
 	{
 		fishObject = client.createRuneLiteObject();
+		keyManager.registerKeyListener(dialogHotkeyListener);
 	}
 
 	@Override
 	protected void shutDown()
 	{
+		keyManager.unregisterKeyListener(dialogHotkeyListener);
+		clearCooking();
+		lastCookLocation = null;
+		fadeState = FadeState.NONE;
 		fishObject.setActive(false);
 		fishObject = null;
-		pendingCookLocation = null;
-		pendingCookItemId = -1;
-		displayedItemId = -1;
-		hideAtTick = -1;
-		showAtTick = -1;
-		pendingShowItemId = -1;
-		pendingShowIsResult = false;
-		hoverPreviewItemId = -1;
+	}
+
+	private void setCookLocation(int sceneX, int sceneY)
+	{
+		pendingCookLocation = LocalPoint.fromScene(sceneX, sceneY, client.getTopLevelWorldView());
+		lastCookLocation = pendingCookLocation;
 	}
 
 	@Subscribe
 	public void onMenuOptionClicked(MenuOptionClicked event)
 	{
 		MenuAction action = event.getMenuAction();
-		Widget clickedWidget = event.getWidget();
-		log.debug("Menu option clicked: action={}, option={}, widgetId={}, widgetItemId={}, selectedWidgetItemId={}",
-			action, event.getMenuOption(), event.getWidgetId(),
-			clickedWidget != null ? clickedWidget.getItemId() : null,
-			client.getSelectedWidget() != null ? client.getSelectedWidget().getItemId() : null);
 
-		// Raw fish used directly on the range.
+		// Raw fish used on the range.
 		if (action == MenuAction.WIDGET_TARGET_ON_GAME_OBJECT)
 		{
 			Widget selectedWidget = client.getSelectedWidget();
 			int itemId = selectedWidget != null ? selectedWidget.getItemId() : -1;
-			if (RAW_FISH_ITEM_IDS.contains(itemId))
+			if (!RAW_FISH_ITEM_IDS.contains(itemId) || !isCookingObject(event.getId()))
 			{
-				pendingCookItemId = itemId;
-				pendingCookLocation = LocalPoint.fromScene(event.getParam0(), event.getParam1());
-				showModel(itemId, pendingCookLocation);
+				return;
+			}
+			// Mid-batch the game keeps cooking the first fish; chat messages resync if not.
+			if (pendingCookItemId != -1 && pendingCookItemId != itemId)
+			{
+				return;
+			}
+			pendingCookItemId = itemId;
+			setCookLocation(event.getParam0(), event.getParam1());
+			if (isPlayerNear(pendingCookLocation))
+			{
+				showModel(itemId);
+			}
+			else
+			{
+				waitingForArrival = true;
 			}
 			return;
 		}
 
-		// "Cook" clicked directly on the range: we know where, but not what yet - that's
-		// resolved once the player hovers and clicks a food choice in the dialog below.
-		boolean isGameObjectOption = action == MenuAction.GAME_OBJECT_FIRST_OPTION || action == MenuAction.GAME_OBJECT_SECOND_OPTION
-			|| action == MenuAction.GAME_OBJECT_THIRD_OPTION || action == MenuAction.GAME_OBJECT_FOURTH_OPTION
-			|| action == MenuAction.GAME_OBJECT_FIFTH_OPTION;
-		if (isGameObjectOption && "Cook".equalsIgnoreCase(event.getMenuOption()))
+		// Walking or interacting elsewhere before reaching the range cancels the cook.
+		if (waitingForArrival && event.getWidget() == null && action != MenuAction.CANCEL)
 		{
-			pendingCookLocation = LocalPoint.fromScene(event.getParam0(), event.getParam1());
-			log.debug("Cook clicked directly on range at scene {},{}", event.getParam0(), event.getParam1());
+			log.debug("Clearing: left before reaching the range");
+			clearCooking();
+		}
+
+		// "Cook" on the range: location known, fish picked in the dialog.
+		if (GAME_OBJECT_OPTIONS.contains(action) && "Cook".equalsIgnoreCase(event.getMenuOption()))
+		{
+			// A new session: the old batch's clean-up must not wipe this location later.
+			if (pendingCookItemId != -1)
+			{
+				clearCooking();
+			}
+			setCookLocation(event.getParam0(), event.getParam1());
+			hoverPreviewItemId = -1;
+			log.debug("Cook clicked on range");
 			return;
 		}
 
-		// Any other click in the "how many would you like to make" dialog - whether on a food
-		// icon or a quantity button - commits to whatever was just hovered and previewed, since
-		// the widgets involved don't carry a usable item id of their own to read directly.
 		if (pendingCookItemId != -1 || pendingCookLocation == null)
 		{
 			return;
 		}
 
-		if ("Cancel".equalsIgnoreCase(event.getMenuOption()))
+		// A click in the dialog. Read the click's own text; the hover poll may lag a fast click.
+		// Quantity buttons carry no fish name, so fall back to the hovered one.
+		int clickedItemId = parseFishFromMenuText(event.getMenuOption(), event.getMenuTarget());
+		int confirmedItemId = clickedItemId != -1 ? clickedItemId : hoverPreviewItemId;
+		if (confirmedItemId != -1)
 		{
-			// Dialog cancelled before anything was confirmed - nothing left to show on the range.
-			clearCooking();
-			return;
+			pendingCookItemId = confirmedItemId;
+			log.debug("Confirmed via dialog click, itemId={}", pendingCookItemId);
+			showModel(pendingCookItemId);
+		}
+	}
+
+	// Ranges have a "Cook" option; fires have none, so they're matched by name.
+	private boolean isCookingObject(int objectId)
+	{
+		ObjectComposition object = client.getObjectDefinition(objectId);
+		if (object.getImpostorIds() != null && object.getImpostor() != null)
+		{
+			object = object.getImpostor();
 		}
 
-		if (hoverPreviewItemId != -1)
+		String[] actions = object.getActions();
+		if (actions != null)
 		{
-			pendingCookItemId = hoverPreviewItemId;
-			log.debug("Confirmed via click while dialog open, itemId={}", pendingCookItemId);
-			showModel(pendingCookItemId, pendingCookLocation);
+			for (String action : actions)
+			{
+				if ("Cook".equalsIgnoreCase(action))
+				{
+					return true;
+				}
+			}
 		}
+
+		String name = object.getName();
+		boolean isFire = name != null && name.toLowerCase().contains("fire");
+		log.debug("Use-on object: id={}, name={}, isFire={}", objectId, name, isFire);
+		return isFire;
 	}
 
 	@Subscribe
 	public void onClientTick(ClientTick event)
 	{
-		if (pendingCookLocation == null || pendingCookItemId != -1)
+		updateFade();
+
+		if (pendingCookLocation == null)
 		{
-			// Hover preview only matters before a choice is confirmed. Once cooking has started,
-			// stray mouse movement over unrelated "Cook <fish>" text shouldn't reinterrupt it.
 			return;
 		}
 
+		if (pendingCookItemId != -1)
+		{
+			if (!cookingAnimationSeen)
+			{
+				trackDialogClose();
+			}
+			return;
+		}
+
+		updateHoverPreview();
+	}
+
+	private void trackDialogClose()
+	{
+		if (!isSkillmultiDialogClosed())
+		{
+			dialogSeenOpen = true;
+			dialogCloseCheckTick = -1;
+		}
+		else if (dialogSeenOpen && dialogCloseCheckTick == -1)
+		{
+			// The widget can flicker for a frame, so confirm on the next tick.
+			dialogCloseCheckTick = client.getTickCount() + 1;
+		}
+	}
+
+	private void updateHoverPreview()
+	{
 		int hoveredItemId = findHoveredFishSlot();
 		if (hoveredItemId == hoverPreviewItemId)
 		{
 			return;
 		}
-
 		hoverPreviewItemId = hoveredItemId;
-		if (hoveredItemId != -1)
+
+		if (hoveredItemId == -1)
 		{
-			showModel(hoveredItemId, pendingCookLocation);
+			pendingHoverSwapItemId = -1;
+			hideModel();
+		}
+		else if (fishObject.isActive())
+		{
+			// Something is showing or still shrinking: shrink it fully, then grow this one in.
+			pendingHoverSwapItemId = hoveredItemId;
+			hideModel();
 		}
 		else
 		{
-			// Nothing hovered and nothing confirmed yet - no preview to show.
-			fishObject.setActive(false);
-			displayedItemId = -1;
+			showModel(hoveredItemId);
 		}
 	}
 
-	// The dialog's food icons don't carry a usable item id on their widgets. But RuneLite's own
-	// "Cook <name>" action-text readout (top-left of the game view) is built from the same menu
-	// entry that a left-click would fire, kept live as the mouse moves - so read that instead.
-	private String lastLoggedMenuState = "";
-
-	private int findHoveredFishSlot()
+	// 1-9 on the main row or numpad pick the Nth button; space picks the only one.
+	private static int slotForKey(int keyCode)
 	{
-		MenuEntry[] entries = client.getMenuEntries();
-		String state = entries.length == 0 ? "empty"
-			: "count=" + entries.length + " top=[" + entries[entries.length - 1].getOption()
-				+ " | " + entries[entries.length - 1].getTarget() + "]";
-		if (!state.equals(lastLoggedMenuState))
+		if (keyCode >= KeyEvent.VK_1 && keyCode <= KeyEvent.VK_9)
 		{
-			lastLoggedMenuState = state;
-			log.debug("Menu entries while dialog open: {}", state);
+			return keyCode - KeyEvent.VK_1;
+		}
+		if (keyCode >= KeyEvent.VK_NUMPAD1 && keyCode <= KeyEvent.VK_NUMPAD9)
+		{
+			return keyCode - KeyEvent.VK_NUMPAD1;
+		}
+		return keyCode == KeyEvent.VK_SPACE ? SPACE_SLOT : -1;
+	}
+
+	private void onDialogHotkey(int slot)
+	{
+		if (pendingCookLocation == null || pendingCookItemId != -1 || isSkillmultiDialogClosed())
+		{
+			return;
 		}
 
+		List<Integer> slotItemIds = readDialogSlots();
+		log.debug("Dialog hotkey: slot={}, slots={}", slot, slotItemIds);
+		if (slot == SPACE_SLOT)
+		{
+			if (slotItemIds.size() != 1)
+			{
+				return;
+			}
+			slot = 0;
+		}
+		if (slot >= slotItemIds.size() || slotItemIds.get(slot) == -1)
+		{
+			return;
+		}
+
+		pendingCookItemId = slotItemIds.get(slot);
+		showModel(pendingCookItemId);
+	}
+
+	// Each visible button's fish, read from its name (the same text the "Cook <fish>" menu shows).
+	// Non-fish buttons (e.g. poison karambwan) stay as -1 so the hotkey numbering lines up.
+	private List<Integer> readDialogSlots()
+	{
+		List<Integer> slotItemIds = new ArrayList<>();
+		for (int componentId : DIALOG_SLOTS)
+		{
+			Widget slot = client.getWidget(componentId);
+			if (slot == null || slot.isHidden())
+			{
+				continue;
+			}
+			slotItemIds.add(slot.getName() != null ? fishForLabel(slot.getName()) : -1);
+		}
+		return slotItemIds;
+	}
+
+	private boolean isSkillmultiDialogClosed()
+	{
+		Widget universe = client.getWidget(InterfaceID.Skillmulti.UNIVERSE);
+		return universe == null || universe.isHidden();
+	}
+
+	// The dialog's food widgets have no item id, but the hovered "Cook <fish>" menu entry names it.
+	private int findHoveredFishSlot()
+	{
+		MenuEntry[] entries = client.getMenu().getMenuEntries();
 		if (entries.length == 0)
 		{
 			return -1;
 		}
-
 		MenuEntry top = entries[entries.length - 1];
-		if (!"Cook".equalsIgnoreCase(top.getOption()))
-		{
-			return -1;
-		}
+		return parseFishFromMenuText(top.getOption(), top.getTarget());
+	}
 
-		String target = Text.removeTags(top.getTarget()).toLowerCase();
-		return rawFishByName().getOrDefault(target, -1);
+	private int parseFishFromMenuText(String option, String target)
+	{
+		return "Cook".equalsIgnoreCase(option) ? fishForLabel(target) : -1;
+	}
+
+	private int fishForLabel(String label)
+	{
+		return rawFishByName().getOrDefault(Text.removeTags(label).toLowerCase(), -1);
 	}
 
 	private Map<String, Integer> rawFishByName()
@@ -272,24 +470,35 @@ public class ImmersiveCookingPlugin extends Plugin
 			rawFishByName = new HashMap<>();
 			for (int rawItemId : RAW_FISH_ITEM_IDS)
 			{
-				// The cooking dialog shows "Shark", not the item's full name "Raw shark".
+				// The dialog says "Shark", not "Raw shark".
 				String name = client.getItemDefinition(rawItemId).getName().toLowerCase();
 				rawFishByName.put(name, rawItemId);
 				if (name.startsWith("raw "))
 				{
 					rawFishByName.put(name.substring(4), rawItemId);
 				}
-
-				// Karambwan is labelled by its result name ("Cooked karambwan") instead of its
-				// raw name - index that too, in case other fish turn out to do the same.
-				Integer cookedId = COOKED_BY_RAW.get(rawItemId);
-				if (cookedId != null)
-				{
-					rawFishByName.put(client.getItemDefinition(cookedId).getName().toLowerCase(), rawItemId);
-				}
+				// Karambwan is labelled "Cooked karambwan" in the dialog.
+				rawFishByName.put(client.getItemDefinition(COOKED_BY_RAW.get(rawItemId)).getName().toLowerCase(), rawItemId);
 			}
 		}
 		return rawFishByName;
+	}
+
+	// Longest match wins, so a short name inside a longer one can't take over.
+	private int resolveFishFromMessage(String message)
+	{
+		int bestItemId = -1;
+		int bestLength = -1;
+		for (Map.Entry<String, Integer> entry : rawFishByName().entrySet())
+		{
+			String name = entry.getKey();
+			if (name.length() > bestLength && Pattern.compile("\\b" + Pattern.quote(name) + "\\b").matcher(message).find())
+			{
+				bestItemId = entry.getValue();
+				bestLength = name.length();
+			}
+		}
+		return bestItemId;
 	}
 
 	@Subscribe
@@ -301,27 +510,50 @@ public class ImmersiveCookingPlugin extends Plugin
 			return;
 		}
 
-		int animation = actor.getAnimation();
-		if (animation != AnimationID.HUMAN_COOKING && animation != AnimationID.HUMAN_COOKING_LOOP)
+		if (isCookingAnimation(actor.getAnimation()))
 		{
-			clearCooking();
+			cookingAnimationSeen = true;
+			clearCheckTick = -1;
 		}
+		else if (cookingAnimationSeen)
+		{
+			clearCheckTick = client.getTickCount() + 1;
+		}
+	}
+
+	private boolean isPlayerNear(LocalPoint location)
+	{
+		Actor localPlayer = client.getLocalPlayer();
+		return location != null && localPlayer != null
+			&& localPlayer.getLocalLocation().distanceTo(location) <= NEAR_RANGE_DISTANCE;
+	}
+
+	// Local coordinates shift when a new region loads, so the stored range location goes stale.
+	@Subscribe
+	public void onGameStateChanged(GameStateChanged event)
+	{
+		if (event.getGameState() == GameState.LOADING)
+		{
+			lastCookLocation = null;
+		}
+	}
+
+	private static boolean isCookingAnimation(int animation)
+	{
+		return animation == AnimationID.HUMAN_COOKING || animation == AnimationID.HUMAN_COOKING_LOOP;
 	}
 
 	@Subscribe
 	public void onChatMessage(ChatMessage event)
 	{
-		if (pendingCookItemId == -1)
+		// Results are SPAM, out-of-fish is GAMEMESSAGE or MESBOX. Player chat is ignored.
+		ChatMessageType type = event.getType();
+		if (type != ChatMessageType.SPAM && type != ChatMessageType.GAMEMESSAGE && type != ChatMessageType.MESBOX)
 		{
 			return;
 		}
 
 		String message = event.getMessage().toLowerCase();
-		log.debug("Chat message during cook: type={}, message={}", event.getType(), message);
-
-		// RuneLite can occasionally deliver the same chat line to this handler twice on the
-		// same tick (observed right at the start of a batch) - without this it eats the next
-		// raw-fish slot by replaying the same result a second time.
 		int tick = client.getTickCount();
 		if (message.equals(lastChatMessage) && tick == lastChatMessageTick)
 		{
@@ -330,55 +562,71 @@ public class ImmersiveCookingPlugin extends Plugin
 		lastChatMessage = message;
 		lastChatMessageTick = tick;
 
-		if (message.contains("haven't got anything to cook"))
+		if (message.contains("haven't got anything to cook") || message.contains("don't have any more"))
 		{
-			// Out of raw fish: "You haven't got anything to cook." This is a MESBOX popup, not
-			// a chatbox line, but it still comes through as a ChatMessage event. It contains
-			// "cook" too, so it must be checked before the result parsing below or it gets
-			// misread as a successful cook.
+			if (pendingCookLocation == null)
+			{
+				return;
+			}
+			log.debug("Clearing: out of fish, message={}", message);
 			clearCooking();
 			return;
 		}
 
-		Integer resultItemId;
-		if (message.contains("burn"))
+		// Matched precisely: "You eat the shark.", "Are you sure you wish to cook..." and
+		// "The fire burns out" would otherwise pass as results.
+		boolean burnt = message.startsWith("you accidentally");
+		boolean cooked = message.startsWith("you successfully cook") || message.startsWith("you cook ");
+		if (!burnt && !cooked)
 		{
-			resultItemId = BURNT_BY_RAW.get(pendingCookItemId);
+			return;
 		}
-		else if (message.contains("cook"))
+		log.debug("Cook result message: {}", message);
+
+		// The message names the fish the game actually cooked; trust it over our tracking.
+		int resolvedItemId = resolveFishFromMessage(message);
+
+		// Cooking with no session (it was cleared, or the start was missed): pick the last range back up.
+		if (pendingCookLocation == null)
 		{
-			resultItemId = COOKED_BY_RAW.get(pendingCookItemId);
+			if (resolvedItemId == -1 || !isPlayerNear(lastCookLocation))
+			{
+				return;
+			}
+			log.debug("Resuming at last range from chat");
+			pendingCookLocation = lastCookLocation;
 		}
-		else
+		if (resolvedItemId != -1 && resolvedItemId != pendingCookItemId)
+		{
+			log.debug("Resyncing fish from chat: was={}, now={}", pendingCookItemId, resolvedItemId);
+			pendingCookItemId = resolvedItemId;
+			cookingAnimationSeen = true;
+		}
+
+		if (pendingCookItemId == -1)
 		{
 			return;
 		}
 
-		if (resultItemId != null)
+		Integer resultItemId = burnt ? BURNT_BY_RAW.get(pendingCookItemId) : COOKED_BY_RAW.get(pendingCookItemId);
+		if (resultItemId == null)
 		{
-			if (displayedItemId == pendingCookItemId)
-			{
-				// Normal case: the raw fish is currently shown, swap to the result immediately.
-				showModel(resultItemId, pendingCookLocation);
-				hideAtTick = client.getTickCount() + RESULT_DISPLAY_TICKS;
-			}
-			else
-			{
-				// This result arrived before the raw fish ever got shown for it (a previous
-				// result's display/gap cycle is still playing out) - show the raw fish now for
-				// a beat first, so the rhythm doesn't skip straight from one result to the next.
-				showModel(pendingCookItemId, pendingCookLocation);
-				pendingShowItemId = resultItemId;
-				pendingShowIsResult = true;
-				showAtTick = client.getTickCount() + 1;
-			}
+			// No burnt model for this fish.
+			hideModel();
+			scheduleNextRaw();
+		}
+		else if (displayedItemId == pendingCookItemId)
+		{
+			showResult(resultItemId);
 		}
 		else
 		{
-			// No distinct burnt model for this fish - clear the range and gap straight to the next raw fish.
-			fishObject.setActive(false);
-			displayedItemId = -1;
-			scheduleNextRaw();
+			// The raw fish isn't up yet (previous result still cycling, or we only just learned
+			// the fish). Show it for a beat first.
+			showModel(pendingCookItemId);
+			pendingShowItemId = resultItemId;
+			pendingShowIsResult = true;
+			showAtTick = tick + 1;
 		}
 	}
 
@@ -387,27 +635,47 @@ public class ImmersiveCookingPlugin extends Plugin
 	{
 		int tick = client.getTickCount();
 
+		// Large ranges can leave the player further than NEAR_RANGE_DISTANCE, so the dialog or animation also counts.
+		if (waitingForArrival && (isPlayerNear(pendingCookLocation) || cookingAnimationSeen || !isSkillmultiDialogClosed()))
+		{
+			showModel(pendingCookItemId);
+		}
+
+		if (clearCheckTick != -1 && tick >= clearCheckTick)
+		{
+			clearCheckTick = -1;
+			Actor localPlayer = client.getLocalPlayer();
+			if (localPlayer == null || !isCookingAnimation(localPlayer.getAnimation()))
+			{
+				log.debug("Clearing: cook animation stopped, itemId={}", pendingCookItemId);
+				clearCooking();
+			}
+		}
+
+		if (dialogCloseCheckTick != -1 && tick >= dialogCloseCheckTick)
+		{
+			dialogCloseCheckTick = -1;
+			if (!cookingAnimationSeen && isSkillmultiDialogClosed())
+			{
+				log.debug("Clearing: dialog closed before cooking, itemId={}", pendingCookItemId);
+				clearCooking();
+			}
+		}
+
 		if (showAtTick != -1 && tick >= showAtTick)
 		{
 			showAtTick = -1;
 			if (pendingShowIsResult)
 			{
-				// A result that was deferred by a tick in onChatMessage to let the raw fish get
-				// a beat on screen first.
-				showModel(pendingShowItemId, pendingCookLocation);
-				hideAtTick = tick + RESULT_DISPLAY_TICKS;
+				showResult(pendingShowItemId);
 			}
 			else if (hasRawFishLeft())
 			{
-				// Reveals the raw fish for the next item - it stays shown with no auto-hide
-				// timer until the next chat-message result comes in.
-				showModel(pendingShowItemId, pendingCookLocation);
+				showModel(pendingShowItemId);
 			}
 			else
 			{
-				// No more of this raw fish in the inventory - nothing left to cook. The cook
-				// animation itself is unreliable for this: it keeps playing well after the
-				// last real attempt has already resolved.
+				// The animation keeps going after the last fish, so the inventory decides.
 				clearCooking();
 			}
 		}
@@ -415,15 +683,11 @@ public class ImmersiveCookingPlugin extends Plugin
 		if (hideAtTick != -1 && tick >= hideAtTick)
 		{
 			hideAtTick = -1;
-			fishObject.setActive(false);
-			displayedItemId = -1;
+			hideModel();
 			scheduleNextRaw();
 		}
 	}
 
-	// Called once a cooked/burnt result has been cleared from the range. Schedules the raw fish
-	// to reappear after a gap; whether there's actually another one to cook is checked later,
-	// when that reveal fires (see hasRawFishLeft()).
 	private void scheduleNextRaw()
 	{
 		pendingShowItemId = pendingCookItemId;
@@ -431,50 +695,118 @@ public class ImmersiveCookingPlugin extends Plugin
 		showAtTick = client.getTickCount() + GAP_TICKS;
 	}
 
-	// The cook animation keeps playing well after the last real attempt has resolved, so it
-	// can't tell us whether the batch is over. The inventory can: if there's none of this raw
-	// fish left, there's nothing more to cook, no matter what the animation is still doing.
 	private boolean hasRawFishLeft()
 	{
-		ItemContainer inventory = client.getItemContainer(InventoryID.INVENTORY);
+		ItemContainer inventory = client.getItemContainer(InventoryID.INV);
 		return inventory != null && inventory.count(pendingCookItemId) > 0;
 	}
 
 	private void clearCooking()
 	{
-		fishObject.setActive(false);
-		displayedItemId = -1;
+		pendingHoverSwapItemId = -1;
+		waitingForArrival = false;
+		hideModel();
 		pendingCookItemId = -1;
 		pendingCookLocation = null;
+		hoverPreviewItemId = -1;
 		hideAtTick = -1;
 		showAtTick = -1;
 		pendingShowItemId = -1;
 		pendingShowIsResult = false;
+		dialogSeenOpen = false;
+		cookingAnimationSeen = false;
+		clearCheckTick = -1;
+		dialogCloseCheckTick = -1;
 	}
 
-	private void showModel(int itemId, LocalPoint location)
+	private void showResult(int resultItemId)
 	{
-		log.debug("showModel: itemId={}, location={}", itemId, location);
+		showModel(resultItemId);
+		hideAtTick = client.getTickCount() + RESULT_DISPLAY_TICKS;
+	}
+
+	private void showModel(int itemId)
+	{
+		log.debug("showModel: itemId={}", itemId);
+		waitingForArrival = false;
 		hideAtTick = -1;
 		showAtTick = -1;
-		if (displayedItemId != itemId)
-		{
-			fishObject.setModel(buildItemModel(itemId));
-			displayedItemId = itemId;
-		}
+		pendingHoverSwapItemId = -1;
+		boolean wasAlreadyVisible = fishObject.isActive();
+		displayedItemId = itemId;
 
-		fishObject.setLocation(location.dx(EAST_OFFSET), client.getPlane());
+		fishObject.setLocation(pendingCookLocation.dx(EAST_OFFSET), client.getTopLevelWorldView().getPlane());
 		fishObject.setZ(fishObject.getZ() - HOVER_HEIGHT);
+
+		// Swapping what's already on screen (raw -> result) is instant; a fresh appearance pops in.
+		if (wasAlreadyVisible)
+		{
+			fadeState = FadeState.NONE;
+			fishObject.setModel(buildItemModel(itemId, MODEL_SCALE));
+		}
+		else
+		{
+			fishObject.setModel(buildItemModel(itemId, MIN_SCALE_PERCENT));
+			fadeItemId = itemId;
+			fadeState = FadeState.IN;
+			fadeStartMs = System.currentTimeMillis();
+		}
 		fishObject.setActive(true);
 	}
 
-	private Model buildItemModel(int itemId)
+	private void hideModel()
+	{
+		// Nothing showing, or already shrinking - restarting would freeze the shrink mid-way.
+		if (displayedItemId == -1)
+		{
+			return;
+		}
+
+		long now = System.currentTimeMillis();
+		// Mid grow-in, shrink from the current size: skip the part of the shrink that's bigger.
+		long skippedMs = fadeState == FadeState.IN ? FADE_DURATION_MS - Math.min(FADE_DURATION_MS, now - fadeStartMs) : 0;
+
+		fadeItemId = displayedItemId;
+		displayedItemId = -1;
+		fadeState = FadeState.OUT;
+		fadeStartMs = now - skippedMs;
+	}
+
+	private void updateFade()
+	{
+		if (fadeState == FadeState.NONE)
+		{
+			return;
+		}
+
+		float progress = Math.min(1f, (System.currentTimeMillis() - fadeStartMs) / (float) FADE_DURATION_MS);
+		float t = fadeState == FadeState.IN ? progress : (1f - progress);
+		int scalePercent = Math.max(MIN_SCALE_PERCENT, (int) (t * MODEL_SCALE));
+		fishObject.setModel(buildItemModel(fadeItemId, scalePercent));
+
+		if (progress < 1f)
+		{
+			return;
+		}
+
+		FadeState finished = fadeState;
+		fadeState = FadeState.NONE;
+		if (finished == FadeState.OUT)
+		{
+			fishObject.setActive(false);
+			if (pendingHoverSwapItemId != -1 && pendingCookLocation != null)
+			{
+				showModel(pendingHoverSwapItemId);
+			}
+			pendingHoverSwapItemId = -1;
+		}
+	}
+
+	private Model buildItemModel(int itemId, int scalePercent)
 	{
 		ItemComposition itemComposition = client.getItemDefinition(itemId);
-		// loadModelData can return a cached, shared instance - clone before mutating it, or
-		// recolor/retexture/scale would compound on every subsequent build of the same model.
-		// Only clone colors/textures when we're actually about to replace them: models with no
-		// texture data (most fish) have a null texture array, and cloning a null array throws.
+		// loadModelData returns a shared instance, so clone before mutating. Colours/textures are only
+		// cloned when replaced, since cloning a null array throws.
 		ModelData modelData = client.loadModelData(itemComposition.getInventoryModel()).cloneVertices();
 
 		short[] colorToReplace = itemComposition.getColorToReplace();
@@ -499,6 +831,6 @@ public class ImmersiveCookingPlugin extends Plugin
 			}
 		}
 
-		return modelData.scale(MODEL_SCALE, MODEL_SCALE, MODEL_SCALE).light();
+		return modelData.scale(scalePercent, scalePercent, scalePercent).light();
 	}
 }

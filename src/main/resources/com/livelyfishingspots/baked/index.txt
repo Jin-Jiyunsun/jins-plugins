@@ -20,3 +20,11 @@ river-ottos-grotto
 river-mount-quidamortem
 shore-catherby
 shore-karamja
+shore-lumbridge-swamp
+shore-al-kharid
+shore-draynor
+shore-mudskipper-point
+shore-entrana
+shore-fishing-platform
+lake-fishing-guild
+shore-barbarian-outpost

@@ -521,7 +521,8 @@ final class RiverDrawing
 					mark(shoal, banks[k], banks[k + 1]);
 				}
 				project(view);
-				graphics.setColor(new Color(255, 160, 0, 160));
+				// Rivers orange, lakes and shores (free roam) pink.
+				graphics.setColor(shoal.lake ? new Color(255, 90, 170, 160) : new Color(255, 160, 0, 160));
 				for (int k = 0; k < marked; k++)
 				{
 					if (screenX[k] >= 1 && screenY[k] >= 1 && screenX[k] < width - 1 && screenY[k] < height - 1)

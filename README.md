@@ -5,8 +5,8 @@
 </p>
 
 Brings fishing spots to life: the spots at sea each have a small shoal of the fish you can catch at them, the rivers and lakes with lure and bait spots have trout, salmon and pike swimming
-through and around them, barbarian fishing spots have leaping trout, salmon and sturgeon, and the shores at
-Catherby and Karamja have the sea's fish swimming along the coast.
+through and around them, barbarian fishing spots have leaping trout, salmon and sturgeon, and the coastal spots have the sea's fish
+swimming along the shore.
 
 ## Features
 
@@ -24,7 +24,9 @@ Catherby and Karamja have the sea's fish swimming along the coast.
   - Now and then a trout or salmon leaps out of the water.
 - **Barbarian fishing**: at Otto's Grotto and Mount Quidamortem, leaping trout and salmon swim up
   the river and its waterfalls, and even **leap** and land with a splash!
-- **Shore fish**: at Catherby and Karamja, the fish swim around the shore, and join the rings as you fish.
+- **Shore fish**: at Catherby, Karamja, the Fishing Guild, Lumbridge Swamp, Al Kharid, Draynor Village,
+  Mudskipper Point, Entrana, the Fishing Platform and the Barbarian Outpost, the fish swim around the shore,
+  and join the rings as you fish.
 
 With 117 HD, since it has transparent water, fish swim deeper, and lobsters, shrimps and anchovies
 appear. Other renderers draw the water solid, so only fish at the surface are shown.

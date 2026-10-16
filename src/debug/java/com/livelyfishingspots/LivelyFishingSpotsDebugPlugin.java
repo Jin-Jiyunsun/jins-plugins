@@ -377,14 +377,13 @@ public class LivelyFishingSpotsDebugPlugin extends Plugin
 				MenuEntry parent = client.getMenu().createMenuEntry(-1).setOption(name).setTarget("")
 					.setType(MenuAction.RUNELITE).onClick(entry -> baker.setMark(at, RiverBaker.Half.WHOLE, kind));
 				baker.preview(parent, at, RiverBaker.Half.WHOLE, kind);
-				// Whole tile, north, south, east, west, top to bottom: made from the bottom up.
+				// Whole tile, then the halves, then the quarters, top to bottom: made from the bottom up.
 				Menu halves = parent.createSubMenu();
 				RiverBaker.Half[] all = RiverBaker.Half.values();
 				for (int h = all.length - 1; h >= 0; h--)
 				{
 					RiverBaker.Half half = all[h];
-					String label = half == RiverBaker.Half.WHOLE ? "Whole tile"
-						: half.name().charAt(0) + half.name().substring(1).toLowerCase() + " half";
+					String label = half.label;
 					// Coloured as their parent.
 					MenuEntry option = halves.createMenuEntry(-1)
 						.setOption(ColorUtil.wrapWithColorTag(label, RiverBaker.markColour(kind))).setTarget("")
@@ -668,6 +667,8 @@ public class LivelyFishingSpotsDebugPlugin extends Plugin
 		RiverSpotFish.BED_CLOSE = config.debugRiverLobsterBedClose();
 		RiverSpotFish.BED_LOOK = config.debugRiverLobsterBedLook();
 		ShoreFish.LOBSTER_BANK_ROOM = config.debugRiverLobsterBankRoom();
+		ShoreFish.LOBSTER_BANK_PUSH = config.debugRiverLobsterBankPush();
+		ShoreFish.LOBSTER_BANK_FLOOR = config.debugRiverLobsterBankFloor();
 		RiverSpotFish.CIRCLE_OFFSET = config.debugRiverCircleOffset();
 		RiverSpotFish.RING_MANUAL = config.debugRiverRingManual();
 		RiverSpotFish.RING_EAST = config.debugRiverRingEast();

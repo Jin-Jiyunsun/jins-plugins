@@ -557,7 +557,13 @@ final class RiverSpotFish
 		// as other fish do rather than only growing in on rings ("lobsters roam" line).
 		boolean ringsGrow;
 		boolean lobstersRoam;
-		// Its marks, each kind's (MARK_WORDS order) tiles or halves of them (WHOLE, WEST, EAST, SOUTH, NORTH): fish
+		// A shore's cage spots each keep at least and at most this many lobsters of their own, picked per spot ("home
+		// lobsters N N" line; -1 if none, ShoreFish.SPOT_LOBSTERS each), and sharks' share of its mix, percent
+		// ("sharks N" line).
+		int homeLeast = -1;
+		int homeMost = -1;
+		int sharkShare = 100;
+		// Its marks, each kind's (MARK_WORDS order) tiles, halves (NORTH, SOUTH, EAST, WEST) or quarters (NORTHEAST...): fish
 		// blockers count as land, allowers as water; on surfacers deep fish (117 HD) come up to their usual depth; on
 		// divers other fish go down to the deepest, under logs across the water.
 		final List<Map<WorldPoint, String>> marks;
@@ -888,6 +894,10 @@ final class RiverSpotFish
 		final boolean shore;
 		boolean ringsGrow;
 		boolean lobstersRoam;
+		// Its bake, for a shore's home lobsters and share of sharks; null if none.
+		Baked saved;
+		// Each cage spot's own lobster count, picked once between its bake's "home lobsters" least and most.
+		final Map<NPC, Integer> homeLobsters = new HashMap<>();
 
 		private Shoal(WorldPoint[] route, int plane, int worldView, River river, int[] kinds, int cycle, int travelling,
 			double[][] spawns)
@@ -1492,6 +1502,9 @@ final class RiverSpotFish
 		String kind = "lure";
 		boolean ringsGrow = false;
 		boolean lobstersRoam = false;
+		int homeLeast = -1;
+		int homeMost = -1;
+		int sharkShare = 100;
 		try
 		{
 			int x0 = 0;
@@ -1525,6 +1538,15 @@ final class RiverSpotFish
 				else if (parts[0].equals("lobsters") && parts.length > 1 && parts[1].equals("roam"))
 				{
 					lobstersRoam = true;
+				}
+				else if (parts[0].equals("home") && parts.length > 3 && parts[1].equals("lobsters"))
+				{
+					homeLeast = Integer.parseInt(parts[2]);
+					homeMost = Math.max(homeLeast, Integer.parseInt(parts[3]));
+				}
+				else if (parts[0].equals("sharks") && parts.length > 1)
+				{
+					sharkShare = Integer.parseInt(parts[1]);
 				}
 				else if (parts[0].equals("route") || parts[0].equals("lake") || parts[0].equals("shore"))
 				{
@@ -1663,6 +1685,9 @@ final class RiverSpotFish
 		saved.kind = kind;
 		saved.ringsGrow = ringsGrow;
 		saved.lobstersRoam = lobstersRoam;
+		saved.homeLeast = homeLeast;
+		saved.homeMost = homeMost;
+		saved.sharkShare = sharkShare;
 		saved.branchStops.addAll(branchStops);
 		saved.branchPaths.addAll(branchPaths);
 		saved.branchShares.addAll(branchShares);
@@ -2006,6 +2031,7 @@ final class RiverSpotFish
 		shoal.mappedAround = playerTile();
 		shoal.ringsGrow = lake && bakedRingsGrow(route[0]);
 		shoal.lobstersRoam = lake && bakedLobstersRoam(route[0]);
+		shoal.saved = baked.get(route[0]);
 		shoal.baseX = view.getBaseX();
 		shoal.baseY = view.getBaseY();
 		if (lake)
@@ -2887,7 +2913,7 @@ final class RiverSpotFish
 	/**
 	 * Keeps SPOT_LOBSTERS lobsters at each cage spot with a ring on a shore, growing in one a tick within
 	 * SPOT_LOBSTER_RANGE of it; they join any ring within SPOT_LOBSTER_JOIN fished for lobsters, going back home after,
-	 * and once their spot moves or goes, shrink away.
+	 * and once their spot moves or goes, shrink away. None with fish only at the spot being fished.
 	 */
 	private void crowdLobsters(Shoal shoal, int cycle, ThreadLocalRandom random)
 	{
@@ -2925,7 +2951,7 @@ final class RiverSpotFish
 				room--;
 			}
 		}
-		if (!shoreShown(ItemID.RAW_LOBSTER))
+		if (onlyAtSpot || !shoreShown(ItemID.RAW_LOBSTER))
 		{
 			return;
 		}
@@ -2934,7 +2960,7 @@ final class RiverSpotFish
 			int[][] shore = ShoreFish.SPOTS.get(spot.getId());
 			LocalPoint at = spot.getLocalLocation();
 			if (shore == null || at == null || !has(shore[0], ItemID.RAW_LOBSTER)
-				|| kept.getOrDefault(spot, 0) >= ShoreFish.SPOT_LOBSTERS)
+				|| kept.getOrDefault(spot, 0) >= homeLobsters(shoal, spot, random))
 			{
 				continue;
 			}
@@ -2949,6 +2975,20 @@ final class RiverSpotFish
 				return;
 			}
 		}
+	}
+
+	/**
+	 * How many lobsters of its own a cage spot keeps: ShoreFish.SPOT_LOBSTERS, or picked once between its shore's
+	 * baked "home lobsters" least and most.
+	 */
+	private static int homeLobsters(Shoal shoal, NPC spot, ThreadLocalRandom random)
+	{
+		Baked saved = shoal.saved;
+		if (saved == null || saved.homeLeast < 0)
+		{
+			return ShoreFish.SPOT_LOBSTERS;
+		}
+		return shoal.homeLobsters.computeIfAbsent(spot, s -> random.nextInt(saved.homeLeast, saved.homeMost + 1));
 	}
 
 	/**
@@ -3423,14 +3463,14 @@ final class RiverSpotFish
 	private void offBanks(River river, Swimmer swimmer, double[] into)
 	{
 		double room = river.smoothClearance(swimmer.x, swimmer.y);
-		double keep = swimmer.item == ItemID.RAW_LOBSTER ? ShoreFish.LOBSTER_BANK_ROOM
-			: FOLLOW_BED && seeThrough ? BED_BANK_ROOM : LAKE_BANK_ROOM;
+		boolean lobster = swimmer.item == ItemID.RAW_LOBSTER;
+		double keep = lobster ? ShoreFish.LOBSTER_BANK_ROOM : FOLLOW_BED && seeThrough ? BED_BANK_ROOM : LAKE_BANK_ROOM;
 		double wantX = 0;
 		double wantY = 0;
 		if (room < keep)
 		{
 			double[] away = awayFromBank(river, swimmer.x, swimmer.y);
-			double push = (keep - room) * LAKE_BANK_PUSH;
+			double push = (keep - room) * (lobster ? ShoreFish.LOBSTER_BANK_PUSH : LAKE_BANK_PUSH);
 			wantX = away[0] * push;
 			wantY = away[1] * push;
 		}
@@ -3681,13 +3721,13 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * The cells of its tile a fish blocker or allower covers (WHOLE, WEST, EAST, SOUTH or NORTH half): from and to column, west
-	 * to east, and from and to row, south to north.
+	 * The cells of its tile a fish blocker or allower covers (WHOLE, a half such as WEST, or a quarter such as
+	 * NORTHEAST): from and to column, west to east, and from and to row, south to north.
 	 */
 	static int[] blockedCells(String half)
 	{
-		return new int[]{half.equals("EAST") ? PER_TILE / 2 : 0, half.equals("WEST") ? PER_TILE / 2 : PER_TILE,
-			half.equals("NORTH") ? PER_TILE / 2 : 0, half.equals("SOUTH") ? PER_TILE / 2 : PER_TILE};
+		return new int[]{half.contains("EAST") ? PER_TILE / 2 : 0, half.contains("WEST") ? PER_TILE / 2 : PER_TILE,
+			half.contains("NORTH") ? PER_TILE / 2 : 0, half.contains("SOUTH") ? PER_TILE / 2 : PER_TILE};
 	}
 
 	/**
@@ -4205,8 +4245,8 @@ final class RiverSpotFish
 			}
 		}
 		int missing = shoal.travelling - all;
-		// A shore short of a kind's least (ShoreFish.least) gets one more.
-		if (shoal.shore && shoreWants(shoal).keySet().stream()
+		// A shore short of a kind's least (ShoreFish.least) gets one more, unless only at my spot.
+		if (shoal.shore && !onlyAtSpot && shoreWants(shoal).keySet().stream()
 			.anyMatch(item -> counts.getOrDefault(item, 0) < ShoreFish.least(item)))
 		{
 			missing = Math.max(missing, 1);
@@ -4265,7 +4305,10 @@ final class RiverSpotFish
 				if (shoreShown(item) && !ringOnly(shoal, item)
 					&& (item != ItemID.RAW_SHARK || shoal.river.waterCells >= ShoreFish.SHARK_ROOM))
 				{
-					wants.merge(item, shore[1][k], Integer::sum);
+					// Sharks scaled by the shore's baked "sharks" share.
+					int odds = item == ItemID.RAW_SHARK && shoal.saved != null
+						? shore[1][k] * shoal.saved.sharkShare / 100 : shore[1][k];
+					wants.merge(item, odds, Integer::sum);
 				}
 			}
 		}
@@ -5243,7 +5286,7 @@ final class RiverSpotFish
 			// Plain text, lower case; the small net is "Net".
 			String picked = option == null ? null : Text.removeTags(option).toLowerCase().replace("small net", "net");
 			chosenFish = picked == null ? null
-				: ShoreFish.OPTIONS.getOrDefault(spot.getId(), OPTION_FISH).get(picked);
+				: ShoreFish.options(spot.getId(), OPTION_FISH).get(picked);
 			if ("lure".equalsIgnoreCase(option))
 			{
 				ItemContainer inventory = client.getItemContainer(InventoryID.INV);
@@ -6286,6 +6329,16 @@ final class RiverSpotFish
 			// Never onto a lake's bank, nor landing on one: turn on the spot, or carry on in the air, instead.
 			x = swimmer.x;
 			y = swimmer.y;
+		}
+		if (keepOff && swimmer.item == ItemID.RAW_LOBSTER)
+		{
+			// Lobsters never step nearer a bank than LOBSTER_BANK_FLOOR, unless it takes them further off.
+			double room = river.clearanceAt(x, y);
+			if (room < ShoreFish.LOBSTER_BANK_FLOOR && room < river.clearanceAt(swimmer.x, swimmer.y))
+			{
+				x = swimmer.x;
+				y = swimmer.y;
+			}
 		}
 		swimmer.x = x;
 		swimmer.y = y;

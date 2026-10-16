@@ -37,7 +37,7 @@ final class Bakes
 	 * deep fish come up; each "dive" line a fish diver, where they go down. Each "branch X Y X Y ..." line is a side
 	 * channel's picked tiles, first and last on the river, followed by its laid path as "bpath" and "bstep" lines.
 	 */
-	static String bakedText(String head, int fishShare, String fishKind, boolean ringsGrow, boolean lobstersRoam, int x0,
+	static String bakedText(String head, int fishShare, String fishKind, Baked saved, int x0,
 		int y0, List<int[]> rows,
 		List<int[]> path, List<Map<WorldPoint, String>> marks, List<int[]> branchStops, List<int[]> branchPaths,
 		List<Integer> branchShares)
@@ -53,13 +53,21 @@ final class Bakes
 		{
 			text.append("kind ").append(fishKind).append('\n');
 		}
-		if (ringsGrow)
+		if (saved != null && saved.ringsGrow)
 		{
 			text.append("rings grow").append('\n');
 		}
-		if (lobstersRoam)
+		if (saved != null && saved.lobstersRoam)
 		{
 			text.append("lobsters roam").append('\n');
+		}
+		if (saved != null && saved.homeLeast >= 0)
+		{
+			text.append("home lobsters ").append(saved.homeLeast).append(' ').append(saved.homeMost).append('\n');
+		}
+		if (saved != null && saved.sharkShare != 100)
+		{
+			text.append("sharks ").append(saved.sharkShare).append('\n');
 		}
 		text.append("water ").append(x0).append(' ').append(y0).append('\n');
 		StringBuilder line = new StringBuilder();
@@ -308,7 +316,7 @@ final class Bakes
 		{
 			path.add(new int[]{(int) Math.round(saved.pathX[k]), (int) Math.round(saved.pathY[k])});
 		}
-		return bakedText(headLine(saved.route, saved.lake), saved.fishShare, saved.kind, saved.ringsGrow, saved.lobstersRoam, x0,
+		return bakedText(headLine(saved.route, saved.lake), saved.fishShare, saved.kind, saved, x0,
 			saved.y0, rows,
 			path, saved.marks,
 			saved.branchStops, saved.branchPaths, saved.branchShares);

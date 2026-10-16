@@ -36,9 +36,21 @@ final class ShoreFish
 		"harpoon", new int[]{ItemID.RAW_TUNA, ItemID.RAW_SWORDFISH});
 	private static final Map<String, int[]> MEMBER_OPTIONS = Map.of(
 		"big net", new int[]{ItemID.RAW_MACKEREL, ItemID.RAW_COD, ItemID.RAW_BASS}, "harpoon", new int[]{ItemID.RAW_SHARK});
-	// Shore spots, by NPC id: Catherby and Karamja (Musa Point).
-	static final Map<Integer, int[][]> SPOTS = Map.of(NpcID._0_44_53_SALTFISH, SALT, NpcID._0_44_53_RAREFISH, RARE,
-		NpcID._0_44_53_MEMBERFISH, MEMBER, NpcID._0_45_49_SALTFISH, SALT, NpcID._0_45_49_RAREFISH, RARE);
+	// Shore spots, by NPC id: each its spot type's fish and odds.
+	static final Map<Integer, int[][]> SPOTS = Map.ofEntries(
+		// Catherby.
+		Map.entry(NpcID._0_44_53_SALTFISH, SALT), Map.entry(NpcID._0_44_53_RAREFISH, RARE),
+		Map.entry(NpcID._0_44_53_MEMBERFISH, MEMBER),
+		// Karamja (Musa Point).
+		Map.entry(NpcID._0_45_49_SALTFISH, SALT), Map.entry(NpcID._0_45_49_RAREFISH, RARE),
+		// Fishing Guild.
+		Map.entry(NpcID._0_40_53_RAREFISH, RARE), Map.entry(NpcID._0_40_53_MEMBERFISH, MEMBER),
+		// Lumbridge Swamp, Al Kharid, Draynor Village, Mudskipper Point, Entrana, the Fishing Platform and the
+		// Barbarian Outpost.
+		Map.entry(NpcID._0_50_49_SALTFISH, SALT), Map.entry(NpcID._0_51_49_SALTFISH, SALT),
+		Map.entry(NpcID._0_48_50_SALTFISH, SALT), Map.entry(NpcID._0_46_49_SALTFISH, SALT),
+		Map.entry(NpcID._0_44_52_SALTFISH, SALT), Map.entry(NpcID._0_43_51_SALTFISH, SALT),
+		Map.entry(NpcID._0_39_55_SALTFISH, SALT));
 	// Every shore fish (any spot's), for the "sea" kind.
 	static final int[] FISH = SPOTS.values().stream().flatMapToInt(spot -> Arrays.stream(spot[0]))
 		.distinct().toArray();
@@ -49,10 +61,18 @@ final class ShoreFish
 		Map.entry(ItemID.RAW_SARDINE, 20), Map.entry(ItemID.RAW_HERRING, 30), Map.entry(ItemID.RAW_MACKEREL, 20),
 		Map.entry(ItemID.RAW_COD, 45), Map.entry(ItemID.RAW_BASS, 100), Map.entry(ItemID.RAW_SHARK, 110),
 		Map.entry(ItemID.RAW_LOBSTER, 90), Map.entry(ItemID.RAW_TUNA, 80), Map.entry(ItemID.RAW_SWORDFISH, 100));
-	// The fish each menu option draws at shore spots, by spot.
-	static final Map<Integer, Map<String, int[]>> OPTIONS = Map.of(NpcID._0_44_53_SALTFISH, SALT_OPTIONS,
-		NpcID._0_44_53_RAREFISH, RARE_OPTIONS, NpcID._0_44_53_MEMBERFISH, MEMBER_OPTIONS,
-		NpcID._0_45_49_SALTFISH, SALT_OPTIONS, NpcID._0_45_49_RAREFISH, RARE_OPTIONS);
+	// The fish each menu option draws, by spot type.
+	private static final Map<int[][], Map<String, int[]>> OPTIONS = Map.of(SALT, SALT_OPTIONS, RARE, RARE_OPTIONS,
+		MEMBER, MEMBER_OPTIONS);
+
+	/**
+	 * The fish each menu option draws at a shore spot, or these if it isn't one.
+	 */
+	static Map<String, int[]> options(int npc, Map<String, int[]> otherwise)
+	{
+		int[][] type = SPOTS.get(npc);
+		return type == null ? otherwise : OPTIONS.get(type);
+	}
 	// Lakes baked with "rings grow" (places too tight for fish to swim in to a spot): there none join or head for
 	// one; while a spot is fished, fish of the kinds it draws grow in on its lanes, and shrink away once it isn't,
 	// apart from the lake's own fish. At most so many shrimps and anchovies grown in (tuning spinner).
@@ -82,6 +102,10 @@ final class ShoreFish
 	// Lobsters keep this far off banks (local units; other lake fish LAKE_BANK_ROOM), so they wander nearer the shore
 	// (tuning spinner).
 	static int LOBSTER_BANK_ROOM = 48;
+	// Lobsters are pushed off banks this much per unit nearer (other lake fish 3), and never step nearer one than this
+	// (local units), so they don't crawl onto the shore (tuning spinners).
+	static double LOBSTER_BANK_PUSH = 8;
+	static int LOBSTER_BANK_FLOOR = 24;
 	// Water cells a shore needs for sharks to roam it (they still grow in on its rings).
 	static final int SHARK_ROOM = 1000;
 	// Swordfish and sharks turn this share as fast, so they take wider turns.
@@ -109,8 +133,8 @@ final class ShoreFish
 	// Kinds that never roam a shore: they only grow in on a fished spot's ring, on any shore (lobsters roam a shore
 	// baked "lobsters roam"; elsewhere only their spot's own, SPOT_LOBSTERS).
 	static final Set<Integer> RING_ONLY = Set.of(SHRIMP, ANCHOVIES, ItemID.RAW_LOBSTER);
-	// Each cage spot keeps this many lobsters of its own, wandering within this far of it (local units; tuning
-	// spinners).
+	// Each cage spot keeps this many lobsters of its own (unless its shore's bake says "home lobsters"), wandering
+	// within this far of it (local units; tuning spinners).
 	static int SPOT_LOBSTERS = 3;
 	static int SPOT_LOBSTER_RANGE = 128;
 	// They join a ring fished for lobsters within this far of them (local units; tuning spinner).

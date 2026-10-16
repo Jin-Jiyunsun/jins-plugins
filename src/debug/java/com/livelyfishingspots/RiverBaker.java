@@ -51,9 +51,10 @@ class RiverBaker
 	static final int BOX_MARGIN = 8;
 	// A diagonal step between cells.
 	private static final double DIAGONAL = CELL * Math.sqrt(2);
-	// Floor textures of water, seen in game: plain water, the sea's shallow shelf off Karamja (WATER_SHELF, 130), and
-	// Tirannwn's crystal water (WATER_CRYSTAL_OPEN, 170, to its deepest, 174).
-	private static final Set<Integer> WATER_TEXTURES = Set.of(1, 130, 170, 171, 172, 173, 174);
+	// Floor textures of water, seen in game: plain water, the sea's shallow shelf off Karamja (WATER_SHELF, 130), the
+	// open sea round the Fishing Platform (131), deep water by the Fishing Guild (WATER_DEEP, 132), and Tirannwn's
+	// crystal water (WATER_CRYSTAL_OPEN, 170, to its deepest, 174).
+	private static final Set<Integer> WATER_TEXTURES = Set.of(1, 130, 131, 132, 170, 171, 172, 173, 174);
 	// Floor overlays of untextured water, seen in game: plain water's (6, untextured in places along Kourend's
 	// rivers), the Water Ravine Dungeon's (130) and the cave's round 1303, 9799 (41).
 	private static final Set<Integer> WATER_OVERLAYS = Set.of(6, 41, 130);
@@ -77,15 +78,26 @@ class RiverBaker
 		ObjectID.KASTORI_WATERWHEEL_CENTRE, ObjectID.KASTORI_WATERWHEEL_LEFT, ObjectID.KASTORI_WATERWHEEL_RIGHT);
 
 	/**
-	 * How much of a tile a fish blocker covers.
+	 * How much of a tile a fish blocker covers: all of it, a half, or a quarter.
 	 */
 	enum Half
 	{
-		WHOLE,
-		NORTH,
-		SOUTH,
-		EAST,
-		WEST
+		WHOLE("Whole tile"),
+		NORTH("North half"),
+		SOUTH("South half"),
+		EAST("East half"),
+		WEST("West half"),
+		NORTHEAST("Northeast quarter"),
+		NORTHWEST("Northwest quarter"),
+		SOUTHEAST("Southeast quarter"),
+		SOUTHWEST("Southwest quarter");
+
+		final String label;
+
+		Half(String label)
+		{
+			this.label = label;
+		}
 	}
 
 	private final Client client;
@@ -593,7 +605,7 @@ class RiverBaker
 		}
 		log.debug("Bake {}: {} of {} points recorded, {} tiles", route[0], cells.size(), route.length, tiles.size());
 		return Bakes.bakedText(Bakes.headLine(route, lake), rivers.bakedFishShare(route[0]), rivers.bakedKind(route[0]),
-			rivers.bakedRingsGrow(route[0]), rivers.bakedLobstersRoam(route[0]),
+			rivers.baked.get(route[0]),
 			minX * PER_TILE, minY * PER_TILE + firstRow, rows, points,
 			Bakes.bakedMarks(rivers, route[0]), branchStops, branchPaths,
 			Bakes.bakedBranchShares(rivers, route[0]));
@@ -1035,10 +1047,11 @@ class RiverBaker
 		{
 			return;
 		}
-		int south = half == Half.NORTH ? 0 : -64;
-		int north = half == Half.SOUTH ? 0 : 64;
-		int west = half == Half.EAST ? 0 : -64;
-		int east = half == Half.WEST ? 0 : 64;
+		String name = half.name();
+		int south = name.contains("NORTH") ? 0 : -64;
+		int north = name.contains("SOUTH") ? 0 : 64;
+		int west = name.contains("EAST") ? 0 : -64;
+		int east = name.contains("WEST") ? 0 : 64;
 		Polygon area = new Polygon();
 		for (int[] corner : new int[][]{{west, south}, {east, south}, {east, north}, {west, north}})
 		{

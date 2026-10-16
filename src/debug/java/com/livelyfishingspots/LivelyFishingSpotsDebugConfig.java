@@ -2085,6 +2085,32 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 		return 48;
 	}
 
+	@Range(max = 50)
+	@ConfigItem(
+		keyName = "debugRiverLobsterBankPush",
+		name = "Bank push",
+		description = "How hard lobsters are pushed off banks,<br>per unit nearer than Bank room<br>(other lake fish 3)",
+		section = debugLookLobster,
+		position = 36
+	)
+	default int debugRiverLobsterBankPush()
+	{
+		return 8;
+	}
+
+	@Range(max = 300)
+	@ConfigItem(
+		keyName = "debugRiverLobsterBankFloor",
+		name = "Bank floor",
+		description = "Lobsters never step nearer a bank<br>than this, local units",
+		section = debugLookLobster,
+		position = 37
+	)
+	default int debugRiverLobsterBankFloor()
+	{
+		return 24;
+	}
+
 	@Range(min = 1, max = 300)
 	@ConfigItem(
 		keyName = "debugLookLobsterThickness",

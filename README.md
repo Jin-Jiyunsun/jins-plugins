@@ -32,12 +32,14 @@ appear. Other renderers draw the water solid, so only fish at the surface are sh
 ## Settings
 
 - **Sea fish**: fish swimming round the fishing spots at sea, on or off.
-- **River fish**: Schooled (groups of fish swimming together), Random (each fish on its own), or Only at
-  my spot (no fish swimming down the rivers or round the lakes, just those coming to the spot you're fishing;
-  lightest on slower computers).
-- **River fish amount** and **Lake fish amount**: how many fish there are, from 25% to 125% (shores
-  count as lakes).
-- **Deep river fish (117 HD)**: river and lake fish swim deeper, rising to circle the spot being
+- **River fish** and **Free roam fish**: fish swimming down the rivers, and fish roaming the lakes and
+  shores, each on or off.
+- **Fish behaviour**: how fish swim in rivers, lakes and shores: Schooled (groups of fish swimming
+  together), Random (each fish on its own), or Only at my spot (no fish swimming down the rivers or round
+  the lakes, just those coming to the spot you're fishing; lightest on slower computers).
+- **River amount** and **Free roam amount**: how many fish swim down the rivers, and how many roam the
+  lakes and shores, from 25% to 125%.
+- **Deep fish (117 HD)**: river, lake and shore fish swim deeper, rising to circle the spot being
   fished.
 
 ### License

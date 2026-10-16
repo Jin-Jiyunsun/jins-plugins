@@ -176,6 +176,10 @@ final class RiverSpotFish
 	// for a pike alone; the chance per client tick of stopping partway; hover speed (a share of travelling
 	// speed); and the set-off, front fish first, the rest this many client ticks later per 16 local units
 	// behind, each with a burst this many client ticks long.
+	// A fish that hasn't got STUCK_MOVE (local units) from where it was in this many client ticks, not counting
+	// pauses, is stuck and shrinks away (tuning spinner).
+	static int STUCK_TICKS = 1500;
+	private static final double STUCK_MOVE = 16;
 	private static final int LAKE_PAUSE_LEAST = 100;
 	private static final int LAKE_PAUSE_MOST = 400;
 	private static final double LAKE_PIKE_PAUSE = 2.5;
@@ -190,6 +194,8 @@ final class RiverSpotFish
 	// Lake fish turn away from banks: nearer than this to one (local units), their aim is pushed out towards open
 	// water, this much per unit nearer; the push builds and fades at this share per client tick.
 	private static final double LAKE_BANK_ROOM = 160;
+	// With 117 HD's bed followed, fish rise with it near banks, so they may come this near (tuning spinner).
+	static int BED_BANK_ROOM = 96;
 	private static final double LAKE_BANK_PUSH = 3;
 	private static final double LAKE_BANK_EASE = 0.05;
 	// Scattered lake fish regroup: after this many client ticks alone (at random), each joins a school with room, or
@@ -269,6 +275,8 @@ final class RiverSpotFish
 	private static final int RING_COME_IN_TRIES = 8;
 	// Client ticks a fish leaving a ring it grew in on swims off before it starts shrinking away.
 	private static final int SWIM_OFF_SHRINK = 30;
+	// Lobsters swim off longer, client ticks (tuning spinner).
+	static int LOBSTER_SWIM_OFF_SHRINK = 100;
 	// Average gap between fish down the river, local units.
 	static double TRAVEL_SPACING = 150;
 	// Fish all rivers together aim to keep (tuning spinner): over it, spacing grows a step a game tick, so fewer
@@ -317,7 +325,7 @@ final class RiverSpotFish
 	// (local units, tuning spinners), rising to the surface to circle a spot; share per client tick they ease up or
 	// down.
 	static int DEEP_LEAST = 12;
-	static int DEEP_MOST = 96;
+	static int DEEP_MOST = 150;
 	// Fish divers: how deep fish not swimming deep go (local units), and how fast, share a client tick (tuning spinners).
 	static int DIVE_DEPTH = 25;
 	static double DIVE_EASE = 0.01;
@@ -327,6 +335,32 @@ final class RiverSpotFish
 	// Nearer a bank than this (local units), deep fish rise towards the surface, all the way at the bank, so they
 	// stay clear of a sloping bed.
 	private static final double SHALLOW_ROOM = 256;
+	// Or deep fish keep above 117 HD's sloping bed (worked out as it does), at most this share of its depth, and
+	// lobsters sit on it (debug toggle and spinner).
+	static boolean FOLLOW_BED = true;
+	static double BED_SHARE = 0.6;
+	// Swordfish (long, with their sword) keep higher, at most this share (tuning spinner).
+	static double SWORDFISH_BED_SHARE = 0.4;
+	// Lobsters read the bed this far ahead and behind for their tilt, and sit this much into it (local units; sink a
+	// tuning spinner).
+	static double BED_LOOK = 32;
+	static int LOBSTER_BED_SINK = 2;
+	// Lobsters roll this share of the bed's slope across their heading (tuning spinner; negative flips it).
+	static double LOBSTER_ROLL = 1;
+	// Lobsters swim back down to their usual depth, off a bed falling away, at most this far a client tick (tuning
+	// spinner).
+	static double LOBSTER_DIVE_SPEED = 1;
+	// Lobsters tip this share of the way they swim up or down (other fish DEPTH_TILT; tuning spinner).
+	static double LOBSTER_DIVE_TILT = 0.5;
+	// Share a client tick a lobster's tip eases towards it (other fish DEPTH_TIP_EASE; tuning spinner).
+	static double LOBSTER_TIP_EASE = 0.04;
+	// Lobsters only tilt and roll to the bed within this of it (local units), fully when on it.
+	static double BED_CLOSE = 16;
+	// Deep fish in a school keep this share of their own depth's difference from the school's average (tuning
+	// spinner).
+	static double SCHOOL_DEPTH_SPREAD = 0.5;
+	// 117 HD's bed depth by level (a tile corner's rings of water round it), used at 0.55 of these as it does.
+	private static final int[] BED_LEVELS = {150, 300, 470, 610, 700, 750, 820, 920, 1080, 1300, 1350, 1380};
 	// Lake fish may swim this many times deeper than DEEP_MOST.
 	private static final double LAKE_DEEPER = 1.15;
 	// Groups at least this big may scatter: chance per client tick, the burst's speed (as a share) and length
@@ -566,6 +600,8 @@ final class RiverSpotFish
 		boolean[] water;
 		// Distance from each cell to the bank, local units; 0 off the water.
 		final short[] clearance;
+		// 117 HD's bed depth at each tile corner (local units), tiles across + 1 by tiles up + 1.
+		short[] bed;
 		// Cells where deep fish come up (fish surfacers), or go down (fish divers), or null if none.
 		boolean[] surface;
 		boolean[] dive;
@@ -599,6 +635,7 @@ final class RiverSpotFish
 			width = grid.width;
 			height = grid.height;
 			clearance = grid.clearance;
+			bed = grid.bed;
 		}
 
 		River(int x0, int y0, int width, int height)
@@ -672,6 +709,27 @@ final class RiverSpotFish
 			double ty = fy - j;
 			return (cell(i, j) * (1 - tx) + cell(i + 1, j) * tx) * (1 - ty)
 				+ (cell(i, j + 1) * (1 - tx) + cell(i + 1, j + 1) * tx) * ty;
+		}
+
+		/**
+		 * 117 HD's bed depth, blended between tile corners; 0 off the grid.
+		 */
+		private double bedAt(double x, double y)
+		{
+			int tilesX = width / PER_TILE;
+			double fx = (x - x0) / 128;
+			double fy = (y - y0) / 128;
+			int i = (int) Math.floor(fx);
+			int j = (int) Math.floor(fy);
+			if (bed == null || i < 0 || j < 0 || i >= tilesX || j >= height / PER_TILE)
+			{
+				return 0;
+			}
+			double tx = fx - i;
+			double ty = fy - j;
+			int c = j * (tilesX + 1) + i;
+			int up = tilesX + 1;
+			return (bed[c] * (1 - tx) + bed[c + 1] * tx) * (1 - ty) + (bed[c + up] * (1 - tx) + bed[c + up + 1] * tx) * ty;
 		}
 
 		private double cell(int i, int j)
@@ -893,6 +951,8 @@ final class RiverSpotFish
 		private double middleS;
 		private double middleX;
 		private double middleY;
+		// Its deep fish's average depth (0 if none), worked out with its middle.
+		private double deep;
 		private int middleAt = -1;
 		// The last fork it came to, and whether it took the side channel there.
 		private Branch fork;
@@ -940,6 +1000,10 @@ final class RiverSpotFish
 		private int nextFill = -1;
 		// Shore rings: the client tick the next fish of each kind may grow in.
 		private final Map<Integer, Integer> nextOf = new HashMap<>();
+		// Shrimps and anchovies streaming in when fishing starts: the way they come from, and the client tick the
+		// stream ends.
+		private double krillWay;
+		private int krillUntil = -1;
 		private int fishedAt = -1;
 
 		private Circle(NPC npc, River river, double x, double y, int way)
@@ -1034,6 +1098,13 @@ final class RiverSpotFish
 		private final Set<Circle> decided = new HashSet<>();
 		// A filler fish's circle, joined when it gets there, or null.
 		private Circle bound;
+		// Lobsters kept at a cage spot: the spot, and where it was when they came.
+		private NPC home;
+		private int homeX;
+		private int homeY;
+		// Lobsters with 117 HD's bed: how deep they are, and their nose tip from swimming up or down to it.
+		private double lobsterUnder = Double.NaN;
+		private double lobsterTip;
 		// Lakes, on its own: where it's heading; the client tick it sets off from a pause, or -1; and the client
 		// tick a scattered fish starts looking for a school, or -1.
 		private double goalX = Double.NaN;
@@ -1048,6 +1119,10 @@ final class RiverSpotFish
 		private double across;
 		// Client tick a scatter burst ends, or -1.
 		private int burstUntil = -1;
+		// Where it last moved from, and since when (client tick), to tell when it's stuck.
+		private double stillX;
+		private double stillY;
+		private int stillSince = -1;
 		// Only at my spot, on a lake: the client tick it was last neither circling nor on its way to a circle, or -1.
 		private int freeSince = -1;
 		private final int surgePhase;
@@ -1098,6 +1173,8 @@ final class RiverSpotFish
 		private int step;
 		private int wantStep;
 		private int pitch;
+		// Lobsters on the bed: banked to its slope across their heading, in tilt steps.
+		private int bank;
 		// Nose up along the water's slope, degrees: as last read, and eased towards it.
 		private double slopeWant;
 		private double slope;
@@ -1180,9 +1257,9 @@ final class RiverSpotFish
 	// being fished swim (none down the rivers or round the lakes).
 	private boolean schooled = true;
 	private boolean onlyAtSpot;
-	// Fish spacing times this, from the player's River fish amount.
+	// Fish spacing times this, from the player's River amount.
 	private double spacingScale = 1;
-	// The same for lakes, from the player's Lake fish amount.
+	// The same for lakes and shores, from the player's Free roam amount.
 	private double lakeSpacingScale = 1;
 	// River spacing times this too: grows while all rivers together have more fish than RIVER_FISH_TARGET.
 	double crowding = 1;
@@ -1200,6 +1277,9 @@ final class RiverSpotFish
 	private boolean seeThrough;
 	// Whether, with see-through water, fish swim deeper (player setting).
 	private boolean deep = true;
+	// Whether river fish, and lake and shore fish, are shown (player settings).
+	private boolean riversShown = true;
+	private boolean freeRoamShown = true;
 	// Reused each tick: spots that moved, and fish circling each circle.
 	private final List<NPC> moved = new ArrayList<>();
 	private final Map<Circle, Integer> circling = new HashMap<>();
@@ -1787,8 +1867,9 @@ final class RiverSpotFish
 	 */
 	private void open(WorldView view, WorldPoint[] route, int plane, NPC spot)
 	{
-		// Only baked rivers and lakes have fish.
-		if (!baked.containsKey(route[0]))
+		// Only baked rivers and lakes have fish, and only the kinds switched on (player settings).
+		Baked saved = baked.get(route[0]);
+		if (saved == null || !(saved.lake ? freeRoamShown : riversShown))
 		{
 			return;
 		}
@@ -2804,6 +2885,115 @@ final class RiverSpotFish
 	}
 
 	/**
+	 * Keeps SPOT_LOBSTERS lobsters at each cage spot with a ring on a shore, growing in one a tick within
+	 * SPOT_LOBSTER_RANGE of it; they join any ring within SPOT_LOBSTER_JOIN fished for lobsters, going back home after,
+	 * and once their spot moves or goes, shrink away.
+	 */
+	private void crowdLobsters(Shoal shoal, int cycle, ThreadLocalRandom random)
+	{
+		Player player = client.getLocalPlayer();
+		Actor fishing = player == null ? null : player.getInteracting();
+		Circle fished = fishing == null ? null : shoal.circles.get(fishing);
+		// Room on the fished ring for more lobsters, up to its lobster target.
+		int room = 0;
+		if (fished != null && drawn(fished, ItemID.RAW_LOBSTER))
+		{
+			room = ShoreFish.ringTargets(fished.npc.getId(), item -> drawn(fished, item))
+				.getOrDefault(ItemID.RAW_LOBSTER, 0) - ringCounts(shoal, fished).getOrDefault(ItemID.RAW_LOBSTER, 0);
+		}
+		Map<NPC, Integer> kept = new HashMap<>();
+		for (Swimmer swimmer : shoal.fish)
+		{
+			if (swimmer.home == null || swimmer.shrinkingSince >= 0)
+			{
+				continue;
+			}
+			Circle circle = shoal.circles.get(swimmer.home);
+			LocalPoint at = circle != null ? swimmer.home.getLocalLocation() : null;
+			if (at == null || at.getX() != swimmer.homeX || at.getY() != swimmer.homeY)
+			{
+				swimmer.shrinkingSince = cycle;
+				continue;
+			}
+			kept.merge(swimmer.home, 1, Integer::sum);
+			if (swimmer.circle == null && room > 0
+				&& Math.hypot(swimmer.x - fished.x, swimmer.y - fished.y) <= ShoreFish.SPOT_LOBSTER_JOIN
+				&& random.nextInt(Math.max(1, ShoreFish.SPOT_LOBSTER_JOIN_AFTER)) == 0)
+			{
+				swimmer.circle = fished;
+				swimmer.circleLane = roomiestLane(shoal, fished, swimmer.item);
+				room--;
+			}
+		}
+		if (!shoreShown(ItemID.RAW_LOBSTER))
+		{
+			return;
+		}
+		for (NPC spot : shoal.circles.keySet())
+		{
+			int[][] shore = ShoreFish.SPOTS.get(spot.getId());
+			LocalPoint at = spot.getLocalLocation();
+			if (shore == null || at == null || !has(shore[0], ItemID.RAW_LOBSTER)
+				|| kept.getOrDefault(spot, 0) >= ShoreFish.SPOT_LOBSTERS)
+			{
+				continue;
+			}
+			double[] place = nearHome(shoal.river, at.getX(), at.getY(), random);
+			Swimmer swimmer = place == null ? null
+				: spawn(shoal, 0, place, true, cycle, random, ItemID.RAW_LOBSTER, null, 0);
+			if (swimmer != null)
+			{
+				swimmer.home = spot;
+				swimmer.homeX = at.getX();
+				swimmer.homeY = at.getY();
+				return;
+			}
+		}
+	}
+
+	/**
+	 * Spot lobsters within SPOT_LOBSTER_JOIN of a ring, not on one yet, that may still join it.
+	 */
+	private static int homeLobstersNear(Shoal shoal, Circle circle)
+	{
+		int near = 0;
+		for (Swimmer swimmer : shoal.fish)
+		{
+			near += swimmer.home != null && swimmer.circle == null && swimmer.shrinkingSince < 0
+				&& Math.hypot(swimmer.x - circle.x, swimmer.y - circle.y) <= ShoreFish.SPOT_LOBSTER_JOIN ? 1 : 0;
+		}
+		return near;
+	}
+
+	/**
+	 * A home lobster's next goal: a short step any way from where it is, on water within SPOT_LOBSTER_RANGE of its
+	 * spot, so it heads every way rather than mostly out to the deeper side; null if none was found.
+	 */
+	private static double[] homeStep(River river, Swimmer swimmer, double fromX, double fromY, ThreadLocalRandom random)
+	{
+		for (int tries = 0; tries < 8; tries++)
+		{
+			double angle = random.nextDouble(2 * Math.PI);
+			double step = random.nextDouble(0.3, 1) * ShoreFish.SPOT_LOBSTER_RANGE;
+			double x = fromX + step * Math.cos(angle);
+			double y = fromY + step * Math.sin(angle);
+			if (river.isWater(x, y) && Math.hypot(x - swimmer.homeX, y - swimmer.homeY) <= ShoreFish.SPOT_LOBSTER_RANGE)
+			{
+				return new double[]{x, y};
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * A place on the water within SPOT_LOBSTER_RANGE of a spot, or null if none was found.
+	 */
+	private static double[] nearHome(River river, int homeX, int homeY, ThreadLocalRandom random)
+	{
+		return placeNear(river, homeX, homeY, ShoreFish.SPOT_LOBSTER_RANGE, 1, random);
+	}
+
+	/**
 	 * A lobster's goal near the nearest spot it's caught at (within LOBSTER_HOME_RADIUS of it, clear of the banks as
 	 * other goals are), by way of a waypoint; null if no such spot is loaded or no water was found.
 	 */
@@ -2826,15 +3016,26 @@ final class RiverSpotFish
 				home = at;
 			}
 		}
-		for (int tries = 0; home != null && tries < 8; tries++)
+		double[] place = home == null ? null : placeNear(shoal.river, home.getX(), home.getY(),
+			ShoreFish.LOBSTER_HOME_RADIUS, Math.min(LAKE_SIGHT_ROOM, ShoreFish.LOBSTER_BANK_ROOM), random);
+		return place == null ? null : waypoint(shoal.river, fromX, fromY, place[0], place[1], random);
+	}
+
+	/**
+	 * A place within a radius of a point, at least so far from a bank (1 for any water), or null if 8 tries found none.
+	 */
+	private static double[] placeNear(River river, double x, double y, double radius, double room,
+		ThreadLocalRandom random)
+	{
+		for (int tries = 0; tries < 8; tries++)
 		{
 			double angle = random.nextDouble(2 * Math.PI);
-			double out = ShoreFish.LOBSTER_HOME_RADIUS * Math.sqrt(random.nextDouble());
-			double x = home.getX() + out * Math.cos(angle);
-			double y = home.getY() + out * Math.sin(angle);
-			if (shoal.river.clearanceAt(x, y) >= LAKE_SIGHT_ROOM)
+			double out = radius * Math.sqrt(random.nextDouble());
+			double atX = x + out * Math.cos(angle);
+			double atY = y + out * Math.sin(angle);
+			if (river.clearanceAt(atX, atY) >= room)
 			{
-				return waypoint(shoal.river, fromX, fromY, x, y, random);
+				return new double[]{atX, atY};
 			}
 		}
 		return null;
@@ -3072,7 +3273,8 @@ final class RiverSpotFish
 				return;
 			}
 			swimmer.setOffAt = -1;
-			swimmer.burstUntil = cycle + LAKE_SET_OFF_BURST;
+			// Lobsters crawl off without one.
+			swimmer.burstUntil = swimmer.item == ItemID.RAW_LOBSTER ? -1 : cycle + LAKE_SET_OFF_BURST;
 		}
 		double fromX = grouped ? middleX : swimmer.x;
 		double fromY = grouped ? middleY : swimmer.y;
@@ -3093,7 +3295,18 @@ final class RiverSpotFish
 			boolean hadGoal = !Double.isNaN(goalX);
 			Circle lure = luring(shoal);
 			double[] goal;
-			if (swimmer.bound != null && !grouped)
+			if (swimmer.home != null)
+			{
+				// A short step any way near home; back from another spot's ring by way of a waypoint, round any land.
+				goal = homeStep(river, swimmer, fromX, fromY, random);
+				if (goal == null)
+				{
+					goal = nearHome(river, swimmer.homeX, swimmer.homeY, random);
+					goal = goal == null || Math.hypot(goal[0] - fromX, goal[1] - fromY) <= 2 * ShoreFish.SPOT_LOBSTER_RANGE
+						? goal : waypoint(river, fromX, fromY, goal[0], goal[1], random);
+				}
+			}
+			else if (swimmer.bound != null && !grouped)
 			{
 				goal = waypoint(river, fromX, fromY, swimmer.bound.x, swimmer.bound.y, random);
 			}
@@ -3197,7 +3410,7 @@ final class RiverSpotFish
 	/**
 	 * Aims a paused lake fish just ahead on its heading, kept off banks.
 	 */
-	private static void hover(River river, Swimmer swimmer, double[] into)
+	private void hover(River river, Swimmer swimmer, double[] into)
 	{
 		into[0] = swimmer.x + swimmer.headX * LOOK_AHEAD;
 		into[1] = swimmer.y + swimmer.headY * LOOK_AHEAD;
@@ -3207,15 +3420,17 @@ final class RiverSpotFish
 	/**
 	 * Pushes a lake fish's aim away from banks, harder the nearer, easing the push in and out so it turns smoothly.
 	 */
-	private static void offBanks(River river, Swimmer swimmer, double[] into)
+	private void offBanks(River river, Swimmer swimmer, double[] into)
 	{
 		double room = river.smoothClearance(swimmer.x, swimmer.y);
+		double keep = swimmer.item == ItemID.RAW_LOBSTER ? ShoreFish.LOBSTER_BANK_ROOM
+			: FOLLOW_BED && seeThrough ? BED_BANK_ROOM : LAKE_BANK_ROOM;
 		double wantX = 0;
 		double wantY = 0;
-		if (room < LAKE_BANK_ROOM)
+		if (room < keep)
 		{
 			double[] away = awayFromBank(river, swimmer.x, swimmer.y);
-			double push = (LAKE_BANK_ROOM - room) * LAKE_BANK_PUSH;
+			double push = (keep - room) * LAKE_BANK_PUSH;
 			wantX = away[0] * push;
 			wantY = away[1] * push;
 		}
@@ -3702,6 +3917,80 @@ final class RiverSpotFish
 			{
 				river.clearance[c] = (short) Math.min(Short.MAX_VALUE, d[c] - CELL / 2);
 			}
+		}
+		beds(river);
+	}
+
+	/**
+	 * A circling shrimp or anchovy's depth past its sink: its own between KRILL_TOP and KRILL_CIRCLE_RISE, deeper on
+	 * inner lanes and by its own spread, but never past BED_SHARE of 117 HD's bed.
+	 */
+	private double krillCircleDepth(River river, Swimmer swimmer, double x, double y)
+	{
+		int lanes = swimmer.circle.lanes.length;
+		double inner = lanes > 1 ? (lanes - 1 - swimmer.circleLane) / (double) (lanes - 1) : 0;
+		double depth = -ShoreFish.KRILL_CIRCLE_RISE
+			- swimmer.height * (swimmer.look.sink - ShoreFish.KRILL_CIRCLE_RISE - ShoreFish.KRILL_TOP)
+			+ inner * ShoreFish.KRILL_INNER_DEEPER + swimmer.height * ShoreFish.KRILL_DEPTH_SPREAD;
+		return FOLLOW_BED && seeThrough ? Math.min(depth, river.bedAt(x, y) * BED_SHARE - swimmer.look.sink) : depth;
+	}
+
+	/**
+	 * How deep a deep fish swims: its own depth, drawn towards its school's average.
+	 */
+	private static double schoolDeep(Swimmer swimmer)
+	{
+		Group group = swimmer.group;
+		return group == null || group.deep <= 0 || group.members.size() < 2 ? swimmer.deep
+			: group.deep + (swimmer.deep - group.deep) * SCHOOL_DEPTH_SPREAD;
+	}
+
+	/**
+	 * 117 HD's bed depth at each tile corner, worked out as it does: corners touching land at 0, the rest a level
+	 * deeper each pass while no neighbour is shallower.
+	 */
+	private static void beds(River river)
+	{
+		int tilesX = river.width / PER_TILE;
+		int tilesY = river.height / PER_TILE;
+		int across = tilesX + 1;
+		byte[] level = new byte[across * (tilesY + 1)];
+		for (int j = 0; j <= tilesY; j++)
+		{
+			for (int i = 0; i <= tilesX; i++)
+			{
+				// Water if the 4 cells touching the corner are (off the grid counts as water).
+				boolean wet = true;
+				for (int k = 0; k < 4 && wet; k++)
+				{
+					int ci = i * PER_TILE - 1 + (k & 1);
+					int cj = j * PER_TILE - 1 + (k >> 1);
+					wet = ci < 0 || cj < 0 || ci >= river.width || cj >= river.height || river.water[cj * river.width + ci];
+				}
+				level[j * across + i] = (byte) (wet ? 1 : 0);
+			}
+		}
+		// In 117 HD's order (across, then up), deepening in place.
+		for (int pass = 1; pass < BED_LEVELS.length; pass++)
+		{
+			for (int i = 0; i <= tilesX; i++)
+			{
+				for (int j = 0; j <= tilesY; j++)
+				{
+					int c = j * across + i;
+					int own = level[c];
+					if (own > 0 && (i == 0 || level[c - 1] >= own) && (i == tilesX || level[c + 1] >= own)
+						&& (j == 0 || level[c - across] >= own) && (j == tilesY || level[c + across] >= own))
+					{
+						level[c]++;
+					}
+				}
+			}
+		}
+		river.bed = new short[level.length];
+		for (int c = 0; c < level.length; c++)
+		{
+			river.bed[c] = (short) (level[c] == 0 ? 0 : (int) (BED_LEVELS[level[c] - 1] * 0.55f));
 		}
 	}
 
@@ -4342,7 +4631,8 @@ final class RiverSpotFish
 
 	private static boolean alone(Swimmer swimmer)
 	{
-		return swimmer.group == null && swimmer.circle == null && swimmer.bound == null && swimmer.shrinkingSince < 0;
+		return swimmer.group == null && swimmer.circle == null && swimmer.bound == null && swimmer.home == null
+			&& swimmer.shrinkingSince < 0;
 	}
 
 	/**
@@ -4463,6 +4753,10 @@ final class RiverSpotFish
 			{
 				fillSome(shoal, cycle, random);
 			}
+			if (shoal.ready && shoal.shore && !shoal.leaving)
+			{
+				crowdLobsters(shoal, cycle, random);
+			}
 			started = probe.add(Probe.FILLING, started);
 			shoal.deciding = cycle >= shoal.nextDecision;
 			if (shoal.deciding)
@@ -4578,7 +4872,8 @@ final class RiverSpotFish
 				{
 					// Not mid-leap: it'd join at its leaping speed, unable to turn, and then swerve in.
 					boolean deciding = shoal.deciding && swimmer.leapingSince < 0;
-					for (Circle circle : deciding && !shoal.ringsGrow ? shoal.circles.values() : List.<Circle>of())
+					for (Circle circle : deciding && !shoal.ringsGrow && swimmer.home == null ? shoal.circles.values()
+						: List.<Circle>of())
 					{
 						// Lake fish may decide again once they've swum well away.
 						double dx = swimmer.x - circle.x;
@@ -4626,8 +4921,14 @@ final class RiverSpotFish
 				else if (swimmer.shrinkingSince < 0 && (fishing != swimmer.circle.npc || !drawn(swimmer.circle, swimmer.item))
 					&& random.nextDouble() < ticks / LEAVE_AFTER)
 				{
+					// A spot's own lobster goes back to wandering near it.
+					if (swimmer.home != null)
+					{
+						swimmer.circle = null;
+						swimmer.goalX = Double.NaN;
+					}
 					// Grown in on a ring: swims off and shrinks away.
-					if (grows(shoal, swimmer.item))
+					else if (grows(shoal, swimmer.item))
 					{
 						swimOff(shoal, swimmer, swimmer.circle, cycle, random);
 					}
@@ -5296,7 +5597,6 @@ final class RiverSpotFish
 		}
 		Map<Integer, Integer> targets = ShoreFish.ringTargets(circle.npc.getId(), item -> drawn(circle, item));
 		Map<Integer, Integer> there = null;
-		double way = Double.NaN;
 		for (Map.Entry<Integer, Integer> target : targets.entrySet())
 		{
 			int item = target.getKey();
@@ -5310,29 +5610,37 @@ final class RiverSpotFish
 				circle.nextOf.put(item, cycle + (next == null ? random.nextInt(ShoreFish.ringGap(item, random) + 1)
 					: ShoreFish.ringGap(item, random)));
 			}
-			if (next == null && ShoreFish.isKrill(item))
+			if (ShoreFish.isKrill(item) && (next == null || cycle < circle.krillUntil))
 			{
-				// One way for the whole ring, on the open water side (away from the spot).
-				if (Double.isNaN(way))
+				// One way for the whole ring, on the open water side (away from the spot), kept for the stream.
+				if (next == null && cycle >= circle.krillUntil)
 				{
 					LocalPoint spot = circle.npc.getLocalLocation();
 					double ax = spot == null ? 0 : circle.x - spot.getX();
 					double ay = spot == null ? 0 : circle.y - spot.getY();
-					way = Math.hypot(ax, ay) > 1 ? Math.atan2(ay, ax) + random.nextDouble(-Math.PI / 3, Math.PI / 3)
-						: random.nextDouble(2 * Math.PI);
+					circle.krillWay = Math.hypot(ax, ay) > 1
+						? Math.atan2(ay, ax) + random.nextDouble(-Math.PI / 3, Math.PI / 3) : random.nextDouble(2 * Math.PI);
+					circle.krillUntil = cycle + ShoreFish.KRILL_STREAM;
 				}
+				// Evenly over the stream: the ones still missing, shared over the client ticks left (a share of one as a
+				// chance, so they don't come one a tick at least).
 				there = there != null ? there : ringCounts(shoal, circle);
-				for (int n = there.getOrDefault(item, 0); n < target.getValue(); n++)
+				int missing = target.getValue() - there.getOrDefault(item, 0);
+				double share = Math.max(0, missing) / (double) Math.max(1, circle.krillUntil - cycle);
+				int now = (int) share + (random.nextDouble() < share - (int) share ? 1 : 0);
+				for (int n = 0; n < now; n++)
 				{
 					double spread = Math.toRadians(ShoreFish.KRILL_COME_SPREAD);
 					growIn(shoal, circle, item, roomiestLane(shoal, circle, item),
-						way + (spread > 0 ? random.nextDouble(-spread, spread) : 0), cycle, random);
+						circle.krillWay + (spread > 0 ? random.nextDouble(-spread, spread) : 0), cycle, random);
 				}
 				there = null;
 				continue;
 			}
 			there = there != null ? there : ringCounts(shoal, circle);
-			if (next == null || cycle < next || there.getOrDefault(item, 0) >= target.getValue()
+			// Spot lobsters nearby still to join count as there.
+			int coming = item == ItemID.RAW_LOBSTER ? homeLobstersNear(shoal, circle) : 0;
+			if (next == null || cycle < next || there.getOrDefault(item, 0) + coming >= target.getValue()
 				|| !ShoreFish.isKrill(item) && !hasRoom(shoal, circle, item))
 			{
 				continue;
@@ -5401,8 +5709,17 @@ final class RiverSpotFish
 	 */
 	private static void swimOff(Shoal shoal, Swimmer swimmer, Circle circle, int cycle, ThreadLocalRandom random)
 	{
-		double[] to = comeInPlace(shoal, circle, Math.atan2(swimmer.y - circle.y, swimmer.x - circle.x), random);
-		swimmer.shrinkingSince = cycle + (to != null ? SWIM_OFF_SHRINK : 0);
+		double angle = Math.atan2(swimmer.y - circle.y, swimmer.x - circle.x);
+		// Lobsters head out to sea: away from the spot, within 60 degrees.
+		LocalPoint spot = circle.npc.getLocalLocation();
+		if (swimmer.item == ItemID.RAW_LOBSTER && spot != null
+			&& Math.hypot(circle.x - spot.getX(), circle.y - spot.getY()) > 1)
+		{
+			angle = Math.atan2(circle.y - spot.getY(), circle.x - spot.getX()) + random.nextDouble(-Math.PI / 3, Math.PI / 3);
+		}
+		double[] to = comeInPlace(shoal, circle, angle, random);
+		swimmer.shrinkingSince = cycle + (to == null ? 0
+			: swimmer.item == ItemID.RAW_LOBSTER ? LOBSTER_SWIM_OFF_SHRINK : SWIM_OFF_SHRINK);
 		if (to != null)
 		{
 			swimmer.circle = null;
@@ -5417,7 +5734,7 @@ final class RiverSpotFish
 	 */
 	private static boolean ownFish(Shoal shoal, Swimmer swimmer)
 	{
-		return swimmer.shrinkingSince < 0 && !(swimmer.circle != null && grows(shoal, swimmer.item));
+		return swimmer.shrinkingSince < 0 && swimmer.home == null && !(swimmer.circle != null && grows(shoal, swimmer.item));
 	}
 
 	/**
@@ -5588,7 +5905,7 @@ final class RiverSpotFish
 		double furthestApart = -1;
 		for (Swimmer swimmer : shoal.fish)
 		{
-			if (!wanted.test(swimmer.item) || swimmer.circle != null || swimmer.bound != null
+			if (!wanted.test(swimmer.item) || swimmer.circle != null || swimmer.bound != null || swimmer.home != null
 				|| swimmer.shrinkingSince >= 0)
 			{
 				continue;
@@ -5787,6 +6104,19 @@ final class RiverSpotFish
 	{
 		River river = shoal.river;
 		Look look = swimmer.look;
+		// Stuck (not paused, not moved for STUCK_TICKS): shrinks away.
+		if (swimmer.stillSince < 0 || swimmer.setOffAt >= 0
+			|| Math.abs(swimmer.x - swimmer.stillX) + Math.abs(swimmer.y - swimmer.stillY) > STUCK_MOVE)
+		{
+			swimmer.stillX = swimmer.x;
+			swimmer.stillY = swimmer.y;
+			swimmer.stillSince = cycle;
+		}
+		else if (swimmer.shrinkingSince < 0 && cycle - swimmer.stillSince > STUCK_TICKS)
+		{
+			log.debug("Stuck {} at {}, {}: shrinking away", swimmer.item, (int) swimmer.x, (int) swimmer.y);
+			swimmer.shrinkingSince = cycle;
+		}
 		Group group = swimmer.circle == null ? swimmer.group : null;
 		int surgePhase = group != null ? group.surgePhase : swimmer.surgePhase;
 		double surging = Perspective.SINE[(cycle + surgePhase) % SURGE_CYCLES * 2048 / SURGE_CYCLES] / 65536.0;
@@ -5811,8 +6141,9 @@ final class RiverSpotFish
 		double hurry = travel * JOIN_SPEED * (swimmer.item == ItemID.RAW_LOBSTER ? ShoreFish.LOBSTER_COME_IN : 1);
 		double base = swimmer.circle != null ? hurry + (CIRCLE_SPEED - hurry) * near : travel;
 		// Slow kinds (sturgeon) come in to a circle at full speed, slowing to their own pace once in their lane.
-		// Sharks keep their own pace.
+		// Sharks and lobsters keep their own pace.
 		double pace = swimmer.circle != null && look.pace < 100 && swimmer.item != ItemID.RAW_SHARK
+			&& swimmer.item != ItemID.RAW_LOBSTER
 			? 100 + (look.pace - 100) * in : look.pace;
 		double want = base * own * pace / 100.0 * (1 + SURGE * look.surge / 100.0 * surging);
 		if (cycle < swimmer.burstUntil)
@@ -5832,12 +6163,17 @@ final class RiverSpotFish
 				group.middleS = 0;
 				group.middleX = 0;
 				group.middleY = 0;
+				group.deep = 0;
+				int deeps = 0;
 				for (Swimmer member : group.members)
 				{
 					group.middleS += member.s;
 					group.middleX += member.x;
 					group.middleY += member.y;
+					group.deep += Math.max(0, member.deep);
+					deeps += member.deep > 0 ? 1 : 0;
 				}
+				group.deep = deeps > 0 ? group.deep / deeps : 0;
 				group.middleS /= group.members.size();
 				group.middleX /= group.members.size();
 				group.middleY /= group.members.size();
@@ -5966,22 +6302,25 @@ final class RiverSpotFish
 		{
 			swimmer.wag -= 2 * Math.PI;
 		}
-		// Deep fish (117 HD) swim deep, shallower near banks, quickly up on fish surfacers (no bobs or dips there). Other
+		// Deep fish (117 HD) swim deep, above 117 HD's bed (or shallower near banks), quickly up on fish surfacers (no bobs or dips there). Other
 		// fish stay at the surface, but go down DIVE_DEPTH on fish divers, under logs across the water. All come up to
 		// circle, lobsters and krill a little above their sink.
 		swimmer.surfacing = river.marked(river.surface, x, y);
 		boolean diving = swimmer.deep == 0 && river.marked(river.dive, x, y);
 		// Shrimps and anchovies above their sink keep their own height (only depth below it is squeezed near banks), and
-		// circling spread between KRILL_TOP under the surface and KRILL_CIRCLE_RISE above their sink.
+		// circling spread between KRILL_TOP under the surface and KRILL_CIRCLE_RISE above their sink, inner lanes deeper,
+		// kept off 117 HD's bed.
 		boolean krill = ShoreFish.isKrill(swimmer.item);
 		double depth = swimmer.circle != null ? (krill
-			? -ShoreFish.KRILL_CIRCLE_RISE
-			- swimmer.height * (swimmer.look.sink - ShoreFish.KRILL_CIRCLE_RISE - ShoreFish.KRILL_TOP)
-			: swimmer.item == ItemID.RAW_LOBSTER ? -ShoreFish.CIRCLE_RISE : 0)
+			? krillCircleDepth(river, swimmer, x, y)
+			: swimmer.item == ItemID.RAW_LOBSTER ? swimmer.height * ShoreFish.LOBSTER_CIRCLE_SPREAD - ShoreFish.CIRCLE_RISE
+			: 0)
 			: diving ? DIVE_DEPTH
 			: swimmer.deep == 0 || swimmer.surfacing ? 0
 			: krill && swimmer.deep < 0 ? swimmer.deep
-			: swimmer.deep * Math.min(1, river.clearanceAt(x, y) / SHALLOW_ROOM);
+			: FOLLOW_BED ? Math.min(schoolDeep(swimmer),
+				river.bedAt(x, y) * (swimmer.item == ItemID.RAW_SWORDFISH ? SWORDFISH_BED_SHARE : BED_SHARE))
+			: schoolDeep(swimmer) * Math.min(1, river.clearanceAt(x, y) / SHALLOW_ROOM);
 		// Divers' own pace both ways, for fish not swimming deep.
 		double depthEase = swimmer.deep == 0 ? DIVE_EASE : swimmer.surfacing ? SURFACE_EASE : DEPTH_EASE;
 		double wasDepth = swimmer.depthNow;
@@ -6384,6 +6723,35 @@ final class RiverSpotFish
 		int leapAge = swimmer.leapingSince < 0 ? -1 : cycle - swimmer.leapingSince;
 		calm *= leapAge < 0 ? 1 : leapAge < LEAP_RUN_TICKS ? 1 - leapAge / (double) LEAP_RUN_TICKS : 0;
 		double under = look.sink + calm * (bobbed + look.dipDepth * dip * dip) + swimmer.depthNow;
+		// Lobsters (117 HD) swim at their usual depth, but where 117 HD's bed comes up to it, along the bed, tipped to its
+		// slope along their heading; off it again, they swim back down nose first.
+		boolean onBed = FOLLOW_BED && seeThrough && swimmer.item == ItemID.RAW_LOBSTER;
+		double bedTip = 0;
+		double bedBank = 0;
+		double close = 0;
+		if (onBed)
+		{
+			double bed = shoal.river.bedAt(swimmer.x, swimmer.y);
+			double onIt = bed + LOBSTER_BED_SINK;
+			double want = Math.min(under, onIt);
+			// Swims there at most LOBSTER_DIVE_SPEED a client tick, never into the bed.
+			double was = Double.isNaN(swimmer.lobsterUnder) ? want : swimmer.lobsterUnder;
+			double now = Math.min(onIt, was + Math.max(-LOBSTER_DIVE_SPEED, Math.min(LOBSTER_DIVE_SPEED, want - was)));
+			swimmer.lobsterUnder = now;
+			double wantTip = Math.toDegrees(Math.atan2(was - now, Math.max(1, swimmer.swimming))) * LOBSTER_DIVE_TILT;
+			wantTip = Math.max(-DEPTH_TIP_MOST, Math.min(DEPTH_TIP_MOST, wantTip));
+			swimmer.lobsterTip += (wantTip - swimmer.lobsterTip) * LOBSTER_TIP_EASE;
+			under = now;
+			// How close to the bed, 1 on it, 0 BED_CLOSE or more off it.
+			close = Math.max(0, 1 - Math.abs(bed + LOBSTER_BED_SINK - under) / BED_CLOSE);
+			double ahead = shoal.river.bedAt(swimmer.x + swimmer.headX * BED_LOOK, swimmer.y + swimmer.headY * BED_LOOK);
+			double behind = shoal.river.bedAt(swimmer.x - swimmer.headX * BED_LOOK, swimmer.y - swimmer.headY * BED_LOOK);
+			bedTip = Math.toDegrees(Math.atan2(behind - ahead, 2 * BED_LOOK)) * close;
+			// Right side down where the bed is deeper on the right.
+			double right = shoal.river.bedAt(swimmer.x + swimmer.headY * BED_LOOK, swimmer.y - swimmer.headX * BED_LOOK);
+			double left = shoal.river.bedAt(swimmer.x - swimmer.headY * BED_LOOK, swimmer.y + swimmer.headX * BED_LOOK);
+			bedBank = Math.toDegrees(Math.atan2(right - left, 2 * BED_LOOK)) * LOBSTER_ROLL * close;
+		}
 		double height = swimmer.leapHeight;
 		double below = leapAge < 0 ? under : leapDepth(leapAge, under, height);
 		swimmer.fish.setZ((int) Math.round(swimmer.surface + below));
@@ -6402,21 +6770,26 @@ final class RiverSpotFish
 		// Tip with the water's slope, bob and dip; only at full size.
 		double tip = swimmer.slope + leapTip + swimmer.depthTip + calm * look.tip / 100.0 * ((look.rise > 0 && bobAt >= 0 ? -BOB_PITCH * Perspective.SINE[bobAt] / 65536 : 0)
 			- (swimmer.dippingSince >= 0 && look.dipDepth > 0 ? DIP_PITCH * Math.sin(2 * through) : 0));
-		int pitch = swimmer.wantStep == GROW_STEPS ? (int) Math.round(tip / FishModels.PITCH_STEP) : 0;
-		if (pitch != swimmer.pitch || swimmer.wantStep != swimmer.step)
+		// Lobsters near the bed take its slope instead, blended in as they near it.
+		tip = onBed ? bedTip + (1 - close) * (tip + swimmer.lobsterTip) : tip;
+		// Lobsters on the bed tilt at any size, growing in and shrinking away too.
+		int pitch = swimmer.wantStep == GROW_STEPS || onBed ? (int) Math.round(tip / FishModels.PITCH_STEP) : 0;
+		int bank = onBed ? Math.max(-15, Math.min(15, (int) Math.round(bedBank / FishModels.PITCH_STEP))) : 0;
+		if (pitch != swimmer.pitch || bank != swimmer.bank || swimmer.wantStep != swimmer.step)
 		{
 			// Use only made models; queue a missing one and keep the current model meanwhile.
 			int size = size(swimmer.item, swimmer.wantStep);
-			Model model = models.made(swimmer.item, size, pitch, 0);
+			Model model = models.made(swimmer.item, size, pitch, bank, 0);
 			if (model != null)
 			{
 				swimmer.fish.setModel(model);
 				swimmer.pitch = pitch;
+				swimmer.bank = bank;
 				swimmer.step = swimmer.wantStep;
 			}
 			else
 			{
-				models.queue(swimmer.item, size, pitch, 0, true);
+				models.queue(swimmer.item, size, pitch, bank, 0, true);
 			}
 		}
 	}
@@ -6467,6 +6840,15 @@ final class RiverSpotFish
 	void setDeep(boolean deep)
 	{
 		this.deep = deep;
+	}
+
+	/**
+	 * Sets whether river fish, and lake and shore fish, are shown, for rivers and lakes mapped from now on.
+	 */
+	void setShown(boolean rivers, boolean freeRoam)
+	{
+		riversShown = rivers;
+		freeRoamShown = freeRoam;
 	}
 
 	/**

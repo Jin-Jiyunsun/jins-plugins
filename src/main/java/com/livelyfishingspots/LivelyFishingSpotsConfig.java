@@ -23,11 +23,33 @@ public interface LivelyFishingSpotsConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = "riverSwimming",
+		keyName = "riverFish",
 		name = "River fish",
-		description = "How fish swim in rivers and lakes:<br>Schooled: in groups<br>Random: each on its own<br>"
-			+ "Only at my spot: just fish coming to the spot<br>you're fishing",
+		description = "Fish swimming down the rivers",
 		position = 1
+	)
+	default boolean riverFish()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "freeRoamFish",
+		name = "Free roam fish",
+		description = "Fish roaming the lakes and shores",
+		position = 2
+	)
+	default boolean freeRoamFish()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "riverSwimming",
+		name = "Fish behaviour",
+		description = "How fish swim in rivers, lakes and shores:<br>Schooled: in groups<br>Random: each on its own<br>"
+			+ "Only at my spot: just fish coming to the spot<br>you're fishing",
+		position = 3
 	)
 	default RiverSwimming riverSwimming()
 	{
@@ -38,9 +60,9 @@ public interface LivelyFishingSpotsConfig extends Config
 	@Units(Units.PERCENT)
 	@ConfigItem(
 		keyName = "riverFishAmount",
-		name = "River fish amount",
+		name = "River amount",
 		description = "How many fish swim down the rivers",
-		position = 2
+		position = 4
 	)
 	default int riverFishAmount()
 	{
@@ -51,9 +73,9 @@ public interface LivelyFishingSpotsConfig extends Config
 	@Units(Units.PERCENT)
 	@ConfigItem(
 		keyName = "lakeFishAmount",
-		name = "Lake fish amount",
-		description = "How many fish swim in the lakes",
-		position = 3
+		name = "Free roam amount",
+		description = "How many fish roam the lakes and shores",
+		position = 5
 	)
 	default int lakeFishAmount()
 	{
@@ -62,9 +84,9 @@ public interface LivelyFishingSpotsConfig extends Config
 
 	@ConfigItem(
 		keyName = "riverDeep",
-		name = "Deep river fish (117 HD)",
-		description = "With 117 HD's transparent water, river and<br>lake fish swim deeper, rising to circle the<br>spot being fished",
-		position = 4
+		name = "Deep fish (117 HD)",
+		description = "With 117 HD's transparent water, river, lake<br>and shore fish swim deeper, rising to circle<br>the spot being fished",
+		position = 6
 	)
 	default boolean riverDeep()
 	{

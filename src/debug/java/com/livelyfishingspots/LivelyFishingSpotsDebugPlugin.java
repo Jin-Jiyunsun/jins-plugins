@@ -544,15 +544,6 @@ public class LivelyFishingSpotsDebugPlugin extends Plugin
 	 */
 	private void tuneLooks()
 	{
-		main.fishModels().tuneLook(ItemID.RAW_TROUT, LOOK_PLACES, new int[]{config.debugLookTroutSink(), config.debugLookTroutRise(), config.debugLookTroutRoll(), config.debugLookTroutTilt(), config.debugLookTroutSize(), config.debugLookTroutTurn(), config.debugLookTroutLightest(), config.debugLookTroutWag(), config.debugLookTroutTip(), config.debugLookTroutPace(), config.debugLookTroutSurge(), config.debugLookTroutTipPivot(), config.debugLookTroutPivot(), config.debugLookTroutDipEvery(), config.debugLookTroutDipDepth(), config.debugLookTroutDipMillis(), config.debugLookTroutTipPivotUp()});
-		main.fishModels().tuneLook(ItemID.RAW_SALMON, LOOK_PLACES, new int[]{config.debugLookSalmonSink(), config.debugLookSalmonRise(), config.debugLookSalmonRoll(), config.debugLookSalmonTilt(), config.debugLookSalmonSize(), config.debugLookSalmonTurn(), config.debugLookSalmonLightest(), config.debugLookSalmonWag(), config.debugLookSalmonTip(), config.debugLookSalmonPace(), config.debugLookSalmonSurge(), config.debugLookSalmonTipPivot(), config.debugLookSalmonPivot(), config.debugLookSalmonDipEvery(), config.debugLookSalmonDipDepth(), config.debugLookSalmonDipMillis(), config.debugLookSalmonTipPivotUp()});
-		main.fishModels().tuneLook(ItemID.RAW_PIKE, LOOK_PLACES, new int[]{config.debugLookPikeSink(), config.debugLookPikeRise(), config.debugLookPikeRoll(), config.debugLookPikeTilt(), config.debugLookPikeSize(), config.debugLookPikeTurn(), config.debugLookPikeLightest(), config.debugLookPikeWag(), config.debugLookPikeTip(), config.debugLookPikePace(), config.debugLookPikeSurge(), config.debugLookPikeTipPivot(), config.debugLookPikePivot(), config.debugLookPikeDipEvery(), config.debugLookPikeDipDepth(), config.debugLookPikeDipMillis(), config.debugLookPikeTipPivotUp()});
-		int[] rainbow = {config.debugLookRainbowSink(), config.debugLookRainbowRise(), config.debugLookRainbowRoll(), config.debugLookRainbowTilt(), config.debugLookRainbowSize(), config.debugLookRainbowTurn(), config.debugLookRainbowLightest(), config.debugLookRainbowWag(), config.debugLookRainbowTip(), config.debugLookRainbowPace(), config.debugLookRainbowSurge(), config.debugLookRainbowTipPivot(), config.debugLookRainbowPivot(), config.debugLookRainbowDipEvery(), config.debugLookRainbowDipDepth(), config.debugLookRainbowDipMillis(), config.debugLookRainbowTipPivotUp()};
-		tuneOneSided(ItemID.HUNTING_RAW_FISH_SPECIAL, rainbow, config.debugLookRainbowStretch(),
-			config.debugLookRainbowThickness());
-		tuneOneSided(ItemID.BRUT_SPAWNING_TROUT, new int[]{config.debugLookLeapTroutSink(), config.debugLookLeapTroutRise(), config.debugLookLeapTroutRoll(), config.debugLookLeapTroutTilt(), config.debugLookLeapTroutSize(), config.debugLookLeapTroutTurn(), config.debugLookLeapTroutLightest(), config.debugLookLeapTroutWag(), config.debugLookLeapTroutTip(), config.debugLookLeapTroutPace(), config.debugLookLeapTroutSurge(), config.debugLookLeapTroutTipPivot(), config.debugLookLeapTroutPivot(), config.debugLookLeapTroutDipEvery(), config.debugLookLeapTroutDipDepth(), config.debugLookLeapTroutDipMillis(), config.debugLookLeapTroutTipPivotUp()}, config.debugLookLeapTroutStretch(), config.debugLookLeapTroutThickness());
-		tuneOneSided(ItemID.BRUT_SPAWNING_SALMON, new int[]{config.debugLookLeapSalmonSink(), config.debugLookLeapSalmonRise(), config.debugLookLeapSalmonRoll(), config.debugLookLeapSalmonTilt(), config.debugLookLeapSalmonSize(), config.debugLookLeapSalmonTurn(), config.debugLookLeapSalmonLightest(), config.debugLookLeapSalmonWag(), config.debugLookLeapSalmonTip(), config.debugLookLeapSalmonPace(), config.debugLookLeapSalmonSurge(), config.debugLookLeapSalmonTipPivot(), config.debugLookLeapSalmonPivot(), config.debugLookLeapSalmonDipEvery(), config.debugLookLeapSalmonDipDepth(), config.debugLookLeapSalmonDipMillis(), config.debugLookLeapSalmonTipPivotUp()}, config.debugLookLeapSalmonStretch(), config.debugLookLeapSalmonThickness());
-		tuneOneSided(ItemID.BRUT_STURGEON, new int[]{config.debugLookSturgeonSink(), config.debugLookSturgeonRise(), config.debugLookSturgeonRoll(), config.debugLookSturgeonTilt(), config.debugLookSturgeonSize(), config.debugLookSturgeonTurn(), config.debugLookSturgeonLightest(), config.debugLookSturgeonWag(), config.debugLookSturgeonTip(), config.debugLookSturgeonPace(), config.debugLookSturgeonSurge(), config.debugLookSturgeonTipPivot(), config.debugLookSturgeonPivot(), config.debugLookSturgeonDipEvery(), config.debugLookSturgeonDipDepth(), config.debugLookSturgeonDipMillis(), config.debugLookSturgeonTipPivotUp()}, config.debugLookSturgeonStretch(), config.debugLookSturgeonThickness());
 		// Shore shrimps and anchovies share the krill look.
 		int[] krill = {config.debugLookKrillSink(), config.debugLookKrillRise(), config.debugLookKrillRoll(), config.debugLookKrillTilt(), config.debugLookKrillSize(), config.debugLookKrillTurn(), config.debugLookKrillLightest(), config.debugLookKrillWag(), config.debugLookKrillTip(), config.debugLookKrillPace(), config.debugLookKrillSurge(), config.debugLookKrillTipPivot(), config.debugLookKrillPivot(), config.debugLookKrillDipEvery(), config.debugLookKrillDipDepth(), config.debugLookKrillDipMillis(), config.debugLookKrillTipPivotUp()};
 		main.fishModels().tuneLook(FishModels.SHORE_SHRIMP, LOOK_PLACES, krill);
@@ -561,21 +552,11 @@ public class LivelyFishingSpotsDebugPlugin extends Plugin
 		ShoreFish.RING_SPAWN_KRILL_MOST = config.debugLookKrillRingMost();
 		ShoreFish.KRILL_LANE_EVERY = config.debugLookKrillLaneEvery() * 50;
 		ShoreFish.KRILL_COME_SPREAD = config.debugLookKrillComeSpread();
+		ShoreFish.KRILL_STREAM = config.debugLookKrillStream() / 20;
+		FishModels.ONE_SIDED_DEPTH.put(ItemID.RAW_LOBSTER, config.debugLookLobsterThickness());
+		main.fishModels().tuneLook(ItemID.RAW_LOBSTER, LOOK_PLACES, new int[]{config.debugLookLobsterSink(), config.debugLookLobsterRise(), config.debugLookLobsterRoll(), config.debugLookLobsterTilt(), config.debugLookLobsterSize(), config.debugLookLobsterTurn(), config.debugLookLobsterLightest(), config.debugLookLobsterWag(), config.debugLookLobsterTip(), config.debugLookLobsterPace(), config.debugLookLobsterSurge(), config.debugLookLobsterTipPivot(), config.debugLookLobsterPivot(), config.debugLookLobsterDipEvery(), config.debugLookLobsterDipDepth(), config.debugLookLobsterDipMillis(), config.debugLookLobsterTipPivotUp()});
 		FishModels.THICKNESS.put(ItemID.RAW_SHARK, config.debugLookSharkThickness());
 		main.fishModels().remake(ItemID.RAW_SHARK);
-	}
-
-	/**
-	 * Sets a one-sided kind's look from its spinners, with its stretch (look place 19) and thickness.
-	 */
-	private void tuneOneSided(int item, int[] look, int stretch, int thickness)
-	{
-		FishModels.ONE_SIDED_DEPTH.put(item, thickness);
-		int[] places = Arrays.copyOf(LOOK_PLACES, LOOK_PLACES.length + 1);
-		places[LOOK_PLACES.length] = 19;
-		int[] values = Arrays.copyOf(look, look.length + 1);
-		values[look.length] = stretch;
-		main.fishModels().tuneLook(item, places, values);
 	}
 
 	/**
@@ -606,6 +587,18 @@ public class LivelyFishingSpotsDebugPlugin extends Plugin
 		RiverSpotFish.DIVE_DEPTH = config.debugRiverDiveDepth();
 		RiverSpotFish.DIVE_EASE = config.debugRiverDiveSpeed() / 100.0;
 		RiverSpotFish.DEPTH_TILT = config.debugRiverDepthTilt() / 100.0;
+		RiverSpotFish.FOLLOW_BED = config.debugRiverFollowBed();
+		RiverSpotFish.BED_SHARE = config.debugRiverBedShare() / 100.0;
+		RiverSpotFish.SWORDFISH_BED_SHARE = config.debugRiverSwordfishBedShare() / 100.0;
+		RiverSpotFish.SCHOOL_DEPTH_SPREAD = config.debugRiverSchoolDepth() / 100.0;
+		RiverSpotFish.LOBSTER_BED_SINK = config.debugRiverLobsterBedSink();
+		RiverSpotFish.LOBSTER_ROLL = config.debugRiverLobsterRoll() / 100.0;
+		RiverSpotFish.LOBSTER_DIVE_SPEED = config.debugRiverLobsterDiveSpeed() / 50.0;
+		RiverSpotFish.LOBSTER_DIVE_TILT = config.debugRiverLobsterDiveTilt() / 100.0;
+		RiverSpotFish.LOBSTER_TIP_EASE = config.debugRiverLobsterTipEase() / 100.0;
+		ShoreFish.KRILL_INNER_DEEPER = config.debugRiverKrillInnerDeeper();
+		ShoreFish.KRILL_DEPTH_SPREAD = config.debugRiverKrillDepthSpread();
+		ShoreFish.LOBSTER_CIRCLE_SPREAD = config.debugRiverLobsterCircleSpread();
 		RiverSpotFish.JOIN_SPEED = config.debugRiverJoinSpeed() / 100.0;
 		RiverSpotFish.LAKE_STURGEON_SHARE = config.debugRiverLakeSturgeon() / 100.0;
 		RiverSpotFish.CLIMB_TILT = config.debugRiverClimbTilt() / 100.0;
@@ -663,6 +656,18 @@ public class LivelyFishingSpotsDebugPlugin extends Plugin
 		RiverSpotFish.RING_COME_IN = config.debugRiverRingComeIn();
 		ShoreFish.LOBSTER_HOME_CHANCE = config.debugRiverLobsterHome() / 100.0;
 		ShoreFish.LOBSTER_HOME_RADIUS = config.debugRiverLobsterHomeRadius() * 128;
+		ShoreFish.SPOT_LOBSTERS = config.debugRiverSpotLobsters();
+		ShoreFish.SPOT_LOBSTER_RANGE = config.debugRiverSpotLobsterRange() * 128;
+		RiverSpotFish.LOBSTER_SWIM_OFF_SHRINK = config.debugRiverLobsterSwimOff() / 20;
+		RiverSpotFish.STUCK_TICKS = config.debugRiverStuckAfter() * 50;
+		RiverSpotFish.BED_BANK_ROOM = config.debugRiverBedBankRoom();
+		ShoreFish.SPOT_LOBSTER_JOIN = config.debugRiverSpotLobsterJoin() * 128;
+		ShoreFish.SPOT_LOBSTER_JOIN_AFTER = config.debugRiverSpotLobsterJoinAfter() / 20;
+		ShoreFish.LOBSTER_COME_IN = config.debugRiverLobsterComeIn() / 100.0;
+		ShoreFish.CIRCLE_RISE = config.debugRiverLobsterCircleRise();
+		RiverSpotFish.BED_CLOSE = config.debugRiverLobsterBedClose();
+		RiverSpotFish.BED_LOOK = config.debugRiverLobsterBedLook();
+		ShoreFish.LOBSTER_BANK_ROOM = config.debugRiverLobsterBankRoom();
 		RiverSpotFish.CIRCLE_OFFSET = config.debugRiverCircleOffset();
 		RiverSpotFish.RING_MANUAL = config.debugRiverRingManual();
 		RiverSpotFish.RING_EAST = config.debugRiverRingEast();

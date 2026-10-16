@@ -25,7 +25,7 @@ final class ShoreFish
 	static final int ANCHOVIES = FishModels.SHORE_ANCHOVIES;
 	// Each spot type's fish and odds (each type's odds sum to 100, so spots count evenly in a mix): net/bait,
 	// cage/harpoon and big net/harpoon.
-	private static final int[][] SALT = {{SHRIMP, ANCHOVIES, ItemID.RAW_SARDINE, ItemID.RAW_HERRING}, {12, 4, 42, 42}};
+	private static final int[][] SALT = {{SHRIMP, ANCHOVIES, ItemID.RAW_SARDINE, ItemID.RAW_HERRING}, {14, 2, 42, 42}};
 	private static final int[][] RARE = {{ItemID.RAW_LOBSTER, ItemID.RAW_TUNA, ItemID.RAW_SWORDFISH}, {25, 60, 15}};
 	private static final int[][] MEMBER = {{ItemID.RAW_MACKEREL, ItemID.RAW_COD, ItemID.RAW_BASS, ItemID.RAW_SHARK},
 		{32, 32, 32, 4}};
@@ -62,6 +62,9 @@ final class ShoreFish
 	// Degrees either side of their one way that shrimps and anchovies grow in at, when fishing starts (tuning
 	// spinner; each also lands within about 23 degrees of its own way).
 	static int KRILL_COME_SPREAD = 60;
+	// When fishing starts, shrimps and anchovies grow in over this many client ticks, a steady stream (tuning
+	// spinner).
+	static int KRILL_STREAM = 150;
 	// Client ticks between fish of a kind grown in on a ring, each kind on its own: shrimps and anchovies, sharks and
 	// swordfish, and the rest (lobsters too).
 	static final int RING_SPAWN_KRILL_GAP_LEAST = 15;
@@ -75,16 +78,25 @@ final class ShoreFish
 	static double LOBSTER_HOME_CHANCE = 1;
 	static double LOBSTER_HOME_RADIUS = 256;
 	// Lobsters swim in to a ring this share as fast as other fish.
-	static final double LOBSTER_COME_IN = 0.4;
+	static double LOBSTER_COME_IN = 0.4;
+	// Lobsters keep this far off banks (local units; other lake fish LAKE_BANK_ROOM), so they wander nearer the shore
+	// (tuning spinner).
+	static int LOBSTER_BANK_ROOM = 48;
 	// Water cells a shore needs for sharks to roam it (they still grow in on its rings).
 	static final int SHARK_ROOM = 1000;
 	// Swordfish and sharks turn this share as fast, so they take wider turns.
 	static final double BIG_TURN = 0.7;
 	// Lobsters circle this much higher than their sink, shrimps and anchovies this much (local units).
-	static final double CIRCLE_RISE = 12;
+	static double CIRCLE_RISE = 12;
+	// Circling lobsters go up to this much deeper, picked per lobster (local units; tuning spinner).
+	static int LOBSTER_CIRCLE_SPREAD = 40;
 	static final double KRILL_CIRCLE_RISE = 30;
 	// Shrimps and anchovies come no nearer the surface than this (local units).
 	static final int KRILL_TOP = 15;
+	// Circling shrimps and anchovies: the innermost lane this much deeper than the outermost, evenly between, and each
+	// up to this much deeper again, picked per fish (local units; tuning spinners).
+	static int KRILL_INNER_DEEPER = 24;
+	static int KRILL_DEPTH_SPREAD = 8;
 	// Sharks and swordfish: never school (one picked to lead a school comes alone, like sturgeon), always take a
 	// circle's outer lane, and grow in on a ring one at a time.
 	private static final Set<Integer> BIG_FISH = Set.of(ItemID.RAW_SHARK, ItemID.RAW_SWORDFISH);
@@ -95,8 +107,16 @@ final class ShoreFish
 	// there take any lane at random, without spacing out (spots with them have a third, innermost lane for them only).
 	private static final Set<Integer> KRILL_FISH = Set.of(SHRIMP, ANCHOVIES);
 	// Kinds that never roam a shore: they only grow in on a fished spot's ring, on any shore (lobsters roam a shore
-	// baked "lobsters roam").
+	// baked "lobsters roam"; elsewhere only their spot's own, SPOT_LOBSTERS).
 	static final Set<Integer> RING_ONLY = Set.of(SHRIMP, ANCHOVIES, ItemID.RAW_LOBSTER);
+	// Each cage spot keeps this many lobsters of its own, wandering within this far of it (local units; tuning
+	// spinners).
+	static int SPOT_LOBSTERS = 3;
+	static int SPOT_LOBSTER_RANGE = 128;
+	// They join a ring fished for lobsters within this far of them (local units; tuning spinner).
+	static int SPOT_LOBSTER_JOIN = 640;
+	// Client ticks on average before each one joins (tuning spinner).
+	static int SPOT_LOBSTER_JOIN_AFTER = 100;
 	// Share of shrimps and anchovies growing in on a ring that circle it the other way (tuning spinner).
 	static double KRILL_BACKWARDS = 0.1;
 

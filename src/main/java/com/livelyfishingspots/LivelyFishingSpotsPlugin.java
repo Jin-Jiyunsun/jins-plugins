@@ -70,6 +70,7 @@ public class LivelyFishingSpotsPlugin extends Plugin
 	 */
 	private void riverSettings()
 	{
+		riverSpotFish.setShown(config.riverFish(), config.freeRoamFish());
 		riverSpotFish.setSwimming(config.riverSwimming());
 		riverSpotFish.setAmount(config.riverFishAmount());
 		riverSpotFish.setLakeAmount(config.lakeFishAmount());
@@ -245,7 +246,8 @@ public class LivelyFishingSpotsPlugin extends Plugin
 	public void onConfigChanged(ConfigChanged event)
 	{
 		String key = event.getKey();
-		if (LivelyFishingSpotsConfig.GROUP.equals(event.getGroup()) && ("riverSwimming".equals(key)
+		if (LivelyFishingSpotsConfig.GROUP.equals(event.getGroup()) && ("riverFish".equals(key)
+			|| "freeRoamFish".equals(key) || "riverSwimming".equals(key)
 			|| "riverFishAmount".equals(key) || "lakeFishAmount".equals(key) || "riverDeep".equals(key)))
 		{
 			clientThread.invoke(() ->

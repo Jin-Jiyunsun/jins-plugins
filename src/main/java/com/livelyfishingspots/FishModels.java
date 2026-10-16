@@ -38,10 +38,10 @@ final class FishModels
 	private static final double WIGGLE_WAVES = 1.2;
 	// Kinds whose item model is a relief facing one way, given a mirrored back.
 	private static final Set<Integer> ONE_SIDED = Set.of(ItemID.HUNTING_RAW_FISH_SPECIAL, ItemID.BRUT_SPAWNING_TROUT,
-		ItemID.BRUT_SPAWNING_SALMON, ItemID.BRUT_STURGEON);
+		ItemID.BRUT_SPAWNING_SALMON, ItemID.BRUT_STURGEON, ItemID.RAW_LOBSTER);
 	// Their depth from the back, percent, by kind; 50 if none (the debug plugin may tune it).
 	static final Map<Integer, Integer> ONE_SIDED_DEPTH = new HashMap<>(Map.of(ItemID.BRUT_SPAWNING_TROUT, 100,
-		ItemID.BRUT_SPAWNING_SALMON, 100));
+		ItemID.BRUT_SPAWNING_SALMON, 100, ItemID.RAW_LOBSTER, 40));
 	// Kinds squashed side to side, percent of their width (the debug plugin may tune it).
 	static final Map<Integer, Integer> THICKNESS = new HashMap<>(Map.of(ItemID.RAW_SHARK, 60));
 	// Kinds that keep their untipped height when tipped, so a long nose doesn't lift out.
@@ -172,7 +172,7 @@ final class FishModels
 	static final int SHORE_SHRIMP = ItemID.RAW_GIANT_KRILL;
 	static final int SHORE_ANCHOVIES = ItemID.GIANT_KRILL;
 	// Giant krill (shore shrimps and anchovies).
-	private static final Look KRILL = new Look(new int[]{90, -80, 25, 17, 50, 0, 16, 90, 0, 40, 60, 30, 7, 0, 1500,
+	private static final Look KRILL = new Look(new int[]{90, -75, 25, 17, 50, 0, 16, 90, 0, 40, 60, 30, 7, 0, 1500,
 		0, 0, 100, 0, 100, 50, 0, 0, 100, 100, 0, 35, 0, 6, 0, 0, 50, 100, 0, 0, 100});
 	private static final Look SARDINE =new Look(new int[]{90, 0, 30, 17, 5, 4, 16, -90, 0, 40, 60, 30, 10, 10, 1500,
 		30, 100, 100, 0, 100, 50, 0, 0, 100, 100, 0, 35, 0, 6, 0, 0, 50, 100, 0, 0, 100});
@@ -221,7 +221,7 @@ final class FishModels
 		Map.entry(ItemID.BRUT_SPAWNING_TROUT, LEAPING_TROUT),
 		Map.entry(ItemID.BRUT_SPAWNING_SALMON, LEAPING_SALMON),
 		Map.entry(ItemID.BRUT_STURGEON, STURGEON),
-		Map.entry(ItemID.RAW_LOBSTER, new Look(new int[]{0, 0, 45, 17, 30, 5, 0, -90, 0, 40, 60, 30, 3, 0, 1500,
+		Map.entry(ItemID.RAW_LOBSTER, new Look(new int[]{0, 0, 45, 17, 30, 3, 0, -90, 0, 40, 60, 30, 30, 0, 1500,
 			35, 0, 100, 0, 100, 50, 0, 0, 50, 50, 0, 35, 0, 6, 0, 0, 50, 100, 0, 0, 100})),
 		Map.entry(ItemID.RAW_TUNA, BASS),
 		Map.entry(ItemID.RAW_SWORDFISH, new Look(new int[]{-90, 19, 45, 17, 16, 2, 25, -90, 0, 40, 60, 30, 10, 10, 1500,
@@ -447,6 +447,17 @@ final class FishModels
 		return thin;
 	}
 
+	/**
+	 * A model's vertex axes, widest spread first.
+	 */
+	private static float[][] bySpread(ModelData model)
+	{
+		int count = model.getVerticesCount();
+		float[][] ways = {model.getVerticesX(), model.getVerticesY(), model.getVerticesZ()};
+		Arrays.sort(ways, (a, b) -> Float.compare(spread(b, count), spread(a, count)));
+		return ways;
+	}
+
 	private static float[] axis(ModelData model, int way)
 	{
 		return way == 0 ? model.getVerticesX() : way == 1 ? model.getVerticesY() : model.getVerticesZ();
@@ -556,12 +567,10 @@ final class FishModels
 	private static void bendTail(ModelData model, double joint, int degrees, boolean atFold, double scale)
 	{
 		int count = model.getVerticesCount();
-		float[][] ways = {model.getVerticesX(), model.getVerticesY(), model.getVerticesZ()};
-		Integer[] order = {0, 1, 2};
-		Arrays.sort(order, (a, b) -> Float.compare(spread(ways[b], count), spread(ways[a], count)));
-		float[] along = ways[order[0]];
-		float[] across = ways[order[1]];
-		float[] thick = ways[order[2]];
+		float[][] ways = bySpread(model);
+		float[] along = ways[0];
+		float[] across = ways[1];
+		float[] thick = ways[2];
 		double thickMiddle = (min(thick, count) + max(thick, count)) / 2.0;
 		float min = Float.MAX_VALUE;
 		float max = -Float.MAX_VALUE;
@@ -706,12 +715,10 @@ final class FishModels
 	private static void uncurl(ModelData model, double share, double shift, double finSize)
 	{
 		int count = model.getVerticesCount();
-		float[][] ways = {model.getVerticesX(), model.getVerticesY(), model.getVerticesZ()};
-		Integer[] order = {0, 1, 2};
-		Arrays.sort(order, (a, b) -> Float.compare(spread(ways[b], count), spread(ways[a], count)));
-		float[] u = ways[order[0]];
-		float[] v = ways[order[1]];
-		float[] side = ways[order[2]];
+		float[][] ways = bySpread(model);
+		float[] u = ways[0];
+		float[] v = ways[1];
+		float[] side = ways[2];
 		double sideMiddle = (min(side, count) + max(side, count)) / 2.0;
 		double sideHalf = (max(side, count) - min(side, count)) / 2.0;
 		// Least-squares circle: x^2 + y^2 + D x + E y + F = 0.
@@ -956,15 +963,23 @@ final class FishModels
 	 */
 	Model model(int item, int size, int pitch, int frame)
 	{
-		return models.computeIfAbsent(key(item, size, pitch, frame), key -> load(item, size, pitch, frame));
+		return model(item, size, pitch, 0, frame);
+	}
+
+	/**
+	 * A model banked sideways (steps of PITCH_STEP, right side down), made and cached on first use.
+	 */
+	Model model(int item, int size, int pitch, int bank, int frame)
+	{
+		return models.computeIfAbsent(key(item, size, pitch, bank, frame), key -> load(item, size, pitch, bank, frame));
 	}
 
 	/**
 	 * Cache key.
 	 */
-	private static long key(int item, int size, int pitch, int frame)
+	private static long key(int item, int size, int pitch, int bank, int frame)
 	{
-		return ((item * 1000L + size) * 64 + pitch + 32) * 8 + frame;
+		return (((item * 1000L + size) * 64 + pitch + 32) * 32 + bank + 16) * 8 + frame;
 	}
 
 	/**
@@ -972,7 +987,7 @@ final class FishModels
 	 */
 	private static int itemOf(long key)
 	{
-		return (int) (key / 8 / 64 / 1000);
+		return (int) (key / 8 / 32 / 64 / 1000);
 	}
 
 	/**
@@ -980,12 +995,17 @@ final class FishModels
 	 */
 	void queue(int item, int size, int pitch, int frame, boolean waiting)
 	{
-		long key = key(item, size, pitch, frame);
+		queue(item, size, pitch, 0, frame, waiting);
+	}
+
+	void queue(int item, int size, int pitch, int bank, int frame, boolean waiting)
+	{
+		long key = key(item, size, pitch, bank, frame);
 		if (models.containsKey(key) || !queued.add(key))
 		{
 			return;
 		}
-		int[] wanted = {item, size, pitch, frame};
+		int[] wanted = {item, size, pitch, bank, frame};
 		if (waiting)
 		{
 			toMake.addFirst(wanted);
@@ -1004,17 +1024,17 @@ final class FishModels
 		for (int made = 0; made < MAKE_PER_TICK && !toMake.isEmpty(); )
 		{
 			int[] wanted = toMake.pollFirst();
-			long key = key(wanted[0], wanted[1], wanted[2], wanted[3]);
+			long key = key(wanted[0], wanted[1], wanted[2], wanted[3], wanted[4]);
 			queued.remove(key);
 			if (!models.containsKey(key))
 			{
-				model(wanted[0], wanted[1], wanted[2], wanted[3]);
+				model(wanted[0], wanted[1], wanted[2], wanted[3], wanted[4]);
 				made++;
 			}
 		}
 	}
 
-	private Model load(int item, int size, int pitch, int frame)
+	private Model load(int item, int size, int pitch, int bank, int frame)
 	{
 		ModelData model = loadItem(item);
 		Look look = look(item);
@@ -1052,7 +1072,7 @@ final class FishModels
 		}
 		// Tip about tipPivot, scaled to its size; its head faces (sin, -cos) of its turn.
 		double turn = Math.toRadians(look.turn);
-		standUp(model, look.roll, look.tilt, pitch * PITCH_STEP, look.tipPivot * 100.0 / size,
+		standUp(model, look.roll, look.tilt, pitch * PITCH_STEP, bank * PITCH_STEP, look.tipPivot * 100.0 / size,
 			look.tipPivotUp * 100.0 / size, Math.sin(turn), -Math.cos(turn), KEEP_HEIGHT.contains(item));
 		int scale = size * 128 / 100;
 		model.scale(scale, scale, scale);
@@ -1160,12 +1180,17 @@ final class FishModels
 
 	/**
 	 * Rolls a side-lying model upright by roll, tilts it by tilt, tips it by tip about a pivot towards its
-	 * head (headX, headZ) and pivotUp above its middle, then rests its lowest point on the water (its untipped one if
-	 * keepHeight).
+	 * head (headX, headZ) and pivotUp above its middle, banks it right side down by bank, then rests its lowest point
+	 * on the water (its untipped one if keepHeight).
 	 */
-	private static void standUp(ModelData model, int roll, int tilt, double tip, double pivot, double pivotUp,
-		double headX, double headZ, boolean keepHeight)
+	private static void standUp(ModelData model, int roll, int tilt, double tip, double bank, double pivot,
+		double pivotUp, double headX, double headZ, boolean keepHeight)
 	{
+		// Its right side, across its heading.
+		double rightX = headZ;
+		double rightZ = -headX;
+		double bankCos = Math.cos(Math.toRadians(bank));
+		double bankSin = Math.sin(Math.toRadians(bank));
 		int count = model.getVerticesCount();
 		float[] x = model.getVerticesX();
 		float[] y = model.getVerticesY();
@@ -1199,6 +1224,14 @@ final class FishModels
 			double height = y[i] + pivotUp;
 			length[i] = (float) (about + from * tipCos - height * tipSin);
 			y[i] = (float) (from * tipSin + height * tipCos - pivotUp);
+			if (bank != 0)
+			{
+				double right = x[i] * rightX + z[i] * rightZ;
+				double banked = right * bankCos - y[i] * bankSin;
+				y[i] = (float) (y[i] * bankCos + right * bankSin);
+				x[i] += (float) ((banked - right) * rightX);
+				z[i] += (float) ((banked - right) * rightZ);
+			}
 			tipped = Math.max(tipped, y[i]);
 		}
 		// Lowest point is the largest y. keepHeight rests it as untipped, so the tail dips as the nose lifts.
@@ -1219,7 +1252,12 @@ final class FishModels
 	 */
 	Model made(int item, int size, int pitch, int frame)
 	{
-		return models.get(key(item, size, pitch, frame));
+		return made(item, size, pitch, 0, frame);
+	}
+
+	Model made(int item, int size, int pitch, int bank, int frame)
+	{
+		return models.get(key(item, size, pitch, bank, frame));
 	}
 
 	/**

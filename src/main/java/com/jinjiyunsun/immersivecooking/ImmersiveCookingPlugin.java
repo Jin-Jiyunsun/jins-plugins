@@ -17,6 +17,7 @@ import net.runelite.api.ChatMessageType;
 import net.runelite.api.Client;
 import net.runelite.api.GameObject;
 import net.runelite.api.GameState;
+import net.runelite.api.GroundObject;
 import net.runelite.api.ItemComposition;
 import net.runelite.api.ItemContainer;
 import net.runelite.api.MenuAction;
@@ -27,6 +28,7 @@ import net.runelite.api.ObjectComposition;
 import net.runelite.api.Renderable;
 import net.runelite.api.RuneLiteObject;
 import net.runelite.api.Tile;
+import net.runelite.api.TileObject;
 import net.runelite.api.coords.LocalPoint;
 import net.runelite.api.events.AnimationChanged;
 import net.runelite.api.events.ChatMessage;
@@ -38,6 +40,8 @@ import net.runelite.api.gameval.AnimationID;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.gameval.ItemID;
+import net.runelite.api.gameval.ObjectID;
+import net.runelite.api.gameval.ObjectID;
 import net.runelite.api.widgets.Widget;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.eventbus.Subscribe;
@@ -60,7 +64,11 @@ public class ImmersiveCookingPlugin extends Plugin
 	// Above a bare hob. One with a pan or pot uses its top instead (RANGE's pan handle puts the fish at 120).
 	private static final int BARE_HOB_CLEARANCE = 4;
 	// Above the top flat surface of something without a hob, like a fire's logs.
-	private static final int SURFACE_CLEARANCE = 40;
+	private static final int SURFACE_CLEARANCE = 8;
+	// Smaller than this, the top "surface" is only slivers (flame tips); a normal fire's logs are about 4400.
+	private static final float MIN_SURFACE_AREA = 1000;
+	// Used then instead: about where food sits on a normal fire (logs at 12, plus the clearance).
+	private static final int NO_SURFACE_HEIGHT = 20;
 	// A face counts as facing up if its normal is within about 25 degrees of straight up.
 	private static final float UP_FACING = 0.9f;
 
@@ -156,6 +164,9 @@ public class ImmersiveCookingPlugin extends Plugin
 	);
 
 	private static final Set<Integer> RAW_FOOD_ITEM_IDS = COOKED_BY_RAW.keySet();
+
+	// Things food can be used on that have neither a "Cook" option nor "fire" in their name.
+	private static final Set<Integer> OTHER_COOKING_OBJECTS = Set.of(ObjectID.TZHAAR_SULPHAR_VENT);
 
 	private static final Set<MenuAction> GAME_OBJECT_OPTIONS = EnumSet.of(
 		MenuAction.GAME_OBJECT_FIRST_OPTION, MenuAction.GAME_OBJECT_SECOND_OPTION, MenuAction.GAME_OBJECT_THIRD_OPTION,
@@ -284,7 +295,7 @@ public class ImmersiveCookingPlugin extends Plugin
 
 	private void setCookLocation(int sceneX, int sceneY, int objectId)
 	{
-		GameObject object = findGameObject(sceneX, sceneY, objectId);
+		TileObject object = findTileObject(sceneX, sceneY, objectId);
 		Model model = object != null ? modelOf(object) : null;
 		float[] spot = model != null ? findHob(model) : null;
 		boolean hob = spot != null;
@@ -308,7 +319,8 @@ public class ImmersiveCookingPlugin extends Plugin
 		lastCookLocation = pendingCookLocation;
 	}
 
-	private GameObject findGameObject(int sceneX, int sceneY, int objectId)
+	// A game object, or a floor decoration (like a sulphur vent), on the clicked tile.
+	private TileObject findTileObject(int sceneX, int sceneY, int objectId)
 	{
 		Tile[][][] tiles = client.getTopLevelWorldView().getScene().getTiles();
 		int plane = client.getTopLevelWorldView().getPlane();
@@ -328,14 +340,16 @@ public class ImmersiveCookingPlugin extends Plugin
 				return object;
 			}
 		}
-		return null;
+		GroundObject ground = tile.getGroundObject();
+		return ground != null && ground.getId() == objectId ? ground : null;
 	}
 
 	// The model as drawn in the scene, already turned the way the object faces. Animated objects (fires)
 	// give their current frame.
-	private static Model modelOf(GameObject object)
+	private static Model modelOf(TileObject object)
 	{
-		Renderable renderable = object.getRenderable();
+		Renderable renderable = object instanceof GameObject ? ((GameObject) object).getRenderable()
+			: object instanceof GroundObject ? ((GroundObject) object).getRenderable() : null;
 		return renderable instanceof Model ? (Model) renderable : renderable != null ? renderable.getModel() : null;
 	}
 
@@ -455,6 +469,17 @@ public class ImmersiveCookingPlugin extends Plugin
 			: new float[]{sumX / total, sumZ / total, height};
 	}
 
+	private static float middle(float[] values, int count)
+	{
+		float low = Float.MAX_VALUE, high = -Float.MAX_VALUE;
+		for (int i = 0; i < count; i++)
+		{
+			low = Math.min(low, values[i]);
+			high = Math.max(high, values[i]);
+		}
+		return (low + high) / 2;
+	}
+
 	// Without a hob (fires, plain ranges): over the highest flat surface with at least a quarter of the
 	// largest one's area, so a small chimney top can't win. Returns {east, north, height}, or null.
 	private static float[] findTopSurface(Model model)
@@ -470,11 +495,13 @@ public class ImmersiveCookingPlugin extends Plugin
 				areaByHeight.merge(heightBucket(model, f), area[f], Float::sum);
 			}
 		}
-		if (areaByHeight.isEmpty())
+		float largest = areaByHeight.isEmpty() ? 0 : Collections.max(areaByHeight.values());
+		if (largest < MIN_SURFACE_AREA)
 		{
-			return null;
+			// Only slivers, like flame tips on a fire with no logs: centre it, at a normal fire's height.
+			return new float[]{middle(model.getVerticesX(), model.getVerticesCount()),
+				middle(model.getVerticesZ(), model.getVerticesCount()), NO_SURFACE_HEIGHT};
 		}
-		float largest = Collections.max(areaByHeight.values());
 		int top = Integer.MAX_VALUE;
 		for (Map.Entry<Integer, Float> entry : areaByHeight.entrySet())
 		{
@@ -572,9 +599,13 @@ public class ImmersiveCookingPlugin extends Plugin
 		}
 	}
 
-	// Ranges have a "Cook" option; fires have none, so they're matched by name.
+	// Ranges have a "Cook" option; fires have none, so they're matched by name. A few others are listed.
 	private boolean isCookingObject(int objectId)
 	{
+		if (OTHER_COOKING_OBJECTS.contains(objectId))
+		{
+			return true;
+		}
 		ObjectComposition object = client.getObjectDefinition(objectId);
 		if (object.getImpostorIds() != null && object.getImpostor() != null)
 		{
@@ -851,7 +882,9 @@ public class ImmersiveCookingPlugin extends Plugin
 
 	private static boolean isCookingAnimation(int animation)
 	{
-		return animation == AnimationID.HUMAN_COOKING || animation == AnimationID.HUMAN_COOKING_LOOP;
+		// Fires use their own animation.
+		return animation == AnimationID.HUMAN_COOKING || animation == AnimationID.HUMAN_COOKING_LOOP
+			|| animation == AnimationID.HUMAN_FIRECOOKING || animation == AnimationID.HUMAN_COOKING_WALKMERGE_NORESTART;
 	}
 
 	@Subscribe

@@ -2,6 +2,7 @@ package com.jinjiyunsun.immersivecooking;
 
 import java.awt.event.KeyEvent;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
@@ -14,6 +15,7 @@ import net.runelite.api.Actor;
 import net.runelite.api.AnimationController;
 import net.runelite.api.ChatMessageType;
 import net.runelite.api.Client;
+import net.runelite.api.GameObject;
 import net.runelite.api.GameState;
 import net.runelite.api.ItemComposition;
 import net.runelite.api.ItemContainer;
@@ -22,7 +24,9 @@ import net.runelite.api.MenuEntry;
 import net.runelite.api.Model;
 import net.runelite.api.ModelData;
 import net.runelite.api.ObjectComposition;
+import net.runelite.api.Renderable;
 import net.runelite.api.RuneLiteObject;
+import net.runelite.api.Tile;
 import net.runelite.api.coords.LocalPoint;
 import net.runelite.api.events.AnimationChanged;
 import net.runelite.api.events.ChatMessage;
@@ -50,8 +54,15 @@ import net.runelite.client.util.Text;
 )
 public class ImmersiveCookingPlugin extends Plugin
 {
+	// When the clicked object can't be found: this far up, and east of the clicked tile.
 	private static final int HOVER_HEIGHT = 120;
 	private static final int EAST_OFFSET = 25;
+	// Above a bare hob. One with a pan or pot uses its top instead (RANGE's pan handle puts the fish at 120).
+	private static final int BARE_HOB_CLEARANCE = 4;
+	// Above the top flat surface of something without a hob, like a fire's logs.
+	private static final int SURFACE_CLEARANCE = 40;
+	// A face counts as facing up if its normal is within about 25 degrees of straight up.
+	private static final float UP_FACING = 0.9f;
 
 	// 128 is 100%.
 	private static final int MODEL_SCALE = 96;
@@ -176,6 +187,8 @@ public class ImmersiveCookingPlugin extends Plugin
 	private LocalPoint pendingCookLocation;
 	// Kept after a batch ends, as a fallback if a cook message arrives with no session.
 	private LocalPoint lastCookLocation;
+	// How high the food floats at the cook location; kept with lastCookLocation.
+	private int cookHoverHeight = HOVER_HEIGHT;
 	// Food was used on the range from a distance; it shows once the player gets there.
 	private boolean waitingForArrival = false;
 
@@ -269,10 +282,224 @@ public class ImmersiveCookingPlugin extends Plugin
 		smokeObject = null;
 	}
 
-	private void setCookLocation(int sceneX, int sceneY)
+	private void setCookLocation(int sceneX, int sceneY, int objectId)
 	{
-		pendingCookLocation = LocalPoint.fromScene(sceneX, sceneY, client.getTopLevelWorldView());
+		GameObject object = findGameObject(sceneX, sceneY, objectId);
+		Model model = object != null ? modelOf(object) : null;
+		float[] spot = model != null ? findHob(model) : null;
+		boolean hob = spot != null;
+		if (model != null && spot == null)
+		{
+			spot = findTopSurface(model);
+		}
+		if (spot != null)
+		{
+			pendingCookLocation = object.getLocalLocation().dx(Math.round(spot[0])).dy(Math.round(spot[1]));
+			cookHoverHeight = Math.round(spot[2]);
+		}
+		else
+		{
+			pendingCookLocation = LocalPoint.fromScene(sceneX, sceneY, client.getTopLevelWorldView()).dx(EAST_OFFSET);
+			cookHoverHeight = HOVER_HEIGHT;
+		}
+		log.debug("Cook spot: object={}, found={}, offset={}, location={}, height={}", objectId,
+			spot == null ? "nothing" : hob ? "hob" : "surface",
+			spot == null ? "-" : Math.round(spot[0]) + "," + Math.round(spot[1]), pendingCookLocation, cookHoverHeight);
 		lastCookLocation = pendingCookLocation;
+	}
+
+	private GameObject findGameObject(int sceneX, int sceneY, int objectId)
+	{
+		Tile[][][] tiles = client.getTopLevelWorldView().getScene().getTiles();
+		int plane = client.getTopLevelWorldView().getPlane();
+		if (sceneX < 0 || sceneY < 0 || sceneX >= tiles[plane].length || sceneY >= tiles[plane][sceneX].length)
+		{
+			return null;
+		}
+		Tile tile = tiles[plane][sceneX][sceneY];
+		if (tile == null)
+		{
+			return null;
+		}
+		for (GameObject object : tile.getGameObjects())
+		{
+			if (object != null && object.getId() == objectId)
+			{
+				return object;
+			}
+		}
+		return null;
+	}
+
+	// The model as drawn in the scene, already turned the way the object faces. Animated objects (fires)
+	// give their current frame.
+	private static Model modelOf(GameObject object)
+	{
+		Renderable renderable = object.getRenderable();
+		return renderable instanceof Model ? (Model) renderable : renderable != null ? renderable.getModel() : null;
+	}
+
+	// A face's area if it faces up (y points down), otherwise 0.
+	private static float upArea(Model model, int face)
+	{
+		float[] x = model.getVerticesX();
+		float[] y = model.getVerticesY();
+		float[] z = model.getVerticesZ();
+		int a = model.getFaceIndices1()[face];
+		int b = model.getFaceIndices2()[face];
+		int c = model.getFaceIndices3()[face];
+		float ux = x[b] - x[a], uy = y[b] - y[a], uz = z[b] - z[a];
+		float vx = x[c] - x[a], vy = y[c] - y[a], vz = z[c] - z[a];
+		float nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+		float length = (float) Math.sqrt(nx * nx + ny * ny + nz * nz);
+		return length > 0 && -ny / length >= UP_FACING ? length / 2 : 0;
+	}
+
+	private static int heightBucket(Model model, int face)
+	{
+		float[] y = model.getVerticesY();
+		return Math.round((y[model.getFaceIndices1()[face]] + y[model.getFaceIndices2()[face]] + y[model.getFaceIndices3()[face]]) / 3 / 4) * 4;
+	}
+
+	// Ranges share red, upward-facing hob faces. Returns where the food sits, relative to the object's
+	// middle, and how high: {east, north, height}, or null without a hob. The food goes over anything on the
+	// hob (a pan or pot), level with its top, or a little above a bare hob.
+	private static float[] findHob(Model model)
+	{
+		short[] unlit = model.getUnlitFaceColors();
+		int[] lit = model.getFaceColors1();
+		float[] x = model.getVerticesX();
+		float[] y = model.getVerticesY();
+		float[] z = model.getVerticesZ();
+		int[] a = model.getFaceIndices1();
+		int[] b = model.getFaceIndices2();
+		int[] c = model.getFaceIndices3();
+		int faces = model.getFaceCount();
+
+		// The hob's height: the height with the most red upward area.
+		float[] redArea = new float[faces];
+		Map<Integer, Float> redAreaByHeight = new HashMap<>();
+		for (int f = 0; f < faces; f++)
+		{
+			int colour = unlit != null ? unlit[f] & 0xffff : lit[f];
+			int hue = colour >> 10 & 63;
+			if (colour < 0 || !(hue <= 2 || hue >= 62) || (colour >> 7 & 7) < 4)
+			{
+				continue;
+			}
+			redArea[f] = upArea(model, f);
+			if (redArea[f] > 0)
+			{
+				redAreaByHeight.merge(heightBucket(model, f), redArea[f], Float::sum);
+			}
+		}
+		if (redAreaByHeight.isEmpty())
+		{
+			return null;
+		}
+		int hobBucket = Collections.max(redAreaByHeight.entrySet(), Map.Entry.comparingByValue()).getKey();
+
+		// The hob's middle, height and extent, from the red faces at that height only.
+		float total = 0, sumX = 0, sumZ = 0, hobY = 0;
+		float minX = Float.MAX_VALUE, maxX = -Float.MAX_VALUE, minZ = Float.MAX_VALUE, maxZ = -Float.MAX_VALUE;
+		for (int f = 0; f < faces; f++)
+		{
+			if (redArea[f] == 0 || Math.abs(heightBucket(model, f) - hobBucket) > 4)
+			{
+				continue;
+			}
+			total += redArea[f];
+			for (int v : new int[]{a[f], b[f], c[f]})
+			{
+				sumX += redArea[f] * x[v] / 3;
+				sumZ += redArea[f] * z[v] / 3;
+				hobY += redArea[f] * y[v] / 3;
+				minX = Math.min(minX, x[v]);
+				maxX = Math.max(maxX, x[v]);
+				minZ = Math.min(minZ, z[v]);
+				maxZ = Math.max(maxZ, z[v]);
+			}
+		}
+		hobY /= total;
+
+		// Anything resting on it. Its top: any face centred over the hob and above it (a grate's bars reach past
+		// the coals, a pan handle counts). Its middle: the upward faces wholly within the hob's extent.
+		float onTotal = 0, onX = 0, onZ = 0, onTop = hobY;
+		for (int f = 0; f < faces; f++)
+		{
+			float faceTop = Math.min(y[a[f]], Math.min(y[b[f]], y[c[f]]));
+			float centreX = (x[a[f]] + x[b[f]] + x[c[f]]) / 3;
+			float centreZ = (z[a[f]] + z[b[f]] + z[c[f]]) / 3;
+			if (faceTop < hobY - 2 && centreX >= minX && centreX <= maxX && centreZ >= minZ && centreZ <= maxZ)
+			{
+				onTop = Math.min(onTop, faceTop);
+			}
+
+			boolean onHob = true;
+			for (int v : new int[]{a[f], b[f], c[f]})
+			{
+				onHob &= x[v] >= minX - 4 && x[v] <= maxX + 4 && z[v] >= minZ - 4 && z[v] <= maxZ + 4 && y[v] < hobY - 2;
+			}
+			if (!onHob)
+			{
+				continue;
+			}
+			float faceArea = upArea(model, f);
+			onTotal += faceArea;
+			onX += faceArea * (x[a[f]] + x[b[f]] + x[c[f]]) / 3;
+			onZ += faceArea * (z[a[f]] + z[b[f]] + z[c[f]]) / 3;
+		}
+		float height = Math.max(-hobY + BARE_HOB_CLEARANCE, -onTop);
+		return onTotal > 0
+			? new float[]{onX / onTotal, onZ / onTotal, height}
+			: new float[]{sumX / total, sumZ / total, height};
+	}
+
+	// Without a hob (fires, plain ranges): over the highest flat surface with at least a quarter of the
+	// largest one's area, so a small chimney top can't win. Returns {east, north, height}, or null.
+	private static float[] findTopSurface(Model model)
+	{
+		int faces = model.getFaceCount();
+		float[] area = new float[faces];
+		Map<Integer, Float> areaByHeight = new HashMap<>();
+		for (int f = 0; f < faces; f++)
+		{
+			area[f] = upArea(model, f);
+			if (area[f] > 0)
+			{
+				areaByHeight.merge(heightBucket(model, f), area[f], Float::sum);
+			}
+		}
+		if (areaByHeight.isEmpty())
+		{
+			return null;
+		}
+		float largest = Collections.max(areaByHeight.values());
+		int top = Integer.MAX_VALUE;
+		for (Map.Entry<Integer, Float> entry : areaByHeight.entrySet())
+		{
+			if (entry.getValue() >= largest / 4 && entry.getKey() < top)
+			{
+				top = entry.getKey();
+			}
+		}
+
+		float[] x = model.getVerticesX();
+		float[] z = model.getVerticesZ();
+		int[] a = model.getFaceIndices1();
+		int[] b = model.getFaceIndices2();
+		int[] c = model.getFaceIndices3();
+		float total = 0, sumX = 0, sumZ = 0;
+		for (int f = 0; f < faces; f++)
+		{
+			if (area[f] > 0 && heightBucket(model, f) == top)
+			{
+				total += area[f];
+				sumX += area[f] * (x[a[f]] + x[b[f]] + x[c[f]]) / 3;
+				sumZ += area[f] * (z[a[f]] + z[b[f]] + z[c[f]]) / 3;
+			}
+		}
+		return new float[]{sumX / total, sumZ / total, -top + SURFACE_CLEARANCE};
 	}
 
 	@Subscribe
@@ -295,7 +522,7 @@ public class ImmersiveCookingPlugin extends Plugin
 				return;
 			}
 			pendingCookItemId = itemId;
-			setCookLocation(event.getParam0(), event.getParam1());
+			setCookLocation(event.getParam0(), event.getParam1(), event.getId());
 			if (isPlayerNear(pendingCookLocation))
 			{
 				showModel(itemId);
@@ -322,7 +549,7 @@ public class ImmersiveCookingPlugin extends Plugin
 			{
 				clearCooking();
 			}
-			setCookLocation(event.getParam0(), event.getParam1());
+			setCookLocation(event.getParam0(), event.getParam1(), event.getId());
 			hoverPreviewItemId = -1;
 			log.debug("Cook clicked on range");
 			return;
@@ -842,8 +1069,8 @@ public class ImmersiveCookingPlugin extends Plugin
 		RuneLiteObject smoke = smokeObject;
 		smokeObject.setAnimationController(new AnimationController(client, AnimationID.FORESTRY_CAMPFIRE)
 			.setOnFinished(controller -> smoke.setActive(false)));
-		smokeObject.setLocation(pendingCookLocation.dx(EAST_OFFSET), client.getTopLevelWorldView().getPlane());
-		smokeObject.setZ(smokeObject.getZ() - HOVER_HEIGHT);
+		smokeObject.setLocation(pendingCookLocation, client.getTopLevelWorldView().getPlane());
+		smokeObject.setZ(smokeObject.getZ() - cookHoverHeight);
 		smokeObject.setActive(true);
 	}
 
@@ -857,8 +1084,8 @@ public class ImmersiveCookingPlugin extends Plugin
 		boolean wasAlreadyVisible = foodObject.isActive();
 		displayedItemId = itemId;
 
-		foodObject.setLocation(pendingCookLocation.dx(EAST_OFFSET), client.getTopLevelWorldView().getPlane());
-		foodObject.setZ(foodObject.getZ() - HOVER_HEIGHT);
+		foodObject.setLocation(pendingCookLocation, client.getTopLevelWorldView().getPlane());
+		foodObject.setZ(foodObject.getZ() - cookHoverHeight);
 
 		// Swapping what's already on screen (raw -> result) is instant; a fresh appearance pops in.
 		if (wasAlreadyVisible)

@@ -1,6 +1,8 @@
 # Immersive Cooking
 
-<!-- Splash GIF goes here -->
+<p align="center">
+<img width="564" height="928" alt="immersive_cooking_splash" src="https://github.com/user-attachments/assets/044de85d-7b4d-4b17-a5c2-c8a778b00bfe" />
+</p>
 
 Puts the food you're cooking onto the range or fire while it cooks!
 

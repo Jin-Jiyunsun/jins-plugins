@@ -41,7 +41,6 @@ import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.gameval.ItemID;
 import net.runelite.api.gameval.ObjectID;
-import net.runelite.api.gameval.ObjectID;
 import net.runelite.api.widgets.Widget;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.eventbus.Subscribe;
@@ -54,7 +53,7 @@ import net.runelite.client.util.Text;
 @Slf4j
 @PluginDescriptor(
 	name = "Immersive Cooking",
-	description = "Shows the food you're cooking sitting on the range while it cooks"
+	description = "Shows the food you are cooking on the range or fire."
 )
 public class ImmersiveCookingPlugin extends Plugin
 {
@@ -171,11 +170,20 @@ public class ImmersiveCookingPlugin extends Plugin
 	private static final Set<Integer> RAW_FOOD_ITEM_IDS = COOKED_BY_RAW.keySet();
 
 	// Things food can be used on that have neither a "Cook" option nor "fire" in their name.
-	// The POH stoves are the small oven, large oven and steel range, with a pot or kettle on or not.
+	// POH_STOVE_6 is the POH steel range. The fancy range has a "Cook" option; the ovens aren't supported.
 	private static final Set<Integer> OTHER_COOKING_OBJECTS = Set.of(ObjectID.TZHAAR_SULPHAR_VENT,
-		ObjectID.POH_STOVE_4, ObjectID.POH_STOVE_4_POT, ObjectID.POH_STOVE_4_KETTLE,
-		ObjectID.POH_STOVE_5, ObjectID.POH_STOVE_5_POT, ObjectID.POH_STOVE_5_KETTLE,
 		ObjectID.POH_STOVE_6, ObjectID.POH_STOVE_6_POT, ObjectID.POH_STOVE_6_KETTLE);
+
+	// POH firepits, which "fire" in their name would otherwise match.
+	private static final Set<Integer> UNSUPPORTED_COOKING_OBJECTS = Set.of(ObjectID.POH_STOVE_1,
+		ObjectID.POH_STOVE_2, ObjectID.POH_STOVE_2_KETTLE, ObjectID.POH_STOVE_3, ObjectID.POH_STOVE_3_KETTLE);
+
+	// The POH steel and fancy ranges with a kettle on: the food goes beside it, not on its handle.
+	private static final Set<Integer> KETTLE_RANGES = Set.of(ObjectID.POH_STOVE_6_KETTLE, ObjectID.POH_STOVE_7_KETTLE);
+	// Grid size, in local units, for finding the free part of the hob.
+	private static final int FREE_HOB_CELL = 4;
+	// How far past the hob's edge the food may hang.
+	private static final int FREE_HOB_EDGE_SLACK = 8;
 
 	private static final Set<MenuAction> GAME_OBJECT_OPTIONS = EnumSet.of(
 		MenuAction.GAME_OBJECT_FIRST_OPTION, MenuAction.GAME_OBJECT_SECOND_OPTION, MenuAction.GAME_OBJECT_THIRD_OPTION,
@@ -306,7 +314,7 @@ public class ImmersiveCookingPlugin extends Plugin
 	{
 		TileObject object = findTileObject(sceneX, sceneY, objectId);
 		Model model = object != null ? modelOf(object) : null;
-		float[] spot = model != null ? findHob(model) : null;
+		float[] spot = model != null ? findHob(model, KETTLE_RANGES.contains(objectId)) : null;
 		boolean hob = spot != null;
 		if (model != null && spot == null)
 		{
@@ -386,8 +394,9 @@ public class ImmersiveCookingPlugin extends Plugin
 
 	// Ranges share red, upward-facing hob faces. Returns where the food sits, relative to the object's
 	// middle, and how high: {east, north, height}, or null without a hob. The food goes over anything on the
-	// hob (a pan or pot), level with its top, or a little above a bare hob.
-	private static float[] findHob(Model model)
+	// hob (a pan or pot), level with its top, or a little above a bare hob. With besideKettle, it goes on
+	// the free part of the hob instead.
+	private static float[] findHob(Model model, boolean besideKettle)
 	{
 		short[] unlit = model.getUnlitFaceColors();
 		int[] lit = model.getFaceColors1();
@@ -444,6 +453,10 @@ public class ImmersiveCookingPlugin extends Plugin
 			}
 		}
 		hobY /= total;
+		if (besideKettle)
+		{
+			return findFreeHobSpot(model, minX, maxX, minZ, maxZ, hobY);
+		}
 
 		// Anything resting on it. Its top: any face centred over the hob and above it (a grate's bars reach past
 		// the coals, a pan handle counts). Its middle: the upward faces wholly within the hob's extent.
@@ -476,6 +489,84 @@ public class ImmersiveCookingPlugin extends Plugin
 		return onTotal > 0
 			? new float[]{onX / onTotal, onZ / onTotal, height}
 			: new float[]{sumX / total, sumZ / total, height};
+	}
+
+	// The hob spot furthest from anything standing on it (a kettle), kept near the hob. Returns
+	// {east, north, height}.
+	private static float[] findFreeHobSpot(Model model, float minX, float maxX, float minZ, float maxZ, float hobY)
+	{
+		float[] x = model.getVerticesX();
+		float[] y = model.getVerticesY();
+		float[] z = model.getVerticesZ();
+		int[] a = model.getFaceIndices1();
+		int[] b = model.getFaceIndices2();
+		int[] c = model.getFaceIndices3();
+		int columns = (int) Math.ceil((maxX - minX) / FREE_HOB_CELL) + 1;
+		int rows = (int) Math.ceil((maxZ - minZ) / FREE_HOB_CELL) + 1;
+
+		// Cells under any face that stands well above the hob (low burner rings don't count).
+		boolean[][] covered = new boolean[columns][rows];
+		boolean anyCovered = false;
+		for (int f = 0; f < model.getFaceCount(); f++)
+		{
+			if (Math.min(y[a[f]], Math.min(y[b[f]], y[c[f]])) >= hobY - 8)
+			{
+				continue;
+			}
+			int fromColumn = Math.max(0, (int) ((Math.min(x[a[f]], Math.min(x[b[f]], x[c[f]])) - minX) / FREE_HOB_CELL));
+			int toColumn = Math.min(columns - 1, (int) ((Math.max(x[a[f]], Math.max(x[b[f]], x[c[f]])) - minX) / FREE_HOB_CELL));
+			int fromRow = Math.max(0, (int) ((Math.min(z[a[f]], Math.min(z[b[f]], z[c[f]])) - minZ) / FREE_HOB_CELL));
+			int toRow = Math.min(rows - 1, (int) ((Math.max(z[a[f]], Math.max(z[b[f]], z[c[f]])) - minZ) / FREE_HOB_CELL));
+			for (int i = fromColumn; i <= toColumn; i++)
+			{
+				for (int j = fromRow; j <= toRow; j++)
+				{
+					covered[i][j] = true;
+					anyCovered = true;
+				}
+			}
+		}
+
+		float height = -hobY + BARE_HOB_CLEARANCE;
+		if (!anyCovered)
+		{
+			return new float[]{(minX + maxX) / 2, (minZ + maxZ) / 2, height};
+		}
+
+		// Each free cell scores its distance to the nearest covered cell, capped by its distance to the edge.
+		float bestScore = -1, bestX = (minX + maxX) / 2, bestZ = (minZ + maxZ) / 2;
+		for (int i = 0; i < columns; i++)
+		{
+			for (int j = 0; j < rows; j++)
+			{
+				if (covered[i][j])
+				{
+					continue;
+				}
+				float nearest = Float.MAX_VALUE;
+				for (int p = 0; p < columns; p++)
+				{
+					for (int q = 0; q < rows; q++)
+					{
+						if (covered[p][q])
+						{
+							nearest = Math.min(nearest, (float) Math.hypot(p - i, q - j) * FREE_HOB_CELL);
+						}
+					}
+				}
+				float cellX = minX + i * FREE_HOB_CELL;
+				float cellZ = minZ + j * FREE_HOB_CELL;
+				float edge = Math.min(Math.min(cellX - minX, maxX - cellX), Math.min(cellZ - minZ, maxZ - cellZ));
+				float score = Math.min(nearest, edge + FREE_HOB_EDGE_SLACK);
+				if (score > bestScore)
+				{
+					bestScore = score;
+					bestX = cellX;
+					bestZ = cellZ;
+				}
+			}
+		}
+		return new float[]{bestX, bestZ, height};
 	}
 
 	private static float middle(float[] values, int count)
@@ -614,6 +705,10 @@ public class ImmersiveCookingPlugin extends Plugin
 		if (OTHER_COOKING_OBJECTS.contains(objectId))
 		{
 			return true;
+		}
+		if (UNSUPPORTED_COOKING_OBJECTS.contains(objectId))
+		{
+			return false;
 		}
 		ObjectComposition object = client.getObjectDefinition(objectId);
 		if (object.getImpostorIds() != null && object.getImpostor() != null)
@@ -1198,7 +1293,13 @@ public class ImmersiveCookingPlugin extends Plugin
 		ItemComposition itemComposition = client.getItemDefinition(itemId);
 		// loadModelData returns a shared instance, so clone before mutating. Colours/textures are only
 		// cloned when replaced, since cloning a null array throws.
-		ModelData modelData = client.loadModelData(itemComposition.getInventoryModel()).cloneVertices();
+		ModelData loaded = client.loadModelData(itemComposition.getInventoryModel());
+		// A model that fails to load shows nothing rather than throwing every frame.
+		if (loaded == null)
+		{
+			return null;
+		}
+		ModelData modelData = loaded.cloneVertices();
 
 		short[] colorToReplace = itemComposition.getColorToReplace();
 		short[] colorToReplaceWith = itemComposition.getColorToReplaceWith();

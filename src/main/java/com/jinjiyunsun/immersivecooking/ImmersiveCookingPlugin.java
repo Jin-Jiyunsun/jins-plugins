@@ -74,6 +74,11 @@ public class ImmersiveCookingPlugin extends Plugin
 
 	// 128 is 100%.
 	private static final int MODEL_SCALE = 96;
+	// The shared raw/cooked/burnt meat model is small next to the others, so it's drawn this much bigger.
+	private static final int MEAT_SCALE_PERCENT = 150;
+	private static final Set<Integer> MEAT_MODEL_ITEMS = Set.of(ItemID.RAW_BEEF, ItemID.RAW_RAT_MEAT,
+		ItemID.RAW_BEAR_MEAT, ItemID.RAW_UGTHANKI_MEAT, ItemID.YAK_MEAT_RAW, ItemID.RAW_BOAR_MEAT,
+		ItemID.RAW_IMPALER_MEAT, ItemID.COOKED_MEAT, ItemID.BURNT_MEAT);
 
 	private static final int RESULT_DISPLAY_TICKS = 2;
 	private static final int GAP_TICKS = 1;
@@ -166,7 +171,11 @@ public class ImmersiveCookingPlugin extends Plugin
 	private static final Set<Integer> RAW_FOOD_ITEM_IDS = COOKED_BY_RAW.keySet();
 
 	// Things food can be used on that have neither a "Cook" option nor "fire" in their name.
-	private static final Set<Integer> OTHER_COOKING_OBJECTS = Set.of(ObjectID.TZHAAR_SULPHAR_VENT);
+	// The POH stoves are the small oven, large oven and steel range, with a pot or kettle on or not.
+	private static final Set<Integer> OTHER_COOKING_OBJECTS = Set.of(ObjectID.TZHAAR_SULPHAR_VENT,
+		ObjectID.POH_STOVE_4, ObjectID.POH_STOVE_4_POT, ObjectID.POH_STOVE_4_KETTLE,
+		ObjectID.POH_STOVE_5, ObjectID.POH_STOVE_5_POT, ObjectID.POH_STOVE_5_KETTLE,
+		ObjectID.POH_STOVE_6, ObjectID.POH_STOVE_6_POT, ObjectID.POH_STOVE_6_KETTLE);
 
 	private static final Set<MenuAction> GAME_OBJECT_OPTIONS = EnumSet.of(
 		MenuAction.GAME_OBJECT_FIRST_OPTION, MenuAction.GAME_OBJECT_SECOND_OPTION, MenuAction.GAME_OBJECT_THIRD_OPTION,
@@ -1213,6 +1222,7 @@ public class ImmersiveCookingPlugin extends Plugin
 			}
 		}
 
-		return modelData.scale(scalePercent, scalePercent, scalePercent).light();
+		int scale = MEAT_MODEL_ITEMS.contains(itemId) ? scalePercent * MEAT_SCALE_PERCENT / 100 : scalePercent;
+		return modelData.scale(scale, scale, scale).light();
 	}
 }

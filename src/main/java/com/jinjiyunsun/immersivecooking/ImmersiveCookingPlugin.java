@@ -11,6 +11,7 @@ import java.util.regex.Pattern;
 import javax.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Actor;
+import net.runelite.api.AnimationController;
 import net.runelite.api.ChatMessageType;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
@@ -45,7 +46,7 @@ import net.runelite.client.util.Text;
 @Slf4j
 @PluginDescriptor(
 	name = "Immersive Cooking",
-	description = "Shows the fish you're cooking sitting on the range while it cooks"
+	description = "Shows the food you're cooking sitting on the range while it cooks"
 )
 public class ImmersiveCookingPlugin extends Plugin
 {
@@ -85,11 +86,28 @@ public class ImmersiveCookingPlugin extends Plugin
 		Map.entry(ItemID.RAW_GIANT_KRILL, ItemID.GIANT_KRILL), Map.entry(ItemID.RAW_HADDOCK, ItemID.HADDOCK),
 		Map.entry(ItemID.RAW_YELLOWFIN, ItemID.YELLOWFIN), Map.entry(ItemID.RAW_HALIBUT, ItemID.HALIBUT),
 		Map.entry(ItemID.RAW_BLUEFIN, ItemID.BLUEFIN), Map.entry(ItemID.RAW_MARLIN, ItemID.MARLIN),
-		Map.entry(ItemID.TBWT_RAW_KARAMBWAN, ItemID.TBWT_COOKED_KARAMBWAN)
+		Map.entry(ItemID.TBWT_RAW_KARAMBWAN, ItemID.TBWT_COOKED_KARAMBWAN),
+		Map.entry(ItemID.HUNTING_RAW_FISH_SPECIAL, ItemID.HUNTING_FISH_SPECIAL),
+		// Meats.
+		Map.entry(ItemID.RAW_BEEF, ItemID.COOKED_MEAT), Map.entry(ItemID.RAW_RAT_MEAT, ItemID.COOKED_MEAT),
+		Map.entry(ItemID.RAW_BEAR_MEAT, ItemID.COOKED_MEAT), Map.entry(ItemID.RAW_CHICKEN, ItemID.COOKED_CHICKEN),
+		Map.entry(ItemID.RAW_RABBIT, ItemID.COOKED_RABBIT), Map.entry(ItemID.RAW_UGTHANKI_MEAT, ItemID.COOKED_UGTHANKI_MEAT),
+		Map.entry(ItemID.RAW_TBONE_STEAK, ItemID.TBONE_STEAK), Map.entry(ItemID.RAW_MYSTERY_MEAT, ItemID.COOKED_MYSTERY_MEAT),
+		Map.entry(ItemID.RAW_LIZARD, ItemID.COOKED_LIZARD), Map.entry(ItemID.YAK_MEAT_RAW, ItemID.COOKED_MEAT),
+		Map.entry(ItemID.RAW_BOAR_MEAT, ItemID.COOKED_MEAT), Map.entry(ItemID.RAW_IMPALER_MEAT, ItemID.COOKED_MEAT),
+		Map.entry(ItemID._100_JUBBLY_MEAT_RAW, ItemID._100_JUBBLY_MEAT_COOKED),
+		Map.entry(ItemID.MORT_SLIMEY_EEL, ItemID.MORT_SLIMEY_EEL_COOKED), Map.entry(ItemID.BREAM_FISH_RAW, ItemID.BREAM_FISH_COOKED),
+		Map.entry(ItemID.RAW_RED_CRAB_MEAT, ItemID.RED_CRAB_MEAT), Map.entry(ItemID.RAW_BLUE_CRAB_MEAT, ItemID.BLUE_CRAB_MEAT),
+		Map.entry(ItemID.RAW_RAINBOW_CRAB_MEAT, ItemID.RAINBOW_CRAB_MEAT),
+		// Varlamore hunter meats.
+		Map.entry(ItemID.HUNTINGBEAST_WILD_MEAT, ItemID.WILDKEBBIT_COOKED), Map.entry(ItemID.HUNTINGBEAST_BARBED_MEAT, ItemID.BARBKEBBIT_COOKED),
+		Map.entry(ItemID.HUNTINGBEAST_SPEEDY2_MEAT, ItemID.DASHINGKEBBIT_COOKED), Map.entry(ItemID.HUNTING_FENNECFOX_MEAT, ItemID.FENNECFOX_COOKED),
+		Map.entry(ItemID.HUNTING_ANTELOPESUN_MEAT, ItemID.ANTELOPESUN_COOKED), Map.entry(ItemID.HUNTING_ANTELOPEMOON_MEAT, ItemID.ANTELOPEMOON_COOKED),
+		Map.entry(ItemID.HUNTING_GRAAHK_MEAT, ItemID.GRAAHK_COOKED), Map.entry(ItemID.HUNTING_LARUPIA_MEAT, ItemID.LARUPIA_COOKED),
+		Map.entry(ItemID.HUNTING_KYATT_MEAT, ItemID.KYATT_COOKED)
 	);
 
-	// Only fish with their own burnt item. The rest share generic "Burnt fish" items,
-	// so a burn just clears the range for them.
+	// Burnt models. Foods missing here (e.g. moss lizard, bream) can't burn.
 	private static final Map<Integer, Integer> BURNT_BY_RAW = Map.ofEntries(
 		Map.entry(ItemID.RAW_SWORDFISH, ItemID.BURNT_SWORDFISH), Map.entry(ItemID.RAW_LOBSTER, ItemID.BURNT_LOBSTER),
 		Map.entry(ItemID.RAW_SHARK, ItemID.BURNT_SHARK), Map.entry(ItemID.RAW_MANTARAY, ItemID.BURNT_MANTARAY),
@@ -100,10 +118,33 @@ public class ImmersiveCookingPlugin extends Plugin
 		Map.entry(ItemID.RAW_GIANT_KRILL, ItemID.BURNT_GIANT_KRILL), Map.entry(ItemID.RAW_HADDOCK, ItemID.BURNT_HADDOCK),
 		Map.entry(ItemID.RAW_YELLOWFIN, ItemID.BURNT_YELLOWFIN), Map.entry(ItemID.RAW_HALIBUT, ItemID.BURNT_HALIBUT),
 		Map.entry(ItemID.RAW_BLUEFIN, ItemID.BURNT_BLUEFIN), Map.entry(ItemID.RAW_MARLIN, ItemID.BURNT_MARLIN),
-		Map.entry(ItemID.TBWT_RAW_KARAMBWAN, ItemID.TBWT_BURNT_KARAMBWAN)
+		Map.entry(ItemID.TBWT_RAW_KARAMBWAN, ItemID.TBWT_BURNT_KARAMBWAN),
+		Map.entry(ItemID.HUNTING_RAW_FISH_SPECIAL, ItemID.HUNTING_RAW_FISH_SPECIAL_BURNT),
+		Map.entry(ItemID.RAW_BEEF, ItemID.BURNT_MEAT), Map.entry(ItemID.RAW_RAT_MEAT, ItemID.BURNT_MEAT),
+		Map.entry(ItemID.RAW_BEAR_MEAT, ItemID.BURNT_MEAT), Map.entry(ItemID.RAW_CHICKEN, ItemID.BURNT_CHICKEN),
+		Map.entry(ItemID.RAW_TBONE_STEAK, ItemID.TBONE_STEAK_BURNED),
+		// Officially the burnt skewered rabbit, but it's the right look.
+		Map.entry(ItemID.RAW_RABBIT, ItemID.SPIT_BURNED_RABBIT_MEAT),
+		Map.entry(ItemID.RAW_UGTHANKI_MEAT, ItemID.BURNT_MEAT), Map.entry(ItemID.YAK_MEAT_RAW, ItemID.BURNT_MEAT),
+		Map.entry(ItemID.RAW_BOAR_MEAT, ItemID.BURNT_MEAT), Map.entry(ItemID.RAW_IMPALER_MEAT, ItemID.BURNT_MEAT),
+		// The "Burnt fish" items, one per group of fish.
+		Map.entry(ItemID.RAW_ANCHOVIES, ItemID.BURNTFISH1), Map.entry(ItemID.RAW_SARDINE, ItemID.BURNTFISH5),
+		Map.entry(ItemID.RAW_HERRING, ItemID.BURNTFISH3), Map.entry(ItemID.RAW_MACKEREL, ItemID.BURNTFISH3),
+		Map.entry(ItemID.RAW_TROUT, ItemID.BURNTFISH2), Map.entry(ItemID.RAW_SALMON, ItemID.BURNTFISH2),
+		Map.entry(ItemID.RAW_PIKE, ItemID.BURNTFISH2), Map.entry(ItemID.RAW_COD, ItemID.BURNTFISH2),
+		Map.entry(ItemID.RAW_GIANT_CARP, ItemID.BURNTFISH2), Map.entry(ItemID.RAW_TUNA, ItemID.BURNTFISH4),
+		Map.entry(ItemID.RAW_BASS, ItemID.BURNTFISH4),
+		Map.entry(ItemID._100_JUBBLY_MEAT_RAW, ItemID._100_JUBBLY_MEAT_BURNED), Map.entry(ItemID.MORT_SLIMEY_EEL, ItemID.BURNT_EEL),
+		Map.entry(ItemID.RAW_RED_CRAB_MEAT, ItemID.BURNT_CRAB_MEAT), Map.entry(ItemID.RAW_BLUE_CRAB_MEAT, ItemID.BURNT_CRAB_MEAT),
+		Map.entry(ItemID.RAW_RAINBOW_CRAB_MEAT, ItemID.BURNT_RAINBOW_CRAB_MEAT),
+		Map.entry(ItemID.HUNTINGBEAST_WILD_MEAT, ItemID.BURNT_KEBBIT), Map.entry(ItemID.HUNTINGBEAST_BARBED_MEAT, ItemID.BURNT_KEBBIT),
+		Map.entry(ItemID.HUNTINGBEAST_SPEEDY2_MEAT, ItemID.BURNT_KEBBIT), Map.entry(ItemID.HUNTING_FENNECFOX_MEAT, ItemID.BURNT_FOXMEAT),
+		Map.entry(ItemID.HUNTING_ANTELOPESUN_MEAT, ItemID.BURNT_ANTELOPE), Map.entry(ItemID.HUNTING_ANTELOPEMOON_MEAT, ItemID.BURNT_ANTELOPE),
+		Map.entry(ItemID.HUNTING_GRAAHK_MEAT, ItemID.BURNT_LARGEBEAST), Map.entry(ItemID.HUNTING_LARUPIA_MEAT, ItemID.BURNT_LARGEBEAST),
+		Map.entry(ItemID.HUNTING_KYATT_MEAT, ItemID.BURNT_LARGEBEAST)
 	);
 
-	private static final Set<Integer> RAW_FISH_ITEM_IDS = COOKED_BY_RAW.keySet();
+	private static final Set<Integer> RAW_FOOD_ITEM_IDS = COOKED_BY_RAW.keySet();
 
 	private static final Set<MenuAction> GAME_OBJECT_OPTIONS = EnumSet.of(
 		MenuAction.GAME_OBJECT_FIRST_OPTION, MenuAction.GAME_OBJECT_SECOND_OPTION, MenuAction.GAME_OBJECT_THIRD_OPTION,
@@ -128,17 +169,17 @@ public class ImmersiveCookingPlugin extends Plugin
 	@Inject
 	private KeyManager keyManager;
 
-	private RuneLiteObject fishObject;
+	private RuneLiteObject foodObject;
 
-	// The raw fish being cooked, and the range it's on. Location can be set before the fish is known.
+	// The raw food being cooked, and the range it's on. Location can be set before the food is known.
 	private int pendingCookItemId = -1;
 	private LocalPoint pendingCookLocation;
 	// Kept after a batch ends, as a fallback if a cook message arrives with no session.
 	private LocalPoint lastCookLocation;
-	// Fish was used on the range from a distance; it shows once the player gets there.
+	// Food was used on the range from a distance; it shows once the player gets there.
 	private boolean waitingForArrival = false;
 
-	// Item shown on fishObject, or -1 if nothing (or it's shrinking away).
+	// Item shown on foodObject, or -1 if nothing (or it's shrinking away).
 	private int displayedItemId = -1;
 
 	private int hideAtTick = -1;
@@ -148,7 +189,7 @@ public class ImmersiveCookingPlugin extends Plugin
 	private boolean pendingShowIsResult = false;
 
 	private int hoverPreviewItemId = -1;
-	// Fish to grow in once the current shrink-out finishes.
+	// Food to grow in once the current shrink-out finishes.
 	private int pendingHoverSwapItemId = -1;
 
 	// Catches the quantity dialog being closed with Escape before cooking starts.
@@ -160,11 +201,23 @@ public class ImmersiveCookingPlugin extends Plugin
 	private int clearCheckTick = -1;
 
 	// Lowercase raw, unprefixed and cooked names -> raw item id.
-	private Map<String, Integer> rawFishByName;
+	private Map<String, List<Integer>> rawFoodByName;
 
 	// The same chat line can arrive twice on one tick.
 	private String lastChatMessage = "";
 	private int lastChatMessageTick = -1;
+
+	// SpotanimID.FORESTRY_CAMPFIRE_SMOKE_01's model and animation; model ids have no gamevals.
+	private static final int SMOKE_MODEL = 49898;
+	private static final int SMOKE_AMBIENT = 20;
+	private static final int SMOKE_CONTRAST = 20;
+	// The smoke's own grey; its embers (any more saturated face) are recoloured to it.
+	private static final int SMOKE_GREY_HUE = 5;
+	private static final int SMOKE_GREY_SATURATION = 1;
+
+	private RuneLiteObject smokeObject;
+	// Whether a deferred result reveal is a burn, for the smoke.
+	private boolean pendingShowIsBurnt = false;
 
 	private enum FadeState { NONE, IN, OUT }
 	private FadeState fadeState = FadeState.NONE;
@@ -198,7 +251,8 @@ public class ImmersiveCookingPlugin extends Plugin
 	@Override
 	protected void startUp()
 	{
-		fishObject = client.createRuneLiteObject();
+		foodObject = client.createRuneLiteObject();
+		smokeObject = client.createRuneLiteObject();
 		keyManager.registerKeyListener(dialogHotkeyListener);
 	}
 
@@ -209,8 +263,10 @@ public class ImmersiveCookingPlugin extends Plugin
 		clearCooking();
 		lastCookLocation = null;
 		fadeState = FadeState.NONE;
-		fishObject.setActive(false);
-		fishObject = null;
+		foodObject.setActive(false);
+		foodObject = null;
+		smokeObject.setActive(false);
+		smokeObject = null;
 	}
 
 	private void setCookLocation(int sceneX, int sceneY)
@@ -224,16 +280,16 @@ public class ImmersiveCookingPlugin extends Plugin
 	{
 		MenuAction action = event.getMenuAction();
 
-		// Raw fish used on the range.
+		// Raw food used on the range.
 		if (action == MenuAction.WIDGET_TARGET_ON_GAME_OBJECT)
 		{
 			Widget selectedWidget = client.getSelectedWidget();
 			int itemId = selectedWidget != null ? selectedWidget.getItemId() : -1;
-			if (!RAW_FISH_ITEM_IDS.contains(itemId) || !isCookingObject(event.getId()))
+			if (!RAW_FOOD_ITEM_IDS.contains(itemId) || !isCookingObject(event.getId()))
 			{
 				return;
 			}
-			// Mid-batch the game keeps cooking the first fish; chat messages resync if not.
+			// Mid-batch the game keeps cooking the first food; chat messages resync if not.
 			if (pendingCookItemId != -1 && pendingCookItemId != itemId)
 			{
 				return;
@@ -258,7 +314,7 @@ public class ImmersiveCookingPlugin extends Plugin
 			clearCooking();
 		}
 
-		// "Cook" on the range: location known, fish picked in the dialog.
+		// "Cook" on the range: location known, food picked in the dialog.
 		if (GAME_OBJECT_OPTIONS.contains(action) && "Cook".equalsIgnoreCase(event.getMenuOption()))
 		{
 			// A new session: the old batch's clean-up must not wipe this location later.
@@ -278,8 +334,8 @@ public class ImmersiveCookingPlugin extends Plugin
 		}
 
 		// A click in the dialog. Read the click's own text; the hover poll may lag a fast click.
-		// Quantity buttons carry no fish name, so fall back to the hovered one.
-		int clickedItemId = parseFishFromMenuText(event.getMenuOption(), event.getMenuTarget());
+		// Quantity buttons carry no food name, so fall back to the hovered one.
+		int clickedItemId = parseFoodFromMenuText(event.getMenuOption(), event.getMenuTarget());
 		int confirmedItemId = clickedItemId != -1 ? clickedItemId : hoverPreviewItemId;
 		if (confirmedItemId != -1)
 		{
@@ -354,7 +410,7 @@ public class ImmersiveCookingPlugin extends Plugin
 
 	private void updateHoverPreview()
 	{
-		int hoveredItemId = findHoveredFishSlot();
+		int hoveredItemId = findHoveredFood();
 		if (hoveredItemId == hoverPreviewItemId)
 		{
 			return;
@@ -366,7 +422,7 @@ public class ImmersiveCookingPlugin extends Plugin
 			pendingHoverSwapItemId = -1;
 			hideModel();
 		}
-		else if (fishObject.isActive())
+		else if (foodObject.isActive())
 		{
 			// Something is showing or still shrinking: shrink it fully, then grow this one in.
 			pendingHoverSwapItemId = hoveredItemId;
@@ -418,8 +474,8 @@ public class ImmersiveCookingPlugin extends Plugin
 		showModel(pendingCookItemId);
 	}
 
-	// Each visible button's fish, read from its name (the same text the "Cook <fish>" menu shows).
-	// Non-fish buttons (e.g. poison karambwan) stay as -1 so the hotkey numbering lines up.
+	// Each visible button's food, read from its name (the same text the "Cook <food>" menu shows).
+	// Unknown buttons (e.g. poison karambwan) stay as -1 so the hotkey numbering lines up.
 	private List<Integer> readDialogSlots()
 	{
 		List<Integer> slotItemIds = new ArrayList<>();
@@ -430,7 +486,7 @@ public class ImmersiveCookingPlugin extends Plugin
 			{
 				continue;
 			}
-			slotItemIds.add(slot.getName() != null ? fishForLabel(slot.getName()) : -1);
+			slotItemIds.add(slot.getName() != null ? foodForLabel(slot.getName()) : -1);
 		}
 		return slotItemIds;
 	}
@@ -441,8 +497,8 @@ public class ImmersiveCookingPlugin extends Plugin
 		return universe == null || universe.isHidden();
 	}
 
-	// The dialog's food widgets have no item id, but the hovered "Cook <fish>" menu entry names it.
-	private int findHoveredFishSlot()
+	// The dialog's food widgets have no item id, but the hovered "Cook <food>" menu entry names it.
+	private int findHoveredFood()
 	{
 		MenuEntry[] entries = client.getMenu().getMenuEntries();
 		if (entries.length == 0)
@@ -450,55 +506,83 @@ public class ImmersiveCookingPlugin extends Plugin
 			return -1;
 		}
 		MenuEntry top = entries[entries.length - 1];
-		return parseFishFromMenuText(top.getOption(), top.getTarget());
+		return parseFoodFromMenuText(top.getOption(), top.getTarget());
 	}
 
-	private int parseFishFromMenuText(String option, String target)
+	private int parseFoodFromMenuText(String option, String target)
 	{
-		return "Cook".equalsIgnoreCase(option) ? fishForLabel(target) : -1;
+		return "Cook".equalsIgnoreCase(option) ? foodForLabel(target) : -1;
 	}
 
-	private int fishForLabel(String label)
+	private int foodForLabel(String label)
 	{
-		return rawFishByName().getOrDefault(Text.removeTags(label).toLowerCase(), -1);
+		return pickRawFood(rawFoodByName().get(Text.removeTags(label).toLowerCase()));
 	}
 
-	private Map<String, Integer> rawFishByName()
+	// Several raw foods can share a name (beef, rat and bear meat are all "Cooked meat"); the one being
+	// cooked is the one in the inventory.
+	private int pickRawFood(List<Integer> candidates)
 	{
-		if (rawFishByName == null)
+		if (candidates == null)
 		{
-			rawFishByName = new HashMap<>();
-			for (int rawItemId : RAW_FISH_ITEM_IDS)
+			return -1;
+		}
+		ItemContainer inventory = client.getItemContainer(InventoryID.INV);
+		for (int rawItemId : candidates)
+		{
+			if (inventory != null && inventory.count(rawItemId) > 0)
+			{
+				return rawItemId;
+			}
+		}
+		return candidates.get(0);
+	}
+
+	private Map<String, List<Integer>> rawFoodByName()
+	{
+		if (rawFoodByName == null)
+		{
+			rawFoodByName = new HashMap<>();
+			for (int rawItemId : RAW_FOOD_ITEM_IDS)
 			{
 				// The dialog says "Shark", not "Raw shark".
 				String name = client.getItemDefinition(rawItemId).getName().toLowerCase();
-				rawFishByName.put(name, rawItemId);
+				addRawFoodName(name, rawItemId);
 				if (name.startsWith("raw "))
 				{
-					rawFishByName.put(name.substring(4), rawItemId);
+					addRawFoodName(name.substring(4), rawItemId);
 				}
-				// Karambwan is labelled "Cooked karambwan" in the dialog.
-				rawFishByName.put(client.getItemDefinition(COOKED_BY_RAW.get(rawItemId)).getName().toLowerCase(), rawItemId);
+				// Some foods, like karambwan, are labelled by what they cook into.
+				addRawFoodName(client.getItemDefinition(COOKED_BY_RAW.get(rawItemId)).getName().toLowerCase(), rawItemId);
 			}
 		}
-		return rawFishByName;
+		return rawFoodByName;
+	}
+
+	private void addRawFoodName(String name, int rawItemId)
+	{
+		List<Integer> ids = rawFoodByName.computeIfAbsent(name, key -> new ArrayList<>());
+		if (!ids.contains(rawItemId))
+		{
+			ids.add(rawItemId);
+		}
 	}
 
 	// Longest match wins, so a short name inside a longer one can't take over.
-	private int resolveFishFromMessage(String message)
+	private int resolveFoodFromMessage(String message)
 	{
-		int bestItemId = -1;
+		List<Integer> best = null;
 		int bestLength = -1;
-		for (Map.Entry<String, Integer> entry : rawFishByName().entrySet())
+		for (Map.Entry<String, List<Integer>> entry : rawFoodByName().entrySet())
 		{
 			String name = entry.getKey();
 			if (name.length() > bestLength && Pattern.compile("\\b" + Pattern.quote(name) + "\\b").matcher(message).find())
 			{
-				bestItemId = entry.getValue();
+				best = entry.getValue();
 				bestLength = name.length();
 			}
 		}
-		return bestItemId;
+		return pickRawFood(best);
 	}
 
 	@Subscribe
@@ -546,7 +630,7 @@ public class ImmersiveCookingPlugin extends Plugin
 	@Subscribe
 	public void onChatMessage(ChatMessage event)
 	{
-		// Results are SPAM, out-of-fish is GAMEMESSAGE or MESBOX. Player chat is ignored.
+		// Results are SPAM, out-of-food is GAMEMESSAGE or MESBOX. Player chat is ignored.
 		ChatMessageType type = event.getType();
 		if (type != ChatMessageType.SPAM && type != ChatMessageType.GAMEMESSAGE && type != ChatMessageType.MESBOX)
 		{
@@ -568,7 +652,7 @@ public class ImmersiveCookingPlugin extends Plugin
 			{
 				return;
 			}
-			log.debug("Clearing: out of fish, message={}", message);
+			log.debug("Clearing: out of food, message={}", message);
 			clearCooking();
 			return;
 		}
@@ -583,8 +667,8 @@ public class ImmersiveCookingPlugin extends Plugin
 		}
 		log.debug("Cook result message: {}", message);
 
-		// The message names the fish the game actually cooked; trust it over our tracking.
-		int resolvedItemId = resolveFishFromMessage(message);
+		// The message names the food the game actually cooked; trust it over our tracking.
+		int resolvedItemId = resolveFoodFromMessage(message);
 
 		// Cooking with no session (it was cleared, or the start was missed): pick the last range back up.
 		if (pendingCookLocation == null)
@@ -598,7 +682,7 @@ public class ImmersiveCookingPlugin extends Plugin
 		}
 		if (resolvedItemId != -1 && resolvedItemId != pendingCookItemId)
 		{
-			log.debug("Resyncing fish from chat: was={}, now={}", pendingCookItemId, resolvedItemId);
+			log.debug("Resyncing food from chat: was={}, now={}", pendingCookItemId, resolvedItemId);
 			pendingCookItemId = resolvedItemId;
 			cookingAnimationSeen = true;
 		}
@@ -611,21 +695,23 @@ public class ImmersiveCookingPlugin extends Plugin
 		Integer resultItemId = burnt ? BURNT_BY_RAW.get(pendingCookItemId) : COOKED_BY_RAW.get(pendingCookItemId);
 		if (resultItemId == null)
 		{
-			// No burnt model for this fish.
+			// No burnt model for this food.
+			playSmoke();
 			hideModel();
 			scheduleNextRaw();
 		}
 		else if (displayedItemId == pendingCookItemId)
 		{
-			showResult(resultItemId);
+			showResult(resultItemId, burnt);
 		}
 		else
 		{
-			// The raw fish isn't up yet (previous result still cycling, or we only just learned
-			// the fish). Show it for a beat first.
+			// The raw food isn't up yet (previous result still cycling, or we only just learned
+			// the food). Show it for a beat first.
 			showModel(pendingCookItemId);
 			pendingShowItemId = resultItemId;
 			pendingShowIsResult = true;
+			pendingShowIsBurnt = burnt;
 			showAtTick = tick + 1;
 		}
 	}
@@ -667,15 +753,15 @@ public class ImmersiveCookingPlugin extends Plugin
 			showAtTick = -1;
 			if (pendingShowIsResult)
 			{
-				showResult(pendingShowItemId);
+				showResult(pendingShowItemId, pendingShowIsBurnt);
 			}
-			else if (hasRawFishLeft())
+			else if (hasRawFoodLeft())
 			{
 				showModel(pendingShowItemId);
 			}
 			else
 			{
-				// The animation keeps going after the last fish, so the inventory decides.
+				// The animation keeps going after the last food, so the inventory decides.
 				clearCooking();
 			}
 		}
@@ -695,7 +781,7 @@ public class ImmersiveCookingPlugin extends Plugin
 		showAtTick = client.getTickCount() + GAP_TICKS;
 	}
 
-	private boolean hasRawFishLeft()
+	private boolean hasRawFoodLeft()
 	{
 		ItemContainer inventory = client.getItemContainer(InventoryID.INV);
 		return inventory != null && inventory.count(pendingCookItemId) > 0;
@@ -719,10 +805,46 @@ public class ImmersiveCookingPlugin extends Plugin
 		dialogCloseCheckTick = -1;
 	}
 
-	private void showResult(int resultItemId)
+	private void showResult(int resultItemId, boolean burnt)
 	{
 		showModel(resultItemId);
 		hideAtTick = client.getTickCount() + RESULT_DISPLAY_TICKS;
+		if (burnt)
+		{
+			playSmoke();
+		}
+	}
+
+	// The smoke's orange embers (any face more saturated than its grey) go its grey, keeping their lightness.
+	private static ModelData greyEmbers(ModelData smoke)
+	{
+		ModelData result = smoke.cloneColors();
+		short[] colors = result.getFaceColors();
+		for (int face = 0; face < colors.length; face++)
+		{
+			if (((colors[face] >> 7) & 7) > SMOKE_GREY_SATURATION)
+			{
+				colors[face] = (short) (SMOKE_GREY_HUE << 10 | SMOKE_GREY_SATURATION << 7 | colors[face] & 127);
+			}
+		}
+		return result;
+	}
+
+	private void playSmoke()
+	{
+		ModelData modelData = client.loadModelData(SMOKE_MODEL);
+		if (modelData == null)
+		{
+			return;
+		}
+		// Same lighting the client gives spot animations.
+		smokeObject.setModel(greyEmbers(modelData).light(SMOKE_AMBIENT + 64, SMOKE_CONTRAST + 850, -30, -50, -30));
+		RuneLiteObject smoke = smokeObject;
+		smokeObject.setAnimationController(new AnimationController(client, AnimationID.FORESTRY_CAMPFIRE)
+			.setOnFinished(controller -> smoke.setActive(false)));
+		smokeObject.setLocation(pendingCookLocation.dx(EAST_OFFSET), client.getTopLevelWorldView().getPlane());
+		smokeObject.setZ(smokeObject.getZ() - HOVER_HEIGHT);
+		smokeObject.setActive(true);
 	}
 
 	private void showModel(int itemId)
@@ -732,26 +854,26 @@ public class ImmersiveCookingPlugin extends Plugin
 		hideAtTick = -1;
 		showAtTick = -1;
 		pendingHoverSwapItemId = -1;
-		boolean wasAlreadyVisible = fishObject.isActive();
+		boolean wasAlreadyVisible = foodObject.isActive();
 		displayedItemId = itemId;
 
-		fishObject.setLocation(pendingCookLocation.dx(EAST_OFFSET), client.getTopLevelWorldView().getPlane());
-		fishObject.setZ(fishObject.getZ() - HOVER_HEIGHT);
+		foodObject.setLocation(pendingCookLocation.dx(EAST_OFFSET), client.getTopLevelWorldView().getPlane());
+		foodObject.setZ(foodObject.getZ() - HOVER_HEIGHT);
 
 		// Swapping what's already on screen (raw -> result) is instant; a fresh appearance pops in.
 		if (wasAlreadyVisible)
 		{
 			fadeState = FadeState.NONE;
-			fishObject.setModel(buildItemModel(itemId, MODEL_SCALE));
+			foodObject.setModel(buildItemModel(itemId, MODEL_SCALE));
 		}
 		else
 		{
-			fishObject.setModel(buildItemModel(itemId, MIN_SCALE_PERCENT));
+			foodObject.setModel(buildItemModel(itemId, MIN_SCALE_PERCENT));
 			fadeItemId = itemId;
 			fadeState = FadeState.IN;
 			fadeStartMs = System.currentTimeMillis();
 		}
-		fishObject.setActive(true);
+		foodObject.setActive(true);
 	}
 
 	private void hideModel()
@@ -782,7 +904,7 @@ public class ImmersiveCookingPlugin extends Plugin
 		float progress = Math.min(1f, (System.currentTimeMillis() - fadeStartMs) / (float) FADE_DURATION_MS);
 		float t = fadeState == FadeState.IN ? progress : (1f - progress);
 		int scalePercent = Math.max(MIN_SCALE_PERCENT, (int) (t * MODEL_SCALE));
-		fishObject.setModel(buildItemModel(fadeItemId, scalePercent));
+		foodObject.setModel(buildItemModel(fadeItemId, scalePercent));
 
 		if (progress < 1f)
 		{
@@ -793,7 +915,7 @@ public class ImmersiveCookingPlugin extends Plugin
 		fadeState = FadeState.NONE;
 		if (finished == FadeState.OUT)
 		{
-			fishObject.setActive(false);
+			foodObject.setActive(false);
 			if (pendingHoverSwapItemId != -1 && pendingCookLocation != null)
 			{
 				showModel(pendingHoverSwapItemId);

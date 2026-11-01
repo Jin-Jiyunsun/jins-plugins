@@ -58,7 +58,7 @@ final class RenderKey
 		int ammo = idAt(ids, EquipmentInventorySlot.AMMO.getSlotIdx());
 		int head = idAt(ids, EquipmentInventorySlot.HEAD.getSlotIdx());
 		int gloves = idAt(ids, EquipmentInventorySlot.GLOVES.getSlotIdx());
-		boolean bolts = ammo > 0 && EnchantedBolts.isEnchantedBolt(ItemVariationMapping.map(ammo));
+		boolean bolts = ammo > 0 && EnchantedBolts.isEnchantedBolt(ammo);
 		boolean slayerHelm = head > 0 && SlayerHelm.isSlayerHelm(head);
 		boolean silence = gloves > 0 && ItemVariationMapping.map(gloves) == ItemID.HUNTING_SILENT_GLOVES;
 
@@ -76,7 +76,7 @@ final class RenderKey
 	// A hovered item is described even when it isn't the one worn in that slot's usual place
 	private static boolean hoveredIsBolt(int hoveredItemId)
 	{
-		return hoveredItemId > 0 && EnchantedBolts.isEnchantedBolt(ItemVariationMapping.map(hoveredItemId));
+		return hoveredItemId > 0 && EnchantedBolts.isEnchantedBolt(hoveredItemId);
 	}
 
 	private static boolean hoveredIsSilence(int hoveredItemId)

@@ -4,6 +4,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.function.BooleanSupplier;
 import net.runelite.api.gameval.ItemID;
+import net.runelite.client.game.ItemVariationMapping;
 
 /**
  * Enchanted bolts (regular and dragon): each gem has a chance to trigger its own effect. Chances
@@ -15,6 +16,8 @@ import net.runelite.api.gameval.ItemID;
 final class EnchantedBolts
 {
 	private static final Map<Integer, Bolt> BOLTS = new HashMap<>();
+	// Ascension bolts share a variation chain with their unenchanted version, so they match on raw ids
+	private static final Map<Integer, Bolt> RAW_BOLTS = new HashMap<>();
 
 	static
 	{
@@ -39,6 +42,11 @@ final class EnchantedBolts
 			60, 60, "deal extra fire damage equal to 20% of your Ranged level. Negated by fiery monsters and dragonfire protection.");
 		add("Onyx", ItemID.XBOWS_CROSSBOW_BOLTS_RUNITE_TIPPED_ONYX_ENCHANTED, ItemID.DRAGON_BOLTS_ENCHANTED_ONYX,
 			100, 110, "deal 20% extra damage that heals you for 25% of the damage dealt. Not effective against the undead.");
+
+		RAW_BOLTS.put(ItemID.ASCENSION_BOLTS_DIAMOND_ENCHANTED, new Bolt("Diamond ascension bolts (e)",
+			25, 50, "ignore the target's Defence and raise max hit by 15%."));
+		RAW_BOLTS.put(ItemID.ASCENSION_BOLTS_ONYX_ENCHANTED, new Bolt("Onyx ascension bolts (e)",
+			50, 55, "deal 20% extra damage that heals you for 25% of the damage dealt. Not effective against the undead."));
 	}
 
 	private EnchantedBolts()
@@ -51,15 +59,22 @@ final class EnchantedBolts
 		BOLTS.put(dragonId, new Bolt(gem + " dragon bolts (e)", pvpTenths, pvmTenths, effect));
 	}
 
-	static boolean isEnchantedBolt(int itemId)
+	/** @param rawItemId the unmapped item id */
+	static boolean isEnchantedBolt(int rawItemId)
 	{
-		return BOLTS.containsKey(itemId);
+		return find(rawItemId) != null;
+	}
+
+	private static Bolt find(int rawItemId)
+	{
+		Bolt bolt = RAW_BOLTS.get(rawItemId);
+		return bolt != null ? bolt : BOLTS.get(ItemVariationMapping.map(rawItemId));
 	}
 
 	/** @param hardKandarinDiary only asked for here, i.e. only when an enchanted bolt is being described */
-	static EffectLine describe(int itemId, BooleanSupplier hardKandarinDiary)
+	static EffectLine describe(int rawItemId, BooleanSupplier hardKandarinDiary)
 	{
-		Bolt bolt = BOLTS.get(itemId);
+		Bolt bolt = find(rawItemId);
 		boolean diary = hardKandarinDiary.getAsBoolean();
 		String pvp = chance(bolt.pvpTenths, diary);
 		String text;
@@ -78,10 +93,11 @@ final class EnchantedBolts
 		return new EffectLine(bolt.name, text);
 	}
 
-	// The diary adds 10% of the base chance (5.0% -> 5.5%), which stays a whole number of tenths
+	// The diary adds 10% of the base chance (2.5% -> 2.75%), which stays a whole number of hundredths
 	private static String chance(int baseTenths, boolean diary)
 	{
-		return EffectLineFormat.formatTenths(diary ? baseTenths * 11 / 10 : baseTenths) + "%";
+		int hundredths = baseTenths * 10;
+		return EffectLineFormat.formatHundredths(diary ? hundredths * 11 / 10 : hundredths) + "%";
 	}
 
 	private static final class Bolt

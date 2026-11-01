@@ -396,7 +396,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Silverlight",
 		description = "Show the Silverlight effect",
 		section = weaponsSection,
-		position = 22
+		position = 23
 	)
 	default boolean silverlight()
 	{
@@ -432,7 +432,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Scorching bow",
 		description = "Show the Scorching bow effect",
 		section = weaponsSection,
-		position = 20
+		position = 21
 	)
 	default boolean scorchingBow()
 	{
@@ -444,7 +444,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Twisted bow",
 		description = "Show the Twisted bow effect",
 		section = weaponsSection,
-		position = 26
+		position = 27
 	)
 	default boolean twistedBow()
 	{
@@ -456,7 +456,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Zaryte crossbow",
 		description = "Show the Zaryte crossbow effect",
 		section = weaponsSection,
-		position = 29
+		position = 30
 	)
 	default boolean zaryteCrossbow()
 	{
@@ -480,7 +480,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Revenant weapons",
 		description = "Show the Revenant weapons effect",
 		section = weaponsSection,
-		position = 18
+		position = 19
 	)
 	default boolean revenantWeapons()
 	{
@@ -492,7 +492,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Staves of the dead",
 		description = "Show the Staves of the dead effect",
 		section = weaponsSection,
-		position = 23
+		position = 24
 	)
 	default boolean stavesOfTheDead()
 	{
@@ -516,7 +516,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Sanguinesti staff",
 		description = "Show the Sanguinesti staff effect",
 		section = weaponsSection,
-		position = 19
+		position = 20
 	)
 	default boolean sanguinestiStaff()
 	{
@@ -528,7 +528,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Purging staff",
 		description = "Show the Purging staff effect",
 		section = weaponsSection,
-		position = 17
+		position = 18
 	)
 	default boolean purgingStaff()
 	{
@@ -552,7 +552,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Wolfbane",
 		description = "Show the Wolfbane effect",
 		section = weaponsSection,
-		position = 28
+		position = 29
 	)
 	default boolean wolfbane()
 	{
@@ -584,11 +584,23 @@ public interface SetEffectDisplayConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "obligator",
+		name = "Obligator",
+		description = "Show the Obligator effect",
+		section = weaponsSection,
+		position = 16
+	)
+	default boolean obligator()
+	{
+		return true;
+	}
+
+	@ConfigItem(
 		keyName = "osmumtensFang",
 		name = "Osmumten's fang",
 		description = "Show the Osmumten's fang effect",
 		section = weaponsSection,
-		position = 16
+		position = 17
 	)
 	default boolean osmumtensFang()
 	{
@@ -600,7 +612,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Tumeken's shadow",
 		description = "Show the Tumeken's shadow effect",
 		section = weaponsSection,
-		position = 24
+		position = 25
 	)
 	default boolean tumekensShadow()
 	{
@@ -684,7 +696,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Scythe of Vitur",
 		description = "Show the Scythe of Vitur effect",
 		section = weaponsSection,
-		position = 21
+		position = 22
 	)
 	default boolean scytheOfVitur()
 	{
@@ -696,7 +708,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Vampyre weapons",
 		description = "Show the Sunspear, Ivandis flail, Blisterwood flail, Blisterwood stake and Hallowed flail effects",
 		section = weaponsSection,
-		position = 27
+		position = 28
 	)
 	default boolean vampyreWeapons()
 	{
@@ -732,7 +744,7 @@ public interface SetEffectDisplayConfig extends Config
 		name = "Twinflame staff",
 		description = "Show the Twinflame staff effect",
 		section = weaponsSection,
-		position = 25
+		position = 26
 	)
 	default boolean twinflameStaff()
 	{
@@ -764,11 +776,23 @@ public interface SetEffectDisplayConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "rondache",
+		name = "Rondache",
+		description = "Show the Rondache effect",
+		section = shieldsSection,
+		position = 12
+	)
+	default boolean rondache()
+	{
+		return true;
+	}
+
+	@ConfigItem(
 		keyName = "spectralSpiritShield",
 		name = "Spectral spirit shield",
 		description = "Show the Spectral spirit shield effect",
 		section = shieldsSection,
-		position = 12
+		position = 13
 	)
 	default boolean spectralSpiritShield()
 	{

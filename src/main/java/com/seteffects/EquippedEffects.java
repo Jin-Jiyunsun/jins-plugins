@@ -130,9 +130,9 @@ final class EquippedEffects
 			}
 		}
 
-		if (EnchantedBolts.isEnchantedBolt(mappedItemId) && enabled.test(EffectFamily.ENCHANTED_BOLTS))
+		if (EnchantedBolts.isEnchantedBolt(rawItemId) && enabled.test(EffectFamily.ENCHANTED_BOLTS))
 		{
-			lines.add(EnchantedBolts.describe(mappedItemId, diaries::hardKandarin));
+			lines.add(EnchantedBolts.describe(rawItemId, diaries::hardKandarin));
 		}
 
 		if (mappedItemId == ItemID.SKILLCAPE_AGILITY && enabled.test(EffectFamily.CAPES_OF_ACCOMPLISHMENT)
@@ -230,9 +230,9 @@ final class EquippedEffects
 				hasShayzienItem |= PerPieceSets.ShayzienArmour.isShayzienItem(mappedItemId);
 				hasAgilityCape |= mappedItemId == ItemID.SKILLCAPE_AGILITY;
 				hasMaxCape |= mappedItemId == ItemID.SKILLCAPE_MAX;
-				if (EnchantedBolts.isEnchantedBolt(mappedItemId))
+				if (EnchantedBolts.isEnchantedBolt(rawItemId))
 				{
-					enchantedBoltId = mappedItemId;
+					enchantedBoltId = rawItemId;
 				}
 				hasBloodbarkItem |= PerPieceSets.BloodbarkArmour.isBloodbarkItem(mappedItemId);
 				hasGracefulItem |= PerPieceSets.GracefulOutfit.isGracefulItem(mappedItemId);

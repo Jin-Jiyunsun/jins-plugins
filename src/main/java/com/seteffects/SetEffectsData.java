@@ -165,6 +165,7 @@ final class SetEffectsData
 		register(singles, ItemID.BLISTERWOOD_STAKE, new SingleItemEffect(EffectFamily.VAMPYRE_WEAPONS, "Blisterwood stake", "+25% damage and accuracy against vampyres."));
 		register(singles, ItemID.HALLOWED_FLAIL, new SingleItemEffect(EffectFamily.VAMPYRE_WEAPONS, "Hallowed flail", "+25% damage and accuracy against vampyres."));
 		register(singles, ItemID.SCYTHE_OF_VITUR, new SingleItemEffect(EffectFamily.SCYTHE_OF_VITUR, "Scythe of Vitur", "Hits up to three targets in front of you, or a large monster up to three times. Each hit deals 50% less damage than the last."));
+		register(singles, ItemID.OBLIGATOR, new SingleItemEffect(EffectFamily.OBLIGATOR, "Obligator", "Thrust style hits up to 2 additional creatures. While charged, thrust rolls damage up to 4 times and keeps the highest, +20% or +40% damage depending on the size of the target."));
 		register(singles, ItemID.OLAF2_BRINE_SABRE, new SingleItemEffect(EffectFamily.BRINE_SABRE, "Brine sabre", "Finishes off rockslugs without a bag of salt."));
 		register(singles, ItemID.GRANITE_HAMMER, new SingleItemEffect(EffectFamily.GRANITE_HAMMER, "Granite hammer", "+30% damage and accuracy against golems."));
 
@@ -172,6 +173,7 @@ final class SetEffectsData
 		register(singles, ItemID.ELYSIAN, new SingleItemEffect(EffectFamily.ELYSIAN_SPIRIT_SHIELD, "Elysian spirit shield", "70% chance to reduce incoming damage by 25%."));
 		register(singles, ItemID.SPECTRAL, new SingleItemEffect(EffectFamily.SPECTRAL_SPIRIT_SHIELD, "Spectral spirit shield", "Reduces the effectiveness of prayer-draining attacks by 50% (outside PvP)."));
 		register(singles, ItemID.DINHS_BULWARK, new SingleItemEffect(EffectFamily.DINHS_BULWARK, "Dinh's bulwark", "Block attack style reduces incoming damage by 20% (outside PvP). Pummel attack style increases max hit based on your defensive bonuses."));
+		register(singles, ItemID.RONDACHE, new SingleItemEffect(EffectFamily.RONDACHE, "Rondache", "Reduces incoming melee, ranged and magic damage by 2, after protection prayers."));
 		register(singles, ItemID.ANTIDRAGONBREATHSHIELD, new SingleItemEffect(EffectFamily.ANTI_DRAGON_SHIELD, "Anti-dragon shield", "Partial protection against dragonfire."));
 		register(singles, ItemID.ELEMENTAL_SHIELD, new SingleItemEffect(EffectFamily.ELEMENTAL_SHIELD, "Elemental shield", "Partial protection against wyverns' icy breath."));
 		register(singles, ItemID.ELEMENTAL_MIND_SHIELD, new SingleItemEffect(EffectFamily.MIND_SHIELD, "Mind shield", "Partial protection against wyverns' icy breath."));

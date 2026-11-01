@@ -63,6 +63,7 @@ enum EffectFamily
 	HARPOONS("harpoons"),
 	INFERNAL_TOOLS("infernalTools"),
 	TWINFLAME_STAFF("twinflameStaff"),
+	OBLIGATOR("obligator"),
 	ENCHANTED_BOLTS("enchantedBolts"),
 
 	// Shields
@@ -79,6 +80,7 @@ enum EffectFamily
 	ELEMENTAL_TOMES("elementalTomes"),
 	MIRROR_SHIELDS("mirrorShields"),
 	AQUANITE_HOPPER("aquaniteHopper"),
+	RONDACHE("rondache"),
 	GHOSTSPEAK("ghostspeak"),
 
 	// Head and hands

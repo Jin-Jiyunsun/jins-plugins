@@ -1,0 +1,50 @@
+name: Bug report
+description: Something in one of the plugins isn't working right
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: dropdown
+    id: plugin
+    attributes:
+      label: Which plugin?
+      options:
+        - Gear Effects Display
+        - Immersive Cooking
+        - Keybind Tile Highlight
+        - Lively Fishing Spots
+        - Poison Ring
+        - Skill Bubbles
+        - Tab Keybind Display
+        - Trawling Plus
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What went wrong, and what did you expect to happen instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How can I reproduce it?
+      description: Where were you, what were you doing, and which settings did you change?
+      placeholder: |
+        1. Go to ...
+        2. Click ...
+        3. See ...
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots or video
+      description: Drag files here if you have any. They help a lot.
+  - type: dropdown
+    id: gpu
+    attributes:
+      label: Are you using the GPU or 117 HD plugin?
+      options:
+        - "No"
+        - GPU
+        - 117 HD
+        - Not sure

@@ -7,7 +7,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Sets the game's own "Set Effect Bonus" box describes that we deliberately don't track (Statius's,
+ * Sets the game's own "Equipment Effects" box describes that we deliberately don't track (Statius's,
  * Vesta's, Morrigan's and Zuriel's equipment, and their corrupted versions). We blank the vanilla
  * text to draw our own list, which would hide these - so their blocks are lifted back out of the
  * vanilla text and added to our list in our own formatting instead. Sets we do track are left

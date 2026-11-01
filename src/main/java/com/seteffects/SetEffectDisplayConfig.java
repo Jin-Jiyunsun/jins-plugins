@@ -12,8 +12,8 @@ public interface SetEffectDisplayConfig extends Config
 
 	@ConfigItem(
 		keyName = "showSetEffectList",
-		name = "Show set effect list",
-		description = "Replace the Set Effect Bonus box with the full list of your worn gear's effects",
+		name = "Show gear effects list",
+		description = "Replace the Equipment Effects box with the<br>full list of your worn gear's effects",
 		position = 0
 	)
 	default boolean showSetEffectList()

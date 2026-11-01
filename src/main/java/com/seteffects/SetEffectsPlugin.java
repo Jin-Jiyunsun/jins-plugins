@@ -29,9 +29,9 @@ import net.runelite.client.ui.overlay.tooltip.Tooltip;
 import net.runelite.client.ui.overlay.tooltip.TooltipManager;
 
 @PluginDescriptor(
-	name = "Set Effect Display",
+	name = "Gear Effects Display",
 	description = "Shows the passive set and gear effects of worn items, on hover and in a scrollable list, in the equipment stats screen",
-	tags = {"equipment", "tooltip", "set", "barrows", "void", "moons"}
+	tags = {"equipment", "tooltip", "set", "gear", "effects", "passive", "barrows", "void", "moons"}
 )
 public class SetEffectsPlugin extends Plugin
 {
@@ -86,7 +86,7 @@ public class SetEffectsPlugin extends Plugin
 	private volatile WarmClothingDisplay warmClothingDisplay = WarmClothingDisplay.AT_WINTERTODT;
 
 	/**
-	 * The vanilla "Set Effect Bonus" box's own text, rewritten by the game's own script whenever
+	 * The vanilla "Equipment Effects" box's own text, rewritten by the game's own script whenever
 	 * equipment changes (it already natively describes some sets, e.g. full Barrows brothers).
 	 * We blank the native widget every frame and draw our own scrollable text over it instead
 	 * (see SetEffectsOverlay). These two track what we last saw/wrote so a later update can tell

@@ -1,17 +1,19 @@
-# Set Effect Display
+# Gear Effects Display
+
+Formerly Set Effect Display.
 
 <p align="center">
 <img width="800" height="518" alt="seteffectanim" src="https://github.com/user-attachments/assets/78673e7a-a4f8-463a-93bf-d5d8959636f9" />
 </p>
 
 Shows the passive set and gear effect for items in the equipment bonuses screen, so you don't
-have to look it up. Hover an item for a tooltip, or check the "Set Effect Bonus" box.
+have to look it up. Hover an item for a tooltip, or check the "Equipment Effects" box.
 
 ## Features
 
 - **Hover tooltips**: hover any tracked item in the "View equipment stats" popup to see its
   effect.
-- **Set Effect Bonus box takeover**: the vanilla display is replaced with a scrollable, colour-coded list of every tracked effect
+- **Equipment Effects box takeover**: the vanilla display is replaced with a scrollable, colour-coded list of every tracked effect
   you're currently wearing, sorted alphabetically. Scrolls with the mouse wheel, click arrows, or
   a draggable thumb, styled to match a native OSRS scrollbar. The scrollbar follows your resource pack,
   so it matches the game's own if a pack restyles it.
@@ -24,7 +26,7 @@ have to look it up. Hover an item for a tooltip, or check the "Set Effect Bonus"
 
 ## Settings
 
-- **Show set effect list**: turn off to leave the vanilla "Set Effect Bonus" box alone.
+- **Show gear effects list**: turn off to leave the vanilla "Equipment Effects" box alone.
 - **Show tooltips**: a dropdown (Off, Equipment window, Everywhere; default Equipment window). Everywhere also shows the tooltip
   when hovering items in your inventory and worn equipment tab (not the bank).
 - **Verbose**: off by default. Turn on to also list each worn piece's own bonus for sets with per-piece

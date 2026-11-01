@@ -33,7 +33,7 @@ import net.runelite.client.ui.overlay.OverlayPosition;
 import net.runelite.client.ui.overlay.OverlayUtil;
 
 /**
- * Draws our own scrollable effect text directly over the native "Set Effect Bonus" box, whose
+ * Draws our own scrollable effect text directly over the native "Equipment Effects" box, whose
  * text is blanked by {@link SetEffectsPlugin} - the native box has no working scroll/auto-resize
  * for content this long (confirmed via the Widget Inspector: its scroll fields are unconfigured
  * and its height is a fixed fraction of its parent, not content-driven), so we render and scroll

@@ -819,7 +819,7 @@ public class TrawlingPlusPlugin extends Plugin
 	private void showDangerMarkers()
 	{
 		worldMapPointManager.removeIf(DangerMarker.class::isInstance);
-		if (worldMapShown())
+		if (worldMapShown() && config.showDanger().onMaps())
 		{
 			for (DangerMarker marker : dangerMarkers)
 			{
@@ -1013,7 +1013,7 @@ public class TrawlingPlusPlugin extends Plugin
 		}
 
 		if (TrawlingPlusConfig.GROUP.equals(event.getGroup())
-			&& "showOnMaps".equals(event.getKey()))
+			&& ("showOnMaps".equals(event.getKey()) || "showDanger".equals(event.getKey())))
 		{
 			clientThread.invoke(this::showDangerMarkers);
 		}

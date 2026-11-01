@@ -923,12 +923,27 @@ final class ShoalRoute
 	}
 
 	/**
-	 * Whether the drawn point at this distance round the route passes close to where sea creatures that
-	 * attack boats spawn.
+	 * Whether the piece of route at this distance round it is drawn as dangerous. A piece takes the colour of the
+	 * point it starts from, so this reads that point rather than the one after.
 	 */
 	boolean dangerAtDistance(double distance)
 	{
-		return sampleX.length > 0 && dangerAt(sampleAt(forward(0, distance)));
+		return dangerAtDistance(distance, 1);
+	}
+
+	/**
+	 * The same, for a line drawn through only every so many points, where a piece starts at a multiple of stride.
+	 */
+	boolean dangerAtDistance(double distance, int stride)
+	{
+		int count = sampleX.length;
+		if (count == 0)
+		{
+			return false;
+		}
+		int index = Arrays.binarySearch(sampleDistance, forward(0, distance));
+		int start = index >= 0 ? index : (-index - 2 + count) % count;
+		return dangerAt(start - start % stride);
 	}
 
 	/**

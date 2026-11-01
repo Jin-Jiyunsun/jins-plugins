@@ -46,23 +46,42 @@ final class MapRoutes
 	}
 
 	/**
-	 * One route as a line, broken wherever it leaves the map.
+	 * A colour made as see-through as another.
+	 */
+	static Color withAlphaOf(Color colour, Color like)
+	{
+		return new Color(colour.getRed(), colour.getGreen(), colour.getBlue(), like.getAlpha());
+	}
+
+	/**
+	 * Every so many of the route's points, chosen from how far the map is zoomed. A fixed number of
+	 * them cuts the corners once the map is zoomed in far enough to see it, and wastes the work of
+	 * placing points on top of each other once it is zoomed out.
+	 */
+	private static int stride(ShoalRoute route, double pixelsPerTile)
+	{
+		if (pixelsPerTile <= 0 || route.sampleCount() == 0)
+		{
+			return 1;
+		}
+		double apart = route.length() / route.sampleCount();
+		return Math.max(1, (int) (LINE_STEP / (pixelsPerTile * apart)));
+	}
+
+	/**
+	 * One route as a line, broken wherever it leaves the map. With a danger colour, the stretches that pass close to
+	 * where sea creatures that attack boats spawn are drawn in it instead, each stretch drawn once in one colour.
 	 */
 	static void route(Graphics2D graphics, TrawlingPlusConfig config, ShoalRoute route, Projection onto,
-		int thickness, double pixelsPerTile, double fromX, double fromY, double toX, double toY)
+		int thickness, double pixelsPerTile, double fromX, double fromY, double toX, double toY, Color dangerColour)
 	{
-		// Every so many of the route's points, chosen from how far the map is zoomed. A fixed number of
-		// them cuts the corners once the map is zoomed in far enough to see it, and wastes the work of
-		// placing points on top of each other once it is zoomed out.
-		int stride = 1;
-		if (pixelsPerTile > 0 && route.sampleCount() > 0)
-		{
-			double apart = route.length() / route.sampleCount();
-			stride = Math.max(1, (int) (LINE_STEP / (pixelsPerTile * apart)));
-		}
-
+		int stride = stride(route, pixelsPerTile);
+		boolean withDanger = dangerColour != null && route.hasDanger();
 		Path2D line = new Path2D.Double();
+		Path2D danger = withDanger ? new Path2D.Double() : null;
+		// Whether the last point placed is on the map, and which of the two paths it went into.
 		boolean drawing = false;
+		boolean wasDangerous = false;
 		for (int block = 0; block < route.blockCount(); block++)
 		{
 			// Only the runs of the route that reach what is being shown. Most of a route is somewhere
@@ -86,79 +105,36 @@ final class MapRoutes
 					continue;
 				}
 
-				if (drawing)
+				boolean dangerous = withDanger && route.dangerAt(sample);
+				Path2D into = dangerous ? danger : line;
+				if (drawing && dangerous != wasDangerous)
 				{
-					line.lineTo(at.getX(), at.getY());
+					// The colour changes here: the last piece stays in the old colour, and the new one starts at
+					// this point, so the two meet without a gap.
+					(wasDangerous ? danger : line).lineTo(at.getX(), at.getY());
+					into.moveTo(at.getX(), at.getY());
+				}
+				else if (drawing)
+				{
+					into.lineTo(at.getX(), at.getY());
 				}
 				else
 				{
-					line.moveTo(at.getX(), at.getY());
+					into.moveTo(at.getX(), at.getY());
 					drawing = true;
 				}
+				wasDangerous = dangerous;
 			}
 		}
 
+		graphics.setStroke(new BasicStroke(thickness));
 		graphics.setColor(config.routeColour());
-		graphics.setStroke(new BasicStroke(thickness));
 		graphics.draw(line);
-	}
-
-	/**
-	 * The stretches of a route that pass close to where sea creatures that attack boats spawn, drawn over its
-	 * line in the given colour and broken wherever the route is safe or leaves the map.
-	 */
-	static void dangerStretches(Graphics2D graphics, ShoalRoute route, Projection onto, Color colour, int thickness,
-		double pixelsPerTile, double fromX, double fromY, double toX, double toY)
-	{
-		if (!route.hasDanger())
+		if (danger != null)
 		{
-			return;
+			graphics.setColor(dangerColour);
+			graphics.draw(danger);
 		}
-
-		// The same thinning of points as the route line itself, so the two lie on top of each other.
-		int stride = 1;
-		if (pixelsPerTile > 0 && route.sampleCount() > 0)
-		{
-			double apart = route.length() / route.sampleCount();
-			stride = Math.max(1, (int) (LINE_STEP / (pixelsPerTile * apart)));
-		}
-
-		Path2D line = new Path2D.Double();
-		boolean drawing = false;
-		for (int block = 0; block < route.blockCount(); block++)
-		{
-			if (!route.blockWithin(block, fromX, fromY, toX, toY))
-			{
-				drawing = false;
-				continue;
-			}
-
-			int start = route.blockFrom(block);
-			for (int sample = start + (stride - start % stride) % stride; sample < route.blockTo(block);
-				sample += stride)
-			{
-				Point at = route.dangerAt(sample) ? onto.at(route.sampleX(sample), route.sampleY(sample)) : null;
-				if (at == null)
-				{
-					drawing = false;
-					continue;
-				}
-
-				if (drawing)
-				{
-					line.lineTo(at.getX(), at.getY());
-				}
-				else
-				{
-					line.moveTo(at.getX(), at.getY());
-					drawing = true;
-				}
-			}
-		}
-
-		graphics.setColor(colour);
-		graphics.setStroke(new BasicStroke(thickness));
-		graphics.draw(line);
 	}
 
 	/**
@@ -187,6 +163,8 @@ final class MapRoutes
 
 		double apart = (double) every * spacing;
 		Color arrowColour = config.directionArrowColour();
+		// Read the same way the line is coloured, through the same thinned points.
+		int stride = stride(route, pixelsPerTile);
 		for (int block = 0; block < route.blockCount(); block++)
 		{
 			// The same skipping the line is drawn with. A run of the route covers one stretch of the way
@@ -232,7 +210,7 @@ final class MapRoutes
 				}
 
 				// An arrow on a stretch drawn red is red too, so it doesn't break the stretch up.
-				graphics.setColor(dangerColour != null && route.dangerAtDistance(arrow * apart) ? dangerColour : arrowColour);
+				graphics.setColor(dangerColour != null && route.dangerAtDistance(arrow * apart, stride) ? dangerColour : arrowColour);
 				graphics.fill(
 					arrowhead(at, Math.atan2(to.getY() - from.getY(), to.getX() - from.getX()), size));
 			}

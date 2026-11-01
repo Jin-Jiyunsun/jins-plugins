@@ -712,25 +712,36 @@ class TrawlingPlusOverlay extends Overlay
 			double toY = view.getBaseY() + view.getSizeY() + beyond;
 
 			Line line = new Line();
+			// The dangerous stretches, drawn red in place of the line.
+			Line danger = dangerOnRoute(route) ? new Line() : null;
+			boolean wasDangerous = false;
 			for (int block = 0; block < route.blockCount(); block++)
 			{
 				if (!route.blockWithin(block, fromX, fromY, toX, toY))
 				{
 					// Nowhere near, so the line picks up again wherever the route comes back.
-					line.add(null);
-					line.hasLast = false;
+					breakLine(line);
+					if (danger != null)
+					{
+						breakLine(danger);
+					}
 					continue;
 				}
 
 				for (int sample = route.blockFrom(block); sample < route.blockTo(block); sample++)
 				{
-					addPoint(line, view, route.sampleX(sample), route.sampleY(sample));
+					wasDangerous = addRoutePoint(line, danger, view, route.dangerAt(sample), wasDangerous,
+						route.sampleX(sample), route.sampleY(sample));
 				}
 			}
 
 			// Closing the loop, so the last run joins back onto the first.
-			addPoint(line, view, route.sampleX(0), route.sampleY(0));
+			addRoutePoint(line, danger, view, route.dangerAt(0), wasDangerous, route.sampleX(0), route.sampleY(0));
 			drawLine(graphics, line);
+			if (danger != null)
+			{
+				drawLine(graphics, danger, 1, MapRoutes.withAlphaOf(config.dangerColour(), config.routeColour()));
+			}
 		}
 
 		if (config.showDirectionArrows())
@@ -841,10 +852,19 @@ class TrawlingPlusOverlay extends Overlay
 			Path2D tip = shown <= 0 ? null : arrowhead(view, place, tipLength, SHOAL_ARROW_HALF_WIDTH, SHOAL_ARROW_NOTCH);
 			if (tip != null)
 			{
-				graphics.setColor(withOpacity(config.directionArrowColour(), shown));
+				graphics.setColor(withOpacity(headArrowColour(route, placed.distance + drawn), shown));
 				graphics.fill(tip);
 			}
 		}
+	}
+
+	/**
+	 * The colour of the arrow leading the route as it draws out: red while it is over a stretch drawn red.
+	 */
+	private Color headArrowColour(ShoalRoute route, double distance)
+	{
+		Color colour = config.directionArrowColour();
+		return dangerOnRoute(route) && route.dangerAtDistance(distance) ? dangerArrowColour(colour) : colour;
 	}
 
 	/**
@@ -924,7 +944,7 @@ class TrawlingPlusOverlay extends Overlay
 			Path2D tip = shown <= 0 ? null : arrowhead(view, place, tipLength, SHOAL_ARROW_HALF_WIDTH, SHOAL_ARROW_NOTCH);
 			if (tip != null)
 			{
-				graphics.setColor(withOpacity(config.directionArrowColour(), shown));
+				graphics.setColor(withOpacity(headArrowColour(route, distance + drawn), shown));
 				graphics.fill(tip);
 			}
 		}
@@ -1683,8 +1703,10 @@ class TrawlingPlusOverlay extends Overlay
 			// only ever gets shorter as the shoal swims along it. Joining it to the shoal instead leaves a
 			// first piece that swings about, since a smoothed route never runs exactly through the shoal.
 			Line line = new Line();
+			Line danger = dangerOnRoute(route) ? new Line() : null;
 			double[] start = route.pointAt(distance);
-			addPoint(line, view, start[0], start[1]);
+			boolean wasDangerous = route.dangerAtDistance(distance);
+			addRoutePoint(line, danger, view, wasDangerous, wasDangerous, start[0], start[1]);
 			for (int step = 0; step < steps; step++)
 			{
 				int sample = (from + step) % route.sampleCount();
@@ -1692,14 +1714,19 @@ class TrawlingPlusOverlay extends Overlay
 				{
 					break;
 				}
-				addPoint(line, view, route.sampleX(sample), route.sampleY(sample));
+				wasDangerous = addRoutePoint(line, danger, view, route.dangerAt(sample), wasDangerous,
+					route.sampleX(sample), route.sampleY(sample));
 			}
 
 			// Ends along the route too, level with the stop once it has drawn all the way there, rather than
 			// at the stop itself: a smoothed route passes beside a stop, and joining the two leaves a hook.
 			double[] end = route.pointAt(distance + drawn);
-			addPoint(line, view, end[0], end[1]);
+			addRoutePoint(line, danger, view, route.dangerAtDistance(distance + drawn), wasDangerous, end[0], end[1]);
 			drawLine(graphics, line, opacity);
+			if (danger != null)
+			{
+				drawLine(graphics, danger, opacity, MapRoutes.withAlphaOf(config.dangerColour(), config.routeColour()));
+			}
 		}
 
 		if (config.showDirectionArrows())
@@ -1715,8 +1742,13 @@ class TrawlingPlusOverlay extends Overlay
 
 	private void drawLine(Graphics2D graphics, Line line, double opacity)
 	{
+		drawLine(graphics, line, opacity, config.routeColour());
+	}
+
+	private void drawLine(Graphics2D graphics, Line line, double opacity, Color colour)
+	{
 		// Round joins and caps so the short segments the curve is drawn with blend into one smooth line.
-		graphics.setColor(opacity >= 1 ? config.routeColour() : withOpacity(config.routeColour(), opacity));
+		graphics.setColor(opacity >= 1 ? colour : withOpacity(colour, opacity));
 		lineStrokes(config.routeLineThickness().pixels());
 		graphics.setStroke(lineStroke);
 		graphics.draw(line.path);
@@ -1734,8 +1766,8 @@ class TrawlingPlusOverlay extends Overlay
 		{
 			piece.setLine(f[k], f[k + 1], f[k + 2], f[k + 3]);
 			graphics.setPaint(new GradientPaint((float) f[k], (float) f[k + 1],
-				withOpacity(config.routeColour(), opacity * f[k + 4]), (float) f[k + 2], (float) f[k + 3],
-				withOpacity(config.routeColour(), opacity * f[k + 5])));
+				withOpacity(colour, opacity * f[k + 4]), (float) f[k + 2], (float) f[k + 3],
+				withOpacity(colour, opacity * f[k + 5])));
 			graphics.draw(piece);
 		}
 		graphics.setPaint(paint);
@@ -1826,6 +1858,8 @@ class TrawlingPlusOverlay extends Overlay
 		// The first arrow sits one spacing in from the start of the route, so where the loop closes, its
 		// last arrow and first arrow are never closer than the spacing.
 		Color colour = opacity >= 1 ? config.directionArrowColour() : withOpacity(config.directionArrowColour(), opacity);
+		// An arrow on a stretch drawn red is red too, as on the maps.
+		Color danger = dangerOnRoute(route) ? dangerArrowColour(colour) : null;
 		graphics.setColor(colour);
 
 		// Only the arrows on runs of the route that reach the loaded map, as the line is drawn: an arrow off it
@@ -1856,13 +1890,14 @@ class TrawlingPlusOverlay extends Overlay
 					Path2D head = shown <= 0 ? null : arrowhead(view, place, length, ARROW_HALF_WIDTH, ARROW_NOTCH);
 					if (head != null)
 					{
-						// Only an arrow near the boat changes colour; the rest share the one already set.
-						if (shown < 1)
+						// Only an arrow near the boat or in danger changes colour; the rest share the one already set.
+						Color own = danger != null && route.dangerAtDistance(at) ? danger : colour;
+						if (shown < 1 || own != colour)
 						{
-							graphics.setColor(withOpacity(colour, shown));
+							graphics.setColor(withOpacity(own, Math.min(1, shown)));
 						}
 						graphics.fill(head);
-						if (shown < 1)
+						if (shown < 1 || own != colour)
 						{
 							graphics.setColor(colour);
 						}
@@ -3138,6 +3173,51 @@ class TrawlingPlusOverlay extends Overlay
 		}
 		double fraction = Math.min(1, Math.sqrt(nearest) / CLEAR_FADE_TILES);
 		return fraction * fraction * (3 - 2 * fraction);
+	}
+
+	/**
+	 * Whether a route's dangerous stretches are drawn red in the water.
+	 */
+	private boolean dangerOnRoute(ShoalRoute route)
+	{
+		return route.hasDanger() && config.showDanger().onRoute();
+	}
+
+	/**
+	 * The danger colour for an arrow, as see-through as the arrow colour it stands in for.
+	 */
+	private Color dangerArrowColour(Color like)
+	{
+		return MapRoutes.withAlphaOf(config.dangerColour(), like);
+	}
+
+	/**
+	 * Adds the next point of a route to the route line, or to the red line when it is dangerous. Where the colour
+	 * changes, the point ends one line and starts the other, so they meet without a gap. Gives back dangerous.
+	 */
+	private boolean addRoutePoint(Line line, Line danger, WorldView view, boolean dangerous, boolean wasDangerous,
+		double x, double y)
+	{
+		if (danger == null)
+		{
+			addPoint(line, view, x, y);
+			return false;
+		}
+
+		if (dangerous != wasDangerous)
+		{
+			Line ending = wasDangerous ? danger : line;
+			addPoint(ending, view, x, y);
+			breakLine(ending);
+		}
+		addPoint(dangerous ? danger : line, view, x, y);
+		return dangerous;
+	}
+
+	private static void breakLine(Line line)
+	{
+		line.add(null);
+		line.hasLast = false;
 	}
 
 	/**

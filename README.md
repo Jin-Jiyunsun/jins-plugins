@@ -15,9 +15,9 @@ and keeps track of your nets, bait and cargo hold from a HUD on the boat.
   nearest shoal is currently heading. The plugin automatically shows you the nearest route.
 - **Fishable area**: a square or circle round the nearest shoal showing how close your boat needs
   to be to fish it, plus a dot on the boat showing whether you're in range.
-- **Dangerous water**: on the world map, stretches of route that pass close to where sea creatures
-  that attack boats spawn are marked with a skull icon, alongside the stretch of route they
-  threaten.
+- **Dangerous water**: stretches of route that pass close to where sea creatures that attack boats
+  spawn are drawn in red on the maps or on the route in the water, and the world map marks each
+  spawn with a skull icon.
 - **Heads up display**: a pill on the boat showing time left at the current stop, fish caught in
   the nets, bait remaining, a hold-full warning and each net's depth. When all it would show is an
   empty or unknown fish count, it hides while you're not trawling: no net lowered, no fish in the
@@ -57,8 +57,9 @@ Every route was recorded in-game and is accurate to the tile when no smoothing i
 
 - **Show guides**: whether route lines, arrows and stop markers show all the time or only while
   your boat has trawling nets fitted.
-- **Show on maps**: minimap, world map, both or off. The world map is also where dangerous water
-  is marked.
+- **Show on maps**: minimap, world map, both or off.
+- **Show danger**: where dangerous water is marked in red: on the route in the water, on the maps,
+  both or off.
 - **Clear around boat**: hides the route line, direction arrows and stops under your boat, fading
   them out around its hull.
 - Each part of the display is toggleable. The route line, direction arrows, stops, the shoal's

@@ -35,9 +35,9 @@ class TrawlingPlusMapOverlay extends Overlay
 	// Stretches of route that pass close to where sea creatures that attack boats spawn, and the skull and
 	// crossbones marking each place they spawn close enough to a route to threaten it, placed among the spawns
 	// that are that close. The plugin puts the skulls on the map as RuneLite world map points, which gives them
-	// the game's style of tooltip. Drawn whenever routes are, on the world map only. Where each creature spawns is
-	// never drawn itself.
-	private static final Color DANGER_COLOUR = new Color(230, 40, 40);
+	// the game's style of tooltip. With Show danger on the maps, the stretches are drawn whenever routes are, on the
+	// minimap too, in the Danger colour; the skulls only on the world map. Where each creature spawns is never drawn
+	// itself.
 	static final BufferedImage DANGER_ICON = dangerIcon();
 
 	// How far apart the two points used to measure the map's zoom are, in tiles. Far enough that
@@ -237,6 +237,7 @@ class TrawlingPlusMapOverlay extends Overlay
 		Shape clip = graphics.getClip();
 		graphics.clip(mapArea(within));
 
+		boolean danger = config.showDanger().onMaps();
 		for (ShoalRoute route : plugin.getShownRoutes())
 		{
 			// Whether any of the route could be on screen, from the box it fits inside, rather than by
@@ -248,11 +249,9 @@ class TrawlingPlusMapOverlay extends Overlay
 			}
 
 			MapRoutes.route(graphics, config, route, onto, THICKNESS, pixelsPerTile,
-				leftX, bottomY, rightX, topY);
-			MapRoutes.dangerStretches(graphics, route, onto, DANGER_COLOUR, THICKNESS, pixelsPerTile,
-				leftX, bottomY, rightX, topY);
-			MapRoutes.arrows(graphics, config, route, onto, ARROW, pixelsPerTile,
-				leftX, bottomY, rightX, topY, DANGER_COLOUR);
+				leftX, bottomY, rightX, topY, danger ? MapRoutes.withAlphaOf(config.dangerColour(), config.routeColour()) : null);
+			MapRoutes.arrows(graphics, config, route, onto, ARROW, pixelsPerTile, leftX, bottomY, rightX, topY,
+				danger ? MapRoutes.withAlphaOf(config.dangerColour(), config.directionArrowColour()) : null);
 		}
 
 		// Only a shoal the client is drawing in the world may be marked on the map. Shoals are dropped

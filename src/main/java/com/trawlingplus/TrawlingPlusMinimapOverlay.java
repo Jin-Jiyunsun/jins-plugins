@@ -129,7 +129,8 @@ class TrawlingPlusMinimapOverlay extends Overlay
 
 		if (route != null && route.overlaps(fromX, fromY, toX, toY))
 		{
-			MapRoutes.route(graphics, config, route, onto, THICKNESS, pixelsPerTile, fromX, fromY, toX, toY);
+			MapRoutes.route(graphics, config, route, onto, THICKNESS, pixelsPerTile, fromX, fromY, toX, toY,
+				config.showDanger().onMaps() ? MapRoutes.withAlphaOf(config.dangerColour(), config.routeColour()) : null);
 		}
 
 		// Only a shoal the client is drawing in the world may be marked on the map.

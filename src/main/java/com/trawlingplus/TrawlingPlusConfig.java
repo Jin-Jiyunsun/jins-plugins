@@ -32,7 +32,7 @@ public interface TrawlingPlusConfig extends Config
 	@ConfigSection(
 		name = "Route line",
 		description = "The line each shoal swims along",
-		position = 6
+		position = 7
 	)
 	String routeLineSection = "routeLine";
 
@@ -170,6 +170,37 @@ public interface TrawlingPlusConfig extends Config
 		}
 	}
 
+	enum ShowDanger
+	{
+		OFF("Off"),
+		ROUTE("Route"),
+		MAPS("Maps"),
+		BOTH("Both");
+
+		private final String name;
+
+		ShowDanger(String name)
+		{
+			this.name = name;
+		}
+
+		boolean onRoute()
+		{
+			return this == ROUTE || this == BOTH;
+		}
+
+		boolean onMaps()
+		{
+			return this == MAPS || this == BOTH;
+		}
+
+		@Override
+		public String toString()
+		{
+			return name;
+		}
+	}
+
 	enum ShowGuides
 	{
 		ALWAYS("Always"),
@@ -281,7 +312,7 @@ public interface TrawlingPlusConfig extends Config
 	@ConfigItem(
 		keyName = "showOnMaps",
 		name = "Show on maps",
-		description = "Which maps to show routes and shoals on. The<br>world map also marks dangerous water near sea<br>creatures that attack boats.",
+		description = "Which maps to show routes and shoals on.",
 		position = 1
 	)
 	default ShowOnMaps showOnMaps()
@@ -290,10 +321,21 @@ public interface TrawlingPlusConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "showDanger",
+		name = "Show danger",
+		description = "Where to draw stretches of route near sea<br>creatures that attack boats in red.<br><b>Route</b>: on the route line in the water.<br><b>Maps</b>: on the maps shown, with skulls on<br>the world map.",
+		position = 2
+	)
+	default ShowDanger showDanger()
+	{
+		return ShowDanger.BOTH;
+	}
+
+	@ConfigItem(
 		keyName = "routeDisplay",
 		name = "Route display",
 		description = "How much of the route to show.<br><b>Whole route</b>: the entire route nearest your boat.<br><b>Next stop only</b>: from the shoal to its next stop.",
-		position = 2
+		position = 3
 	)
 	default RouteDisplay routeDisplay()
 	{
@@ -304,7 +346,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "revealNextSection",
 		name = "Animate next section",
 		description = "Animate the shoal's route to its next stop.",
-		position = 3
+		position = 4
 	)
 	default boolean revealNextSection()
 	{
@@ -320,7 +362,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "animationDuration",
 		name = "Animation duration",
 		description = "How long the animation takes.",
-		position = 4
+		position = 5
 	)
 	default int animationDuration()
 	{
@@ -331,7 +373,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "clearAroundBoat",
 		name = "Clear around boat",
 		description = "Hide the route line, direction arrows and stops<br>under your boat.",
-		position = 5
+		position = 6
 	)
 	default boolean clearAroundBoat()
 	{
@@ -364,10 +406,22 @@ public interface TrawlingPlusConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "dangerColour",
+		name = "Danger",
+		description = "Colour of stretches of route near sea<br>creatures that attack boats, where Show<br>danger draws them. As see-through as Colour.",
+		position = 9,
+		section = routeLineSection
+	)
+	default Color dangerColour()
+	{
+		return new Color(230, 40, 40);
+	}
+
+	@ConfigItem(
 		keyName = "routeLineThickness",
 		name = "Thickness",
 		description = "Thickness of the route line.",
-		position = 9,
+		position = 10,
 		section = routeLineSection
 	)
 	default LineThickness routeLineThickness()
@@ -379,7 +433,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = SMOOTHING_KEY,
 		name = "Smoothing",
 		description = "How much to round off the route's corners.<br><b>None</b>: straight lines between points.<br><b>Light</b>: gently rounded corners.<br><b>Heavy</b>: the smoothest curves.",
-		position = 10,
+		position = 11,
 		section = routeLineSection
 	)
 	default Smoothing routeSmoothing()

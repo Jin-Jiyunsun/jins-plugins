@@ -7,9 +7,7 @@ import java.awt.Composite;
 import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.FontMetrics;
-import java.awt.GradientPaint;
 import java.awt.Graphics2D;
-import java.awt.Paint;
 import java.awt.Polygon;
 import java.awt.Rectangle;
 import java.awt.Shape;
@@ -135,6 +133,8 @@ class TrawlingPlusOverlay extends Overlay
 	// How far above the deck the display at the helm floats, in local units: about two tiles, which
 	// clears the mast and the crew.
 	private static final int HELM_TEXT_HEIGHT = 250;
+	// How far above the water the display floats when it sits over the shoal, in local units: about a tile.
+	private static final int SHOAL_TEXT_HEIGHT = Perspective.LOCAL_TILE_SIZE;
 	// The raft, by its boat config, which has no mast or crew to clear, so at the helm the display sits half a tile
 	// lower over it.
 	private static final int RAFT_CONFIG = 1;
@@ -253,6 +253,35 @@ class TrawlingPlusOverlay extends Overlay
 	// How many tiles the loaded map reaches beyond the scene, worked out once a frame rather than for every
 	// point placed.
 	private int frameBeyond;
+	// How many steps of see-through the route line's faded pieces are drawn in, and a path for each, kept between
+	// frames so they aren't made afresh.
+	private static final int FADE_LEVELS = 16;
+	// Given how long each frame's drawing took, for the dev-only debug plugin to measure with. Null, and not timed at
+	// all, in the released plugin. While timing, the route line's share and the part of that spent stroking it are
+	// added up as the frame draws.
+	static DrawTimer drawTimer;
+	private boolean timing;
+	private long lineNanos;
+	private long strokeNanos;
+
+	/**
+	 * Takes one frame's timings, in nanoseconds: the whole overlay, the route line within it, and the line's stroking.
+	 */
+	interface DrawTimer
+	{
+		void took(long total, long line, long stroke);
+	}
+	private final Path2D.Double[] fadeLevels = new Path2D.Double[FADE_LEVELS];
+	{
+		for (int level = 0; level < FADE_LEVELS; level++)
+		{
+			fadeLevels[level] = new Path2D.Double();
+		}
+	}
+	// The sea's height, which is the same everywhere (Jin), read once at the boat and reused for every point placed on
+	// the water, and read again after each scene load. Until it is read, each point looks up its own.
+	private int waterHeight;
+	private boolean waterKnown;
 	// This frame's arrow style, and for Facing camera, where the camera is in local units.
 	private TrawlingPlusConfig.ArrowStyle arrowStyle = TrawlingPlusConfig.ArrowStyle.FACING;
 	private double frameCameraX;
@@ -269,8 +298,13 @@ class TrawlingPlusOverlay extends Overlay
 	private static final double FACING_MAX_SCALE = 1;
 	// How far apart, in tiles, the places a camera-facing arrow is measured off are.
 	private static final double FACING_SPAN = 2;
-	// This frame's camera, unrounded, for finding which way a camera-facing arrow points without the screen's
-	// whole pixels in the way: where it is in local units, its turn and tilt, and its zoom.
+	// This frame's camera, unrounded, for placing the route line on screen and finding which way a camera-facing arrow
+	// points without the screen's whole pixels in the way: where it is in local units, its turn and tilt, its zoom,
+	// and the middle of the game view on screen. Only read when the route line is placed this way (ownProjection) or
+	// arrows face the camera.
+	private boolean ownProjection;
+	private double viewMiddleX;
+	private double viewMiddleY;
 	private double cameraFpX;
 	private double cameraFpY;
 	private double cameraFpZ;
@@ -284,6 +318,9 @@ class TrawlingPlusOverlay extends Overlay
 	private double wayY;
 	private double canvasX;
 	private double canvasY;
+	// What place gives back: a point of the route line on screen, before rounding.
+	private double placedX;
+	private double placedY;
 
 	// Whether the route line, direction arrows and stops are left out from under the boat this frame: Clear around
 	// boat is on, the player is aboard, and the hull's outline has been read. Taken from where the boat is drawn
@@ -444,6 +481,29 @@ class TrawlingPlusOverlay extends Overlay
 	private double shownBarHeight;
 	private double shownWide;
 	private long lastResizeMillis = -1;
+	// Where the display sits on screen, eased briefly towards where it is worked out each frame, and where it was last
+	// drawn. Its place comes in whole pixels, and going slowly it can sit on the edge between two, flicking back and
+	// forth a pixel each frame. Eased, that settles between the two, and the drawn place only moves once the eased one
+	// is most of a pixel away, so it stays put through the flicker and still moves a pixel at a time when turning.
+	// Further off than the snap it goes straight there. Kept well above how far it trails while the boat turns, or it
+	// would trail, catch up in one jump and trail again.
+	private static final double HELM_STEADY_MILLIS = 20;
+	private static final double HELM_STEADY_HOLD = 0.75;
+	private static final int HELM_STEADY_SNAP = 64;
+	private double easedX;
+	private double easedY;
+	private int steadyX;
+	private int steadyY;
+	private long steadyMillis = -1;
+	// Moved to another spot, by the Position setting or the shoal coming and going, it glides there over this long
+	// with Animated on, from where it was, eased in and out. Where it glides from is kept as an offset from where it
+	// is going, so it follows the new spot as that moves.
+	private static final double HELM_MOVE_MILLIS = 500;
+	private TrawlingPlusConfig.HudPosition placedAt;
+	private TrawlingPlusConfig.HudPosition steadyPlacedAt;
+	private double moveFromX;
+	private double moveFromY;
+	private long moveStartMillis = -1;
 	private int resizeFrom;
 	private int resizeTo;
 	private boolean roomReady = true;
@@ -467,10 +527,71 @@ class TrawlingPlusOverlay extends Overlay
 	@Override
 	public Dimension render(Graphics2D graphics)
 	{
+		DrawTimer timer = drawTimer;
+		if (timer == null)
+		{
+			return draw(graphics);
+		}
+		timing = true;
+		lineNanos = 0;
+		strokeNanos = 0;
+		long start = System.nanoTime();
+		try
+		{
+			return draw(graphics);
+		}
+		finally
+		{
+			timer.took(System.nanoTime() - start, lineNanos, strokeNanos);
+			timing = false;
+		}
+	}
+
+	/**
+	 * The time now, for timing part of a frame, or 0 when nothing is being timed.
+	 */
+	private long timeFrom()
+	{
+		return timing ? System.nanoTime() : 0;
+	}
+
+	/**
+	 * How long since a time from timeFrom, or 0 when nothing is being timed.
+	 */
+	private long timeSince(long from)
+	{
+		return timing ? System.nanoTime() - from : 0;
+	}
+
+	private Dimension draw(Graphics2D graphics)
+	{
 		drawHoldOutline();
 		WorldView top = client.getTopLevelWorldView();
 		frameBeyond = top == null ? 0 : tilesBeyondScene(top);
+		WorldEntity afloat = waterKnown || top == null ? null : plugin.getBoat();
+		LocalPoint boatAt = afloat == null ? null : afloat.getLocalLocation();
+		if (boatAt != null)
+		{
+			waterHeight = top.getTileHeight(boatAt.getX(), boatAt.getY(), top.getPlane());
+			waterKnown = true;
+		}
 		arrowStyle = config.arrowStyle();
+		// The route line is placed on screen with the camera read here once, rather than by RuneLite for every point,
+		// whenever the scene is drawn the way those sums assume: on the GPU, by the GPU plugin or 117 HD.
+		ownProjection = client.isGpu();
+		if (ownProjection || arrowStyle == TrawlingPlusConfig.ArrowStyle.FACING)
+		{
+			cameraFpX = client.getCameraFpX();
+			cameraFpY = client.getCameraFpY();
+			cameraFpZ = client.getCameraFpZ();
+			yawSin = Math.sin(client.getCameraFpYaw());
+			yawCos = Math.cos(client.getCameraFpYaw());
+			pitchSin = Math.sin(client.getCameraFpPitch());
+			pitchCos = Math.cos(client.getCameraFpPitch());
+			cameraScale = client.getScale();
+			viewMiddleX = client.getViewportXOffset() + client.getViewportWidth() / 2.0;
+			viewMiddleY = client.getViewportYOffset() + client.getViewportHeight() / 2.0;
+		}
 		if (arrowStyle == TrawlingPlusConfig.ArrowStyle.FACING)
 		{
 			// Where the camera is, for finding the way straight across the screen at each arrow, and how big a tile
@@ -496,14 +617,6 @@ class TrawlingPlusOverlay extends Overlay
 			double screenLimit = client.getViewportHeight() * FACING_MAX_SCREEN / ARROW_LENGTH;
 			facingLimit = facingLimit > 0 ? Math.min(facingLimit, screenLimit) : screenLimit;
 			facingMinimum = facingReference > 0 ? facingReference * FACING_MIN_SCALE : -1;
-			cameraFpX = client.getCameraFpX();
-			cameraFpY = client.getCameraFpY();
-			cameraFpZ = client.getCameraFpZ();
-			yawSin = Math.sin(client.getCameraFpYaw());
-			yawCos = Math.cos(client.getCameraFpYaw());
-			pitchSin = Math.sin(client.getCameraFpPitch());
-			pitchCos = Math.cos(client.getCameraFpPitch());
-			cameraScale = client.getScale();
 		}
 		// Routes included: there is no point being shown where the fish are by a boat that cannot
 		// catch them, though how strict to be about that is the Show guides setting.
@@ -674,7 +787,7 @@ class TrawlingPlusOverlay extends Overlay
 				}
 
 				// Each piece of the line from this sample to the next, counted when both ends are loaded.
-				int next = (sample + 1) % route.sampleCount();
+				int next = sample + 1 == route.sampleCount() ? 0 : sample + 1;
 				if (within(route.sampleX(sample), route.sampleY(sample), fromX, fromY, toX, toY)
 					&& within(route.sampleX(next), route.sampleY(next), fromX, fromY, toX, toY))
 				{
@@ -704,6 +817,7 @@ class TrawlingPlusOverlay extends Overlay
 	{
 		if (config.showRouteLine())
 		{
+			long lineFrom = timeFrom();
 			// Only the runs of the route that reach the loaded map. Most of a route is well outside it,
 			// and a run can be dismissed in four comparisons instead of asking the same of all sixty
 			// four points inside it.
@@ -744,6 +858,7 @@ class TrawlingPlusOverlay extends Overlay
 			{
 				drawLine(graphics, danger, 1, MapRoutes.withAlphaOf(config.dangerColour(), config.routeColour()));
 			}
+			lineNanos += timeSince(lineFrom);
 		}
 
 		if (config.showDirectionArrows())
@@ -964,6 +1079,14 @@ class TrawlingPlusOverlay extends Overlay
 	}
 
 	/**
+	 * Reads the sea's height again at the boat on the next frame, as a new scene loads.
+	 */
+	void forgetWater()
+	{
+		waterKnown = false;
+	}
+
+	/**
 	 * Lets go of everything kept between frames that holds on to the game or its pictures, as the plugin is switched
 	 * off, so none of it stays in memory; all of it is made again when next needed.
 	 */
@@ -989,6 +1112,11 @@ class TrawlingPlusOverlay extends Overlay
 		lastHoldOutlineMillis = -1;
 		spotArrowBlocked = false;
 		spotCheckTick = -1;
+		steadyMillis = -1;
+		moveStartMillis = -1;
+		waterKnown = false;
+		placedAt = null;
+		steadyPlacedAt = null;
 	}
 
 	/**
@@ -1164,7 +1292,7 @@ class TrawlingPlusOverlay extends Overlay
 		// Placed by its bottom line of text, or with only the bar, where that line would be.
 		String placedBy = count > 0 ? text[0] : "";
 
-		Point at = helmPoint(graphics, boat, deck, hull, placedBy);
+		Point at = steady(helmPoint(graphics, boat, deck, hull, placedBy, true));
 		if (at == null)
 		{
 			return false;
@@ -1275,11 +1403,26 @@ class TrawlingPlusOverlay extends Overlay
 
 	/**
 	 * Where the display at the helm, or the hold's in its place, sits on screen: the left end of the baseline of a
-	 * bottom line of text centred there, at the helm, the bow or above the sails. Null when it can't be placed.
+	 * bottom line of text centred there, at the helm, the bow, above the sails, or above the nearest shoal where
+	 * that may be used. Null when it can't be placed.
 	 */
 	private Point helmPoint(Graphics2D graphics, WorldEntity boat, WorldView deck, WorldEntityConfig hull,
-		String placedBy)
+		String placedBy, boolean overShoal)
 	{
+		TrawlingPlusConfig.HudPosition position = config.hudPosition();
+		if (position == TrawlingPlusConfig.HudPosition.SHOAL)
+		{
+			Point over = overShoal ? shoalPoint(graphics, placedBy) : null;
+			if (over != null)
+			{
+				placedAt = position;
+				return over;
+			}
+			// No shoal to sit over, so at the helm.
+			position = TrawlingPlusConfig.HudPosition.HELM;
+		}
+		placedAt = position;
+
 		// The helm sits a quarter of the hull length behind the middle of the boat, and the text a
 		// tile and a half further back again. A hull an odd number of tiles wide has its middle
 		// tile half a tile off the middle of the view.
@@ -1294,12 +1437,11 @@ class TrawlingPlusOverlay extends Overlay
 		int lift = HELM_TEXT_HEIGHT;
 		// At the bow or above the sails instead, once this boat's deck has been read for where those are; until
 		// then, which is only as its models load, at the helm.
-		TrawlingPlusConfig.HudPosition position = config.hudPosition();
 		if (position == TrawlingPlusConfig.HudPosition.HELM && hull.getId() == RAFT_CONFIG)
 		{
 			lift = HELM_TEXT_HEIGHT - Perspective.LOCAL_HALF_TILE_SIZE;
 		}
-		if (position != TrawlingPlusConfig.HudPosition.HELM && readAnchors(boat, deck, hull))
+		if (position != TrawlingPlusConfig.HudPosition.HELM && readAnchors(deck, hull))
 		{
 			// A raft's sail is barely above its deck, so above it is the same as at its bow.
 			if (position == TrawlingPlusConfig.HudPosition.BOW || !SAILS_BY_BOAT.containsKey(hull.getId()))
@@ -1320,6 +1462,92 @@ class TrawlingPlusOverlay extends Overlay
 		}
 		LocalPoint afloat = boat.transformToMainWorld(anchor);
 		return afloat == null ? null : Perspective.getCanvasTextLocation(client, graphics, afloat, placedBy, lift);
+	}
+
+	/**
+	 * Where the display sits over the nearest shoal, as for helmPoint, or null with no shoal to place it over. The
+	 * shoal's drawn position glides smoothly, so it needs no easing.
+	 */
+	private Point shoalPoint(Graphics2D graphics, String placedBy)
+	{
+		Shoal shoal = plugin.getNearestShoal();
+		WorldView view = shoal == null ? null : shoal.parentView(client);
+		double[] at = shoal == null ? null : shoal.position(client);
+		LocalPoint local = view == null || at == null ? null : toLocal(view, at[0], at[1]);
+		return local == null ? null
+			: Perspective.getCanvasTextLocation(client, graphics, local, placedBy, SHOAL_TEXT_HEIGHT);
+	}
+
+	/**
+	 * The display's place on screen, eased and held so it doesn't flicker between two pixels. One not drawn for a while
+	 * goes straight there.
+	 */
+	private Point steady(Point at)
+	{
+		if (at == null)
+		{
+			return null;
+		}
+
+		long now = System.currentTimeMillis();
+		boolean fresh = steadyMillis < 0 || now - steadyMillis > HELM_FADE_MILLIS;
+		if (!fresh && placedAt != steadyPlacedAt)
+		{
+			if (config.animatedHud())
+			{
+				moveFromX = steadyX - at.getX();
+				moveFromY = steadyY - at.getY();
+				moveStartMillis = now;
+			}
+			else
+			{
+				// Moved to another spot with Animated off, so straight there.
+				fresh = true;
+			}
+		}
+		steadyPlacedAt = placedAt;
+		if (!fresh && config.animatedHud() && now - moveStartMillis < HELM_MOVE_MILLIS)
+		{
+			// Gliding to a new spot, which is smooth enough on its own. Quartic ease in and out: 8t^4 over each half,
+			// starting and stopping more gently than smootherstep.
+			double t = (now - moveStartMillis) / HELM_MOVE_MILLIS;
+			double u = Math.min(t, 1 - t);
+			double q = 8 * u * u * u * u;
+			double left = t < 0.5 ? 1 - q : q;
+			steadyMillis = now;
+			easedX = at.getX() + moveFromX * left;
+			easedY = at.getY() + moveFromY * left;
+			steadyX = (int) Math.round(easedX);
+			steadyY = (int) Math.round(easedY);
+			return new Point(steadyX, steadyY);
+		}
+		if (!config.smoothHud())
+		{
+			// Where the game puts it, whole pixel and all; kept so a glide still starts from the right place.
+			steadyMillis = now;
+			easedX = steadyX = at.getX();
+			easedY = steadyY = at.getY();
+			return at;
+		}
+		// Far off on either axis, both go straight there, so it never lands off to one side and slides the rest.
+		if (Math.abs(at.getX() - easedX) > HELM_STEADY_SNAP || Math.abs(at.getY() - easedY) > HELM_STEADY_SNAP)
+		{
+			fresh = true;
+		}
+		double behind = fresh ? 0 : Math.exp(-(now - steadyMillis) / HELM_STEADY_MILLIS);
+		steadyMillis = now;
+		easedX = at.getX() + (easedX - at.getX()) * behind;
+		easedY = at.getY() + (easedY - at.getY()) * behind;
+		// Fresh, the eased place is exactly where it is, so this moves it there too.
+		if (Math.abs(easedX - steadyX) > HELM_STEADY_HOLD)
+		{
+			steadyX = (int) Math.round(easedX);
+		}
+		if (Math.abs(easedY - steadyY) > HELM_STEADY_HOLD)
+		{
+			steadyY = (int) Math.round(easedY);
+		}
+		return steadyX == at.getX() && steadyY == at.getY() ? at : new Point(steadyX, steadyY);
 	}
 
 	/**
@@ -1555,7 +1783,7 @@ class TrawlingPlusOverlay extends Overlay
 		WorldEntity boat = plugin.getOwnBoat();
 		WorldView deck = boat == null ? null : boat.getWorldView();
 		WorldEntityConfig hull = boat == null ? null : boat.getConfig();
-		Point at = deck == null || hull == null ? null : helmPoint(graphics, boat, deck, hull, "");
+		Point at = deck == null || hull == null ? null : steady(helmPoint(graphics, boat, deck, hull, "", false));
 		if (at == null)
 		{
 			return;
@@ -1699,6 +1927,7 @@ class TrawlingPlusOverlay extends Overlay
 	{
 		if (config.showRouteLine())
 		{
+			long lineFrom = timeFrom();
 			int from = route.sampleAt(distance);
 			int steps = Math.floorMod(route.sampleAt(distance + drawn) - from, route.sampleCount());
 
@@ -1710,9 +1939,9 @@ class TrawlingPlusOverlay extends Overlay
 			double[] start = route.pointAt(distance);
 			boolean wasDangerous = route.dangerAtDistance(distance);
 			addRoutePoint(line, danger, view, wasDangerous, wasDangerous, start[0], start[1]);
-			for (int step = 0; step < steps; step++)
+			int count = route.sampleCount();
+			for (int step = 0, sample = from; step < steps; step++, sample = sample + 1 == count ? 0 : sample + 1)
 			{
-				int sample = (from + step) % route.sampleCount();
 				if (route.forward(distance, route.sampleDistance(sample)) >= drawn)
 				{
 					break;
@@ -1730,6 +1959,7 @@ class TrawlingPlusOverlay extends Overlay
 			{
 				drawLine(graphics, danger, opacity, MapRoutes.withAlphaOf(config.dangerColour(), config.routeColour()));
 			}
+			lineNanos += timeSince(lineFrom);
 		}
 
 		if (config.showDirectionArrows())
@@ -1750,6 +1980,13 @@ class TrawlingPlusOverlay extends Overlay
 
 	private void drawLine(Graphics2D graphics, Line line, double opacity, Color colour)
 	{
+		long strokeFrom = timeFrom();
+		strokeLine(graphics, line, opacity, colour);
+		strokeNanos += timeSince(strokeFrom);
+	}
+
+	private void strokeLine(Graphics2D graphics, Line line, double opacity, Color colour)
+	{
 		// Round joins and caps so the short segments the curve is drawn with blend into one smooth line.
 		graphics.setColor(opacity >= 1 ? colour : withOpacity(colour, opacity));
 		lineStrokes(config.routeLineThickness().pixels());
@@ -1760,20 +1997,42 @@ class TrawlingPlusOverlay extends Overlay
 			return;
 		}
 
-		// Flat ended, since the round ends of see-through pieces would overlap and show as darker beads.
+		// Each faded piece takes one solid colour, how much of it shows rounded to one of FADE_LEVELS steps, and the
+		// pieces at each step are drawn together as one path: a handful of plain draws rather than a gradient each,
+		// which is one of the slowest things Java2D draws. Flat ended, since the round ends of see-through pieces
+		// would overlap and show as darker beads; pieces at the same step that meet are joined instead.
 		graphics.setStroke(fadedLineStroke);
-		Paint paint = graphics.getPaint();
-		Line2D.Double piece = new Line2D.Double();
+		for (Path2D.Double level : fadeLevels)
+		{
+			level.reset();
+		}
 		double[] f = line.faded;
+		int lastLevel = -1;
 		for (int k = 0; k < line.fadedCount; k += 6)
 		{
-			piece.setLine(f[k], f[k + 1], f[k + 2], f[k + 3]);
-			graphics.setPaint(new GradientPaint((float) f[k], (float) f[k + 1],
-				withOpacity(colour, opacity * f[k + 4]), (float) f[k + 2], (float) f[k + 3],
-				withOpacity(colour, opacity * f[k + 5])));
-			graphics.draw(piece);
+			int level = (int) Math.round((f[k + 4] + f[k + 5]) / 2 * FADE_LEVELS);
+			if (level <= 0)
+			{
+				lastLevel = -1;
+				continue;
+			}
+			Path2D.Double path = fadeLevels[level - 1];
+			if (level != lastLevel || k == 0 || f[k] != f[k - 4] || f[k + 1] != f[k - 3])
+			{
+				path.moveTo(f[k], f[k + 1]);
+			}
+			path.lineTo(f[k + 2], f[k + 3]);
+			lastLevel = level;
 		}
-		graphics.setPaint(paint);
+		for (int level = 1; level <= FADE_LEVELS; level++)
+		{
+			Path2D.Double path = fadeLevels[level - 1];
+			if (path.getCurrentPoint() != null)
+			{
+				graphics.setColor(withOpacity(colour, opacity * level / FADE_LEVELS));
+				graphics.draw(path);
+			}
+		}
 	}
 
 	/**
@@ -1956,7 +2215,7 @@ class TrawlingPlusOverlay extends Overlay
 	private void drawSpotArrow(Graphics2D graphics, WorldView top)
 	{
 		long now = System.currentTimeMillis();
-		double[] place = placeSpotArrow(graphics, top);
+		double[] place = placeSpotArrow(top);
 		// Not past the spot, pointing away from it, nor over the spot itself, where it would only cover what it points
 		// at: both as the boat sits on or beside it. Worked out once a tick, not every frame.
 		int tick = client.getTickCount();
@@ -2038,7 +2297,7 @@ class TrawlingPlusOverlay extends Overlay
 	 * Where the fishing spot arrow goes this frame, as {x, y, dx, dy} in world tiles, its middle and the unit way to
 	 * the spot, and whether the boat is within range of the spot, where it hides. Null when it can't be placed.
 	 */
-	private double[] placeSpotArrow(Graphics2D graphics, WorldView top)
+	private double[] placeSpotArrow(WorldView top)
 	{
 		double[] spot = plugin.getRememberedSpot();
 		WorldEntity boat = plugin.getOwnBoat();
@@ -2068,7 +2327,7 @@ class TrawlingPlusOverlay extends Overlay
 		}
 		double headX = (bow.getX() - stern.getX()) / (double) Perspective.LOCAL_TILE_SIZE;
 		double headY = (bow.getY() - stern.getY()) / (double) Perspective.LOCAL_TILE_SIZE;
-		double head = Math.hypot(headX, headY);
+		double head = span(headX, headY);
 		if (head < 1e-6)
 		{
 			return null;
@@ -2104,7 +2363,7 @@ class TrawlingPlusOverlay extends Overlay
 
 		double dx = spot[0] - fromX;
 		double dy = spot[1] - fromY;
-		double across = Math.hypot(dx, dy);
+		double across = span(dx, dy);
 		if (across < 1e-6)
 		{
 			return null;
@@ -2174,7 +2433,7 @@ class TrawlingPlusOverlay extends Overlay
 		double[] ahead = route.pointAt(distance + length / 2);
 		double dx = ahead[0] - behind[0];
 		double dy = ahead[1] - behind[1];
-		double across = Math.hypot(dx, dy);
+		double across = span(dx, dy);
 		if (across < 1e-9)
 		{
 			return route.pointAt(distance);
@@ -2289,7 +2548,7 @@ class TrawlingPlusOverlay extends Overlay
 		{
 			perTile = Math.max(perTile, facingMinimum);
 		}
-		double apart = Math.hypot(ax, ay);
+		double apart = span(ax, ay);
 		// Heading straight towards or away from the camera there is no way across the screen to point, so it
 		// points up the screen, the way the route leads off into the distance.
 		double ux = apart < 1e-6 ? 0 : ax / apart;
@@ -2328,7 +2587,7 @@ class TrawlingPlusOverlay extends Overlay
 		{
 			return false;
 		}
-		double height = view.getTileHeight((int) localX, (int) localY, view.getPlane());
+		double height = water(view, (int) localX, (int) localY);
 		if (!unroundedCanvas(localX + reachX, localY + reachY, height))
 		{
 			return false;
@@ -2377,11 +2636,20 @@ class TrawlingPlusOverlay extends Overlay
 		double localY = (y - view.getBaseY()) * Perspective.LOCAL_TILE_SIZE + Perspective.LOCAL_HALF_TILE_SIZE;
 		double sightX = localX - frameCameraX;
 		double sightY = localY - frameCameraY;
-		double sight = Math.hypot(sightX, sightY);
+		double sight = span(sightX, sightY);
 		double acrossX = sight < 1e-6 ? 1 : -sightY / sight;
 		double acrossY = sight < 1e-6 ? 0 : sightX / sight;
 		Point side = at == null ? null : toCanvas(view, x + acrossX * FACING_SPAN, y + acrossY * FACING_SPAN);
-		return side == null ? -1 : Math.hypot(side.getX() - at.getX(), side.getY() - at.getY()) / FACING_SPAN;
+		return side == null ? -1 : span(side.getX() - at.getX(), side.getY() - at.getY()) / FACING_SPAN;
+	}
+
+	/**
+	 * How long a line across and down is. Math.hypot guards against overflow these sizes never reach, and costs many
+	 * times as much for it.
+	 */
+	private static double span(double x, double y)
+	{
+		return Math.sqrt(x * x + y * y);
 	}
 
 	private static Path2D path(Point a, Point b, Point c, Point d)
@@ -2686,7 +2954,7 @@ class TrawlingPlusOverlay extends Overlay
 		}
 
 		// At the water's height, the same as the area it is read against.
-		int height = sea.getTileHeight(afloat.getX(), afloat.getY(), sea.getPlane());
+		int height = water(sea, afloat.getX(), afloat.getY());
 		Point point = Perspective.localToCanvas(client, afloat.getWorldView(), afloat.getX(), afloat.getY(), height);
 		if (point == null)
 		{
@@ -2768,17 +3036,12 @@ class TrawlingPlusOverlay extends Overlay
 	}
 
 	/**
-	 * Reads the hull's outline from above off its model into footLocalX/Y, in the deck's local units, and says how
-	 * many corners it has, or 0 if the hull can't be found yet. The outline comes from the object on the deck's
-	 * lowest level covering the most tiles, the one with the most points if two tie: the deck floor on a sloop
-	 * and a skiff, which spans the whole hull. Done once per boat type, not every frame.
-	 */
-	/**
 	 * Reads, once per boat type, where the display goes at the bow and above the sails: the front of the hull's
-	 * outline on the deck floor, and the height of the top of the tallest thing on the deck, the mast or its sails. True once they are known for this boat; the deck is looked through at most once a tick until then,
-	 * while its models load.
+	 * outline on the deck floor, and the height of the top of the tallest thing on the deck, the mast or its sails.
+	 * True once they are known for this boat; the deck is looked through at most once a tick until then, while its
+	 * models load.
 	 */
-	private boolean readAnchors(WorldEntity boat, WorldView deck, WorldEntityConfig hull)
+	private boolean readAnchors(WorldView deck, WorldEntityConfig hull)
 	{
 		if (hull.getId() == anchorConfig && deck.getId() == anchorDeckView)
 		{
@@ -2861,6 +3124,12 @@ class TrawlingPlusOverlay extends Overlay
 		return true;
 	}
 
+	/**
+	 * Reads the hull's outline from above off its model into footLocalX/Y, in the deck's local units, and says how
+	 * many corners it has, or 0 if the hull can't be found yet. The outline comes from the object on the deck's
+	 * lowest level covering the most tiles, the one with the most points if two tie: the deck floor on a sloop
+	 * and a skiff, which spans the whole hull. Done once per boat type, not every frame.
+	 */
 	private int readFootprint(WorldView deck)
 	{
 		Tile[][][] planes = deck.getScene().getTiles();
@@ -2973,7 +3242,7 @@ class TrawlingPlusOverlay extends Overlay
 			{
 				continue;
 			}
-			int water = top.getTileHeight(local.getX(), local.getY(), top.getPlane());
+			int water = water(top, local.getX(), local.getY());
 			Point low = Perspective.localToCanvas(client, top.getId(), local.getX(), local.getY(), water);
 			Point high = Perspective.localToCanvas(client, top.getId(), local.getX(), local.getY(), water - height);
 			if (low != null)
@@ -3004,7 +3273,7 @@ class TrawlingPlusOverlay extends Overlay
 		// outline's edge keeps about the same width as the camera zooms.
 		Point from = toCanvas(top, clearX, clearY);
 		Point to = toCanvas(top, clearX + 1, clearY);
-		double perTile = from == null || to == null ? 0 : Math.hypot(to.getX() - from.getX(), to.getY() - from.getY());
+		double perTile = from == null || to == null ? 0 : span(to.getX() - from.getX(), to.getY() - from.getY());
 		silhouetteBand = Math.max(1, perTile * CLEAR_FADE_TILES);
 		fadeBounds.setBounds(silhouette.getBounds());
 		fadeBounds.grow((int) Math.ceil(silhouetteBand), (int) Math.ceil(silhouetteBand));
@@ -3110,39 +3379,42 @@ class TrawlingPlusOverlay extends Overlay
 	/**
 	 * The same for a point of the route line already placed on screen, while the boat is being left clear.
 	 */
-	private double clearShown(double x, double y, Point canvas)
+	private double clearShown(double x, double y, double canvasX, double canvasY)
 	{
 		double shown = footprintFade(x, y);
 		if (shown > 0 && behindBoat(x, y))
 		{
-			shown = Math.min(shown, silhouetteFade(canvas));
+			shown = Math.min(shown, silhouetteFade(canvasX, canvasY));
 		}
 		return shown;
+	}
+
+	private double silhouetteFade(Point canvas)
+	{
+		return canvas == null ? 1 : silhouetteFade(canvas.getX(), canvas.getY());
 	}
 
 	/**
 	 * From 0 inside the boat's outline on screen to 1 once silhouetteBand pixels outside it, eased.
 	 */
-	private double silhouetteFade(Point canvas)
+	private double silhouetteFade(double canvasX, double canvasY)
 	{
-		if (canvas == null || !fadeBounds.contains(canvas.getX(), canvas.getY()))
+		if (!fadeBounds.contains(canvasX, canvasY))
 		{
 			return 1;
 		}
-		if (silhouette.contains(canvas.getX(), canvas.getY()))
+		if (silhouette.contains(canvasX, canvasY))
 		{
 			return 0;
 		}
 
 		double nearest = Double.MAX_VALUE;
-		for (int k = 0; k < silhouette.npoints; k++)
+		for (int k = 0, j = silhouette.npoints - 1; k < silhouette.npoints; j = k++)
 		{
-			int next = (k + 1) % silhouette.npoints;
-			nearest = Math.min(nearest, Line2D.ptSegDistSq(silhouette.xpoints[k], silhouette.ypoints[k],
-				silhouette.xpoints[next], silhouette.ypoints[next], canvas.getX(), canvas.getY()));
+			nearest = Math.min(nearest, Line2D.ptSegDistSq(silhouette.xpoints[j], silhouette.ypoints[j],
+				silhouette.xpoints[k], silhouette.ypoints[k], canvasX, canvasY));
 		}
-		double fraction = Math.min(1, Math.sqrt(nearest) / silhouetteBand);
-		return fraction * fraction * (3 - 2 * fraction);
+		return smoothFade(nearest, silhouetteBand);
 	}
 
 	/**
@@ -3186,7 +3458,20 @@ class TrawlingPlusOverlay extends Overlay
 		{
 			nearest = Math.min(nearest, Line2D.ptSegDistSq(footX[j], footY[j], footX[k], footY[k], x, y));
 		}
-		double fraction = Math.min(1, Math.sqrt(nearest) / CLEAR_FADE_TILES);
+		return smoothFade(nearest, CLEAR_FADE_TILES);
+	}
+
+	/**
+	 * From 0 at nothing to 1 at the band's width or more, eased, given the square of the distance. Past the band it is
+	 * 1 without a square root.
+	 */
+	private static double smoothFade(double distanceSquared, double band)
+	{
+		if (distanceSquared >= band * band)
+		{
+			return 1;
+		}
+		double fraction = Math.sqrt(distanceSquared) / band;
 		return fraction * fraction * (3 - 2 * fraction);
 	}
 
@@ -3231,8 +3516,40 @@ class TrawlingPlusOverlay extends Overlay
 
 	private static void breakLine(Line line)
 	{
-		line.add(null);
+		line.gap();
 		line.hasLast = false;
+	}
+
+	/**
+	 * Places a point in world tiles on screen into placedX and placedY, before rounding to a pixel, and says whether
+	 * it could be. On the sea with GPU drawing, worked out here from the camera read once a frame: the same sums as
+	 * RuneLite's Perspective.localToCanvas, which works out four sines and cosines and asks the client for the camera
+	 * again for every point. Anywhere else, through RuneLite.
+	 */
+	private boolean place(WorldView view, double x, double y)
+	{
+		if (!ownProjection || !view.isTopLevel())
+		{
+			Point at = toCanvas(view, x, y);
+			if (at == null)
+			{
+				return false;
+			}
+			placedX = at.getX();
+			placedY = at.getY();
+			return true;
+		}
+		double localX = (x - view.getBaseX()) * Perspective.LOCAL_TILE_SIZE + Perspective.LOCAL_HALF_TILE_SIZE;
+		double localY = (y - view.getBaseY()) * Perspective.LOCAL_TILE_SIZE + Perspective.LOCAL_HALF_TILE_SIZE;
+		int roundX = (int) Math.round(localX);
+		int roundY = (int) Math.round(localY);
+		if (!onLoadedMap(view, roundX, roundY) || !unroundedCanvas(localX, localY, water(view, roundX, roundY)))
+		{
+			return false;
+		}
+		placedX = viewMiddleX + canvasX;
+		placedY = viewMiddleY + canvasY;
+		return true;
 	}
 
 	/**
@@ -3242,25 +3559,35 @@ class TrawlingPlusOverlay extends Overlay
 	 */
 	private void addPoint(Line line, WorldView view, double x, double y)
 	{
-		Point here = toCanvas(view, x, y);
+		boolean placed = place(view, x, y);
+		double hereX = placedX;
+		double hereY = placedY;
 		if (!clearing)
 		{
-			line.add(here);
+			if (placed)
+			{
+				line.add(hereX, hereY);
+			}
+			else
+			{
+				line.gap();
+			}
 			return;
 		}
-		if (line.hasLast && nearClear(line.lastX, line.lastY, line.lastCanvas, x, y, here))
+		if (line.hasLast && nearClear(line.lastX, line.lastY, line.lastPlaced, line.lastCanvasX, line.lastCanvasY,
+			x, y, placed, hereX, hereY))
 		{
 			double fromX = line.lastX;
 			double fromY = line.lastY;
-			int steps = Math.max(1, (int) Math.ceil(Math.hypot(x - fromX, y - fromY) / LINE_FADE_STEP_TILES));
+			int steps = Math.max(1, (int) Math.ceil(span(x - fromX, y - fromY) / LINE_FADE_STEP_TILES));
 			for (int step = 1; step < steps; step++)
 			{
 				double stepX = fromX + (x - fromX) * step / steps;
 				double stepY = fromY + (y - fromY) * step / steps;
-				addFadedPoint(line, stepX, stepY, toCanvas(view, stepX, stepY));
+				addFadedPoint(line, stepX, stepY, place(view, stepX, stepY), placedX, placedY);
 			}
 		}
-		addFadedPoint(line, x, y, here);
+		addFadedPoint(line, x, y, placed, hereX, hereY);
 	}
 
 	/**
@@ -3268,36 +3595,45 @@ class TrawlingPlusOverlay extends Overlay
 	 * last point are fully shown, and otherwise as a piece of its own, blending from how much of one end shows to
 	 * how much of the other does.
 	 */
-	private void addFadedPoint(Line line, double x, double y, Point here)
+	private void addFadedPoint(Line line, double x, double y, boolean placed, double hereX, double hereY)
 	{
-		double shown = here == null ? 0 : clearShown(x, y, here);
-		if (here == null)
+		double shown = placed ? clearShown(x, y, hereX, hereY) : 0;
+		if (!placed)
 		{
-			line.add(null);
+			line.gap();
 		}
-		else if (!line.hasLast || line.lastCanvas == null)
+		else if (!line.hasLast || !line.lastPlaced)
 		{
-			line.add(shown >= LINE_FULLY_SHOWN ? here : null);
+			if (shown >= LINE_FULLY_SHOWN)
+			{
+				line.add(hereX, hereY);
+			}
+			else
+			{
+				line.gap();
+			}
 		}
 		else if (shown >= LINE_FULLY_SHOWN && line.lastShown >= LINE_FULLY_SHOWN)
 		{
 			if (!line.connected)
 			{
-				line.add(line.lastCanvas);
+				line.add(line.lastCanvasX, line.lastCanvasY);
 			}
-			line.add(here);
+			line.add(hereX, hereY);
 		}
 		else
 		{
-			line.add(null);
+			line.gap();
 			if (shown > 0 || line.lastShown > 0)
 			{
-				line.fade(line.lastCanvas, here, line.lastShown, shown);
+				line.fade(line.lastCanvasX, line.lastCanvasY, hereX, hereY, line.lastShown, shown);
 			}
 		}
 		line.lastX = x;
 		line.lastY = y;
-		line.lastCanvas = here;
+		line.lastPlaced = placed;
+		line.lastCanvasX = hereX;
+		line.lastCanvasY = hereY;
 		line.lastShown = shown;
 		line.hasLast = true;
 	}
@@ -3306,21 +3642,21 @@ class TrawlingPlusOverlay extends Overlay
 	 * Whether the piece of route line between two points could come within the fade round the boat: near the hull's
 	 * outline on the water, or behind the boat and near its outline on screen.
 	 */
-	private boolean nearClear(double fromX, double fromY, Point fromCanvas, double toX, double toY, Point toCanvas)
+	private boolean nearClear(double fromX, double fromY, boolean fromPlaced, double fromCanvasX, double fromCanvasY,
+		double toX, double toY, boolean toPlaced, double toCanvasX, double toCanvasY)
 	{
 		if (Math.max(fromX, toX) >= footFromX - CLEAR_FADE_TILES && Math.min(fromX, toX) <= footToX + CLEAR_FADE_TILES
 			&& Math.max(fromY, toY) >= footFromY - CLEAR_FADE_TILES && Math.min(fromY, toY) <= footToY + CLEAR_FADE_TILES)
 		{
 			return true;
 		}
-		if (fromCanvas == null || toCanvas == null || !behindBoat(fromX, fromY) && !behindBoat(toX, toY))
+		if (!fromPlaced || !toPlaced || !behindBoat(fromX, fromY) && !behindBoat(toX, toY))
 		{
 			return false;
 		}
-		int left = Math.min(fromCanvas.getX(), toCanvas.getX());
-		int top = Math.min(fromCanvas.getY(), toCanvas.getY());
-		return fadeBounds.intersects(left, top, Math.abs(toCanvas.getX() - fromCanvas.getX()) + 1,
-			Math.abs(toCanvas.getY() - fromCanvas.getY()) + 1);
+		double left = Math.min(fromCanvasX, toCanvasX);
+		double top = Math.min(fromCanvasY, toCanvasY);
+		return fadeBounds.intersects(left, top, Math.abs(toCanvasX - fromCanvasX) + 1, Math.abs(toCanvasY - fromCanvasY) + 1);
 	}
 
 	private Stroke stopOutline(int pixels)
@@ -3334,7 +3670,7 @@ class TrawlingPlusOverlay extends Overlay
 	}
 
 	/**
-	 * Makes the route line's strokes afresh only when its thickness setting changes.
+	 * Makes the route line's strokes afresh only when its thickness setting or its joins change.
 	 */
 	private void lineStrokes(int pixels)
 	{
@@ -3374,8 +3710,7 @@ class TrawlingPlusOverlay extends Overlay
 		{
 			return null;
 		}
-		int height = view.getTileHeight(local.getX(), local.getY(), view.getPlane())
-			- (int) Math.round(raised * Perspective.LOCAL_TILE_SIZE);
+		int height = water(view, local.getX(), local.getY()) - (int) Math.round(raised * Perspective.LOCAL_TILE_SIZE);
 		return Perspective.localToCanvas(client, view.getId(), local.getX(), local.getY(), height);
 	}
 
@@ -3387,10 +3722,18 @@ class TrawlingPlusOverlay extends Overlay
 			return null;
 		}
 
-		// The world view's own height lookup reaches into the extra map loaded around the scene; the one
-		// Perspective.localToCanvas(client, local, plane) uses stops at the scene's edge and gives 0 beyond it.
-		int height = view.getTileHeight(local.getX(), local.getY(), view.getPlane());
-		return Perspective.localToCanvas(client, view.getId(), local.getX(), local.getY(), height);
+		return Perspective.localToCanvas(client, view.getId(), local.getX(), local.getY(),
+			water(view, local.getX(), local.getY()));
+	}
+
+	/**
+	 * The water's height at a place in local units: the sea's, once read at the boat. Before then, the world view's
+	 * own lookup, which reaches into the extra map loaded around the scene; the one
+	 * Perspective.localToCanvas(client, local, plane) uses stops at the scene's edge and gives 0 beyond it.
+	 */
+	private int water(WorldView view, int localX, int localY)
+	{
+		return waterKnown ? waterHeight : view.getTileHeight(localX, localY, view.getPlane());
 	}
 
 	/**
@@ -3465,33 +3808,40 @@ class TrawlingPlusOverlay extends Overlay
 		// The last point added, in world tiles, for cutting the line at the edge of the boat's clear area.
 		private boolean hasLast;
 		private double lastShown;
-		private Point lastCanvas;
+		// Where the last point landed on screen, if it could be placed there.
+		private boolean lastPlaced;
+		private double lastCanvasX;
+		private double lastCanvasY;
 		private double lastX;
 		private double lastY;
 		// Pieces faded near the boat, drawn on their own: from x, y, to x, y, and how much of each end shows.
 		private double[] faded = new double[0];
 		private int fadedCount;
 
-		void add(Point point)
+		void add(double x, double y)
 		{
-			if (point == null)
+			if (connected)
 			{
-				connected = false;
-			}
-			else if (connected)
-			{
-				path.lineTo(point.getX(), point.getY());
+				path.lineTo(x, y);
 			}
 			else
 			{
-				path.moveTo(point.getX(), point.getY());
+				path.moveTo(x, y);
 				connected = true;
 			}
 		}
 
-		void fade(Point from, Point to, double fromShown, double toShown)
+		/**
+		 * A point that can't be drawn, so the next one that can starts a new stretch.
+		 */
+		void gap()
 		{
-			if (from.getX() == to.getX() && from.getY() == to.getY())
+			connected = false;
+		}
+
+		void fade(double fromX, double fromY, double toX, double toY, double fromShown, double toShown)
+		{
+			if (fromX == toX && fromY == toY)
 			{
 				return;
 			}
@@ -3499,10 +3849,10 @@ class TrawlingPlusOverlay extends Overlay
 			{
 				faded = Arrays.copyOf(faded, Math.max(48, faded.length * 2));
 			}
-			faded[fadedCount++] = from.getX();
-			faded[fadedCount++] = from.getY();
-			faded[fadedCount++] = to.getX();
-			faded[fadedCount++] = to.getY();
+			faded[fadedCount++] = fromX;
+			faded[fadedCount++] = fromY;
+			faded[fadedCount++] = toX;
+			faded[fadedCount++] = toY;
 			faded[fadedCount++] = fromShown;
 			faded[fadedCount++] = toShown;
 		}

@@ -36,9 +36,6 @@ final class ShoalRoute
 	// It makes no visible difference, and takes most of the points out of long straight stretches.
 	private static final double CURVE_TOLERANCE = 0.01;
 
-	// Centripetal Catmull-Rom: curves through every point without overshooting or looping at sharp turns.
-	private static final double SMOOTH_ALPHA = 0.5;
-
 	// Before light smoothing, long straight stretches are split into points this far apart, in tiles,
 	// so the curve only rounds off corners instead of swinging wide between them. On Rainbow Reef it
 	// stays within a quarter of a tile of where the recorded shoal actually swam.
@@ -128,7 +125,7 @@ final class ShoalRoute
 			pathX[i] = path[i][0];
 			pathY[i] = path[i][1];
 			pathDistance[i] = distance;
-			distance += Math.hypot(path[j][0] - path[i][0], path[j][1] - path[i][1]);
+			distance += span(path[j][0] - path[i][0], path[j][1] - path[i][1]);
 		}
 		length = distance;
 
@@ -309,7 +306,7 @@ final class ShoalRoute
 			double t1 = knot(p0, p1);
 			double t2 = t1 + knot(p1, p2);
 			double t3 = t2 + knot(p2, p3);
-			int steps = Math.max(1, (int) Math.ceil(Math.hypot(p2[0] - p1[0], p2[1] - p1[1]) / SMOOTH_SPACING));
+			int steps = Math.max(1, (int) Math.ceil(span(p2[0] - p1[0], p2[1] - p1[1]) / SMOOTH_SPACING));
 			for (int step = 0; step < steps; step++)
 			{
 				curve.add(catmullRomPoint(p0, p1, p2, p3, t1, t2, t3, t1 + (t2 - t1) * step / steps));
@@ -345,7 +342,7 @@ final class ShoalRoute
 			double[] p2 = controls[(i + 1) % count];
 			double[] p3 = controls[(i + 2) % count];
 
-			int steps = Math.max(1, (int) Math.ceil(Math.hypot(p2[0] - p1[0], p2[1] - p1[1]) / SMOOTH_SPACING));
+			int steps = Math.max(1, (int) Math.ceil(span(p2[0] - p1[0], p2[1] - p1[1]) / SMOOTH_SPACING));
 			for (int step = 0; step < steps; step++)
 			{
 				// Uniform cubic B-spline weights, which always add up to 1.
@@ -405,7 +402,7 @@ final class ShoalRoute
 				{
 					continue;
 				}
-				double offset = Math.hypot(stops[stop][0] - curve[i][0], stops[stop][1] - curve[i][1]);
+				double offset = span(stops[stop][0] - curve[i][0], stops[stop][1] - curve[i][1]);
 				if (offset < nearestOffset)
 				{
 					nearest = i;
@@ -451,7 +448,10 @@ final class ShoalRoute
 			double segmentLength = Math.sqrt(lengthSquared);
 			double t = lengthSquared == 0 ? 0
 				: Math.max(0, Math.min(1, ((position[0] - from[0]) * dx + (position[1] - from[1]) * dy) / lengthSquared));
-			double offset = Math.hypot(position[0] - (from[0] + t * dx), position[1] - (from[1] + t * dy));
+			// Squared: only ever compared.
+			double awayX = position[0] - (from[0] + t * dx);
+			double awayY = position[1] - (from[1] + t * dy);
+			double offset = awayX * awayX + awayY * awayY;
 			if (offset < bestOffset)
 			{
 				bestOffset = offset;
@@ -477,7 +477,7 @@ final class ShoalRoute
 		for (int i = 0; i < points.length; i++)
 		{
 			double[] next = points[(i + 1) % points.length];
-			total += Math.hypot(next[0] - points[i][0], next[1] - points[i][1]);
+			total += span(next[0] - points[i][0], next[1] - points[i][1]);
 		}
 		return total;
 	}
@@ -545,7 +545,7 @@ final class ShoalRoute
 		double lengthSquared = dx * dx + dy * dy;
 		double t = lengthSquared == 0 ? 0
 			: Math.max(0, Math.min(1, ((point[0] - from[0]) * dx + (point[1] - from[1]) * dy) / lengthSquared));
-		return Math.hypot(point[0] - (from[0] + t * dx), point[1] - (from[1] + t * dy));
+		return span(point[0] - (from[0] + t * dx), point[1] - (from[1] + t * dy));
 	}
 
 	/**
@@ -559,7 +559,7 @@ final class ShoalRoute
 		for (int i = 0; i < count; i++)
 		{
 			double[] next = points[(i + 1) % count];
-			reached[i + 1] = reached[i] + Math.hypot(next[0] - points[i][0], next[1] - points[i][1]);
+			reached[i + 1] = reached[i] + span(next[0] - points[i][0], next[1] - points[i][1]);
 		}
 
 		int pieces = Math.max(3, (int) (reached[count] / spacing));
@@ -587,7 +587,7 @@ final class ShoalRoute
 		{
 			double[] a = points[i];
 			double[] b = points[(i + 1) % points.length];
-			int pieces = Math.max(1, (int) Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / spacing));
+			int pieces = Math.max(1, (int) Math.ceil(span(b[0] - a[0], b[1] - a[1]) / spacing));
 			for (int piece = 0; piece < pieces; piece++)
 			{
 				controls.add(lerp(a, b, (double) piece / pieces));
@@ -598,8 +598,12 @@ final class ShoalRoute
 
 	private static double knot(double[] a, double[] b)
 	{
-		// Coincident points would divide by zero, so keep every knot interval above zero.
-		return Math.max(1e-6, Math.pow(Math.hypot(b[0] - a[0], b[1] - a[1]), SMOOTH_ALPHA));
+		// Centripetal Catmull-Rom, which curves through every point without overshooting or looping at sharp turns:
+		// the square root of the distance, as two square roots of its square, cheaper than a power. Coincident points
+		// would divide by zero, so keep every knot interval above zero.
+		double dx = b[0] - a[0];
+		double dy = b[1] - a[1];
+		return Math.max(1e-6, Math.sqrt(Math.sqrt(dx * dx + dy * dy)));
 	}
 
 	private static double[] catmullRomPoint(double[] p0, double[] p1, double[] p2, double[] p3, double t1, double t2, double t3, double t)
@@ -653,7 +657,7 @@ final class ShoalRoute
 	{
 		double awayX = Math.max(0, Math.max(minX - x, x - maxX));
 		double awayY = Math.max(0, Math.max(minY - y, y - maxY));
-		return Math.hypot(awayX, awayY);
+		return span(awayX, awayY);
 	}
 
 	/**
@@ -699,11 +703,12 @@ final class ShoalRoute
 		double bestDistance = 0;
 		for (int i = 0; i < points; i++)
 		{
-			int j = (i + 1) % points;
+			int j = i + 1 == points ? 0 : i + 1;
 			double dx = pathX[j] - pathX[i];
 			double dy = pathY[j] - pathY[i];
 			double lengthSquared = dx * dx + dy * dy;
-			double segmentLength = Math.sqrt(lengthSquared);
+			// Already measured when the route was built, rather than a square root for every piece on every call.
+			double segmentLength = pathDistance(j) - pathDistance[i];
 
 			if (near >= 0)
 			{
@@ -718,14 +723,17 @@ final class ShoalRoute
 			}
 
 			double t = lengthSquared == 0 ? 0 : Math.max(0, Math.min(1, ((x - pathX[i]) * dx + (y - pathY[i]) * dy) / lengthSquared));
-			double offset = Math.hypot(x - (pathX[i] + t * dx), y - (pathY[i] + t * dy));
+			// Compared squared, with one square root for the nearest at the end.
+			double awayX = x - (pathX[i] + t * dx);
+			double awayY = y - (pathY[i] + t * dy);
+			double offset = awayX * awayX + awayY * awayY;
 			if (offset < bestOffset)
 			{
 				bestOffset = offset;
 				bestDistance = pathDistance[i] + t * segmentLength;
 			}
 		}
-		return new Projection(bestDistance % length, bestOffset);
+		return new Projection(bestDistance % length, Math.sqrt(bestOffset));
 	}
 
 	/**
@@ -813,7 +821,9 @@ final class ShoalRoute
 				boolean spawnNear = false;
 				for (int i = 0; i < sampleX.length; i++)
 				{
-					if (Math.hypot(sampleX[i] - spawn[0], sampleY[i] - spawn[1]) <= tiles)
+					double awayX = sampleX[i] - spawn[0];
+					double awayY = sampleY[i] - spawn[1];
+					if (awayX * awayX + awayY * awayY <= tiles * tiles)
 					{
 						marked[i] = true;
 						spawnNear = true;
@@ -857,7 +867,9 @@ final class ShoalRoute
 		{
 			for (int i = 0; i < sampleX.length; i++)
 			{
-				if (marked[i] && Math.hypot(sampleX[i] - circle[0], sampleY[i] - circle[1]) <= circle[2])
+				double awayX = sampleX[i] - circle[0];
+				double awayY = sampleY[i] - circle[1];
+				if (marked[i] && awayX * awayX + awayY * awayY <= circle[2] * circle[2])
 				{
 					marked[i] = false;
 				}
@@ -1011,7 +1023,7 @@ final class ShoalRoute
 		double fraction = end == start ? 0 : (at - start) / (end - start);
 		double dx = sampleX[next] - sampleX[previous];
 		double dy = sampleY[next] - sampleY[previous];
-		double step = Math.hypot(dx, dy);
+		double step = span(dx, dy);
 		return new double[]{
 			sampleX[previous] + dx * fraction,
 			sampleY[previous] + dy * fraction,
@@ -1033,6 +1045,15 @@ final class ShoalRoute
 		return index == sampleDistance.length ? 0 : index;
 	}
 
+	/**
+	 * How long a line across and down is. Math.hypot guards against overflow these sizes never reach, and costs many
+	 * times as much for it.
+	 */
+	private static double span(double x, double y)
+	{
+		return Math.sqrt(x * x + y * y);
+	}
+
 	private double pathDistance(int point)
 	{
 		return point == 0 ? length : pathDistance[point];
@@ -1043,7 +1064,13 @@ final class ShoalRoute
 	 */
 	double forward(double from, double to)
 	{
-		double gap = (to - from) % length;
+		// Usually both are already round the route once at most, which needs no remainder.
+		double gap = to - from;
+		if (gap >= 0 && gap < length)
+		{
+			return gap;
+		}
+		gap %= length;
 		return gap < 0 ? gap + length : gap;
 	}
 

@@ -89,10 +89,12 @@ class TrawlingPlusMinimapOverlay extends Overlay
 		double middleX = bounds.x + bounds.width / 2.0;
 		double middleY = bounds.y + bounds.height / 2.0;
 		double radius = Math.min(bounds.width, bounds.height) / 2.0;
+		// Squared, so each point is checked without a square root.
+		double radiusSquared = radius * radius;
 		MapRoutes.Projection onto = (x, y) ->
 		{
 			Point at = onMinimap(view, x, y);
-			return at == null || Math.hypot(at.getX() - middleX, at.getY() - middleY) > radius ? null : at;
+			return at == null || squared(at.getX() - middleX, at.getY() - middleY) > radiusSquared ? null : at;
 		};
 
 		Shape clip = graphics.getClip();
@@ -114,7 +116,7 @@ class TrawlingPlusMinimapOverlay extends Overlay
 		Point middle = onMinimap(view, acrossX, acrossY);
 		Point along = onMinimap(view, acrossX + SCALE_TILES, acrossY);
 		double measured = middle == null || along == null ? 0
-			: Math.hypot(along.getX() - middle.getX(), along.getY() - middle.getY()) / SCALE_TILES;
+			: Math.sqrt(squared(along.getX() - middle.getX(), along.getY() - middle.getY())) / SCALE_TILES;
 		double pixelsPerTile = measured > 0 ? measured : PIXELS_PER_TILE;
 
 		// Only the stretch of route the minimap could show, which is a good deal less than the map that
@@ -144,6 +146,14 @@ class TrawlingPlusMinimapOverlay extends Overlay
 
 		graphics.setClip(clip);
 		return null;
+	}
+
+	/**
+	 * The square of a distance, for comparing distances without a square root.
+	 */
+	private static double squared(double x, double y)
+	{
+		return x * x + y * y;
 	}
 
 	/**

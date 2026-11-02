@@ -211,8 +211,7 @@ final class MapRoutes
 
 				// An arrow on a stretch drawn red is red too, so it doesn't break the stretch up.
 				graphics.setColor(dangerColour != null && route.dangerAtDistance(arrow * apart, stride) ? dangerColour : arrowColour);
-				graphics.fill(
-					arrowhead(at, Math.atan2(to.getY() - from.getY(), to.getX() - from.getX()), size));
+				graphics.fill(arrowhead(at, to.getX() - from.getX(), to.getY() - from.getY(), size));
 			}
 		}
 	}
@@ -239,12 +238,15 @@ final class MapRoutes
 	}
 
 	/**
-	 * An arrowhead of the given length in pixels, centred on a point and pointing along an angle.
+	 * An arrowhead of the given length in pixels, centred on a point and pointing along a direction, which needn't be
+	 * of any particular length but mustn't be nothing. Turned by the direction itself rather than by an angle worked
+	 * out from it and back.
 	 */
-	private static Path2D arrowhead(Point at, double angle, int length)
+	private static Path2D arrowhead(Point at, double towardX, double towardY, int length)
 	{
-		double sin = Math.sin(angle);
-		double cos = Math.cos(angle);
+		double size = Math.sqrt(towardX * towardX + towardY * towardY);
+		double sin = towardY / size;
+		double cos = towardX / size;
 		double half = length * ARROW_HALF_WIDTH;
 		double notch = length * ARROW_NOTCH;
 

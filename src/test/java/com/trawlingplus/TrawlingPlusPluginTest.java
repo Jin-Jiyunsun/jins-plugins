@@ -7,7 +7,7 @@ public class TrawlingPlusPluginTest
 {
 	public static void main(String[] args) throws Exception
 	{
-		ExternalPluginManager.loadBuiltin(TrawlingPlusPlugin.class);
+		ExternalPluginManager.loadBuiltin(TrawlingPlusPlugin.class, TrawlingPlusDebugPlugin.class);
 		RuneLite.main(args);
 	}
 }

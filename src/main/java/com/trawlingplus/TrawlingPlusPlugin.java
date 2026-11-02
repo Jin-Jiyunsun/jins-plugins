@@ -841,7 +841,8 @@ public class TrawlingPlusPlugin extends Plugin
 	private ShoalRoute routeBeside(int x, int y)
 	{
 		ShoalRoute beside = null;
-		double closest = SHOAL_ICON_TILES;
+		// Squared, as every distance below is: they are only compared.
+		double closest = SHOAL_ICON_TILES * SHOAL_ICON_TILES;
 		for (ShoalRoute route : routes)
 		{
 			double[][] box = route.corners();
@@ -853,7 +854,7 @@ public class TrawlingPlusPlugin extends Plugin
 
 			for (int i = 0; i < route.sampleCount(); i++)
 			{
-				double distance = Math.hypot(route.sampleX(i) - x, route.sampleY(i) - y);
+				double distance = squared(route.sampleX(i) - x, route.sampleY(i) - y);
 				if (distance <= closest)
 				{
 					closest = distance;
@@ -934,6 +935,11 @@ public class TrawlingPlusPlugin extends Plugin
 	@Subscribe
 	public void onGameStateChanged(GameStateChanged event)
 	{
+		if (event.getGameState() == GameState.LOADING)
+		{
+			overlay.forgetWater();
+		}
+
 		if (event.getGameState() == GameState.HOPPING || event.getGameState() == GameState.LOGIN_SCREEN)
 		{
 			clearShoals();
@@ -1746,7 +1752,7 @@ public class TrawlingPlusPlugin extends Plugin
 		{
 			spotPausedAt = boatAt;
 		}
-		else if (Math.hypot(boatAt[0] - spotPausedAt[0], boatAt[1] - spotPausedAt[1]) > SPOT_MOVED_TILES)
+		else if (squared(boatAt[0] - spotPausedAt[0], boatAt[1] - spotPausedAt[1]) > SPOT_MOVED_TILES * SPOT_MOVED_TILES)
 		{
 			spotPaused = false;
 			spotPausedAt = null;
@@ -1778,7 +1784,7 @@ public class TrawlingPlusPlugin extends Plugin
 	{
 		double[] boatAt = fishedSpot == null || ownBoat == null ? null : worldPlace(ownBoat.getLocalLocation());
 		return boatAt != null
-			&& Math.hypot(fishedSpot[0] - boatAt[0], fishedSpot[1] - boatAt[1]) <= SEA_SPOT_REACH_TILES;
+			&& squared(fishedSpot[0] - boatAt[0], fishedSpot[1] - boatAt[1]) <= SEA_SPOT_REACH_TILES * SEA_SPOT_REACH_TILES;
 	}
 
 	/**
@@ -1792,10 +1798,10 @@ public class TrawlingPlusPlugin extends Plugin
 			return null;
 		}
 		double[] nearest = null;
-		double nearestDistance = SEA_SPOT_REACH_TILES;
+		double nearestDistance = SEA_SPOT_REACH_TILES * SEA_SPOT_REACH_TILES;
 		for (double[] place : seaSpotPlaces.values())
 		{
-			double distance = Math.hypot(place[0] - boatAt[0], place[1] - boatAt[1]);
+			double distance = squared(place[0] - boatAt[0], place[1] - boatAt[1]);
 			if (distance <= nearestDistance)
 			{
 				nearest = place;
@@ -2810,7 +2816,7 @@ public class TrawlingPlusPlugin extends Plugin
 				continue;
 			}
 
-			double gap = Math.hypot(at[0] - afloat[0], at[1] - afloat[1]);
+			double gap = squared(at[0] - afloat[0], at[1] - afloat[1]);
 			if (gap < nearestGap)
 			{
 				nearestGap = gap;
@@ -2818,6 +2824,14 @@ public class TrawlingPlusPlugin extends Plugin
 			}
 		}
 		return nearest;
+	}
+
+	/**
+	 * The square of a distance, for comparing distances without a square root.
+	 */
+	private static double squared(double x, double y)
+	{
+		return x * x + y * y;
 	}
 
 	/**

@@ -1005,7 +1005,8 @@ class TrawlingPlusOverlay extends Overlay
 		// in either guides mode, even on a raft, which has no nets for the guides to wait on.
 		long now = System.currentTimeMillis();
 		boolean hold = layOutHold(graphics, now);
-		boolean helm = plugin.showGuides() && drawTrawling(graphics, now, hold);
+		// Only on the player's own boat: everything on it is counted for that boat alone.
+		boolean helm = plugin.showGuides() && plugin.getOwnBoat() != null && drawTrawling(graphics, now, hold);
 		if (hold && !helm)
 		{
 			drawHoldAlone(graphics, now);

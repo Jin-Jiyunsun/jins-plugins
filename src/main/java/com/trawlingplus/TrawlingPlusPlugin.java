@@ -447,6 +447,9 @@ public class TrawlingPlusPlugin extends Plugin
 	// The player's own boat while they are aboard it, whether or not the guides are showing, which the hold's display
 	// has nothing to do with.
 	private WorldEntity ownBoat;
+	// Any player's boat the player is stood on, theirs or someone else's. The guides show on either; the displays,
+	// and everything counted for them, only on their own.
+	private WorldEntity aboardBoat;
 	// The shoal the leaving notification is watching, whether it was sitting at a stop on the last tick,
 	// and whether the stop it is at has been warned about already.
 	private Shoal leavingShoal;
@@ -550,6 +553,7 @@ public class TrawlingPlusPlugin extends Plugin
 			fishingSpot = false;
 			// Nothing is kept in memory while switched off: the routes and markers are built again on the next start.
 			ownBoat = null;
+			aboardBoat = null;
 			routes = Collections.emptyList();
 			plainBaitSpecies = Collections.emptySet();
 			dangerMarkers = Collections.emptyList();
@@ -571,7 +575,8 @@ public class TrawlingPlusPlugin extends Plugin
 	 */
 	private boolean shouldDraw(Renderable renderable, boolean drawingUI)
 	{
-		return !drawingUI || !hideStopBar || !showGuides || !(renderable instanceof NPC)
+		// Someone else's boat has no display to show the bar on instead, so the game keeps its own.
+		return !drawingUI || !hideStopBar || !showGuides || ownBoat == null || !(renderable instanceof NPC)
 			|| ((NPC) renderable).getId() != NpcID.SAILING_SHOAL_RIPPLES;
 	}
 
@@ -880,6 +885,7 @@ public class TrawlingPlusPlugin extends Plugin
 			clearShoals();
 			fishingSpot = false;
 			ownBoat = null;
+			aboardBoat = null;
 			// Sea spot fishing outlasts a logout or disconnect, the way the hold does; only its away timer starts over,
 			// as the tick count needn't carry on from where it was.
 			awayFromSpotsTick = -1;
@@ -937,8 +943,9 @@ public class TrawlingPlusPlugin extends Plugin
 			return;
 		}
 
+		// Someone else's hold isn't the player's to keep a record of.
 		int hold = id & ~BOAT_INVENTORY;
-		if ((id & BOAT_INVENTORY) == 0 || hold < InventoryID.SAILING_BOAT_1_CARGOHOLD
+		if (onOtherBoat() || (id & BOAT_INVENTORY) == 0 || hold < InventoryID.SAILING_BOAT_1_CARGOHOLD
 			|| hold > InventoryID.SAILING_BOAT_5_CARGOHOLD)
 		{
 			return;
@@ -1151,9 +1158,11 @@ public class TrawlingPlusPlugin extends Plugin
 		// The world map is looked at from anywhere, so its trawling shoal icons are found whether or not aboard.
 		findShoalIcons();
 
-		WorldEntity own = boardedBoat();
+		WorldEntity aboard = boardedBoat();
+		WorldEntity own = aboard != null && aboard.getOwnerType() == WorldEntity.OWNER_TYPE_SELF_PLAYER ? aboard : null;
+		aboardBoat = aboard;
 		ownBoat = own;
-		if (own == null)
+		if (aboard == null)
 		{
 			stopTracking();
 			showGuides = false;
@@ -1162,22 +1171,25 @@ public class TrawlingPlusPlugin extends Plugin
 
 		// The boat's hold, looked for until it is found, which is once it has been opened or emptied into, and then
 		// kept; and whether the boat is still near the fishing spots at sea, while fishing one. Both whatever the
-		// guides are doing, as the hold's display has nothing to do with the nets.
-		if (boatHold == null)
+		// guides are doing, as the hold's display has nothing to do with the nets, and only on the player's own boat.
+		if (own != null)
 		{
-			boatHoldNumber = boatNumber();
-			boatHold = holds.get(boatHoldNumber);
-		}
-		checkNearSpots(own);
-		checkSpotPaused(own);
-		// Only worked out again when the hold, what it holds or its full warning has changed.
-		if (boatHold != spotHoldChecked || boatHold != null
-			&& (boatHold.changes() != spotHoldChanges || boatHold.fullWarning() != spotHoldWarned))
-		{
-			spotHoldChecked = boatHold;
-			spotHoldChanges = boatHold == null ? 0 : boatHold.changes();
-			spotHoldWarned = boatHold != null && boatHold.fullWarning();
-			spotHoldFull = boatHold != null && (spotHoldWarned || boatHold.fullTo(SPOT_HOLD_FULL_SHARE));
+			if (boatHold == null)
+			{
+				boatHoldNumber = boatNumber();
+				boatHold = holds.get(boatHoldNumber);
+			}
+			checkNearSpots(own);
+			checkSpotPaused(own);
+			// Only worked out again when the hold, what it holds or its full warning has changed.
+			if (boatHold != spotHoldChecked || boatHold != null
+				&& (boatHold.changes() != spotHoldChanges || boatHold.fullWarning() != spotHoldWarned))
+			{
+				spotHoldChecked = boatHold;
+				spotHoldChanges = boatHold == null ? 0 : boatHold.changes();
+				spotHoldWarned = boatHold != null && boatHold.fullWarning();
+				spotHoldFull = boatHold != null && (spotHoldWarned || boatHold.fullTo(SPOT_HOLD_FULL_SHARE));
+			}
 		}
 
 		// A boat with no net fitted, which a raft always is since it can't take one, has nothing to show under Nets
@@ -1238,8 +1250,8 @@ public class TrawlingPlusPlugin extends Plugin
 		}
 
 		// Worked out here rather than in each overlay, which would repeat it every frame.
-		boat = own;
-		boatPlace = worldPlace(own.getLocalLocation());
+		boat = aboard;
+		boatPlace = worldPlace(aboard.getLocalLocation());
 		nearestShoal = nearest();
 		followNearestRoute();
 		baited = stillBaited();
@@ -1831,6 +1843,14 @@ public class TrawlingPlusPlugin extends Plugin
 			return;
 		}
 
+		if (aboardBoat != null && message.startsWith(NETS_NUMB))
+		{
+			// Only said when the game knocks the player off, so stepping off by choice never notifies. Said on
+			// anyone's boat.
+			notifier.notify(config.notifyStoppedOperating(), "You stopped operating the net.");
+			return;
+		}
+
 		// The spots at sea are only fished from the player's own boat, whatever the guides are doing, as they have
 		// nothing to do with the nets.
 		if (ownBoat != null)
@@ -1839,12 +1859,6 @@ public class TrawlingPlusPlugin extends Plugin
 			{
 				// Back on the nets, so the player's own catches are theirs again.
 				fishingSpot = false;
-			}
-			else if (message.startsWith(NETS_NUMB))
-			{
-				// Only said when the game knocks the player off, so stepping off by choice never notifies.
-				notifier.notify(config.notifyStoppedOperating(), "You stopped operating the net.");
-				return;
 			}
 
 			boolean start = SEA_START.matcher(message).find();
@@ -1875,6 +1889,21 @@ public class TrawlingPlusPlugin extends Plugin
 
 		if (boatPlace == null)
 		{
+			return;
+		}
+
+		if (ownBoat == null)
+		{
+			// Someone else's boat, whose nets and hold aren't counted: only what a message says on its own notifies,
+			// every time it is said.
+			if (message.startsWith("You empty the net") && message.contains("not enough"))
+			{
+				notifier.notify(config.notifyHoldFull(), "The cargo hold is full.");
+			}
+			else if (message.startsWith("Your net has no more space"))
+			{
+				notifier.notify(config.notifyNetsFull(), "The trawling nets are full.");
+			}
 			return;
 		}
 
@@ -1975,12 +2004,12 @@ public class TrawlingPlusPlugin extends Plugin
 	@Subscribe
 	public void onWidgetLoaded(WidgetLoaded event)
 	{
-		if (event.getGroupId() == InterfaceID.CHATMENU && boatPlace != null)
+		if (event.getGroupId() == InterfaceID.CHATMENU && ownBoat != null && boatPlace != null)
 		{
 			// The menu's lines are filled in after it loads.
 			clientThread.invokeLater(this::readNetMenu);
 		}
-		else if (event.getGroupId() == InterfaceID.SAILING_BOAT_CARGOHOLD)
+		else if (event.getGroupId() == InterfaceID.SAILING_BOAT_CARGOHOLD && !onOtherBoat())
 		{
 			holdOpen = true;
 			// What goes into or comes out of it while it is open is counted from the inventory as it opens.
@@ -2460,10 +2489,18 @@ public class TrawlingPlusPlugin extends Plugin
 	}
 
 	/**
-	 * The player's own boat while they are stood on it, or null. Everyone aboard stands in the boat's own
-	 * world view rather than the one the sea is in, and the boat is looked up straight from that view's id
-	 * rather than searched for among every world entity in the scene. What comes back is checked to be
-	 * that same view and the player's own boat, so standing on someone else's counts as not aboard.
+	 * Whether the player is stood on another player's boat, as of the last tick.
+	 */
+	private boolean onOtherBoat()
+	{
+		return aboardBoat != null && ownBoat == null;
+	}
+
+	/**
+	 * The player's boat they are stood on, theirs or another player's, or null. Everyone aboard stands in the
+	 * boat's own world view rather than the one the sea is in, and the boat is looked up straight from that
+	 * view's id rather than searched for among every world entity in the scene. What comes back is checked to
+	 * be that same view and a player's boat.
 	 */
 	private WorldEntity boardedBoat()
 	{
@@ -2478,7 +2515,8 @@ public class TrawlingPlusPlugin extends Plugin
 		WorldEntity boat = top.worldEntities().byIndex(standing.getId());
 		WorldView deck = boat == null ? null : boat.getWorldView();
 		return deck != null && deck.getId() == standing.getId()
-			&& boat.getOwnerType() == WorldEntity.OWNER_TYPE_SELF_PLAYER ? boat : null;
+			&& (boat.getOwnerType() == WorldEntity.OWNER_TYPE_SELF_PLAYER
+			|| boat.getOwnerType() == WorldEntity.OWNER_TYPE_OTHER_PLAYER) ? boat : null;
 	}
 
 	/**

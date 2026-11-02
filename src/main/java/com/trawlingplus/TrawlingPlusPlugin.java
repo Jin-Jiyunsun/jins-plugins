@@ -2388,6 +2388,14 @@ public class TrawlingPlusPlugin extends Plugin
 
 
 	/**
+	 * Whether a shoal is a special one: shimmering, glistening or vibrant.
+	 */
+	boolean isSpecial(Shoal shoal)
+	{
+		return MIXED_BY_CLICKBOX.containsKey(shoal.getClickbox());
+	}
+
+	/**
 	 * Whether plain fish offcuts bait this shoal as well as fine ones. A kind with no entry is taken to
 	 * need fine ones, which every kind of shoal accepts.
 	 */

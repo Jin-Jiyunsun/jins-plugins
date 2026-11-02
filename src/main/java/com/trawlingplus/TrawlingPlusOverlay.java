@@ -348,6 +348,8 @@ class TrawlingPlusOverlay extends Overlay
 	private WorldView areaView;
 	private double areaX;
 	private double areaY;
+	// Whether the area is drawn in the special colours: for a shimmering, glistening or vibrant shoal.
+	private boolean areaSpecial;
 	private long lastFishingPointMillis = -1;
 
 	private final Client client;
@@ -2557,6 +2559,7 @@ class TrawlingPlusOverlay extends Overlay
 		areaView = view;
 		areaX = at[0];
 		areaY = at[1];
+		areaSpecial = plugin.isSpecial(shoal);
 		return true;
 	}
 
@@ -2631,10 +2634,21 @@ class TrawlingPlusOverlay extends Overlay
 
 		// Faded only while fading, rather than making the same colours again every frame.
 		boolean faded = fishingPointFade < 1;
+		Color line = areaColour();
+		Color fill = areaSpecial ? config.specialAreaFillColour() : config.fishableAreaFillColour();
 		OverlayUtil.renderPolygon(graphics, outline,
-			faded ? withOpacity(config.fishableAreaColour(), fishingPointFade) : config.fishableAreaColour(),
-			faded ? withOpacity(config.fishableAreaFillColour(), fishingPointFade) : config.fishableAreaFillColour(),
+			faded ? withOpacity(line, fishingPointFade) : line,
+			faded ? withOpacity(fill, fishingPointFade) : fill,
 			areaOutline(config.fishableAreaThickness().pixels()));
+	}
+
+	/**
+	 * The colour the fishable area's outline and the fishing point are drawn in: the special colour while the
+	 * nearest shoal is shimmering, glistening or vibrant.
+	 */
+	private Color areaColour()
+	{
+		return areaSpecial ? config.specialAreaColour() : config.fishableAreaColour();
 	}
 
 	/**
@@ -2679,7 +2693,7 @@ class TrawlingPlusOverlay extends Overlay
 			return;
 		}
 
-		graphics.setColor(withOpacity(TrawlingPlusNetOverlay.opaque(config.fishableAreaColour()), fishingPointFade));
+		graphics.setColor(withOpacity(TrawlingPlusNetOverlay.opaque(areaColour()), fishingPointFade));
 		graphics.fillOval(point.getX() - FISHING_POINT_SIZE / 2, point.getY() - FISHING_POINT_SIZE / 2,
 			FISHING_POINT_SIZE, FISHING_POINT_SIZE);
 	}

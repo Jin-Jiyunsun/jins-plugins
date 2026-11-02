@@ -1057,6 +1057,32 @@ public interface TrawlingPlusConfig extends Config
 		return LineThickness.MEDIUM;
 	}
 
+	@Alpha
+	@ConfigItem(
+		keyName = "specialAreaColour",
+		name = "Special colour",
+		description = "Colour of the fishable area and the fishing<br>point while the shoal is shimmering,<br>glistening or vibrant.",
+		position = 34,
+		section = areaSection
+	)
+	default Color specialAreaColour()
+	{
+		return new Color(255, 215, 0, 180);
+	}
+
+	@Alpha
+	@ConfigItem(
+		keyName = "specialAreaFillColour",
+		name = "Special fill colour",
+		description = "Colour of the fishable area's fill while<br>the shoal is special.",
+		position = 35,
+		section = areaSection
+	)
+	default Color specialAreaFillColour()
+	{
+		return new Color(255, 215, 0, 0);
+	}
+
 	@ConfigItem(
 		keyName = "showBluefin",
 		name = "Bluefin",

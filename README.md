@@ -14,7 +14,8 @@ and keeps track of your nets, bait and cargo hold from a HUD on the boat.
   optionally on the world map/minimap, with stops marked and an arrow showing which way the
   nearest shoal is currently heading. The plugin automatically shows you the nearest route.
 - **Fishable area**: a square or circle round the nearest shoal showing how close your boat needs
-  to be to fish it, plus a dot on the boat showing whether you're in range.
+  to be to fish it, plus a dot on the boat showing whether you're in range. Both change to a
+  special colour while the shoal is shimmering, glistening or vibrant.
 - **Dangerous water**: stretches of route that pass close to where sea creatures that attack boats
   spawn are drawn in red on the maps or on the route in the water, and the world map marks each
   spawn with a skull icon.
@@ -68,6 +69,8 @@ Every route was recorded in-game and is accurate to the tile when no smoothing i
 - Each part of the display is toggleable. The route line, direction arrows, stops, the shoal's
   heading arrow, the fishable area, the heads up display and the side panel have their own
   section in the config panel.
+- **Special colour**: the colours the fishable area and fishing point turn while the shoal is
+  shimmering, glistening or vibrant, in the fishable area section. Gold by default.
 - **Display position**: the heads up display can sit at the helm, the bow or above the sails.
 - **Timer bar**: moves the game's stop timer bar from over the shoal to the bottom of the heads up
   display, sized to match it.

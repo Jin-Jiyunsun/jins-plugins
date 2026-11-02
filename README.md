@@ -30,7 +30,9 @@ and keeps track of your nets, bait and cargo hold from a HUD on the boat.
   warns when the hold is full. Open the hold once each session so it can count what's inside.
 - **Info boxes**: an info box for each fish your nets have caught, your crew's catches included, on
   your boat or anyone else's, plus one for every fish together. The counts last until the client is
-  closed; right-click the total to reset them. An optional info box shows the fish in your own nets.
+  closed; right-click the total to reset them. Hovering over a box also shows your lifetime count,
+  saved to your RuneLite profile for each account, which the total's "Reset lifetime" clears: hold Shift while right-clicking it to see that option. An
+  optional info box shows the fish in your own nets.
 - **Fishing spot arrow**: after fishing one of the spots at sea, an arrow beside your boat points
   the way back to it, such as after banking. It hides while you fish, near the spot, and when your
   hold is nearly full.

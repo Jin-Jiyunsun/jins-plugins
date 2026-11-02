@@ -9,19 +9,24 @@ import net.runelite.client.ui.overlay.infobox.InfoBox;
 import net.runelite.client.util.QuantityFormatter;
 
 /**
- * A count of fish: of one kind caught, of every kind caught, or in the nets. A count below 0 is not known.
+ * A count of fish: of one kind caught, of every kind caught, or in the nets. A count below 0 is not known. The
+ * caught ones also give the account's lifetime count in their tooltip.
  */
 class CatchInfoBox extends InfoBox
 {
 	private final String label;
 	private final IntSupplier count;
+	// How many have been caught in the account's lifetime, or null for a box with no lifetime count.
+	private final IntSupplier lifetime;
 	private final BooleanSupplier shown;
 
-	CatchInfoBox(BufferedImage image, Plugin plugin, String label, IntSupplier count, BooleanSupplier shown)
+	CatchInfoBox(BufferedImage image, Plugin plugin, String label, IntSupplier count, IntSupplier lifetime,
+		BooleanSupplier shown)
 	{
 		super(image, plugin);
 		this.label = label;
 		this.count = count;
+		this.lifetime = lifetime;
 		this.shown = shown;
 	}
 
@@ -42,7 +47,9 @@ class CatchInfoBox extends InfoBox
 	public String getTooltip()
 	{
 		int fish = count.getAsInt();
-		return label + ": " + (fish < 0 ? "unknown" : QuantityFormatter.formatNumber(fish));
+		String tooltip = label + ": " + (fish < 0 ? "unknown" : QuantityFormatter.formatNumber(fish));
+		return lifetime == null ? tooltip
+			: tooltip + "</br>Lifetime: " + QuantityFormatter.formatNumber(lifetime.getAsInt());
 	}
 
 	@Override

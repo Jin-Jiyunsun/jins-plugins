@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.WeakHashMap;
+import java.util.concurrent.CompletableFuture;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import javax.inject.Inject;
@@ -24,6 +25,7 @@ import net.runelite.api.GameObject;
 import net.runelite.api.GameState;
 import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
+import net.runelite.api.KeyCode;
 import net.runelite.api.MenuAction;
 import net.runelite.api.Perspective;
 import net.runelite.api.NPC;
@@ -37,6 +39,7 @@ import net.runelite.api.coords.LocalPoint;
 import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.WorldView;
 import net.runelite.api.events.ChatMessage;
+import net.runelite.api.events.ClientTick;
 import net.runelite.api.events.GameObjectDespawned;
 import net.runelite.api.events.GameObjectSpawned;
 import net.runelite.api.events.GameStateChanged;
@@ -66,6 +69,7 @@ import net.runelite.client.callback.RenderCallback;
 import net.runelite.client.callback.RenderCallbackManager;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
+import net.runelite.client.events.ClientShutdown;
 import net.runelite.client.events.ConfigChanged;
 import net.runelite.client.events.InfoBoxMenuClicked;
 import net.runelite.client.game.ItemManager;
@@ -193,6 +197,11 @@ public class TrawlingPlusPlugin extends Plugin
 		"bluefin", ItemID.RAW_BLUEFIN,
 		"marlin", ItemID.RAW_MARLIN);
 	private static final String RESET_CATCHES = "Reset";
+	private static final String RESET_LIFETIME = "Reset lifetime";
+	// Each fish's lifetime count is kept in the account's RuneLite profile under this key, plus the fish's name.
+	private static final String LIFETIME_KEY = "lifetimeCaught_";
+	// How often, in ticks, lifetime catches not yet saved are saved: about a minute.
+	private static final int LIFETIME_SAVE_TICKS = 100;
 
 	// Starting to fish one of the spots at sea, which only the player does, never the crew: every tool says so as it
 	// starts, before anything is caught: "You cast out your line..." or "...your net...", "You attempt to catch a
@@ -306,6 +315,9 @@ public class TrawlingPlusPlugin extends Plugin
 
 	@Inject
 	private InfoBoxManager infoBoxManager;
+
+	@Inject
+	private ConfigManager configManager;
 
 	@Inject
 	private ItemManager itemManager;
@@ -497,6 +509,12 @@ public class TrawlingPlusPlugin extends Plugin
 	private final Map<String, CatchInfoBox> catchBoxes = new HashMap<>();
 	private CatchInfoBox totalBox;
 	private CatchInfoBox netsBox;
+	// The total's Reset lifetime option, which is only on its menu while Shift is held so it can't be picked by mistake.
+	private final OverlayMenuEntry resetLifetimeEntry =
+		new OverlayMenuEntry(MenuAction.RUNELITE_INFOBOX, RESET_LIFETIME, "Fish caught");
+	// Lifetime catches of each fish not yet added to what the account's profile has saved. Saved now and then rather
+	// than on every catch, and always on logout or switching off.
+	private final Map<String, Integer> lifetimeUnsaved = new HashMap<>();
 
 	@Override
 	protected void startUp() throws IOException
@@ -569,6 +587,7 @@ public class TrawlingPlusPlugin extends Plugin
 		worldMapPointManager.removeIf(DangerMarker.class::isInstance);
 		worldMapPointManager.removeIf(ShoalMarker.class::isInstance);
 		infoBoxManager.removeIf(CatchInfoBox.class::isInstance);
+		clientThread.invoke(this::saveLifetime);
 		// shutDown runs on the Swing thread; clear on the client thread so it can't race a game tick.
 		clientThread.invoke(() ->
 		{
@@ -928,6 +947,8 @@ public class TrawlingPlusPlugin extends Plugin
 
 		if (event.getGameState() == GameState.LOGIN_SCREEN)
 		{
+			// Saved to the profile of the account logging out, before another can log in.
+			saveLifetime();
 			// A new session, so what the hold held last time is no longer known.
 			plainBait = -1;
 			fineBait = -1;
@@ -1186,6 +1207,11 @@ public class TrawlingPlusPlugin extends Plugin
 	@Subscribe
 	public void onGameTick(GameTick event)
 	{
+		if (client.getTickCount() % LIFETIME_SAVE_TICKS == 0)
+		{
+			saveLifetime();
+		}
+
 		// None of this means anything off a boat: the routes are out at sea and out of sight from land,
 		// and someone stood on land is not fishing. So none of it is worked out off one, and everything
 		// drawn on the water, the minimap and the side panel rests on the same answer. The world map is
@@ -2367,6 +2393,7 @@ public class TrawlingPlusPlugin extends Plugin
 			{
 				caught.merge(kind, fish, Integer::sum);
 				caughtTotal += fish;
+				lifetimeUnsaved.merge(kind, fish, Integer::sum);
 				if (!catchBoxes.containsKey(kind))
 				{
 					addFishBox(kind);
@@ -2383,13 +2410,13 @@ public class TrawlingPlusPlugin extends Plugin
 	private void addCatchBoxes()
 	{
 		totalBox = new CatchInfoBox(itemManager.getImage(ItemID.FISH_BARREL_OPEN), this, "Fish caught",
-			() -> caughtTotal, () -> config.showTotalCaughtInfoBox() && caughtTotal > 0 && loggedIn());
+			() -> caughtTotal, this::lifetimeTotal, () -> config.showTotalCaughtInfoBox() && caughtTotal > 0 && loggedIn());
 		totalBox.getMenuEntries().add(new OverlayMenuEntry(MenuAction.RUNELITE_INFOBOX, RESET_CATCHES, "Fish caught"));
 		infoBoxManager.addInfoBox(totalBox);
 
 		// The nets are only counted on the player's own boat.
 		netsBox = new CatchInfoBox(itemManager.getImage(ItemID.BIG_NET), this, "Fish in the nets",
-			() -> fishInNets, () -> config.showFishInNetsInfoBox() && ownBoat != null && netsFitted && loggedIn());
+			() -> fishInNets, null, () -> config.showFishInNetsInfoBox() && ownBoat != null && netsFitted && loggedIn());
 		infoBoxManager.addInfoBox(netsBox);
 
 		for (String kind : caught.keySet())
@@ -2402,7 +2429,7 @@ public class TrawlingPlusPlugin extends Plugin
 	{
 		String name = Character.toUpperCase(kind.charAt(0)) + kind.substring(1);
 		CatchInfoBox box = new CatchInfoBox(itemManager.getImage(CAUGHT_FISH.get(kind)), this, name + " caught",
-			() -> caught.getOrDefault(kind, 0), () -> config.showFishCaughtInfoBoxes() && loggedIn());
+			() -> caught.getOrDefault(kind, 0), () -> lifetime(kind), () -> config.showFishCaughtInfoBoxes() && loggedIn());
 		catchBoxes.put(kind, box);
 		infoBoxManager.addInfoBox(box);
 	}
@@ -2413,12 +2440,69 @@ public class TrawlingPlusPlugin extends Plugin
 	}
 
 	/**
-	 * Reset on the total's info box starts every count of fish caught over.
+	 * Closing the client saves the lifetime catches straight away, rather than losing up to a minute of them.
+	 */
+	@Subscribe
+	public void onClientShutdown(ClientShutdown event)
+	{
+		CompletableFuture<Void> saved = new CompletableFuture<>();
+		clientThread.invoke(() ->
+		{
+			saveLifetime();
+			saved.complete(null);
+		});
+		event.waitFor(saved);
+	}
+
+	/**
+	 * Puts Reset lifetime on the total's menu while Shift is held, and takes it off again once it isn't.
+	 */
+	@Subscribe
+	public void onClientTick(ClientTick event)
+	{
+		if (totalBox == null)
+		{
+			return;
+		}
+
+		boolean shift = client.isKeyPressed(KeyCode.KC_SHIFT);
+		List<OverlayMenuEntry> entries = totalBox.getMenuEntries();
+		if (shift != entries.contains(resetLifetimeEntry))
+		{
+			if (shift)
+			{
+				entries.add(resetLifetimeEntry);
+			}
+			else
+			{
+				entries.remove(resetLifetimeEntry);
+			}
+		}
+	}
+
+	/**
+	 * Reset on the total's info box starts every count of fish caught over, and Reset lifetime, there while Shift
+	 * is held, every lifetime count.
 	 */
 	@Subscribe
 	public void onInfoBoxMenuClicked(InfoBoxMenuClicked event)
 	{
-		if (event.getInfoBox() != totalBox || !RESET_CATCHES.equals(event.getEntry().getOption()))
+		if (event.getInfoBox() != totalBox)
+		{
+			return;
+		}
+
+		if (event.getEntry() == resetLifetimeEntry)
+		{
+			lifetimeUnsaved.clear();
+			for (String kind : CAUGHT_FISH.keySet())
+			{
+				configManager.unsetRSProfileConfiguration(TrawlingPlusConfig.GROUP, lifetimeKey(kind));
+			}
+			return;
+		}
+
+		if (!RESET_CATCHES.equals(event.getEntry().getOption()))
 		{
 			return;
 		}
@@ -2430,6 +2514,62 @@ public class TrawlingPlusPlugin extends Plugin
 			infoBoxManager.removeInfoBox(box);
 		}
 		catchBoxes.clear();
+	}
+
+	/**
+	 * How many of a fish the logged in account has caught in its lifetime: what its profile has saved, and what
+	 * hasn't been saved yet.
+	 */
+	private int lifetime(String kind)
+	{
+		return savedLifetime(kind) + lifetimeUnsaved.getOrDefault(kind, 0);
+	}
+
+	private int lifetimeTotal()
+	{
+		int total = 0;
+		for (String kind : CAUGHT_FISH.keySet())
+		{
+			total += lifetime(kind);
+		}
+		return total;
+	}
+
+	private int savedLifetime(String kind)
+	{
+		String saved = configManager.getRSProfileConfiguration(TrawlingPlusConfig.GROUP, lifetimeKey(kind));
+		try
+		{
+			return saved == null ? 0 : Integer.parseInt(saved);
+		}
+		catch (NumberFormatException e)
+		{
+			return 0;
+		}
+	}
+
+	/**
+	 * Adds the lifetime catches not yet saved to what the account's profile has.
+	 */
+	private void saveLifetime()
+	{
+		if (lifetimeUnsaved.isEmpty() || configManager.getRSProfileKey() == null)
+		{
+			return;
+		}
+
+		for (Map.Entry<String, Integer> unsaved : lifetimeUnsaved.entrySet())
+		{
+			String kind = unsaved.getKey();
+			configManager.setRSProfileConfiguration(TrawlingPlusConfig.GROUP, lifetimeKey(kind),
+				savedLifetime(kind) + unsaved.getValue());
+		}
+		lifetimeUnsaved.clear();
+	}
+
+	private static String lifetimeKey(String kind)
+	{
+		return LIFETIME_KEY + kind.replace(' ', '_');
 	}
 
 	/**

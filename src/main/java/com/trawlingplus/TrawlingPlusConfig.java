@@ -99,6 +99,13 @@ public interface TrawlingPlusConfig extends Config
 	)
 	String notificationsSection = "notifications";
 
+	@ConfigSection(
+		name = "Info boxes",
+		description = "Counts of fish shown as info boxes",
+		position = 70
+	)
+	String infoBoxSection = "infoBoxes";
+
 	enum LineThickness
 	{
 		THIN("Thin", 1),
@@ -1081,6 +1088,42 @@ public interface TrawlingPlusConfig extends Config
 	default Color specialAreaFillColour()
 	{
 		return new Color(255, 215, 0, 0);
+	}
+
+	@ConfigItem(
+		keyName = "showFishCaughtInfoBoxes",
+		name = "Fish caught",
+		description = "Show an info box for each fish the nets<br>have caught, the crew's catches included.",
+		position = 71,
+		section = infoBoxSection
+	)
+	default boolean showFishCaughtInfoBoxes()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "showTotalCaughtInfoBox",
+		name = "Total caught",
+		description = "Show an info box for every fish the nets<br>have caught together. Right-click it to<br>reset the counts.",
+		position = 72,
+		section = infoBoxSection
+	)
+	default boolean showTotalCaughtInfoBox()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "showFishInNetsInfoBox",
+		name = "Fish in nets",
+		description = "Show an info box for the fish in the nets<br>on your own boat.",
+		position = 73,
+		section = infoBoxSection
+	)
+	default boolean showFishInNetsInfoBox()
+	{
+		return false;
 	}
 
 	@ConfigItem(

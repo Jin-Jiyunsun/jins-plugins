@@ -28,6 +28,9 @@ and keeps track of your nets, bait and cargo hold from a HUD on the boat.
   many fit alongside the rest of your cargo, and how many of each of the last three kinds you put
   in, with any others together. It stacks above the heads up display, works on a raft too, and
   warns when the hold is full. Open the hold once each session so it can count what's inside.
+- **Info boxes**: an info box for each fish your nets have caught, your crew's catches included, on
+  your boat or anyone else's, plus one for every fish together. The counts last until the client is
+  closed; right-click the total to reset them. An optional info box shows the fish in your own nets.
 - **Fishing spot arrow**: after fishing one of the spots at sea, an arrow beside your boat points
   the way back to it, such as after banking. It hides while you fish, near the spot, and when your
   hold is nearly full.
@@ -77,6 +80,8 @@ Every route was recorded in-game and is accurate to the tile when no smoothing i
 - **Animated**: the heads up display fades its lines in and out and grows to fit them. Turn it off
   for instant changes.
 - **Cargo hold**: shows or hides the cargo hold display, in the heads up display section.
+- **Info boxes**: shows or hides the fish caught, total caught and fish in nets info boxes, in their
+  own section.
 - **Fishing spot arrow**: shows or hides the fishing spot arrow and sets its colour.
 - **Cargo hold highlight**: shows or hides the cargo hold's outline and sets its colour.
 - **Arrow style**: arrows on the water can face the camera (the default), stand upright along the

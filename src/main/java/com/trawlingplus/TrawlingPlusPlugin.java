@@ -24,6 +24,7 @@ import net.runelite.api.GameObject;
 import net.runelite.api.GameState;
 import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
+import net.runelite.api.MenuAction;
 import net.runelite.api.Perspective;
 import net.runelite.api.NPC;
 import net.runelite.api.Player;
@@ -66,9 +67,13 @@ import net.runelite.client.callback.RenderCallbackManager;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.events.ConfigChanged;
+import net.runelite.client.events.InfoBoxMenuClicked;
+import net.runelite.client.game.ItemManager;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.ui.overlay.OverlayManager;
+import net.runelite.client.ui.overlay.OverlayMenuEntry;
+import net.runelite.client.ui.overlay.infobox.InfoBoxManager;
 import net.runelite.client.ui.overlay.worldmap.WorldMapPoint;
 import net.runelite.client.ui.overlay.worldmap.WorldMapPointManager;
 import net.runelite.client.util.Text;
@@ -179,6 +184,16 @@ public class TrawlingPlusPlugin extends Plugin
 	// "You catch four giant krill!", "You catch a haddock!", "Jolly Jim catches three giant krill!"
 	private static final Pattern CATCH = Pattern.compile("^(?:You catch|.+ catches) (\\S+) ");
 
+	// Each trawled fish as a catch names it, which is the same for one fish or many, and the raw fish it is.
+	private static final Map<String, Integer> CAUGHT_FISH = Map.of(
+		"giant krill", ItemID.RAW_GIANT_KRILL,
+		"haddock", ItemID.RAW_HADDOCK,
+		"yellowfin", ItemID.RAW_YELLOWFIN,
+		"halibut", ItemID.RAW_HALIBUT,
+		"bluefin", ItemID.RAW_BLUEFIN,
+		"marlin", ItemID.RAW_MARLIN);
+	private static final String RESET_CATCHES = "Reset";
+
 	// Starting to fish one of the spots at sea, which only the player does, never the crew: every tool says so as it
 	// starts, before anything is caught: "You cast out your line..." or "...your net...", "You attempt to catch a
 	// lobster.", "You start harpooning fish.", "You lower the Karambwan vessel." Aboard the player's own boat this is
@@ -288,6 +303,12 @@ public class TrawlingPlusPlugin extends Plugin
 
 	@Inject
 	private WorldMapPointManager worldMapPointManager;
+
+	@Inject
+	private InfoBoxManager infoBoxManager;
+
+	@Inject
+	private ItemManager itemManager;
 
 	@Inject
 	private TrawlingPlusOverlay overlay;
@@ -468,6 +489,14 @@ public class TrawlingPlusPlugin extends Plugin
 	// The cargo hold on each boat in sight, by its world view.
 	private final Map<Integer, GameObject> holdByView = new HashMap<>();
 	private final Map<Integer, Shoal> shoals = new HashMap<>();
+	// How many of each fish the nets have caught, by the name a catch gives it, and of every fish together, since the
+	// client started. Kept while the plugin is switched off; only the total's Reset clears them.
+	private final Map<String, Integer> caught = new HashMap<>();
+	private int caughtTotal;
+	// The info box for each fish caught, by the same name, and the ones for the total and for the fish in the nets.
+	private final Map<String, CatchInfoBox> catchBoxes = new HashMap<>();
+	private CatchInfoBox totalBox;
+	private CatchInfoBox netsBox;
 
 	@Override
 	protected void startUp() throws IOException
@@ -523,6 +552,7 @@ public class TrawlingPlusPlugin extends Plugin
 		overlayManager.add(mapOverlay);
 		overlayManager.add(minimapOverlay);
 		clientThread.invoke(this::findExistingShoals);
+		clientThread.invoke(this::addCatchBoxes);
 		log.debug("Trawling Plus started with {} routes, {} points to draw them from", routes.size(),
 			routes.stream().mapToInt(ShoalRoute::sampleCount).sum());
 	}
@@ -538,10 +568,15 @@ public class TrawlingPlusPlugin extends Plugin
 		overlayManager.remove(minimapOverlay);
 		worldMapPointManager.removeIf(DangerMarker.class::isInstance);
 		worldMapPointManager.removeIf(ShoalMarker.class::isInstance);
+		infoBoxManager.removeIf(CatchInfoBox.class::isInstance);
 		// shutDown runs on the Swing thread; clear on the client thread so it can't race a game tick.
 		clientThread.invoke(() ->
 		{
 			clearShoals();
+			// The counts themselves are kept, to put up again on the next start.
+			catchBoxes.clear();
+			totalBox = null;
+			netsBox = null;
 			shoalMarkers.clear();
 			shoalIconsSeen.clear();
 			mapRegionsSeen.clear();
@@ -1892,6 +1927,15 @@ public class TrawlingPlusPlugin extends Plugin
 			return;
 		}
 
+		// Counted on anyone's boat. The fishing spots at sea never catch a trawled fish, so a catch naming one
+		// came from the nets.
+		Matcher catchLine = CATCH.matcher(message);
+		int catchCount = catchLine.find() ? number(catchLine.group(1)) : -1;
+		if (catchCount > 0)
+		{
+			countCatch(message.substring(catchLine.end()), catchCount);
+		}
+
 		if (ownBoat == null)
 		{
 			// Someone else's boat, whose nets and hold aren't counted: only what a message says on its own notifies,
@@ -2308,6 +2352,84 @@ public class TrawlingPlusPlugin extends Plugin
 			return "Nets full";
 		}
 		return "Fish: " + (fish < 0 ? "?" : Integer.toString(fish));
+	}
+
+	/**
+	 * Adds a catch to the count of its fish and to the total, the rest of a catch line after its count naming the
+	 * fish. A catch of anything other than a trawled fish isn't counted.
+	 */
+	private void countCatch(String named, int fish)
+	{
+		String lower = named.toLowerCase();
+		for (String kind : CAUGHT_FISH.keySet())
+		{
+			if (lower.startsWith(kind))
+			{
+				caught.merge(kind, fish, Integer::sum);
+				caughtTotal += fish;
+				if (!catchBoxes.containsKey(kind))
+				{
+					addFishBox(kind);
+				}
+				return;
+			}
+		}
+	}
+
+	/**
+	 * Puts up the info boxes for the total caught and the fish in the nets, and one for each fish already caught,
+	 * as counts kept from before the plugin was last switched off.
+	 */
+	private void addCatchBoxes()
+	{
+		totalBox = new CatchInfoBox(itemManager.getImage(ItemID.FISH_BARREL_OPEN), this, "Fish caught",
+			() -> caughtTotal, () -> config.showTotalCaughtInfoBox() && caughtTotal > 0 && loggedIn());
+		totalBox.getMenuEntries().add(new OverlayMenuEntry(MenuAction.RUNELITE_INFOBOX, RESET_CATCHES, "Fish caught"));
+		infoBoxManager.addInfoBox(totalBox);
+
+		// The nets are only counted on the player's own boat.
+		netsBox = new CatchInfoBox(itemManager.getImage(ItemID.BIG_NET), this, "Fish in the nets",
+			() -> fishInNets, () -> config.showFishInNetsInfoBox() && ownBoat != null && netsFitted && loggedIn());
+		infoBoxManager.addInfoBox(netsBox);
+
+		for (String kind : caught.keySet())
+		{
+			addFishBox(kind);
+		}
+	}
+
+	private void addFishBox(String kind)
+	{
+		String name = Character.toUpperCase(kind.charAt(0)) + kind.substring(1);
+		CatchInfoBox box = new CatchInfoBox(itemManager.getImage(CAUGHT_FISH.get(kind)), this, name + " caught",
+			() -> caught.getOrDefault(kind, 0), () -> config.showFishCaughtInfoBoxes() && loggedIn());
+		catchBoxes.put(kind, box);
+		infoBoxManager.addInfoBox(box);
+	}
+
+	private boolean loggedIn()
+	{
+		return client.getGameState() == GameState.LOGGED_IN;
+	}
+
+	/**
+	 * Reset on the total's info box starts every count of fish caught over.
+	 */
+	@Subscribe
+	public void onInfoBoxMenuClicked(InfoBoxMenuClicked event)
+	{
+		if (event.getInfoBox() != totalBox || !RESET_CATCHES.equals(event.getEntry().getOption()))
+		{
+			return;
+		}
+
+		caught.clear();
+		caughtTotal = 0;
+		for (CatchInfoBox box : catchBoxes.values())
+		{
+			infoBoxManager.removeInfoBox(box);
+		}
+		catchBoxes.clear();
 	}
 
 	/**

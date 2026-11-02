@@ -895,10 +895,34 @@ public interface TrawlingPlusConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "notifyDepthChange",
+		name = "Depth change",
+		description = "Notify when the nearest shoal changes depth<br>and the nets are not set to its new depth.",
+		position = 57,
+		section = notificationsSection
+	)
+	default Notification notifyDepthChange()
+	{
+		return Notification.OFF;
+	}
+
+	@ConfigItem(
+		keyName = "notifySpecialShoal",
+		name = "Special shoal",
+		description = "Notify when a shoal turns shimmering,<br>glistening or vibrant.",
+		position = 58,
+		section = notificationsSection
+	)
+	default Notification notifySpecialShoal()
+	{
+		return Notification.OFF;
+	}
+
+	@ConfigItem(
 		keyName = "notifyNetsFull",
 		name = "Nets full",
 		description = "Notify when the nets are full.",
-		position = 55,
+		position = 59,
 		section = notificationsSection
 	)
 	default Notification notifyNetsFull()
@@ -907,10 +931,22 @@ public interface TrawlingPlusConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "notifyStoppedOperating",
+		name = "Stopped operating",
+		description = "Notify when your hands grow numb and you<br>stop operating the net.",
+		position = 60,
+		section = notificationsSection
+	)
+	default Notification notifyStoppedOperating()
+	{
+		return Notification.OFF;
+	}
+
+	@ConfigItem(
 		keyName = "notifyHoldFull",
 		name = "Hold full",
 		description = "Notify when emptying the nets finds the<br>cargo hold full.",
-		position = 56,
+		position = 61,
 		section = notificationsSection
 	)
 	default Notification notifyHoldFull()
@@ -922,7 +958,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "notifyShoalLeaving",
 		name = "Shoal leaving",
 		description = "Notify when the nearest shoal is about to<br>leave its stop.",
-		position = 57,
+		position = 55,
 		section = notificationsSection
 	)
 	default Notification notifyShoalLeaving()
@@ -939,7 +975,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "shoalLeavingSeconds",
 		name = "Leaving warning",
 		description = "How long before the shoal leaves to notify.<br><b>0</b>: as it sets off.<br><b>Above 0</b>: needs the stop's timer running.",
-		position = 58,
+		position = 56,
 		section = notificationsSection
 	)
 	default int shoalLeavingSeconds()

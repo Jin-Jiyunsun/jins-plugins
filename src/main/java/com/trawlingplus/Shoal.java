@@ -33,6 +33,9 @@ final class Shoal
 	private double[] lastPosition;
 	private double[] lastTarget;
 	private ShoalDepth depth = ShoalDepth.UNKNOWN;
+	// The last depth read off the shoal's animation rather than guessed, and whether it changed on the last read.
+	private ShoalDepth animatedDepth;
+	private boolean depthChanged;
 
 	// The bar the game draws over a shoal while it sits at a stop, which empties as the stop runs out,
 	// and how long a stop on this shoal's route lasts. The bar is the same length whatever the route
@@ -129,9 +132,26 @@ final class Shoal
 		return depth;
 	}
 
-	void setDepth(ShoalDepth depth)
+	/**
+	 * Takes the depth as read this tick, and whether it came off the shoal's animation. Only one animated depth
+	 * giving way to another counts as a change, not the guessed resting depth giving way to the first one seen.
+	 */
+	void setDepth(ShoalDepth depth, boolean animated)
 	{
 		this.depth = depth;
+		depthChanged = animated && animatedDepth != null && animatedDepth != depth;
+		if (animated)
+		{
+			animatedDepth = depth;
+		}
+	}
+
+	/**
+	 * Whether the shoal's animation moved it to another depth on the last read.
+	 */
+	boolean depthChanged()
+	{
+		return depthChanged;
 	}
 
 	/**
@@ -202,6 +222,15 @@ final class Shoal
 	boolean stopped()
 	{
 		return headingArrowHidden;
+	}
+
+	/**
+	 * Whether the shoal has actually been seen sitting still, as of the last tick. Unlike stopped(), a shoal that
+	 * has only just come into view, with nothing yet to judge it by, doesn't count.
+	 */
+	boolean seenStopped()
+	{
+		return seenStill;
 	}
 
 	/**

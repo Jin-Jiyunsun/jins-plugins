@@ -187,6 +187,8 @@ public class TrawlingPlusPlugin extends Plugin
 	private static final Pattern SEA_START = Pattern.compile(
 		"^You (?:cast out your|attempt to catch|start harpooning|lower the Karambwan vessel)");
 	private static final String NETS_START = "You begin operating the trawling net";
+	// What the player is told when they are knocked off the net for holding it too long without moving.
+	private static final String NETS_NUMB = "Your hands grow numb from holding the net";
 
 	// The map regions the boat counts as near each of the fishing spots at sea in, each listed once, so one near two
 	// spots is only with the first; and how many ticks it can be away from all of them, 3 minutes, before it no
@@ -450,6 +452,10 @@ public class TrawlingPlusPlugin extends Plugin
 	private Shoal leavingShoal;
 	private boolean leavingWasStopped;
 	private boolean leavingWarned;
+	// The shoal and depth the depth change notification last fired for, so a reading that flickers between
+	// two depths as the animation turns over doesn't fire it again.
+	private Shoal depthWarnedShoal;
+	private ShoalDepth depthWarned;
 	private List<ShoalRoute> routes = Collections.emptyList();
 
 	// All keyed by the id of each world entity's own world view, which is what ties a shoal's
@@ -1197,6 +1203,13 @@ public class TrawlingPlusPlugin extends Plugin
 				shoal = new Shoal(entry.getValue());
 				shoals.put(entry.getKey(), shoal);
 			}
+			// Mixed shoals swap clickboxes in place, so a mixed one replacing another is a shoal turning special.
+			// A shoal first seen already special has no clickbox before it.
+			String mixed = MIXED_BY_CLICKBOX.get(clickbox);
+			if (mixed != null && shoal.getClickbox() != 0 && shoal.getClickbox() != clickbox)
+			{
+				notifier.notify(config.notifySpecialShoal(), "A shoal has turned " + mixed.toLowerCase() + ".");
+			}
 			shoal.setClickbox(clickbox);
 
 			double[] position = shoal.position(client);
@@ -1233,6 +1246,7 @@ public class TrawlingPlusPlugin extends Plugin
 		baitedLabel = baitLabel();
 		netsAtDepth = netsSetToDepth();
 		checkShoalLeaving();
+		checkDepthChange();
 	}
 
 	private void findExistingShoals()
@@ -1442,7 +1456,9 @@ public class TrawlingPlusPlugin extends Plugin
 			return;
 		}
 
-		boolean stopped = shoal.stopped();
+		// Only once it has been seen sitting still: a shoal just come into view reads as stopped until it is
+		// seen moving, which would otherwise warn of it leaving a stop it was never at.
+		boolean stopped = shoal.seenStopped();
 		if (shoal != leavingShoal)
 		{
 			// A shoal first seen on the move has no stop to warn about until it reaches one.
@@ -1471,6 +1487,27 @@ public class TrawlingPlusPlugin extends Plugin
 				: "The shoal leaves its stop in " + seconds + " seconds.");
 		}
 		leavingWasStopped = stopped;
+	}
+
+	/**
+	 * Notifies as soon as the nearest shoal's animation moves it to another depth, if the nets aren't already set
+	 * to it.
+	 */
+	private void checkDepthChange()
+	{
+		Shoal shoal = nearestShoal;
+		if (shoal == null || !shoal.depthChanged())
+		{
+			return;
+		}
+
+		ShoalDepth depth = shoal.getDepth();
+		if (netsFitted && !netsAtDepth && (shoal != depthWarnedShoal || depth != depthWarned))
+		{
+			depthWarnedShoal = shoal;
+			depthWarned = depth;
+			notifier.notify(config.notifyDepthChange(), "The shoal depth is now " + depth.toString().toLowerCase() + ".");
+		}
 	}
 
 	/**
@@ -1802,6 +1839,12 @@ public class TrawlingPlusPlugin extends Plugin
 			{
 				// Back on the nets, so the player's own catches are theirs again.
 				fishingSpot = false;
+			}
+			else if (message.startsWith(NETS_NUMB))
+			{
+				// Only said when the game knocks the player off, so stepping off by choice never notifies.
+				notifier.notify(config.notifyStoppedOperating(), "You stopped operating the net.");
+				return;
 			}
 
 			boolean start = SEA_START.matcher(message).find();
@@ -2544,7 +2587,7 @@ public class TrawlingPlusPlugin extends Plugin
 			}
 		}
 
-		shoal.setDepth(depth);
+		shoal.setDepth(depth, swimming);
 		shoal.setStopBar(bar, scale);
 	}
 
@@ -2601,6 +2644,7 @@ public class TrawlingPlusPlugin extends Plugin
 		baitedShoal = null;
 		netsAtDepth = false;
 		leavingShoal = null;
+		depthWarnedShoal = null;
 	}
 
 	@Provides

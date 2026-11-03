@@ -999,7 +999,13 @@ class TrawlingPlusOverlay extends Overlay
 		WorldView view = placed.view;
 		double distance = placed.distance;
 		int next = placed.next;
-		double stretch = route.forward(distance, route.stopDistance(next));
+		int stops = route.stopCount();
+		int ahead = Math.min(config.stopsAhead(), stops - 1);
+		int last = (next + ahead - 1) % stops;
+		double stretch = route.forward(distance, route.stopDistance(last));
+		// What was already showing before the last stop came into view, up to the stop before it. Only the
+		// rest draws out when the shoal moves on.
+		double before = ahead > 1 ? route.forward(distance, route.stopDistance(last == 0 ? stops - 1 : last - 1)) : 0;
 
 		// When the shoal moves on to a new next stop, the route to it draws itself out from the shoal,
 		// arrows appearing as it reaches them, and the stop fades in once the route gets there.
@@ -1039,20 +1045,32 @@ class TrawlingPlusOverlay extends Overlay
 			stopReveal = placed.shoal.nextStopReveal(now, revealMillis);
 			if (!placed.shoal.revealStarted(now))
 			{
-				// Waiting for the shoal to settle in before the way to its next stop is drawn.
-				return;
+				// Waiting for the shoal to settle in before the way on to the last stop is drawn.
+				routeReveal = 0;
+				stopReveal = 0;
 			}
 		}
-		double drawn = stretch * routeReveal;
-		drawStretch(graphics, view, route, distance, drawn, 1);
-
-		if (config.showStops() && stopReveal > 0)
+		double drawn = before + (stretch - before) * routeReveal;
+		if (drawn > 0)
 		{
-			drawStop(graphics, view, route, next, config.nextStopColour(), stopReveal);
+			drawStretch(graphics, view, route, distance, drawn, 1);
+		}
+
+		if (config.showStops())
+		{
+			for (int stop = next, step = 1; step < ahead; stop = stop + 1 == stops ? 0 : stop + 1, step++)
+			{
+				drawStop(graphics, view, route, stop, step == 1 ? config.nextStopColour() : config.stopColour(), 1);
+			}
+			if (stopReveal > 0)
+			{
+				drawStop(graphics, view, route, last, ahead == 1 ? config.nextStopColour() : config.stopColour(),
+					stopReveal);
+			}
 		}
 
 		// An arrow leads the route as it draws out, and fades away as the stop fades in.
-		double tipOpacity = 1 - stopReveal;
+		double tipOpacity = config.revealNextSection() && !placed.shoal.revealStarted(now) ? 0 : 1 - stopReveal;
 		if (config.showDirectionArrows() && tipOpacity > 0)
 		{
 			double tipLength = shoalArrowLength();

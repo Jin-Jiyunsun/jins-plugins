@@ -24,6 +24,7 @@ import net.runelite.api.SpritePixels;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.SpriteID;
 import net.runelite.api.widgets.Widget;
+import net.runelite.client.config.ConfigManager;
 import net.runelite.client.input.KeyListener;
 import net.runelite.client.input.MouseAdapter;
 import net.runelite.client.input.MouseListener;
@@ -77,9 +78,12 @@ class HoldBook extends Overlay implements KeyListener
 	private static final int RIGHT_PAGE_LEFT = (COLUMNS / 2) * TILE + 23;
 	private static final int RIGHT_PAGE_RIGHT = BOOK_WIDTH - 13;
 	private static final int PAGE_WIDTH = LEFT_PAGE_RIGHT - LEFT_PAGE_LEFT;
-	// The text keeps this far from every edge of its page, so it sits centred on the page; the close button and
-	// arrows sit this far from their page's corner, by their visible pixels.
+	// The text keeps this far from the sides of its page, so it sits centred on the page, and the title and page
+	// number this far from its top and bottom, a little closer than the sides to leave more room for lines (Jin); the
+	// close button and arrows sit this far from their page's corner, by their visible pixels.
 	private static final int TEXT_INSET = 18;
+	private static final int TITLE_INSET = 16;
+	private static final int NUMBER_INSET = 10;
 	private static final int CORNER_INSET = 6;
 
 	// The button is centred on a space the size of the hold's own close button, just left of it; where that can't be
@@ -160,16 +164,22 @@ class HoldBook extends Overlay implements KeyListener
 	private volatile Rectangle leftBounds;
 	private volatile Rectangle rightBounds;
 
+	// The config key for the spread last showing, kept across sessions so the book opens where it was left (Jin).
+	private static final String SPREAD_KEY = "holdBookSpread";
+
+	private final ConfigManager configManager;
+
 	private volatile boolean open;
 	// The left page of the spread showing.
 	private volatile int spread;
 
 	@Inject
-	HoldBook(Client client, TrawlingPlusConfig config, TrawlingPlusPlugin plugin)
+	HoldBook(Client client, TrawlingPlusConfig config, TrawlingPlusPlugin plugin, ConfigManager configManager)
 	{
 		this.client = client;
 		this.config = config;
 		this.plugin = plugin;
+		this.configManager = configManager;
 		setPosition(OverlayPosition.DYNAMIC);
 		setLayer(OverlayLayer.ABOVE_WIDGETS);
 		setPriority(PRIORITY_HIGHEST);
@@ -275,7 +285,7 @@ class HoldBook extends Overlay implements KeyListener
 		List<BookPage> showing = pages;
 		int first = Math.min(spread, lastSpread(showing.size()));
 		int textWidth = PAGE_WIDTH - 2 * TEXT_INSET;
-		int top = y + PAGE_TOP + TEXT_INSET;
+		int top = y + PAGE_TOP + TITLE_INSET;
 		drawPage(graphics, showing, first, x + LEFT_PAGE_LEFT + TEXT_INSET, top, textWidth);
 		drawPage(graphics, showing, first + 1, x + RIGHT_PAGE_LEFT + TEXT_INSET, top, textWidth);
 
@@ -319,15 +329,17 @@ class HoldBook extends Overlay implements KeyListener
 		BookPage content = showing.get(page);
 		if (pageImages.get(page) == null || !content.equals(pagesDrawn.get(page)))
 		{
-			pageImages.set(page, buildPage(content, page + 1, width, PAGE_BOTTOM - PAGE_TOP - 2 * TEXT_INSET));
+			pageImages.set(page, buildPage(content, page + 1, width,
+				PAGE_BOTTOM - PAGE_TOP - TITLE_INSET - NUMBER_INSET));
 			pagesDrawn.set(page, content);
 		}
 		graphics.drawImage(pageImages.get(page), x, y, null);
 	}
 
 	/**
-	 * One page: its title in the medium quill, then its lines in the small quill (text wrapped to the page, or a row
-	 * with its name on the left and its value against the right edge), and its number at the foot.
+	 * One page: its title in the medium quill, then its lines in the small quill (text wrapped to the page, left
+	 * aligned or centred, centred in faded ink for a heading, a row with its name on the left and its value against
+	 * the right edge, or a blank line), and its number at the foot.
 	 */
 	private BufferedImage buildPage(BookPage content, int number, int width, int height)
 	{
@@ -338,15 +350,22 @@ class HoldBook extends Overlay implements KeyListener
 		heading.draw(g, title, (width - heading.width(title)) / 2, 0, INK);
 
 		int lineHeight = bodyFont.height() + 2;
-		// One blank line between the title and the first line (Jin).
-		int line = heading.height() + 6 + lineHeight;
+		// Half a blank line between the title and the first line, and for each blank line (Jin): a whole one left too
+		// little room on a page.
+		int gap = lineHeight / 2;
+		int line = heading.height() + 6 + gap;
 		for (BookPage.Line text : content.getLines())
 		{
 			if (text.getRight() == null)
 			{
+				if (text.getLeft().isEmpty())
+				{
+					line += gap;
+				}
 				for (String part : wrap(text.getLeft(), bodyFont, width))
 				{
-					bodyFont.draw(g, part, 0, line, INK);
+					int x = text.isCentred() ? (width - bodyFont.width(part)) / 2 : 0;
+					bodyFont.draw(g, part, x, line, text.isFaded() ? FADED_INK : INK);
 					line += lineHeight;
 				}
 			}
@@ -697,6 +716,11 @@ class HoldBook extends Overlay implements KeyListener
 			if (inside(buttonBounds, event))
 			{
 				open = !open;
+				if (open)
+				{
+					Integer saved = configManager.getConfiguration(TrawlingPlusConfig.GROUP, SPREAD_KEY, Integer.class);
+					spread = saved != null && saved > 0 ? saved / 2 * 2 : 0;
+				}
 				event.consume();
 			}
 			else if (open && inside(bookBounds, event))
@@ -707,11 +731,11 @@ class HoldBook extends Overlay implements KeyListener
 				}
 				else if (inside(leftBounds, event))
 				{
-					spread = Math.max(0, Math.min(spread, lastSpread(pages.size())) - 2);
+					turnTo(Math.max(0, Math.min(spread, lastSpread(pages.size())) - 2));
 				}
 				else if (inside(rightBounds, event))
 				{
-					spread = Math.min(spread + 2, lastSpread(pages.size()));
+					turnTo(Math.min(spread + 2, lastSpread(pages.size())));
 				}
 				event.consume();
 			}
@@ -722,6 +746,16 @@ class HoldBook extends Overlay implements KeyListener
 			return event;
 		}
 	};
+
+	/** Shows the spread starting at the given page, and saves it for the next time the book opens. */
+	private void turnTo(int page)
+	{
+		if (page != spread)
+		{
+			spread = page;
+			configManager.setConfiguration(TrawlingPlusConfig.GROUP, SPREAD_KEY, page);
+		}
+	}
 
 	/** Whether the game offers walking under the mouse, by its type, so other plugins renaming it don't matter. */
 	private boolean walkingUnderMouse()

@@ -206,6 +206,11 @@ public class TrawlingPlusPlugin extends Plugin
 	private static final String RESET_LIFETIME = "Reset lifetime";
 	// Each fish's lifetime count is kept in the account's RuneLite profile under this key, plus the fish's name.
 	private static final String LIFETIME_KEY = "lifetimeCaught_";
+	// The account's lifetime fish caught by the player and by the crew, and offcuts laid as bait, for the hold
+	// book's Worker log; counted from when they were added, so they start at none.
+	private static final String LIFETIME_CAPTAIN_KEY = "lifetimeCaughtByCaptain";
+	private static final String LIFETIME_CREW_KEY = "lifetimeCaughtByCrew";
+	private static final String LIFETIME_BAIT_KEY = "lifetimeBaitUsed";
 	// How often, in ticks, lifetime catches not yet saved are saved: about a minute.
 	private static final int LIFETIME_SAVE_TICKS = 100;
 
@@ -527,8 +532,9 @@ public class TrawlingPlusPlugin extends Plugin
 	// The total's Reset lifetime option, which is only on its menu while Shift is held so it can't be picked by mistake.
 	private final OverlayMenuEntry resetLifetimeEntry =
 		new OverlayMenuEntry(MenuAction.RUNELITE_INFOBOX, RESET_LIFETIME, "Fish caught");
-	// Lifetime catches of each fish not yet added to what the account's profile has saved. Saved now and then rather
-	// than on every catch, and always on logout or switching off.
+	// Lifetime counts not yet added to what the account's profile has saved, by their key there: each fish's catches,
+	// the captain's and crew's, and the bait used. Saved now and then rather than on every catch, and always on
+	// logout or switching off.
 	private final Map<String, Integer> lifetimeUnsaved = new HashMap<>();
 
 	@Override
@@ -1987,7 +1993,7 @@ public class TrawlingPlusPlugin extends Plugin
 		int catchCount = catchLine.find() ? number(catchLine.group(1)) : -1;
 		if (catchCount > 0)
 		{
-			countCatch(message.substring(catchLine.end()), catchCount);
+			countCatch(message.substring(catchLine.end()), catchCount, message.startsWith("You catch"));
 		}
 
 		if (ownBoat == null)
@@ -2409,10 +2415,11 @@ public class TrawlingPlusPlugin extends Plugin
 	}
 
 	/**
-	 * Adds a catch to the count of its fish and to the total, the rest of a catch line after its count naming the
-	 * fish. A catch of anything other than a trawled fish isn't counted.
+	 * Adds a catch to the count of its fish and to the total, and to the lifetime count of fish caught by the player
+	 * or by the crew, the rest of a catch line after its count naming the fish. A catch of anything other than a
+	 * trawled fish isn't counted.
 	 */
-	private void countCatch(String named, int fish)
+	private void countCatch(String named, int fish, boolean byCaptain)
 	{
 		String lower = named.toLowerCase();
 		for (String kind : CAUGHT_FISH.keySet())
@@ -2421,7 +2428,8 @@ public class TrawlingPlusPlugin extends Plugin
 			{
 				caught.merge(kind, fish, Integer::sum);
 				caughtTotal += fish;
-				lifetimeUnsaved.merge(kind, fish, Integer::sum);
+				lifetimeUnsaved.merge(lifetimeKey(kind), fish, Integer::sum);
+				lifetimeUnsaved.merge(byCaptain ? LIFETIME_CAPTAIN_KEY : LIFETIME_CREW_KEY, fish, Integer::sum);
 				if (!catchBoxes.containsKey(kind))
 				{
 					addFishBox(kind);
@@ -2457,7 +2465,7 @@ public class TrawlingPlusPlugin extends Plugin
 	{
 		String name = Character.toUpperCase(kind.charAt(0)) + kind.substring(1);
 		CatchInfoBox box = new CatchInfoBox(itemManager.getImage(CAUGHT_FISH.get(kind)), this, name + " caught",
-			() -> caught.getOrDefault(kind, 0), () -> lifetime(kind), () -> config.showFishCaughtInfoBoxes() && loggedIn());
+			() -> caught.getOrDefault(kind, 0), () -> lifetime(lifetimeKey(kind)), () -> config.showFishCaughtInfoBoxes() && loggedIn());
 		catchBoxes.put(kind, box);
 		infoBoxManager.addInfoBox(box);
 	}
@@ -2522,11 +2530,14 @@ public class TrawlingPlusPlugin extends Plugin
 
 		if (event.getEntry() == resetLifetimeEntry)
 		{
-			lifetimeUnsaved.clear();
+			// Every lifetime count of fish, the captain's and crew's included; the bait used isn't a catch and stays.
+			lifetimeUnsaved.keySet().retainAll(List.of(LIFETIME_BAIT_KEY));
 			for (String kind : CAUGHT_FISH.keySet())
 			{
 				configManager.unsetRSProfileConfiguration(TrawlingPlusConfig.GROUP, lifetimeKey(kind));
 			}
+			configManager.unsetRSProfileConfiguration(TrawlingPlusConfig.GROUP, LIFETIME_CAPTAIN_KEY);
+			configManager.unsetRSProfileConfiguration(TrawlingPlusConfig.GROUP, LIFETIME_CREW_KEY);
 			return;
 		}
 
@@ -2549,8 +2560,8 @@ public class TrawlingPlusPlugin extends Plugin
 	 * hasn't been saved yet.
 	 */
 	/**
-	 * The hold book's pages: the fish caught since the counts were last reset, and the account's lifetime catches,
-	 * each with a total. Client thread only.
+	 * The hold book's pages: two pages to open the book, then the fish caught since the counts were last reset, and
+	 * the account's lifetime catches, each with a total. Client thread only.
 	 */
 	List<BookPage> bookPages()
 	{
@@ -2562,19 +2573,42 @@ public class TrawlingPlusPlugin extends Plugin
 		for (String kind : BOOK_FISH)
 		{
 			String name = Character.toUpperCase(kind.charAt(0)) + kind.substring(1);
-			int lifetime = lifetime(kind);
+			int lifetime = lifetime(lifetimeKey(kind));
 			lifeTotal += lifetime;
 			session.add(BookPage.row(name, QuantityFormatter.formatNumber(caught.getOrDefault(kind, 0))));
 			life.add(BookPage.row(name, QuantityFormatter.formatNumber(lifetime)));
 		}
+		// Half a blank line sets the total apart from the fish above it (Jin).
+		session.add(BookPage.blank());
+		life.add(BookPage.blank());
 		session.add(BookPage.row("Total", QuantityFormatter.formatNumber(caughtTotal)));
 		life.add(BookPage.row("Total", QuantityFormatter.formatNumber(lifeTotal)));
-		return List.of(new BookPage("This session", session), new BookPage("Lifetime", life));
+		Player player = client.getLocalPlayer();
+		String name = player != null && player.getName() != null ? player.getName() : "";
+		BookPage cover = new BookPage("Trawling Log", List.of(
+			BookPage.centred(name),
+			BookPage.blank(),
+			BookPage.text("A record of the fish hauled aboard, and of the hands who brought them in.")));
+		BookPage foreword = new BookPage("On trawling", List.of(
+			BookPage.text("Shoals of fish ride predictable currents across the seas, pausing to feed before "
+				+ "moving on."),
+			BookPage.blank(),
+			BookPage.text("Lower the nets to the depth they swim at, keep the boat steady, and the nets "
+				+ "will fill.")));
+		BookPage workers = new BookPage("Worker log", List.of(
+			BookPage.heading("Catches"),
+			BookPage.row("Captain", QuantityFormatter.formatNumber(lifetime(LIFETIME_CAPTAIN_KEY))),
+			BookPage.row("Crew", QuantityFormatter.formatNumber(lifetime(LIFETIME_CREW_KEY))),
+			BookPage.blank(),
+			BookPage.row("Bait usage", QuantityFormatter.formatNumber(lifetime(LIFETIME_BAIT_KEY)))));
+		return List.of(cover, foreword, new BookPage("This session", session), new BookPage("Lifetime", life),
+			workers);
 	}
 
-	private int lifetime(String kind)
+	/** A lifetime count, by its key in the account's profile: what is saved there, and what hasn't been yet. */
+	private int lifetime(String key)
 	{
-		return savedLifetime(kind) + lifetimeUnsaved.getOrDefault(kind, 0);
+		return savedLifetime(key) + lifetimeUnsaved.getOrDefault(key, 0);
 	}
 
 	private int lifetimeTotal()
@@ -2582,14 +2616,14 @@ public class TrawlingPlusPlugin extends Plugin
 		int total = 0;
 		for (String kind : CAUGHT_FISH.keySet())
 		{
-			total += lifetime(kind);
+			total += lifetime(lifetimeKey(kind));
 		}
 		return total;
 	}
 
-	private int savedLifetime(String kind)
+	private int savedLifetime(String key)
 	{
-		String saved = configManager.getRSProfileConfiguration(TrawlingPlusConfig.GROUP, lifetimeKey(kind));
+		String saved = configManager.getRSProfileConfiguration(TrawlingPlusConfig.GROUP, key);
 		try
 		{
 			return saved == null ? 0 : Integer.parseInt(saved);
@@ -2612,9 +2646,9 @@ public class TrawlingPlusPlugin extends Plugin
 
 		for (Map.Entry<String, Integer> unsaved : lifetimeUnsaved.entrySet())
 		{
-			String kind = unsaved.getKey();
-			configManager.setRSProfileConfiguration(TrawlingPlusConfig.GROUP, lifetimeKey(kind),
-				savedLifetime(kind) + unsaved.getValue());
+			String key = unsaved.getKey();
+			configManager.setRSProfileConfiguration(TrawlingPlusConfig.GROUP, key,
+				savedLifetime(key) + unsaved.getValue());
 		}
 		lifetimeUnsaved.clear();
 	}
@@ -2765,6 +2799,10 @@ public class TrawlingPlusPlugin extends Plugin
 			baitedShoal = nearestShoal;
 			baitedWasStopped = nearestShoal.stopped();
 			ticksSinceBait = 0;
+			if (ownBoat != null)
+			{
+				lifetimeUnsaved.merge(LIFETIME_BAIT_KEY, 1, Integer::sum);
+			}
 			if (holdTick != tick)
 			{
 				// The hold's contents sent on the same tick as the bait already have that offcut taken out.

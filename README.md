@@ -10,7 +10,7 @@ and keeps track of your nets, bait and cargo hold from a HUD on the boat.
 
 ## Features
 
-- **Shoal routes drawn as a loop or as an individual slice**: every route is drawn in game and
+- **Shoal routes drawn as a loop or as the next few stops**: every route is drawn in game and
   optionally on the world map/minimap, with stops marked and an arrow showing which way the
   nearest shoal is currently heading. The plugin automatically shows you the nearest route.
 - **Fishable area**: a square or circle round the nearest shoal showing how close your boat needs
@@ -33,6 +33,8 @@ and keeps track of your nets, bait and cargo hold from a HUD on the boat.
   closed; right-click the total to reset them. Hovering over a box also shows your lifetime count,
   saved to your RuneLite profile for each account, which the total's "Reset lifetime" clears: hold Shift while right-clicking it to see that option. An
   optional info box shows the fish in your own nets.
+- **Catch book**: a button on the cargo hold opens a book of the fish you've caught this session
+  and in total.
 - **Fishing spot arrow**: after fishing one of the spots at sea, an arrow beside your boat points
   the way back to it, such as after banking. It hides while you fish, near the spot, and when your
   hold is nearly full.
@@ -67,6 +69,7 @@ Every route was recorded in-game and is accurate to the tile when no smoothing i
 - **Show guides**: whether route lines, arrows and stop markers show all the time or only while
   your boat has trawling nets fitted.
 - **Show on maps**: minimap, world map, both or off.
+- **Route display**: the whole route, or only the next few stops.
 - **Show danger**: where dangerous water is marked in red: on the route in the water, on the maps,
   both or off.
 - **Clear around boat**: hides the route line, direction arrows and stops under your boat, fading
@@ -76,7 +79,9 @@ Every route was recorded in-game and is accurate to the tile when no smoothing i
   section in the config panel.
 - **Special colour**: the colours the fishable area and fishing point turn while the shoal is
   shimmering, glistening or vibrant, in the fishable area section. Gold by default.
-- **Display position**: the heads up display can sit at the helm, the bow or above the sails.
+- **Display position**: the heads up display can sit at the helm, the bow, above the sails or over
+  the shoal.
+- **Smooth position**: the heads up display moves smoothly with the boat.
 - **Timer bar**: moves the game's stop timer bar from over the shoal to the bottom of the heads up
   display, sized to match it.
 - **Animated**: the heads up display fades its lines in and out and grows to fit them. Turn it off
@@ -84,6 +89,7 @@ Every route was recorded in-game and is accurate to the tile when no smoothing i
 - **Cargo hold**: shows or hides the cargo hold display, in the heads up display section.
 - **Info boxes**: shows or hides the fish caught, total caught and fish in nets info boxes, in their
   own section.
+- **Hold book**: shows or hides the catch book button.
 - **Fishing spot arrow**: shows or hides the fishing spot arrow and sets its colour.
 - **Cargo hold highlight**: shows or hides the cargo hold's outline and sets its colour.
 - **Arrow style**: arrows on the water can face the camera (the default), stand upright along the

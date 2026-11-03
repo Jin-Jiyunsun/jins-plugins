@@ -860,6 +860,18 @@ public interface TrawlingPlusConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "showHoldBook",
+		name = "Hold book",
+		description = "Show a button beside the cargo hold's close button<br>that opens the Trawling Plus book.",
+		position = 54,
+		section = hudSection
+	)
+	default boolean showHoldBook()
+	{
+		return true;
+	}
+
+	@ConfigItem(
 		keyName = "shallowDepthColour",
 		name = "Shallow",
 		description = "Colour of shallow depth.",

@@ -75,11 +75,14 @@ import net.runelite.client.events.InfoBoxMenuClicked;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
+import net.runelite.client.input.KeyManager;
+import net.runelite.client.input.MouseManager;
 import net.runelite.client.ui.overlay.OverlayManager;
 import net.runelite.client.ui.overlay.OverlayMenuEntry;
 import net.runelite.client.ui.overlay.infobox.InfoBoxManager;
 import net.runelite.client.ui.overlay.worldmap.WorldMapPoint;
 import net.runelite.client.ui.overlay.worldmap.WorldMapPointManager;
+import net.runelite.client.util.QuantityFormatter;
 import net.runelite.client.util.Text;
 
 @Slf4j
@@ -196,6 +199,9 @@ public class TrawlingPlusPlugin extends Plugin
 		"halibut", ItemID.RAW_HALIBUT,
 		"bluefin", ItemID.RAW_BLUEFIN,
 		"marlin", ItemID.RAW_MARLIN);
+	// The trawled fish in the order the hold book lists them, from the first caught to the last.
+	private static final List<String> BOOK_FISH = List.of("giant krill", "haddock", "yellowfin", "halibut", "bluefin",
+		"marlin");
 	private static final String RESET_CATCHES = "Reset";
 	private static final String RESET_LIFETIME = "Reset lifetime";
 	// Each fish's lifetime count is kept in the account's RuneLite profile under this key, plus the fish's name.
@@ -327,6 +333,15 @@ public class TrawlingPlusPlugin extends Plugin
 
 	@Inject
 	private TrawlingPlusNetOverlay netOverlay;
+
+	@Inject
+	private HoldBook holdBook;
+
+	@Inject
+	private MouseManager mouseManager;
+
+	@Inject
+	private KeyManager keyManager;
 
 	// The display on the boat, drawn above the game's health bars by the main overlay's own code, so made from it
 	// rather than injected, which would make a second main overlay.
@@ -569,6 +584,9 @@ public class TrawlingPlusPlugin extends Plugin
 		overlayManager.add(netOverlay);
 		overlayManager.add(mapOverlay);
 		overlayManager.add(minimapOverlay);
+		overlayManager.add(holdBook);
+		mouseManager.registerMouseListener(holdBook.mouse);
+		keyManager.registerKeyListener(holdBook);
 		clientThread.invoke(this::findExistingShoals);
 		clientThread.invoke(this::addCatchBoxes);
 		log.debug("Trawling Plus started with {} routes, {} points to draw them from", routes.size(),
@@ -584,6 +602,10 @@ public class TrawlingPlusPlugin extends Plugin
 		overlayManager.remove(netOverlay);
 		overlayManager.remove(mapOverlay);
 		overlayManager.remove(minimapOverlay);
+		overlayManager.remove(holdBook);
+		mouseManager.unregisterMouseListener(holdBook.mouse);
+		keyManager.unregisterKeyListener(holdBook);
+		clientThread.invoke(holdBook::reset);
 		worldMapPointManager.removeIf(DangerMarker.class::isInstance);
 		worldMapPointManager.removeIf(ShoalMarker.class::isInstance);
 		infoBoxManager.removeIf(CatchInfoBox.class::isInstance);
@@ -2526,6 +2548,30 @@ public class TrawlingPlusPlugin extends Plugin
 	 * How many of a fish the logged in account has caught in its lifetime: what its profile has saved, and what
 	 * hasn't been saved yet.
 	 */
+	/**
+	 * The hold book's pages: the fish caught since the counts were last reset, and the account's lifetime catches,
+	 * each with a total. Client thread only.
+	 */
+	List<BookPage> bookPages()
+	{
+		List<BookPage.Line> session = new ArrayList<>();
+		List<BookPage.Line> life = new ArrayList<>();
+		// The lifetime total is added up here rather than with lifetimeTotal(), which would read every fish's saved
+		// count from the profile a second time; this runs once a tick while the book is open.
+		int lifeTotal = 0;
+		for (String kind : BOOK_FISH)
+		{
+			String name = Character.toUpperCase(kind.charAt(0)) + kind.substring(1);
+			int lifetime = lifetime(kind);
+			lifeTotal += lifetime;
+			session.add(BookPage.row(name, QuantityFormatter.formatNumber(caught.getOrDefault(kind, 0))));
+			life.add(BookPage.row(name, QuantityFormatter.formatNumber(lifetime)));
+		}
+		session.add(BookPage.row("Total", QuantityFormatter.formatNumber(caughtTotal)));
+		life.add(BookPage.row("Total", QuantityFormatter.formatNumber(lifeTotal)));
+		return List.of(new BookPage("This session", session), new BookPage("Lifetime", life));
+	}
+
 	private int lifetime(String kind)
 	{
 		return savedLifetime(kind) + lifetimeUnsaved.getOrDefault(kind, 0);

@@ -70,19 +70,18 @@
 
 ## Testing
 
-You cannot verify plugin behavior yourself. Even if you have screen-capture or computer-use tools available, **do not use them to interact with RuneScape** — automating game input violates Jagex's third-party client guidelines and will get the user's account banned. Only the user can confirm a plugin works in-game.
+You cannot verify plugin behavior yourself. Even if you have screen-capture or computer-use tools available, **do not use them to interact with RuneScape** — automating game input violates Jagex's third-party client guidelines and will get the user's account banned **it is extremely important to comply with this rule**. Only the user can confirm a plugin works in-game.
 
 After completing a task, do not declare it done. Instead:
 
-1. Offer to launch RuneLite for the user by running `./gradlew run` from the plugin's root directory.
-2. Instruct the user to follow the "Using Jagex Accounts" instructions found at https://github.com/runelite/runelite/wiki/Using-Jagex-Accounts to login to the development client.
-3. Tell the user *what to test* — the specific behavior you changed, the golden path, and any edge cases worth exercising.
-4. Wait for the user to confirm the feature works in-game before considering the task complete. A clean JVM start is not a passing test.
+1. Tell the user *what to test* — the specific behavior you changed, the golden path, and any edge cases worth exercising.
+2. Wait for the user to confirm the feature works in-game before considering the task complete. A clean JVM start is not a passing test.
 
 ---
 
 # Plugin Rules & Restrictions
 
+This section should be used to check compliance with Runelite and Jagex's rules periodically, including checking the web pages listed below for more up to date information.
 Features that are **forbidden or restricted** in RuneLite hub plugins.
 Sourced from [Jagex's Third-Party Client Guidelines](https://secure.runescape.com/m=news/third-party-client-guidelines?oldschool=1) and RuneLite's [Rejected or Rolled-Back Features](https://github.com/runelite/runelite/wiki/Rejected-or-Rolled-Back-Features).
 

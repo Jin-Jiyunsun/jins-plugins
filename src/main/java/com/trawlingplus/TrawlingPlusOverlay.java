@@ -73,9 +73,8 @@ class TrawlingPlusOverlay extends Overlay
 	// How far a shoal can be fished from, in tiles along each axis. It is the same for every kind of
 	// shoal, but it is not measured from the middle of the boat: it is measured from a point towards the
 	// bow, so a boat pointing its bow at a shoal can fish it from further away than one pointing its
-	// stern. Measured on a sloop against bluefin, halibut and glistening shoals, parked still. The edge
-	// shifts by about half a tile with the way the boat faces, so this sits between where fishing always
-	// works and where it sometimes still does.
+	// stern. The edge shifts by about half a tile with the way the boat faces, so this sits between where
+	// fishing always works and where it sometimes still does.
 	private static final double FISHABLE_REACH = 8.7;
 
 	// That point on the boat, in local units ahead of its middle towards the bow: two and a quarter
@@ -145,7 +144,7 @@ class TrawlingPlusOverlay extends Overlay
 	// and a little above the top.
 	private static final int BOW_INSET = Perspective.LOCAL_TILE_SIZE;
 	// How far towards the helm from the bow's spot the display sits over the sails, and how far from their top,
-	// in tenths of a tile, by boat config, tuned in game: the skiff and the sloop. The raft has none, and puts the
+	// in tenths of a tile, by boat config: the skiff and the sloop. The raft has none, and puts the
 	// display at its bow instead.
 	private static final Map<Integer, int[]> SAILS_BY_BOAT = Map.of(2, new int[]{12, -23}, 3, new int[]{21, -27});
 
@@ -278,7 +277,7 @@ class TrawlingPlusOverlay extends Overlay
 			fadeLevels[level] = new Path2D.Double();
 		}
 	}
-	// The sea's height, which is the same everywhere (Jin), read once at the boat and reused for every point placed on
+	// The sea's height, which is the same everywhere, read once at the boat and reused for every point placed on
 	// the water, and read again after each scene load. Until it is read, each point looks up its own.
 	private int waterHeight;
 	private boolean waterKnown;
@@ -288,7 +287,7 @@ class TrawlingPlusOverlay extends Overlay
 	private double frameCameraY;
 	// The most and fewest pixels a tile may cover for a camera-facing arrow this frame, or -1 for no limit: no more
 	// than the size where the camera is aimed, nor a tenth of the screen's height for an arrow, and no less than half
-	// that size. Tuned in game.
+	// that size.
 	private static final double FACING_MIN_SCALE = 0.5;
 	private static final double FACING_MAX_SCREEN = 0.1;
 	private double facingLimit = -1;
@@ -328,7 +327,7 @@ class TrawlingPlusOverlay extends Overlay
 	private boolean clearing;
 	// The hull's own outline seen from above, read once per boat type from its model: corners in the deck's
 	// local units, which boat type they are for, and this frame's corners in world tiles with the box round them.
-	// How many corners it is cut down to: the fewest that fit every boat, tuned in game.
+	// How many corners it is cut down to: the fewest that fit every boat.
 	private static final int FOOTPRINT_POINTS = 7;
 	private int footprintConfig = -1;
 	private int footprintTriedTick = -1;
@@ -353,7 +352,7 @@ class TrawlingPlusOverlay extends Overlay
 	// the boat's middle and the camera in local units for telling what is behind the boat. Rebuilt every frame
 	// into the same polygon.
 	private static final double CLEAR_HEIGHT_TILES = 1;
-	// Boat types less tall than that, by their boat config, tuned in game: the skiff, and the raft, which is flat
+	// Boat types less tall than that, by their boat config: the skiff, and the raft, which is flat
 	// enough that its outline on the water is all there is to it. There are only these three player boats.
 	private static final Map<Integer, Double> CLEAR_HEIGHT_BY_BOAT = Map.of(1, 0.0, 2, 0.9);
 	// This frame's boat's height, from the above.
@@ -1086,8 +1085,8 @@ class TrawlingPlusOverlay extends Overlay
 	}
 
 	/**
-	 * Whether either display on the player's boat could be up this frame: the guides are showing, they are fishing a
-	 * spot at sea, or the hold's display is still fading out after they stopped. Asked before anything else, so
+	 * Whether either display on the player's boat could be up this frame: the guides are showing, they are sea spot
+	 * fishing, or the hold's display is still fading out after they stopped. Asked before anything else, so
 	 * with neither, nothing about them is worked out.
 	 */
 	boolean displayWanted()
@@ -1139,7 +1138,7 @@ class TrawlingPlusOverlay extends Overlay
 
 	/**
 	 * Draws the displays on the player's boat: the one at the helm while the guides are showing, and the hold's
-	 * above it while fishing a spot at sea, or in its place when it is the only one up.
+	 * above it while sea spot fishing, or in its place when it is the only one up.
 	 */
 	void drawHelm(Graphics2D graphics)
 	{
@@ -2188,11 +2187,6 @@ class TrawlingPlusOverlay extends Overlay
 	}
 
 	/**
-	 * Points the way from the boat to the fishing spot at sea being fished, with an arrow like the shoal heading
-	 * arrow on the water off the hull, on the side nearest the spot, going round the boat as it moves. Fades in and
-	 * out like the display on the boat, where it is, the spot's place being kept once the arrow's rules hide it.
-	 */
-	/**
 	 * Outlines the cargo hold while sea spot fishing with a full inventory, fading in and out with Animated.
 	 */
 	private void drawHoldOutline()
@@ -2230,6 +2224,11 @@ class TrawlingPlusOverlay extends Overlay
 		outlineRenderer.drawOutline(hold, HOLD_OUTLINE_WIDTH, withOpacity(colour, shown), HOLD_OUTLINE_FEATHER);
 	}
 
+	/**
+	 * Points the way from the boat to the fishing spot at sea being fished, with an arrow like the shoal heading
+	 * arrow on the water off the hull, on the side nearest the spot, going round the boat as it moves. Fades in and
+	 * out like the display on the boat, where it is, the spot's place being kept once the arrow's rules hide it.
+	 */
 	private void drawSpotArrow(Graphics2D graphics, WorldView top)
 	{
 		long now = System.currentTimeMillis();

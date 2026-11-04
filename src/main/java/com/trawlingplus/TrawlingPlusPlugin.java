@@ -144,10 +144,10 @@ public class TrawlingPlusPlugin extends Plugin
 	private static final double DANGER_GAP_TILES = 30;
 
 	// The type of the icon the game puts on the world map beside each trawling shoal route, "Trawling shoal" in the
-	// map key. It isn't among the named gamevals, so it was found by logging the icons near every recorded route.
+	// map key. It isn't among the named gamevals.
 	private static final int TRAWLING_SHOAL_ICON = 1048;
 
-	// How far a trawling shoal icon can sit from the route it belongs to, in tiles. Those seen sit within 7.
+	// How far a trawling shoal icon can sit from the route it belongs to, in tiles, with room to spare.
 	private static final double SHOAL_ICON_TILES = 15;
 
 	// How far the invisible point over a trawling shoal icon reaches past the icon, in pixels, so the game's own
@@ -214,10 +214,10 @@ public class TrawlingPlusPlugin extends Plugin
 	// How often, in ticks, lifetime catches not yet saved are saved: about a minute.
 	private static final int LIFETIME_SAVE_TICKS = 100;
 
-	// Starting to fish one of the spots at sea, which only the player does, never the crew: every tool says so as it
+	// Starting sea spot fishing, which only the player does, never the crew: every tool says so as it
 	// starts, before anything is caught: "You cast out your line..." or "...your net...", "You attempt to catch a
 	// lobster.", "You start harpooning fish.", "You lower the Karambwan vessel." Aboard the player's own boat this is
-	// only ever fishing a spot at sea; the nets say "You begin operating the trawling net..." instead. From then on
+	// only ever sea spot fishing; the nets say "You begin operating the trawling net..." instead. From then on
 	// the player's own catches are the spot's, whatever they name.
 	private static final Pattern SEA_START = Pattern.compile(
 		"^You (?:cast out your|attempt to catch|start harpooning|lower the Karambwan vessel)");
@@ -465,7 +465,7 @@ public class TrawlingPlusPlugin extends Plugin
 	// Each account's boats' holds as last seen, kept until the client closes or the plugin is switched off, since
 	// logging out, as when disconnected for being idle, leaves them as they were; and the logged in account's, by
 	// the game's number for the boat last boarded, which is the one whose hold was opened. Whether the player has
-	// been fishing a spot at sea since boarding, which shows the hold's display, until they step off or have been
+	// been sea spot fishing since boarding, which shows the hold's display, until they step off or have been
 	// away from the spots a while, and the tick they were first away since, or -1 while near one. Each catch
 	// from those spots in the inventory as of its last update, counted like the offcuts, or null when not, for
 	// counting what goes into the hold as it is shut.
@@ -1170,7 +1170,7 @@ public class TrawlingPlusPlugin extends Plugin
 		}
 
 		// The route being drawn and the one waiting to take over from it are swapped for their new shapes
-		// too. Left as they were, Whole route kept drawing the old shape for as long as that route stayed
+		// too. Otherwise Whole route would keep drawing the old shape for as long as that route stays
 		// nearest, since its new shape is never meaningfully nearer than its old one.
 		nearestRoute = counterpart(nearestRoute, reshaped);
 		contender = counterpart(contender, reshaped);
@@ -1265,7 +1265,7 @@ public class TrawlingPlusPlugin extends Plugin
 		}
 
 		// The boat's hold, looked for until it is found, which is once it has been opened or emptied into, and then
-		// kept; and whether the boat is still near the fishing spots at sea, while fishing one. Both whatever the
+		// kept; and whether the boat is still near the sea spots, while sea spot fishing. Both whatever the
 		// guides are doing, as the hold's display has nothing to do with the nets, and only on the player's own boat.
 		if (own != null)
 		{
@@ -1674,9 +1674,6 @@ public class TrawlingPlusPlugin extends Plugin
 	}
 
 	/**
-	 * What the fish line says: how many fish are in the nets, or a question mark while that is not known.
-	 */
-	/**
 	 * Whether the nets are known to be full.
 	 */
 	boolean netsFull()
@@ -1684,6 +1681,9 @@ public class TrawlingPlusPlugin extends Plugin
 		return fishInNets >= NET_CAPACITY;
 	}
 
+	/**
+	 * What the fish line says: how many fish are in the nets, or a question mark while that is not known.
+	 */
 	String getFishLabel()
 	{
 		return fishLabel;
@@ -1840,7 +1840,7 @@ public class TrawlingPlusPlugin extends Plugin
 	}
 
 	/**
-	 * Ends fishing a spot at sea, as stepping off does, once the boat has been away from all of them for
+	 * Ends sea spot fishing, as stepping off does, once the boat has been away from all of them for
 	 * SEA_AWAY_TICKS, which hides the hold's display until the player starts fishing one again. Near one is being
 	 * in one of the map regions around it. Only worked out while fishing one.
 	 */
@@ -1946,7 +1946,7 @@ public class TrawlingPlusPlugin extends Plugin
 			return;
 		}
 
-		// The spots at sea are only fished from the player's own boat, whatever the guides are doing, as they have
+		// Sea spot fishing is only done from the player's own boat, whatever the guides are doing, as they have
 		// nothing to do with the nets.
 		if (ownBoat != null)
 		{
@@ -1960,7 +1960,7 @@ public class TrawlingPlusPlugin extends Plugin
 			boolean seaCatch = fishingSpot && message.startsWith("You catch ");
 			if (start || seaCatch)
 			{
-				// Fishing a spot at sea, from the moment it starts, which puts nothing in the nets. Starting or
+				// Sea spot fishing, from the moment it starts, which puts nothing in the nets. Starting or
 				// catching is being at a spot, wherever its regions say it is.
 				seaFishing = true;
 				fishingSpot = true;
@@ -1987,7 +1987,7 @@ public class TrawlingPlusPlugin extends Plugin
 			return;
 		}
 
-		// Counted on anyone's boat. The fishing spots at sea never catch a trawled fish, so a catch naming one
+		// Counted on anyone's boat. Sea spot catches are never trawled fish, so a catch naming one
 		// came from the nets.
 		Matcher catchLine = CATCH.matcher(message);
 		int catchCount = catchLine.find() ? number(catchLine.group(1)) : -1;
@@ -2247,7 +2247,7 @@ public class TrawlingPlusPlugin extends Plugin
 	}
 
 	/**
-	 * Counts the offcuts and catches from the fishing spots at sea in the inventory, and what of them just went into
+	 * Counts the offcuts and sea spot catches in the inventory, and what of them just went into
 	 * or came out of the hold, while its screen is open or just shut: the only times they can, and so only once its
 	 * contents are known. Any other time they aren't looked for at all, and the count starts again from the inventory
 	 * as the screen next opens.
@@ -2315,7 +2315,7 @@ public class TrawlingPlusPlugin extends Plugin
 	}
 
 	/**
-	 * Moves catches from the fishing spots at sea between the inventory aboard and the hold's count, the same way
+	 * Moves sea spot catches between the inventory aboard and the hold's count, the same way
 	 * as offcuts: not when its own contents came the same tick, and only into a hold whose contents are known.
 	 * Those leaving the inventory went in, and those arriving came out, unless a catch was announced that tick.
 	 */
@@ -2556,12 +2556,8 @@ public class TrawlingPlusPlugin extends Plugin
 	}
 
 	/**
-	 * How many of a fish the logged in account has caught in its lifetime: what its profile has saved, and what
-	 * hasn't been saved yet.
-	 */
-	/**
-	 * The hold book's pages: two pages to open the book, then the fish caught since the counts were last reset, and
-	 * the account's lifetime catches, each with a total. Client thread only.
+	 * The hold book's pages: two pages to open the book, the fish caught since the counts were last reset, the
+	 * account's lifetime catches, each with a total, then the Worker log. Client thread only.
 	 */
 	List<BookPage> bookPages()
 	{
@@ -2578,7 +2574,7 @@ public class TrawlingPlusPlugin extends Plugin
 			session.add(BookPage.row(name, QuantityFormatter.formatNumber(caught.getOrDefault(kind, 0))));
 			life.add(BookPage.row(name, QuantityFormatter.formatNumber(lifetime)));
 		}
-		// Half a blank line sets the total apart from the fish above it (Jin).
+		// Half a blank line sets the total apart from the fish above it.
 		session.add(BookPage.blank());
 		life.add(BookPage.blank());
 		session.add(BookPage.row("Total", QuantityFormatter.formatNumber(caughtTotal)));
@@ -2780,7 +2776,7 @@ public class TrawlingPlusPlugin extends Plugin
 	/**
 	 * Works out whether the nearest shoal is baited. The game records which step of its route a shoal was
 	 * last baited at rather than how long the bait lasts, and never says when it wears off: the number
-	 * stays where it is long after a bait, while the shoal swims on. Tested in game, a bait lasts until the
+	 * stays where it is long after a bait, while the shoal swims on. A bait lasts until the
 	 * shoal next arrives at a stop. Baited at a stop, it lasts the rest of that stop and the swim to the
 	 * next; baited on the way, until the stop it is heading for. So a new number is a fresh bait on the
 	 * nearest shoal, which stays baited until that shoal next arrives somewhere.

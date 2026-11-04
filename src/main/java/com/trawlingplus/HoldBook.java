@@ -56,8 +56,8 @@ class HoldBook extends Overlay implements KeyListener
 	private static final int CLASP_BOTTOM = SpriteID.TfaBackgroundBookTfa01._10;
 	private static final int CORNER_BOTTOM_RIGHT = SpriteID.TfaBackgroundBookTfa01._11;
 
-	// Page turning and closing. The arrows are matched by their order in the set; the right one has been seen in
-	// game, the left one only shows from a book's second spread.
+	// Page turning and closing. The arrows are matched by their order in the set; the left one only shows from a
+	// book's second spread.
 	private static final int ARROW_LEFT = SpriteID.TfaButtonArrowTfa01._2;
 	private static final int ARROW_RIGHT = SpriteID.TfaButtonArrowTfa01._3;
 	private static final int CLOSE = SpriteID.CloseButtons.PARCHMENT;
@@ -79,8 +79,8 @@ class HoldBook extends Overlay implements KeyListener
 	private static final int RIGHT_PAGE_RIGHT = BOOK_WIDTH - 13;
 	private static final int PAGE_WIDTH = LEFT_PAGE_RIGHT - LEFT_PAGE_LEFT;
 	// The text keeps this far from the sides of its page, so it sits centred on the page, and the title and page
-	// number this far from its top and bottom, a little closer than the sides to leave more room for lines (Jin); the
-	// close button and arrows sit this far from their page's corner, by their visible pixels.
+	// number this far from its top and bottom; the close button and arrows sit this far from their page's corner,
+	// by their visible pixels.
 	private static final int TEXT_INSET = 18;
 	private static final int TITLE_INSET = 16;
 	private static final int NUMBER_INSET = 10;
@@ -97,7 +97,7 @@ class HoldBook extends Overlay implements KeyListener
 	private static final int FISH_SIZE = 15;
 	private static final double COVER_MIDDLE_X = 10.65;
 	private static final double COVER_MIDDLE_Y = 10.78;
-	// Moved from the middle by eye: 1 px right and 1 px up (Jin).
+	// How far the fish sits off the cover's middle, in px: 1 right and 1 up.
 	private static final int FISH_NUDGE_X = 1;
 	private static final int FISH_NUDGE_Y = -1;
 	private static final float HOVER_BRIGHTNESS = 1.25f;
@@ -164,7 +164,7 @@ class HoldBook extends Overlay implements KeyListener
 	private volatile Rectangle leftBounds;
 	private volatile Rectangle rightBounds;
 
-	// The config key for the spread last showing, kept across sessions so the book opens where it was left (Jin).
+	// The config key for the spread last showing, kept across sessions so the book opens where it was left.
 	private static final String SPREAD_KEY = "holdBookSpread";
 
 	private final ConfigManager configManager;
@@ -350,8 +350,7 @@ class HoldBook extends Overlay implements KeyListener
 		heading.draw(g, title, (width - heading.width(title)) / 2, 0, INK);
 
 		int lineHeight = bodyFont.height() + 2;
-		// Half a blank line between the title and the first line, and for each blank line (Jin): a whole one left too
-		// little room on a page.
+		// Half a blank line between the title and the first line, and for each blank line.
 		int gap = lineHeight / 2;
 		int line = heading.height() + 6 + gap;
 		for (BookPage.Line text : content.getLines())
@@ -509,7 +508,7 @@ class HoldBook extends Overlay implements KeyListener
 		BufferedImage cross = sprite(CLOSE);
 		BufferedImage crossHovered = sprite(CLOSE_HOVERED);
 		// The button is two sprites drawn as one, so it always uses the game's own: a pack replacing only one of them
-		// (often the skill icon) leaves a fish that doesn't match its book (Jin: never follow packs here).
+		// (often the skill icon) leaves a fish that doesn't match its book.
 		BufferedImage buttonBook = sprite(BUTTON_BOOK, false);
 		BufferedImage buttonFish = sprite(BUTTON_FISH, false);
 		QuillFont body = QuillFont.load(client, BODY_FONT);

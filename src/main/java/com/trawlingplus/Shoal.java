@@ -239,8 +239,8 @@ final class Shoal
 	 *
 	 * Judged from where the shoal is heading whenever that can be read. The destination stops changing on
 	 * the tick the last move is sent, and changes again the tick a new one is, where the drawn position
-	 * only settles or sets off a tick later, once the client has glided it there. RuneLite confirmed that
-	 * reading the destination of a shoal is fine. The position is the fallback when there is none.
+	 * only settles or sets off a tick later, once the client has glided it there. The position is the fallback
+	 * when there is none.
 	 */
 	void update(double[] position, double[] target)
 	{

@@ -800,7 +800,7 @@ public interface TrawlingPlusConfig extends Config
 	@ConfigItem(
 		keyName = "showCargoHold",
 		name = "Cargo hold",
-		description = "Show how full the hold is and the fish in it<br>while fishing the spots at sea.",
+		description = "Show how full the hold is and the fish in it<br>while sea spot fishing.",
 		position = 49,
 		section = hudSection
 	)

@@ -23,22 +23,23 @@ and keeps track of your nets, bait and cargo hold from a HUD on the boat.
   the nets, bait remaining, a hold-full warning and each net's depth. When all it would show is an
   empty or unknown fish count, it hides while you're not trawling: no net lowered, no fish in the
   nets or hold, and no catch for 3 minutes.
-- **Cargo hold display**: while fishing the fishing spots at sea with a rod, net, harpoon, lobster
-  pot or karambwan vessel, a second pill shows how many fish are in your boat's hold, out of how
+- **Cargo hold display**: while sea spot fishing with a rod, net, harpoon, lobster pot or
+  karambwan vessel, a second pill shows how many fish are in your boat's hold, out of how
   many fit alongside the rest of your cargo, and how many of each of the last three kinds you put
   in, with any others together. It stacks above the heads up display, works on a raft too, and
   warns when the hold is full. Open the hold once each session so it can count what's inside.
 - **Info boxes**: an info box for each fish your nets have caught, your crew's catches included, on
   your boat or anyone else's, plus one for every fish together. The counts last until the client is
   closed; right-click the total to reset them. Hovering over a box also shows your lifetime count,
-  saved to your RuneLite profile for each account, which the total's "Reset lifetime" clears: hold Shift while right-clicking it to see that option. An
-  optional info box shows the fish in your own nets.
+  saved to your RuneLite profile for each account, which the total's "Reset lifetime" clears: hold
+  Shift while right-clicking it to see that option. An optional info box shows the fish in your
+  own nets.
 - **Catch book**: a button on the cargo hold opens a book of the fish you've caught this session
   and in total.
-- **Fishing spot arrow**: after fishing one of the spots at sea, an arrow beside your boat points
-  the way back to it, such as after banking. It hides while you fish, near the spot, and when your
+- **Fishing spot arrow**: after sea spot fishing, an arrow beside your boat points
+  the way back to the spot, such as after banking. It hides while you fish, near the spot, and when your
   hold is nearly full.
-- **Cargo hold highlight**: while fishing the spots at sea, your boat's cargo hold is outlined once
+- **Cargo hold highlight**: while sea spot fishing, your boat's cargo hold is outlined once
   your inventory is full, ready to empty your catch into. Like the arrow, it hides when your hold is
   nearly full.
 - **Side panel depth guide**: highlights which depth each trawling net should be set to, and ticks

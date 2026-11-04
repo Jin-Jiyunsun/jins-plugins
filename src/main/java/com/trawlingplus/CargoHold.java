@@ -5,14 +5,14 @@ import java.util.Arrays;
 import net.runelite.api.gameval.ItemID;
 
 /**
- * What one boat's cargo hold holds of the catches from the fishing spots at sea, and how many of its slots the
+ * What one boat's cargo hold holds of the sea spot catches, and how many of its slots the
  * rest of its cargo takes out of how many. Only known once its screen has been opened, the only time the game
  * sends it, and kept up to date after by what is deposited or withdrawn as it is shut. Every fish takes a slot of
  * its own, since fish don't stack, so the slots left for them are what the rest doesn't take.
  */
 final class CargoHold
 {
-	// The catches of the six fishing spots at sea, which are only fished from a boat, and what the hold's display
+	// The six sea spot catches, which are only caught from a boat, and what the hold's display
 	// calls each, in the same order.
 	static final int[] SEA_FISH = {
 		ItemID.RAW_SHRIMP, ItemID.RAW_ANCHOVIES, ItemID.RAW_SARDINE, ItemID.RAW_HERRING, ItemID.RAW_MACKEREL,
@@ -24,9 +24,7 @@ final class CargoHold
 		"Cod", "Bass", "Shark", "Lobster", "Tuna", "Swordfish",
 		"Karambwan", "Anglerfish", "Monkfish"
 	};
-	// The colour each is listed in: its item picture's own colour, averaged without its black outline and shadow
-	// and with the most colourful parts counting most, then lifted to read on the dark display, tuned by eye and
-	// made a fifth more saturated.
+	// The colour each is listed in: its item picture's own colour, lifted to read on the dark display.
 	static final Color[] SEA_FISH_COLOURS = {
 		new Color(0xdc8d7c), new Color(0x8b8ebf), new Color(0x74d975), new Color(0xd9cbcb), new Color(0xd9d76b),
 		new Color(0xa8a8d9), new Color(0xd97a6e), new Color(0xd9c3c3), new Color(0xd95c00), new Color(0xe6d8d5),
@@ -101,7 +99,7 @@ final class CargoHold
 	}
 
 	/**
-	 * How many catches from the fishing spots at sea it holds, all kinds together.
+	 * How many sea spot catches it holds, all kinds together.
 	 */
 	int caught()
 	{

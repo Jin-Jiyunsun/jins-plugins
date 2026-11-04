@@ -51,6 +51,7 @@ import net.runelite.api.events.WidgetClosed;
 import net.runelite.api.events.WidgetLoaded;
 import net.runelite.api.events.WorldEntityDespawned;
 import net.runelite.api.events.WorldEntitySpawned;
+import net.runelite.api.gameval.AnimationID;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.gameval.ItemID;
@@ -211,6 +212,24 @@ public class TrawlingPlusPlugin extends Plugin
 	private static final String LIFETIME_CAPTAIN_KEY = "lifetimeCaughtByCaptain";
 	private static final String LIFETIME_CREW_KEY = "lifetimeCaughtByCrew";
 	private static final String LIFETIME_BAIT_KEY = "lifetimeBaitUsed";
+	// The account's lifetime ticks on a net: the player's on any boat, and every crewmate's on the player's own.
+	private static final String LIFETIME_CAPTAIN_NET_KEY = "lifetimeNetTicksByCaptain";
+	private static final String LIFETIME_CREW_NET_KEY = "lifetimeNetTicksByCrew";
+	// What anyone on a trawling net shows, the player or a crewmate, whatever the boat's size.
+	private static final Set<Integer> NET_ANIMATIONS = Set.of(
+		AnimationID.SAILING_HUMAN_TRAWLING_NET_KANDARIN_2X5_DROP_LEVEL01,
+		AnimationID.SAILING_HUMAN_TRAWLING_NET_KANDARIN_2X5_DROP_LEVEL02,
+		AnimationID.SAILING_HUMAN_TRAWLING_NET_KANDARIN_2X5_RAISE_LEVEL01,
+		AnimationID.SAILING_HUMAN_TRAWLING_NET_KANDARIN_2X5_RESET01,
+		AnimationID.SAILING_HUMAN_TRAWLING_NET_KANDARIN_2X5_ENGAGE01,
+		AnimationID.SAILING_HUMAN_TRAWLING_NET_KANDARIN_2X5_IDLE01,
+		AnimationID.SAILING_HUMAN_TRAWLING_NET_KANDARIN_3X8_01_COMPLETE,
+		AnimationID.SAILING_HUMAN_TRAWLING_NET_KANDARIN_3X8_DROP_LEVEL01,
+		AnimationID.SAILING_HUMAN_TRAWLING_NET_KANDARIN_3X8_DROP_LEVEL02,
+		AnimationID.SAILING_HUMAN_TRAWLING_NET_KANDARIN_3X8_RAISE_LEVEL01,
+		AnimationID.SAILING_HUMAN_TRAWLING_NET_KANDARIN_3X8_RESET01,
+		AnimationID.SAILING_HUMAN_TRAWLING_NET_KANDARIN_3X8_ENGAGE01,
+		AnimationID.SAILING_HUMAN_TRAWLING_NET_KANDARIN_3X8_IDLE01);
 	// How often, in ticks, lifetime catches not yet saved are saved: about a minute.
 	private static final int LIFETIME_SAVE_TICKS = 100;
 
@@ -1263,6 +1282,8 @@ public class TrawlingPlusPlugin extends Plugin
 			showGuides = false;
 			return;
 		}
+
+		countNetTime(own != null);
 
 		// The boat's hold, looked for until it is found, which is once it has been opened or emptied into, and then
 		// kept; and whether the boat is still near the sea spots, while sea spot fishing. Both whatever the
@@ -2530,14 +2551,17 @@ public class TrawlingPlusPlugin extends Plugin
 
 		if (event.getEntry() == resetLifetimeEntry)
 		{
-			// Every lifetime count of fish, the captain's and crew's included; the bait used isn't a catch and stays.
-			lifetimeUnsaved.keySet().retainAll(List.of(LIFETIME_BAIT_KEY));
+			// Every lifetime count: each fish, the captain's and crew's catches and time on nets, and the bait used.
+			lifetimeUnsaved.clear();
 			for (String kind : CAUGHT_FISH.keySet())
 			{
 				configManager.unsetRSProfileConfiguration(TrawlingPlusConfig.GROUP, lifetimeKey(kind));
 			}
-			configManager.unsetRSProfileConfiguration(TrawlingPlusConfig.GROUP, LIFETIME_CAPTAIN_KEY);
-			configManager.unsetRSProfileConfiguration(TrawlingPlusConfig.GROUP, LIFETIME_CREW_KEY);
+			for (String key : List.of(LIFETIME_CAPTAIN_KEY, LIFETIME_CREW_KEY, LIFETIME_CAPTAIN_NET_KEY,
+				LIFETIME_CREW_NET_KEY, LIFETIME_BAIT_KEY))
+			{
+				configManager.unsetRSProfileConfiguration(TrawlingPlusConfig.GROUP, key);
+			}
 			return;
 		}
 
@@ -2596,9 +2620,55 @@ public class TrawlingPlusPlugin extends Plugin
 			BookPage.row("Captain", QuantityFormatter.formatNumber(lifetime(LIFETIME_CAPTAIN_KEY))),
 			BookPage.row("Crew", QuantityFormatter.formatNumber(lifetime(LIFETIME_CREW_KEY))),
 			BookPage.blank(),
+			BookPage.heading("Time on nets"),
+			BookPage.row("Captain", hoursMinutes(lifetime(LIFETIME_CAPTAIN_NET_KEY))),
+			BookPage.row("Crew", hoursMinutes(lifetime(LIFETIME_CREW_NET_KEY))),
+			BookPage.blank(),
 			BookPage.row("Bait usage", QuantityFormatter.formatNumber(lifetime(LIFETIME_BAIT_KEY)))));
 		return List.of(cover, foreword, new BookPage("This session", session), new BookPage("Lifetime", life),
 			workers);
+	}
+
+	/** Ticks as hours and two-digit minutes, such as "12h 34m". */
+	private static String hoursMinutes(int ticks)
+	{
+		long minutes = ticks * 600L / 60_000;
+		return String.format("%dh %02dm", minutes / 60, minutes % 60);
+	}
+
+	/**
+	 * Adds a tick on a net for the player, on any boat, and one for each crewmate on a net when the deck is the
+	 * player's own.
+	 */
+	private void countNetTime(boolean ownDeck)
+	{
+		Player player = client.getLocalPlayer();
+		if (player == null)
+		{
+			return;
+		}
+		if (NET_ANIMATIONS.contains(player.getAnimation()))
+		{
+			lifetimeUnsaved.merge(LIFETIME_CAPTAIN_NET_KEY, 1, Integer::sum);
+		}
+
+		WorldView deck = player.getWorldView();
+		if (!ownDeck || deck == null)
+		{
+			return;
+		}
+		int crew = 0;
+		for (NPC npc : deck.npcs())
+		{
+			if (NET_ANIMATIONS.contains(npc.getAnimation()))
+			{
+				crew++;
+			}
+		}
+		if (crew > 0)
+		{
+			lifetimeUnsaved.merge(LIFETIME_CREW_NET_KEY, crew, Integer::sum);
+		}
 	}
 
 	/** A lifetime count, by its key in the account's profile: what is saved there, and what hasn't been yet. */

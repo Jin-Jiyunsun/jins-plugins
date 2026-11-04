@@ -35,7 +35,7 @@ and keeps track of your nets, bait and cargo hold from a HUD on the boat.
   Shift while right-clicking it to see that option. An optional info box shows the fish in your
   own nets.
 - **Catch book**: a button on the cargo hold opens a book of the fish you've caught this session
-  and in total.
+  and in total, with a worker log of your and your crew's catches, time on the nets and bait used.
 - **Fishing spot arrow**: after sea spot fishing, an arrow beside your boat points
   the way back to the spot, such as after banking. It hides while you fish, near the spot, and when your
   hold is nearly full.

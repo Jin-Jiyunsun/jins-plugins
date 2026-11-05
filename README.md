@@ -47,7 +47,9 @@ On someone else's boat, the routes, fishable area, depth guide and notifications
 
 ## Trawling log
 
-<!-- trawling log webp -->
+<p align="center">
+<img width="800" height="508" alt="trawlinglog" src="https://github.com/user-attachments/assets/7b9ab598-e055-4cb8-a2da-4ec909397d6c" />
+</p>
 
 A button on the cargo hold screen opens a book of your trawling:
 
@@ -59,10 +61,6 @@ A button on the cargo hold screen opens a book of your trawling:
 - **Bookmark**: click the ribbon on a page to set the page the book will open to at the start of each session.
 
 Shift right-click the button or the total info box to reset the lifetime counts.
-
-<p align="center">
-  <img width="800" height="669" alt="nextstop" src="https://github.com/user-attachments/assets/0bc124e7-0984-4843-bc2c-130bedfb8747" />
-</p>
 
 ## Route data
 
@@ -84,7 +82,11 @@ Highly customisable: almost every feature can be switched off or recoloured. Her
 - **Show danger**: mark dangerous water on the route, the maps, both or neither.
 - **Display position**: put the heads up display at the helm, bow, sails or over the shoal.
 - **Timer bar**: move the game's stop timer bar into the heads up display.
-- **Fish**: switch each fish off to hide its routes and shoals.
+- **Fish**: switch each fish off to hide its routes.
+
+<p align="center">
+  <img width="800" height="669" alt="nextstop" src="https://github.com/user-attachments/assets/0bc124e7-0984-4843-bc2c-130bedfb8747" />
+</p>
 
 ### License
 

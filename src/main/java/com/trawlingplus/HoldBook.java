@@ -31,6 +31,8 @@ import net.runelite.client.input.MouseListener;
 import net.runelite.client.ui.overlay.Overlay;
 import net.runelite.client.ui.overlay.OverlayLayer;
 import net.runelite.client.ui.overlay.OverlayPosition;
+import net.runelite.client.ui.overlay.tooltip.Tooltip;
+import net.runelite.client.ui.overlay.tooltip.TooltipManager;
 
 /**
  * A button on the cargo hold's screen, and the book it opens: drawn from the game's own Fractured Archive book
@@ -62,6 +64,62 @@ class HoldBook extends Overlay implements KeyListener
 	private static final int ARROW_RIGHT = SpriteID.TfaButtonArrowTfa01._3;
 	private static final int CLOSE = SpriteID.CloseButtons.PARCHMENT;
 	private static final int CLOSE_HOVERED = SpriteID.CloseButtons.PARCHMENT_HOVERED;
+	// Sailing's large red wax seal, pressed beside a name signed at the foot of a page.
+	private static final int SEAL = SpriteID.IconSailingWaxseal37x37._1;
+	// How near the page's own edge the seal may go.
+	private static final int SEAL_PAGE_EDGE = 3;
+	// The seal sits off to the lower left of the name, so it looks pressed on by hand: its left edge this far left of
+	// the name's, and its top this far below the name's.
+	private static final int SEAL_LEFT_OF_NAME = 61;
+	private static final int SEAL_BELOW_NAME = 19;
+	// Two ribbon tails hanging from behind the seal, splayed apart, each with a notch cut into its end like the
+	// bookmark's: in px, their width, how far below the seal's middle they reach, and how far out each leans.
+	private static final int SEAL_TAIL_WIDTH = 7;
+	private static final int SEAL_TAIL_LENGTH = 26;
+	private static final int SEAL_TAIL_LEAN = 6;
+	private static final int SEAL_TAIL_NOTCH = 4;
+	// Blue, for contrast with the red wax, close to the game's blue seal.
+	private static final Color SEAL_TAIL = new Color(48, 86, 122);
+	private static final Color SEAL_TAIL_EDGE = new Color(26, 48, 74);
+	// The Fishing skill's fish pressed into the middle of the seal, as the stamp left it: shrunk to this many px
+	// across, shaded in the seal's own red, a shade under the wax, darker where the icon is dark.
+	private static final int SEAL_FISH_SIZE = 16;
+	private static final float SEAL_FISH_SHADE_DARK = 0.85f;
+	private static final float SEAL_FISH_SHADE_LIGHT = 1f;
+	private static final float SEAL_FISH_ALPHA = 1f;
+	// A 1 px lit edge just past the fish's lower right outline, as the wax catches the light along a pressed-in rim,
+	// and a 1 px shadowed edge just inside its upper left outline. Icon pixels at least this opaque count as the fish.
+	private static final Color SEAL_FISH_RIM = new Color(145, 12, 8);
+	private static final Color SEAL_FISH_SHADOW = new Color(68, 36, 39);
+	private static final int SEAL_FISH_SOLID = 60;
+	// The middle of the seal's inner ring, measured on the trimmed sprite: a pixel left of the sprite's own middle.
+	private static final double SEAL_RING_X = 17;
+	private static final double SEAL_RING_Y = 16.5;
+	// How much more saturated the seal is drawn than the game's own, whose wax is quite dull on the page.
+	private static final float SEAL_SATURATION = 1.8f;
+
+	// A row's stars: three, each bronze, then silver, then gold as more milestones are reached, drawn from this pixel
+	// mask with a darker edge, in a column a little after the longest name on the page.
+	private static final String[] STAR = {
+		"....#....",
+		"....#....",
+		"...###...",
+		"#########",
+		".#######.",
+		"..#####..",
+		"..##.##..",
+		".##...##.",
+		".#.....#.",
+	};
+	private static final int STARS = 3;
+	private static final int STAR_SPACING = 10;
+	private static final int STAR_GAP = 5;
+	// Bronze, silver and gold: the fill, then the edge.
+	private static final Color[][] STAR_METALS = {
+		{new Color(184, 115, 60), new Color(112, 62, 28)},
+		{new Color(200, 200, 208), new Color(104, 104, 116)},
+		{new Color(236, 188, 52), new Color(146, 100, 14)},
+	};
 
 	// 13 by 9 pieces, 442 x 306 px: fits the fixed size game view, with the clasps on the middle column.
 	private static final int COLUMNS = 13;
@@ -115,6 +173,22 @@ class HoldBook extends Overlay implements KeyListener
 	private static final Color INK = new Color(40, 26, 12);
 	private static final Color FADED_INK = new Color(40, 26, 12, 140);
 
+	// The bookmark: a ribbon drawn hanging from the top of the left page, faded until the spread showing is the one
+	// marked, then red. Pixel sizes, with a notch cut into its foot.
+	private static final int RIBBON_WIDTH = 11;
+	private static final int RIBBON_HEIGHT = 24;
+	private static final int RIBBON_NOTCH = 5;
+	private static final int RIBBON_LEFT = 14;
+	private static final Color RIBBON_UNSET = new Color(40, 26, 12, 70);
+	// Fainter still while another spread holds the bookmark.
+	private static final Color RIBBON_ELSEWHERE = new Color(40, 26, 12, 40);
+	private static final Color RIBBON_HOVERED = new Color(40, 26, 12, 130);
+	private static final Color RIBBON_SET = new Color(150, 32, 28);
+	private static final Color RIBBON_SET_HOVERED = new Color(118, 24, 21);
+	private static final String BOOKMARK_TIP = "Bookmark these pages: the book opens here"
+		+ "</br>the first time it is opened each session.";
+	private static final String UNBOOKMARK_TIP = "Remove the bookmark.";
+
 	private final Client client;
 	private final TrawlingPlusConfig config;
 	private final TrawlingPlusPlugin plugin;
@@ -133,6 +207,8 @@ class HoldBook extends Overlay implements KeyListener
 	private BufferedImage closeHovered;
 	private BufferedImage icon;
 	private BufferedImage iconHovered;
+	// Optional: a page signed without it just has the name.
+	private BufferedImage seal;
 
 	// The hold's close button, looked for each tick while its screen is open until found, then kept until it closes.
 	private Widget holdClose;
@@ -149,6 +225,8 @@ class HoldBook extends Overlay implements KeyListener
 	// Each page drawn once, the first time it shows, then kept: the text is drawn letter by letter from the game's
 	// quill font, too slow to redo every frame.
 	private final List<BufferedImage> pageImages = new ArrayList<>();
+	// Each drawn page's lines that have a tooltip, by where they sit on the page's image.
+	private final List<Map<Rectangle, String>> pageTips = new ArrayList<>();
 	private QuillFont bodyFont;
 	private QuillFont titleFont;
 
@@ -163,19 +241,30 @@ class HoldBook extends Overlay implements KeyListener
 	private volatile Rectangle closeBounds;
 	private volatile Rectangle leftBounds;
 	private volatile Rectangle rightBounds;
+	private volatile Rectangle bookmarkBounds;
 
-	// The config key for the spread last showing, kept across sessions so the book opens where it was left.
-	private static final String SPREAD_KEY = "holdBookSpread";
+	// The config key for the bookmarked spread's left page, kept across sessions. The book opens there the first
+	// time each session, then where it was last left.
+	private static final String BOOKMARK_KEY = "holdBookBookmark";
+	// Where the book opened before bookmarks, no longer used: taken out of the config when the plugin starts.
+	static final String OLD_SPREAD_KEY = "holdBookSpread";
 
 	private final ConfigManager configManager;
+	private final TooltipManager tooltipManager;
 
 	private volatile boolean open;
 	// The left page of the spread showing.
 	private volatile int spread;
+	// Whether the book has been opened since the plugin started, after which it opens where it was left.
+	private volatile boolean openedThisSession;
+	// The bookmarked spread's left page, -1 for none, or null until read from the config.
+	private volatile Integer bookmark;
 
 	@Inject
-	HoldBook(Client client, TrawlingPlusConfig config, TrawlingPlusPlugin plugin, ConfigManager configManager)
+	HoldBook(Client client, TrawlingPlusConfig config, TrawlingPlusPlugin plugin, ConfigManager configManager,
+		TooltipManager tooltipManager)
 	{
+		this.tooltipManager = tooltipManager;
 		this.client = client;
 		this.config = config;
 		this.plugin = plugin;
@@ -190,6 +279,8 @@ class HoldBook extends Overlay implements KeyListener
 	{
 		open = false;
 		spread = 0;
+		openedThisSession = false;
+		bookmark = null;
 		forgetBounds();
 		frame = null;
 		arrowLeft = null;
@@ -198,6 +289,7 @@ class HoldBook extends Overlay implements KeyListener
 		closeHovered = null;
 		icon = null;
 		iconHovered = null;
+		seal = null;
 		holdClose = null;
 		spritesTriedTick = -1;
 		spritesMissingLogged = false;
@@ -205,6 +297,7 @@ class HoldBook extends Overlay implements KeyListener
 		overridesCheckedTick = -1;
 		closeTriedTick = -1;
 		pageImages.clear();
+		pageTips.clear();
 		pagesDrawn.clear();
 		pages = Collections.emptyList();
 		pagesReadTick = -1;
@@ -288,11 +381,20 @@ class HoldBook extends Overlay implements KeyListener
 		int top = y + PAGE_TOP + TITLE_INSET;
 		drawPage(graphics, showing, first, x + LEFT_PAGE_LEFT + TEXT_INSET, top, textWidth);
 		drawPage(graphics, showing, first + 1, x + RIGHT_PAGE_LEFT + TEXT_INSET, top, textWidth);
+		if (!menuOpen)
+		{
+			showTip(first, mouseX - (x + LEFT_PAGE_LEFT + TEXT_INSET), mouseY - top);
+			showTip(first + 1, mouseX - (x + RIGHT_PAGE_LEFT + TEXT_INSET), mouseY - top);
+		}
 
 		closing = new Rectangle(x + RIGHT_PAGE_RIGHT - CORNER_INSET - close.getWidth(), y + PAGE_TOP + CORNER_INSET,
 			close.getWidth(), close.getHeight());
 		graphics.drawImage(closing.contains(mouseX, mouseY) ? closeHovered : close, closing.x, closing.y, null);
 		closeBounds = closing;
+
+		// The book opens on the cover anyway, so the first spread has no bookmark.
+		bookmarkBounds = first == 0 ? null
+			: drawBookmark(graphics, x + LEFT_PAGE_LEFT + RIBBON_LEFT, y + PAGE_TOP - 1, first, mouseX, mouseY);
 
 		int arrowY = y + PAGE_BOTTOM - CORNER_INSET - arrowLeft.getHeight();
 		leftBounds = first > 0 ? drawArrow(graphics, arrowLeft, x + LEFT_PAGE_LEFT + CORNER_INSET, arrowY) : null;
@@ -300,6 +402,42 @@ class HoldBook extends Overlay implements KeyListener
 			? drawArrow(graphics, arrowRight, x + RIGHT_PAGE_RIGHT - CORNER_INSET - arrowRight.getWidth(), arrowY)
 			: null;
 		return null;
+	}
+
+	/**
+	 * The bookmark ribbon hanging from the top of the left page, red when this spread is the one marked, with a
+	 * tooltip saying what clicking it does.
+	 */
+	private Rectangle drawBookmark(Graphics2D graphics, int x, int y, int first, int mouseX, int mouseY)
+	{
+		Rectangle bounds = new Rectangle(x, y, RIBBON_WIDTH, RIBBON_HEIGHT);
+		int marked = bookmarkedSpread();
+		boolean set = marked == first;
+		boolean hovered = !menuOpen && bounds.contains(mouseX, mouseY);
+		graphics.setColor(set ? (hovered ? RIBBON_SET_HOVERED : RIBBON_SET)
+			: hovered ? RIBBON_HOVERED : marked >= 0 ? RIBBON_ELSEWHERE : RIBBON_UNSET);
+		int middle = x + RIBBON_WIDTH / 2;
+		graphics.fillPolygon(new int[]{x, x + RIBBON_WIDTH, x + RIBBON_WIDTH, middle + 1, middle, x},
+			new int[]{y, y, y + RIBBON_HEIGHT, y + RIBBON_HEIGHT - RIBBON_NOTCH, y + RIBBON_HEIGHT - RIBBON_NOTCH,
+				y + RIBBON_HEIGHT}, 6);
+		if (hovered)
+		{
+			tooltipManager.add(new Tooltip(set ? UNBOOKMARK_TIP : BOOKMARK_TIP));
+		}
+		return bounds;
+	}
+
+	/** The bookmarked spread's left page, or -1 for none, read from the config the first time it is needed. */
+	private int bookmarkedSpread()
+	{
+		Integer marked = bookmark;
+		if (marked == null)
+		{
+			Integer saved = configManager.getConfiguration(TrawlingPlusConfig.GROUP, BOOKMARK_KEY, Integer.class);
+			marked = saved != null && saved >= 0 ? saved / 2 * 2 : -1;
+			bookmark = marked;
+		}
+		return marked;
 	}
 
 	private Rectangle drawArrow(Graphics2D graphics, BufferedImage arrow, int x, int y)
@@ -315,6 +453,23 @@ class HoldBook extends Overlay implements KeyListener
 		return Math.max(0, (pageCount - 1) / 2 * 2);
 	}
 
+	/** Shows the tooltip of the line on a page under the mouse, given relative to the page's top left. */
+	private void showTip(int page, int x, int y)
+	{
+		if (page >= pageTips.size() || pageTips.get(page) == null)
+		{
+			return;
+		}
+		for (Map.Entry<Rectangle, String> tip : pageTips.get(page).entrySet())
+		{
+			if (tip.getKey().contains(x, y))
+			{
+				tooltipManager.add(new Tooltip(tip.getValue()));
+				return;
+			}
+		}
+	}
+
 	private void drawPage(Graphics2D graphics, List<BookPage> showing, int page, int x, int y, int width)
 	{
 		if (page >= showing.size())
@@ -324,27 +479,34 @@ class HoldBook extends Overlay implements KeyListener
 		while (pageImages.size() <= page)
 		{
 			pageImages.add(null);
+			pageTips.add(null);
 			pagesDrawn.add(null);
 		}
 		BookPage content = showing.get(page);
 		if (pageImages.get(page) == null || !content.equals(pagesDrawn.get(page)))
 		{
+			Map<Rectangle, String> tips = new HashMap<>();
 			pageImages.set(page, buildPage(content, page + 1, width,
-				PAGE_BOTTOM - PAGE_TOP - TITLE_INSET - NUMBER_INSET));
+				PAGE_BOTTOM - PAGE_TOP - TITLE_INSET, tips));
+			pageTips.set(page, tips);
 			pagesDrawn.set(page, content);
 		}
-		graphics.drawImage(pageImages.get(page), x, y, null);
+		// The image reaches out over the page's side margins, which only a seal ever draws into.
+		graphics.drawImage(pageImages.get(page), x - TEXT_INSET, y, null);
 	}
 
 	/**
 	 * One page: its title in the medium quill, then its lines in the small quill (text wrapped to the page, left
 	 * aligned or centred, centred in faded ink for a heading, a row with its name on the left and its value against
-	 * the right edge, or a blank line), and its number at the foot.
+	 * the right edge, or a blank line), and its number at the foot. Each line with a tooltip is put in tips, by where
+	 * it was drawn.
 	 */
-	private BufferedImage buildPage(BookPage content, int number, int width, int height)
+	private BufferedImage buildPage(BookPage content, int number, int width, int height, Map<Rectangle, String> tips)
 	{
-		BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+		// Wider than the text by the side margins, which a seal may hang over; drawn to with the text's left edge at 0.
+		BufferedImage image = new BufferedImage(width + 2 * TEXT_INSET, height, BufferedImage.TYPE_INT_ARGB);
 		Graphics2D g = image.createGraphics();
+		g.translate(TEXT_INSET, 0);
 		String title = content.getTitle();
 		QuillFont heading = titleFont.width(title) <= width ? titleFont : bodyFont;
 		heading.draw(g, title, (width - heading.width(title)) / 2, 0, INK);
@@ -353,6 +515,14 @@ class HoldBook extends Overlay implements KeyListener
 		// Half a blank line between the title and the first line, and for each blank line.
 		int gap = lineHeight / 2;
 		int line = heading.height() + 6 + gap;
+		int starX = 0;
+		for (BookPage.Line text : content.getLines())
+		{
+			if (text.getStars() >= 0)
+			{
+				starX = Math.max(starX, bodyFont.width(text.getLeft()) + STAR_GAP);
+			}
+		}
 		for (BookPage.Line text : content.getLines())
 		{
 			if (text.getRight() == null)
@@ -365,6 +535,10 @@ class HoldBook extends Overlay implements KeyListener
 				{
 					int x = text.isCentred() ? (width - bodyFont.width(part)) / 2 : 0;
 					bodyFont.draw(g, part, x, line, text.isFaded() ? FADED_INK : INK);
+					if (text.getTooltip() != null)
+					{
+						tips.put(new Rectangle(x, line, bodyFont.width(part), lineHeight), text.getTooltip());
+					}
 					line += lineHeight;
 				}
 			}
@@ -372,14 +546,85 @@ class HoldBook extends Overlay implements KeyListener
 			{
 				bodyFont.draw(g, text.getLeft(), 0, line, INK);
 				bodyFont.draw(g, text.getRight(), width - bodyFont.width(text.getRight()), line, INK);
+				drawStars(g, text.getStars(), starX, line + (bodyFont.height() - STAR.length) / 2);
+				if (text.getTooltip() != null)
+				{
+					// The whole row, name to value.
+					tips.put(new Rectangle(0, line, width, lineHeight), text.getTooltip());
+				}
 				line += lineHeight;
 			}
 		}
 
 		String page = String.valueOf(number);
-		bodyFont.draw(g, page, (width - bodyFont.width(page)) / 2, height - bodyFont.height(), FADED_INK);
+		// The image runs to the foot of the page so a seal can hang below the number; the number keeps its inset.
+		int numberTop = height - NUMBER_INSET - bodyFont.height();
+		bodyFont.draw(g, page, (width - bodyFont.width(page)) / 2, numberTop, FADED_INK);
+
+		String signature = content.getSignature();
+		if (signature != null)
+		{
+			// The name centred above the page number, with the seal off to its lower left.
+			int nameX = (width - bodyFont.width(signature)) / 2;
+			// As high as the middle of a seal standing on the line above the page number.
+			int sealHeight = seal == null ? bodyFont.height() : seal.getHeight();
+			int nameY = numberTop - lineHeight - sealHeight + (sealHeight - bodyFont.height()) / 2;
+			if (seal != null)
+			{
+				// Kept on the page for long names, and never so low its ribbon tails run off the foot of the page.
+				int sealX = Math.max(SEAL_PAGE_EDGE - TEXT_INSET, nameX - SEAL_LEFT_OF_NAME);
+				int sealY = Math.min(nameY + SEAL_BELOW_NAME, height - 1 - SEAL_TAIL_LENGTH - seal.getHeight() / 2);
+				int middleX = sealX + seal.getWidth() / 2;
+				int middleY = sealY + seal.getHeight() / 2;
+				drawSealTail(g, middleX - SEAL_TAIL_WIDTH - 2, middleY, -SEAL_TAIL_LEAN);
+				drawSealTail(g, middleX, middleY, SEAL_TAIL_LEAN);
+				g.drawImage(seal, sealX, sealY, null);
+			}
+			bodyFont.draw(g, signature, nameX, nameY, INK);
+		}
 		g.dispose();
 		return image;
+	}
+
+	/**
+	 * A row's stars for this many milestones: each star in turn goes bronze, silver then gold, and a star not yet
+	 * reached isn't drawn.
+	 */
+	private static void drawStars(Graphics2D g, int reached, int x, int y)
+	{
+		for (int star = 0; star < STARS; star++)
+		{
+			int metal = Math.min(reached - star * STAR_METALS.length, STAR_METALS.length) - 1;
+			if (metal < 0)
+			{
+				return;
+			}
+			int left = x + star * STAR_SPACING;
+			for (int row = 0; row < STAR.length; row++)
+			{
+				for (int column = 0; column < STAR[row].length(); column++)
+				{
+					if (STAR[row].charAt(column) == '#')
+					{
+						g.setColor(STAR_METALS[metal][starEdge(row, column) ? 1 : 0]);
+						g.fillRect(left + column, y + row, 1, 1);
+					}
+				}
+			}
+		}
+	}
+
+	/** Whether a star pixel is on its edge, beside a blank pixel or the mask's border. */
+	private static boolean starEdge(int row, int column)
+	{
+		return !starPixel(row - 1, column) || !starPixel(row + 1, column) || !starPixel(row, column - 1)
+			|| !starPixel(row, column + 1);
+	}
+
+	private static boolean starPixel(int row, int column)
+	{
+		return row >= 0 && row < STAR.length && column >= 0 && column < STAR[row].length()
+			&& STAR[row].charAt(column) == '#';
 	}
 
 	private static List<String> wrap(String text, QuillFont font, int width)
@@ -562,10 +807,135 @@ class HoldBook extends Overlay implements KeyListener
 		closeHovered = trim(crossHovered, crossShows);
 		icon = button;
 		iconHovered = brighter(button, HOVER_BRIGHTNESS);
+		BufferedImage waxSeal = sprite(SEAL);
+		// The Fishing icon pressed into it is the game's own, hook and all, whatever a resource pack does.
+		seal = waxSeal == null ? null
+			: imprinted(saturated(trim(waxSeal, visible(waxSeal)), SEAL_SATURATION), trim(buttonFish, visible(buttonFish)));
+		// Pages already drawn are drawn again, with the new sprites.
+		pageImages.clear();
+		pageTips.clear();
+		pagesDrawn.clear();
 		bodyFont = body;
 		titleFont = titles;
 		frame = built;
 		return true;
+	}
+
+	/** One ribbon tail from behind the seal: its top left corner, leaning this far sideways by its notched end. */
+	private static void drawSealTail(Graphics2D g, int x, int y, int lean)
+	{
+		int bottom = y + SEAL_TAIL_LENGTH;
+		int[] xs = {x, x + SEAL_TAIL_WIDTH, x + SEAL_TAIL_WIDTH + lean, x + lean + SEAL_TAIL_WIDTH / 2, x + lean};
+		int[] ys = {y, y, bottom, bottom - SEAL_TAIL_NOTCH, bottom};
+		g.setColor(SEAL_TAIL);
+		g.fillPolygon(xs, ys, xs.length);
+		g.setColor(SEAL_TAIL_EDGE);
+		g.drawPolygon(xs, ys, xs.length);
+	}
+
+	/**
+	 * The seal with the fish pressed into its middle: shrunk, then each of its pixels drawn in the colour of the seal
+	 * beneath, darker or lighter by how dark or light the icon is there, so it reads as a stamped impression.
+	 */
+	private static BufferedImage imprinted(BufferedImage seal, BufferedImage fish)
+	{
+		Image small = shrunk(fish, SEAL_FISH_SIZE);
+		BufferedImage icon = new BufferedImage(small.getWidth(null), small.getHeight(null), BufferedImage.TYPE_INT_ARGB);
+		Graphics2D drawn = icon.createGraphics();
+		drawn.drawImage(small, 0, 0, null);
+		drawn.dispose();
+
+		BufferedImage out = new BufferedImage(seal.getWidth(), seal.getHeight(), BufferedImage.TYPE_INT_ARGB);
+		Graphics2D g = out.createGraphics();
+		g.drawImage(seal, 0, 0, null);
+		g.dispose();
+		int left = (int) Math.round(SEAL_RING_X - icon.getWidth() / 2.0);
+		int top = (int) Math.round(SEAL_RING_Y - icon.getHeight() / 2.0);
+		float[] hsb = new float[3];
+		for (int y = 0; y < icon.getHeight(); y++)
+		{
+			for (int x = 0; x < icon.getWidth(); x++)
+			{
+				int pixel = icon.getRGB(x, y);
+				float alpha = (pixel >>> 24) / 255f * SEAL_FISH_ALPHA;
+				if (alpha == 0)
+				{
+					continue;
+				}
+				Color.RGBtoHSB(pixel >> 16 & 0xff, pixel >> 8 & 0xff, pixel & 0xff, hsb);
+				float shade = SEAL_FISH_SHADE_DARK + (SEAL_FISH_SHADE_LIGHT - SEAL_FISH_SHADE_DARK) * hsb[2];
+				int under = out.getRGB(left + x, top + y);
+				int r = blend(under >> 16 & 0xff, shade, alpha);
+				int gr = blend(under >> 8 & 0xff, shade, alpha);
+				int b = blend(under & 0xff, shade, alpha);
+				out.setRGB(left + x, top + y, under & 0xff000000 | r << 16 | gr << 8 | b);
+			}
+		}
+		BufferedImage pressed = new BufferedImage(out.getWidth(), out.getHeight(), BufferedImage.TYPE_INT_ARGB);
+		Graphics2D copy = pressed.createGraphics();
+		copy.drawImage(out, 0, 0, null);
+		copy.dispose();
+		for (int y = 0; y < icon.getHeight(); y++)
+		{
+			for (int x = 0; x < icon.getWidth(); x++)
+			{
+				if (!fishAt(icon, x, y))
+				{
+					continue;
+				}
+				if (!fishAt(icon, x + 1, y + 1))
+				{
+					edge(out, pressed, left + x + 1, top + y + 1, SEAL_FISH_RIM);
+				}
+				if (!fishAt(icon, x - 1, y - 1))
+				{
+					edge(out, pressed, left + x, top + y, SEAL_FISH_SHADOW);
+				}
+			}
+		}
+		return out;
+	}
+
+	/** Whether the shrunk icon is solid enough at a pixel to count as the fish; outside it never is. */
+	private static boolean fishAt(BufferedImage icon, int x, int y)
+	{
+		return x >= 0 && y >= 0 && x < icon.getWidth() && y < icon.getHeight()
+			&& (icon.getRGB(x, y) >>> 24) >= SEAL_FISH_SOLID;
+	}
+
+	/** Sets a pixel of the seal to an emboss edge's colour, if there was wax there before the emboss. */
+	private static void edge(BufferedImage out, BufferedImage before, int x, int y, Color colour)
+	{
+		int pixel = before.getRGB(x, y);
+		if ((pixel >>> 24) != 0)
+		{
+			out.setRGB(x, y, pixel & 0xff000000 | colour.getRGB() & 0xffffff);
+		}
+	}
+
+	/** A colour channel shaded by a factor, mixed over itself by alpha. */
+	private static int blend(int channel, float shade, float alpha)
+	{
+		float shaded = Math.min(255, channel * shade);
+		return Math.round(channel + (shaded - channel) * alpha);
+	}
+
+	/** A copy with every pixel's saturation scaled, capped at full, keeping its hue, brightness and alpha. */
+	private static BufferedImage saturated(BufferedImage image, float scale)
+	{
+		BufferedImage out = new BufferedImage(image.getWidth(), image.getHeight(), BufferedImage.TYPE_INT_ARGB);
+		float[] hsb = new float[3];
+		for (int y = 0; y < image.getHeight(); y++)
+		{
+			for (int x = 0; x < image.getWidth(); x++)
+			{
+				int argb = image.getRGB(x, y);
+				Color.RGBtoHSB(argb >> 16 & 0xff, argb >> 8 & 0xff, argb & 0xff, hsb);
+				int rgb = Color.HSBtoRGB(hsb[0], Math.min(1f, hsb[1] * scale), hsb[2]);
+				out.setRGB(x, y, argb & 0xff000000 | rgb & 0xffffff);
+			}
+		}
+		return out;
 	}
 
 	/** Shrunk to the given size on its longer side, averaging pixels rather than dropping them. */
@@ -688,6 +1058,7 @@ class HoldBook extends Overlay implements KeyListener
 		closeBounds = null;
 		leftBounds = null;
 		rightBounds = null;
+		bookmarkBounds = null;
 	}
 
 	private static boolean inside(Rectangle bounds, MouseEvent event)
@@ -722,10 +1093,10 @@ class HoldBook extends Overlay implements KeyListener
 			if (inside(buttonBounds, event))
 			{
 				open = !open;
-				if (open)
+				if (open && !openedThisSession)
 				{
-					Integer saved = configManager.getConfiguration(TrawlingPlusConfig.GROUP, SPREAD_KEY, Integer.class);
-					spread = saved != null && saved > 0 ? saved / 2 * 2 : 0;
+					openedThisSession = true;
+					spread = Math.max(0, bookmarkedSpread());
 				}
 				event.consume();
 			}
@@ -743,6 +1114,10 @@ class HoldBook extends Overlay implements KeyListener
 				{
 					turnTo(Math.min(spread + 2, lastSpread(pages.size())));
 				}
+				else if (inside(bookmarkBounds, event))
+				{
+					toggleBookmark();
+				}
 				event.consume();
 			}
 			else if (open && overWorld)
@@ -753,13 +1128,25 @@ class HoldBook extends Overlay implements KeyListener
 		}
 	};
 
-	/** Shows the spread starting at the given page, and saves it for the next time the book opens. */
+	/** Shows the spread starting at the given page, where the book opens again for the rest of the session. */
 	private void turnTo(int page)
 	{
-		if (page != spread)
+		spread = page;
+	}
+
+	/** Bookmarks the spread showing, or takes the bookmark off it if it is the one marked. */
+	private void toggleBookmark()
+	{
+		int first = Math.min(spread, lastSpread(pages.size()));
+		int marked = bookmarkedSpread() == first ? -1 : first;
+		bookmark = marked;
+		if (marked < 0)
 		{
-			spread = page;
-			configManager.setConfiguration(TrawlingPlusConfig.GROUP, SPREAD_KEY, page);
+			configManager.unsetConfiguration(TrawlingPlusConfig.GROUP, BOOKMARK_KEY);
+		}
+		else
+		{
+			configManager.setConfiguration(TrawlingPlusConfig.GROUP, BOOKMARK_KEY, marked);
 		}
 	}
 

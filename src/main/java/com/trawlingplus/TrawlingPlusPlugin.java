@@ -13,6 +13,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.WeakHashMap;
+import java.util.function.Function;
+import java.util.function.ObjIntConsumer;
+import java.util.function.ToIntFunction;
 import java.util.concurrent.CompletableFuture;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -227,6 +230,24 @@ public class TrawlingPlusPlugin extends Plugin
 	private static final List<String> BOOK_FISH = List.of("giant krill", "haddock", "yellowfin", "halibut", "bluefin",
 		"marlin");
 	private static final String RESET_CATCHES = "Reset";
+	// The lifetime counts at which each fish earns its next star on the trawling log: three stars, each bronze, silver
+	// then gold. Each doubles the last, starting from 500 for giant krill, scaled for the others by their average catch
+	// chance from their level requirement to 99 (Jagex's figures, on the OSRS wiki), and snapped to round numbers.
+	private static final Map<String, int[]> STAR_MILESTONES = Map.of(
+		"giant krill", new int[]{500, 1_000, 2_000, 4_000, 8_000, 16_000, 32_000, 64_000, 128_000},
+		"haddock", new int[]{450, 950, 1_900, 3_800, 7_600, 15_200, 30_300, 60_600, 121_000},
+		"yellowfin", new int[]{450, 900, 1_800, 3_600, 7_300, 14_600, 29_200, 58_400, 117_000},
+		"halibut", new int[]{450, 850, 1_700, 3_400, 6_900, 13_800, 27_500, 55_000, 110_000},
+		"bluefin", new int[]{400, 800, 1_600, 3_200, 6_500, 12_900, 25_800, 51_600, 103_000},
+		"marlin", new int[]{350, 700, 1_400, 2_900, 5_800, 11_500, 23_000, 46_000, 92_100});
+	// The trawling log's tooltips, each shown over a heading and its number.
+	private static final String FISH_PER_HOUR_TIP = "Every fish caught over the time spent trawling."
+		+ "</br>Includes banking, sailing between shoals"
+		+ "</br>and breaks of up to 30 minutes.";
+	private static final String TRUST_TIP = "Extra fish given by Trawler's trust.";
+	private static final String FILLED_TIP = "Times your nets went from empty to full,</br>on your own boat.";
+	private static final String BEST_TIP = "The most fish caught in one session.";
+	private static final String BAIT_TIP = "Fish offcuts laid as bait by you and your crew,</br>on your own boat.";
 	private static final String RESET_LIFETIME = "Reset lifetime";
 	// Each fish's lifetime count is kept in the account's RuneLite profile under this key, plus the fish's name.
 	private static final String LIFETIME_KEY = "lifetimeCaught_";
@@ -240,9 +261,21 @@ public class TrawlingPlusPlugin extends Plugin
 	private static final String LIFETIME_CREW_NET_KEY = "lifetimeNetTicksByCrew";
 	// Each crewmate's lifetime ticks on a net are kept under this key, plus their name.
 	private static final String LIFETIME_WORKER_KEY = "lifetimeNetTicks_";
+	// Each crewmate's lifetime fish caught on the player's own boat are kept under this key, plus their name.
+	private static final String LIFETIME_CATCHER_KEY = "lifetimeCatches_";
 	// Set once an account's lifetime counts have had their one-off reset, so the fish counts from 1.4.1 start
 	// over with the Worker log's.
 	private static final String LIFETIME_FRESH_KEY = "lifetimeFreshStart";
+	// For the trawling log's Statistics: fish each side caught while its time on nets was counting, extra fish from
+	// Trawler's trust, the times the nets filled up, and the most fish caught in one session.
+	private static final String LIFETIME_CAPTAIN_NET_FISH_KEY = "lifetimeNetFishByCaptain";
+	private static final String LIFETIME_CREW_NET_FISH_KEY = "lifetimeNetFishByCrew";
+	private static final String LIFETIME_TRUST_KEY = "lifetimeTrawlersTrust";
+	private static final String LIFETIME_NETS_FILLED_KEY = "lifetimeNetsFilled";
+	private static final String LIFETIME_BEST_SESSION_KEY = "lifetimeBestSession";
+	// The account's lifetime ticks spent trawling: every logged-in tick between one catch and the next, banking and
+	// sailing between shoals included, so long as the next catch comes within TRAWL_GAP_TICKS.
+	private static final String LIFETIME_TRAWL_TICKS_KEY = "lifetimeTrawlingTicks";
 	// What anyone on a trawling net shows, the player or a crewmate, whatever the boat's size.
 	private static final Set<Integer> NET_ANIMATIONS = Set.of(
 		AnimationID.SAILING_HUMAN_TRAWLING_NET_KANDARIN_2X5_DROP_LEVEL01,
@@ -333,6 +366,10 @@ public class TrawlingPlusPlugin extends Plugin
 	// How long, in ticks, after the last trawling catch the display at the helm stays up with nothing else to keep
 	// it: 3 minutes.
 	private static final int TRAWL_AWAY_TICKS = 300;
+	// The longest gap between catches still counted as trawling: 30 minutes, longer than any trip to bank and back.
+	private static final int TRAWL_GAP_TICKS = 3000;
+	// The least time a fish per hour is shown for: a minute.
+	private static final int RATE_MIN_TICKS = 100;
 	// How far, in tiles, the boat has to move after fishing for the arrow to show again.
 	private static final double SPOT_MOVED_TILES = 0.5;
 	// How often, in ticks, that and the 3 minute away timer are looked at, there being no hurry for either.
@@ -487,8 +524,14 @@ public class TrawlingPlusPlugin extends Plugin
 	// hold, so this adds up what it says is caught and taken, and is put right whenever a net's menu
 	// gives the true number.
 	private int fishInNets = -1;
+	// Whether the nets have been seen emptied since they last filled, so topping them back up after taking a few
+	// fish out isn't another fill.
+	private boolean netsEmptied;
 	// The tick of the last trawling catch, or -1 if none since starting.
 	private int lastCatchTick = -1;
+	// Logged-in ticks since the last counted catch, held until the next one adds them to the time spent trawling,
+	// or -1 when there has been no catch within TRAWL_GAP_TICKS.
+	private int heldTrawlTicks = -1;
 	// Net ticks since a shoal came into view, held for the captain and, by lifetime key, the crew, until a catch or an
 	// attempt in reach by that side proves the visit.
 	private int heldCaptainNetTicks;
@@ -585,6 +628,8 @@ public class TrawlingPlusPlugin extends Plugin
 	// client started. Kept while the plugin is switched off; only the total's Reset clears them.
 	private final Map<String, Integer> caught = new HashMap<>();
 	private int caughtTotal;
+	// The session's fish caught before the lifetime counts were last reset, which the best session leaves out.
+	private int caughtBeforeReset;
 	// The info box for each fish caught, by the same name, and the ones for the total and for the fish in the nets.
 	private final Map<String, CatchInfoBox> catchBoxes = new HashMap<>();
 	private CatchInfoBox totalBox;
@@ -596,8 +641,17 @@ public class TrawlingPlusPlugin extends Plugin
 	// the captain's and crew's, and the bait used. Saved now and then rather than on every catch, and always on
 	// logout or switching off.
 	private final Map<String, Integer> lifetimeUnsaved = new HashMap<>();
+	// The same counts since the session's fish counts were last reset, for the Statistics' This session page.
+	private final Map<String, Integer> sessionCounts = new HashMap<>();
+	// What was being held, by lifetime key, when the session's counts were last reset: the lifetime counts still get it
+	// once proven, but the new session doesn't.
+	private final Map<String, Integer> heldBeforeSession = new HashMap<>();
 	// The account profile last checked for its one-off lifetime reset.
 	private String freshChecked;
+	// Each crewmate's saved lifetime keys by prefix (net time, catches), for the profile named, so the book doesn't
+	// look them up every tick.
+	private final Map<String, Set<String>> savedNamedKeys = new HashMap<>();
+	private String savedNamedKeysProfile;
 
 	@Override
 	protected void startUp() throws IOException
@@ -652,6 +706,8 @@ public class TrawlingPlusPlugin extends Plugin
 		overlayManager.add(netOverlay);
 		overlayManager.add(mapOverlay);
 		overlayManager.add(minimapOverlay);
+		// The spread the book was last left on, no longer kept: the book opens at its bookmark instead.
+		configManager.unsetConfiguration(TrawlingPlusConfig.GROUP, HoldBook.OLD_SPREAD_KEY);
 		overlayManager.add(holdBook);
 		mouseManager.registerMouseListener(holdBook.mouse);
 		keyManager.registerKeyListener(holdBook);
@@ -1314,6 +1370,12 @@ public class TrawlingPlusPlugin extends Plugin
 	public void onGameTick(GameTick event)
 	{
 		freshStart();
+		if (heldTrawlTicks >= 0 && ++heldTrawlTicks > TRAWL_GAP_TICKS)
+		{
+			// Too long without a catch to be a trip to bank and back: trawling stopped at the last catch.
+			heldTrawlTicks = -1;
+			heldBeforeSession.remove(LIFETIME_TRAWL_TICKS_KEY);
+		}
 		if (client.getTickCount() % LIFETIME_SAVE_TICKS == 0)
 		{
 			saveLifetime();
@@ -2070,8 +2132,8 @@ public class TrawlingPlusPlugin extends Plugin
 			return;
 		}
 
-		// Counted on anyone's boat. Sea spot catches are never trawled fish, so a catch naming one
-		// came from the nets.
+		// The player's catches are counted on anyone's boat. Sea spot catches are never trawled fish, so a catch
+		// naming one came from the nets.
 		Matcher catchLine = CATCH.matcher(message);
 		int catchCount = catchLine.find() ? number(catchLine.group(1)) : -1;
 		// A catch, or a net trying for a shoal in reach ("Your net is not deep enough to catch fish from the nearby
@@ -2084,9 +2146,32 @@ public class TrawlingPlusPlugin extends Plugin
 		{
 			proveNetTime(message.startsWith("Your net"));
 		}
-		if (catchCount > 0)
+		boolean byCaptain = message.startsWith("You catch");
+		// The crew's catches only count on the player's own boat, as their time on nets does.
+		if (catchCount > 0 && (byCaptain || ownBoat != null))
 		{
-			countCatch(message.substring(catchLine.end()), catchCount, message.startsWith("You catch"));
+			countCatch(message.substring(catchLine.end()), catchCount, byCaptain);
+			if (!byCaptain)
+			{
+				// "Jolly Jim catches three giant krill!"
+				countLifetime(LIFETIME_CATCHER_KEY + message.substring(0, message.indexOf(" catches ")), catchCount);
+			}
+			if (heldTrawlTicks > 0)
+			{
+				countHeld(LIFETIME_TRAWL_TICKS_KEY, heldTrawlTicks);
+			}
+			heldTrawlTicks = 0;
+			// Only fish caught while that side's time on nets counts, so fish per hour sets like against like.
+			if (byCaptain ? captainNetProven : crewNetProven)
+			{
+				countLifetime(byCaptain ? LIFETIME_CAPTAIN_NET_FISH_KEY : LIFETIME_CREW_NET_FISH_KEY,
+					catchCount);
+			}
+		}
+		else if (catchCount <= 0 && message.startsWith("Trawler's trust"))
+		{
+			// "Trawler's trust: You catch an additional fish."
+			countLifetime(LIFETIME_TRUST_KEY, 1);
 		}
 
 		if (ownBoat == null)
@@ -2118,7 +2203,7 @@ public class TrawlingPlusPlugin extends Plugin
 		if (message.startsWith("You bait a nearby") || message.contains("baited a nearby"))
 		{
 			baitAnnouncedTick = client.getTickCount();
-			lifetimeUnsaved.merge(LIFETIME_BAIT_KEY, 1, Integer::sum);
+			countLifetime(LIFETIME_BAIT_KEY, 1);
 			return;
 		}
 
@@ -2193,6 +2278,11 @@ public class TrawlingPlusPlugin extends Plugin
 			}
 			if (fish >= 0 && fishInNets >= 0)
 			{
+				if (netsEmptied && fishInNets + fish >= NET_CAPACITY)
+				{
+					countLifetime(LIFETIME_NETS_FILLED_KEY, 1);
+					netsEmptied = false;
+				}
 				setFish(Math.min(NET_CAPACITY, fishInNets + fish));
 			}
 		}
@@ -2624,6 +2714,10 @@ public class TrawlingPlusPlugin extends Plugin
 	private void noteFish(int fish)
 	{
 		setFish(fish);
+		if (fish == 0)
+		{
+			netsEmptied = true;
+		}
 		fishActivityMillis = System.currentTimeMillis();
 	}
 
@@ -2671,8 +2765,8 @@ public class TrawlingPlusPlugin extends Plugin
 			{
 				caught.merge(kind, fish, Integer::sum);
 				caughtTotal += fish;
-				lifetimeUnsaved.merge(lifetimeKey(kind), fish, Integer::sum);
-				lifetimeUnsaved.merge(byCaptain ? LIFETIME_CAPTAIN_KEY : LIFETIME_CREW_KEY, fish, Integer::sum);
+				countLifetime(lifetimeKey(kind), fish);
+				countLifetime(byCaptain ? LIFETIME_CAPTAIN_KEY : LIFETIME_CREW_KEY, fish);
 				if (!catchBoxes.containsKey(kind))
 				{
 					addFishBox(kind);
@@ -2793,7 +2887,7 @@ public class TrawlingPlusPlugin extends Plugin
 
 	/**
 	 * Every lifetime count: each fish, the captain's and crew's catches and time on nets, each crewmate's time on
-	 * nets, and the bait used.
+	 * nets, the bait used and the Statistics.
 	 */
 	private void resetLifetime()
 	{
@@ -2801,12 +2895,18 @@ public class TrawlingPlusPlugin extends Plugin
 		{
 			configManager.unsetRSProfileConfiguration(TrawlingPlusConfig.GROUP, lifetimeKey(kind));
 		}
-		Set<String> keys = workerKeys();
+		Set<String> keys = namedKeys(LIFETIME_WORKER_KEY);
+		keys.addAll(namedKeys(LIFETIME_CATCHER_KEY));
 		keys.addAll(List.of(LIFETIME_CAPTAIN_KEY, LIFETIME_CREW_KEY, LIFETIME_CAPTAIN_NET_KEY,
-			LIFETIME_CREW_NET_KEY, LIFETIME_BAIT_KEY));
+			LIFETIME_CREW_NET_KEY, LIFETIME_BAIT_KEY, LIFETIME_CAPTAIN_NET_FISH_KEY, LIFETIME_CREW_NET_FISH_KEY,
+			LIFETIME_TRUST_KEY, LIFETIME_NETS_FILLED_KEY, LIFETIME_BEST_SESSION_KEY, LIFETIME_TRAWL_TICKS_KEY));
 		lifetimeUnsaved.clear();
 		heldCaptainNetTicks = 0;
 		heldCrewNetTicks.clear();
+		heldTrawlTicks = -1;
+		heldBeforeSession.clear();
+		savedNamedKeys.clear();
+		caughtBeforeReset = caughtTotal;
 		for (String key : keys)
 		{
 			configManager.unsetRSProfileConfiguration(TrawlingPlusConfig.GROUP, key);
@@ -2838,6 +2938,9 @@ public class TrawlingPlusPlugin extends Plugin
 
 		caught.clear();
 		caughtTotal = 0;
+		caughtBeforeReset = 0;
+		sessionCounts.clear();
+		holdBackFromSession();
 		for (CatchInfoBox box : catchBoxes.values())
 		{
 			infoBoxManager.removeInfoBox(box);
@@ -2846,8 +2949,9 @@ public class TrawlingPlusPlugin extends Plugin
 	}
 
 	/**
-	 * The hold book's pages: two pages to open the book, the fish caught since the counts were last reset, the
-	 * account's lifetime catches, each with a total, then the Worker log over two pages. Client thread only.
+	 * The trawling log's pages: two pages to open the book, the fish caught since the counts were last reset and the
+	 * account's lifetime catches, each with a total, the rates for this session and lifetime, the other statistics,
+	 * then the Worker log, each over two pages. Client thread only.
 	 */
 	List<BookPage> bookPages()
 	{
@@ -2862,7 +2966,7 @@ public class TrawlingPlusPlugin extends Plugin
 			int lifetime = lifetime(lifetimeKey(kind));
 			lifeTotal += lifetime;
 			session.add(BookPage.row(name, QuantityFormatter.formatNumber(caught.getOrDefault(kind, 0))));
-			life.add(BookPage.row(name, QuantityFormatter.formatNumber(lifetime)));
+			life.add(starredRow(kind, name, lifetime));
 		}
 		// Half a blank line sets the total apart from the fish above it.
 		session.add(BookPage.blank());
@@ -2871,10 +2975,10 @@ public class TrawlingPlusPlugin extends Plugin
 		life.add(BookPage.row("Total", QuantityFormatter.formatNumber(lifeTotal)));
 		Player player = client.getLocalPlayer();
 		String name = player != null && player.getName() != null ? player.getName() : "";
+		// Signed with the player's name at the foot of the page, beside a wax seal.
 		BookPage cover = new BookPage("Trawling Log", List.of(
-			BookPage.centred(name),
-			BookPage.blank(),
-			BookPage.text("A record of the fish hauled aboard, and of the hands who brought them in.")));
+			BookPage.text("A record of the fish hauled aboard, and of the hands who brought them in.")),
+			name.isEmpty() ? null : name);
 		BookPage foreword = new BookPage("On trawling", List.of(
 			BookPage.text("Shoals of fish ride predictable currents across the seas, pausing to feed before "
 				+ "moving on."),
@@ -2886,13 +2990,83 @@ public class TrawlingPlusPlugin extends Plugin
 			BookPage.row("Captain", QuantityFormatter.formatNumber(lifetime(LIFETIME_CAPTAIN_KEY))),
 			BookPage.row("Crew", QuantityFormatter.formatNumber(lifetime(LIFETIME_CREW_KEY))),
 			BookPage.blank(),
-			BookPage.heading("Time on nets"),
+			BookPage.heading("Time working nets").tip("Time spent working a net while trawling a shoal."),
 			BookPage.row("Captain", hoursMinutes(lifetime(LIFETIME_CAPTAIN_NET_KEY))),
 			BookPage.row("Crew", hoursMinutes(lifetime(LIFETIME_CREW_NET_KEY)))));
 		// The Worker log's second page, across from it, so it has no title of its own.
 		BookPage hardest = new BookPage("", hardestWorkerLines());
+		// The rates for this session and lifetime across from each other, then the other statistics.
+		BookPage sessionRates = new BookPage("This session", rateLines(caughtTotal, sessionCounts::get));
+		BookPage lifetimeRates = new BookPage("Lifetime", rateLines(
+			lifetime(LIFETIME_CAPTAIN_KEY) + lifetime(LIFETIME_CREW_KEY), this::lifetime));
+		BookPage statistics = new BookPage("Statistics", List.of(
+			BookPage.heading("Trawler's trust").tip(TRUST_TIP),
+			BookPage.centred(QuantityFormatter.formatNumber(lifetime(LIFETIME_TRUST_KEY))).tip(TRUST_TIP),
+			BookPage.blank(),
+			BookPage.heading("Nets filled from empty").tip(FILLED_TIP),
+			BookPage.centred(QuantityFormatter.formatNumber(lifetime(LIFETIME_NETS_FILLED_KEY))).tip(FILLED_TIP)));
+		// The Statistics' second page, across from it.
+		BookPage moreStatistics = new BookPage("", List.of(
+			BookPage.heading("Best session").tip(BEST_TIP),
+			BookPage.centred(QuantityFormatter.formatNumber(
+				Math.max(caughtTotal - caughtBeforeReset, savedLifetime(LIFETIME_BEST_SESSION_KEY)))).tip(BEST_TIP),
+			BookPage.blank(),
+			BookPage.heading("Bait used").tip(BAIT_TIP),
+			BookPage.centred(QuantityFormatter.formatNumber(lifetime(LIFETIME_BAIT_KEY))).tip(BAIT_TIP)));
 		return List.of(cover, foreword, new BookPage("This session", session), new BookPage("Lifetime", life),
-			workers, hardest);
+			sessionRates, lifetimeRates, statistics, moreStatistics, workers, hardest);
+	}
+
+	/**
+	 * A rates page's lines: fish per hour while trawling, then on the nets for the captain and the crew, from a fish
+	 * total and the other counts by their lifetime keys.
+	 */
+	private static List<BookPage.Line> rateLines(int fish, Function<String, Integer> counts)
+	{
+		ToIntFunction<String> count = key ->
+		{
+			Integer value = counts.apply(key);
+			return value != null ? value : 0;
+		};
+		return List.of(
+			BookPage.heading("Fish per hour").tip(FISH_PER_HOUR_TIP),
+			BookPage.centred(fishPerHour(fish, count.applyAsInt(LIFETIME_TRAWL_TICKS_KEY))).tip(FISH_PER_HOUR_TIP),
+			BookPage.blank(),
+			BookPage.heading("Working the nets").tip("Fish caught per hour while working a net"
+				+ "</br>near a shoal, leaving out sailing and banking."),
+			BookPage.row("Captain", fishPerHour(count.applyAsInt(LIFETIME_CAPTAIN_NET_FISH_KEY),
+				count.applyAsInt(LIFETIME_CAPTAIN_NET_KEY))).tip("Your catches over your time on a net."),
+			BookPage.row("Crew", fishPerHour(count.applyAsInt(LIFETIME_CREW_NET_FISH_KEY),
+				count.applyAsInt(LIFETIME_CREW_NET_KEY))).tip("Your crew's catches over their time on nets,"
+				+ "</br>each crewmate's time added together."));
+	}
+
+	/**
+	 * Fish caught per hour, from a count of fish and the ticks they took, or a dash with under a minute of time, which
+	 * a few quick catches would make far too high.
+	 */
+	private static String fishPerHour(int fish, int ticks)
+	{
+		if (ticks < RATE_MIN_TICKS)
+		{
+			return "-";
+		}
+		// 6,000 ticks to the hour.
+		return QuantityFormatter.formatNumber(Math.round(fish * 6000.0 / ticks));
+	}
+
+	/** A fish's row on the Lifetime page, with its stars and a tooltip saying how far to the next one. */
+	private static BookPage.Line starredRow(String kind, String name, int caught)
+	{
+		int[] milestones = STAR_MILESTONES.get(kind);
+		int reached = 0;
+		while (reached < milestones.length && caught >= milestones[reached])
+		{
+			reached++;
+		}
+		String tip = reached == milestones.length ? "All stars earned."
+			: QuantityFormatter.formatNumber(milestones[reached] - caught) + " more " + kind + " to the next star.";
+		return BookPage.row(name, QuantityFormatter.formatNumber(caught)).withStars(reached).tip(tip);
 	}
 
 	/** Ticks as hours and two-digit minutes, such as "12h 34m". */
@@ -2914,6 +3088,7 @@ public class TrawlingPlusPlugin extends Plugin
 		{
 			heldCaptainNetTicks = 0;
 			heldCrewNetTicks.clear();
+			heldBeforeSession.keySet().retainAll(Set.of(LIFETIME_TRAWL_TICKS_KEY));
 			captainNetProven = false;
 			crewNetProven = false;
 			return;
@@ -2926,7 +3101,7 @@ public class TrawlingPlusPlugin extends Plugin
 		{
 			if (captainNetProven)
 			{
-				lifetimeUnsaved.merge(LIFETIME_CAPTAIN_NET_KEY, 1, Integer::sum);
+				countLifetime(LIFETIME_CAPTAIN_NET_KEY, 1);
 			}
 			else
 			{
@@ -2939,7 +3114,8 @@ public class TrawlingPlusPlugin extends Plugin
 		{
 			return;
 		}
-		Map<String, Integer> into = crewNetProven ? lifetimeUnsaved : heldCrewNetTicks;
+		ObjIntConsumer<String> into = crewNetProven ? this::countLifetime
+			: (key, ticks) -> heldCrewNetTicks.merge(key, ticks, Integer::sum);
 		int crew = 0;
 		for (NPC npc : deck.npcs())
 		{
@@ -2948,13 +3124,13 @@ public class TrawlingPlusPlugin extends Plugin
 				crew++;
 				if (npc.getName() != null)
 				{
-					into.merge(LIFETIME_WORKER_KEY + npc.getName(), 1, Integer::sum);
+					into.accept(LIFETIME_WORKER_KEY + npc.getName(), 1);
 				}
 			}
 		}
 		if (crew > 0)
 		{
-			into.merge(LIFETIME_CREW_NET_KEY, crew, Integer::sum);
+			into.accept(LIFETIME_CREW_NET_KEY, crew);
 		}
 	}
 
@@ -2971,13 +3147,13 @@ public class TrawlingPlusPlugin extends Plugin
 		if (captain && !captainNetProven)
 		{
 			captainNetProven = true;
-			lifetimeUnsaved.merge(LIFETIME_CAPTAIN_NET_KEY, heldCaptainNetTicks, Integer::sum);
+			countHeld(LIFETIME_CAPTAIN_NET_KEY, heldCaptainNetTicks);
 			heldCaptainNetTicks = 0;
 		}
 		else if (!captain && !crewNetProven)
 		{
 			crewNetProven = true;
-			heldCrewNetTicks.forEach((key, ticks) -> lifetimeUnsaved.merge(key, ticks, Integer::sum));
+			heldCrewNetTicks.forEach(this::countHeld);
 			heldCrewNetTicks.clear();
 		}
 	}
@@ -2989,19 +3165,28 @@ public class TrawlingPlusPlugin extends Plugin
 		return !clickboxByView.isEmpty();
 	}
 
-	/** Each crewmate's lifetime net time key in the account's profile, saved or not yet. */
-	private Set<String> workerKeys()
+	/** Each crewmate's lifetime key with this prefix in the account's profile, saved or not yet. */
+	private Set<String> namedKeys(String prefix)
 	{
-		Set<String> keys = new HashSet<>();
 		String profile = configManager.getRSProfileKey();
-		if (profile != null)
+		if (profile != null && !profile.equals(savedNamedKeysProfile))
 		{
-			keys.addAll(configManager.getRSProfileConfigurationKeys(TrawlingPlusConfig.GROUP, profile,
-				LIFETIME_WORKER_KEY));
+			savedNamedKeys.clear();
+			savedNamedKeysProfile = profile;
 		}
+		Set<String> saved = savedNamedKeys.get(prefix);
+		if (saved == null && profile != null)
+		{
+			// Looking keys up by prefix goes through every setting RuneLite holds, so it is done once per account,
+			// then kept up to date as crewmates' counts are saved.
+			saved = new HashSet<>(configManager.getRSProfileConfigurationKeys(TrawlingPlusConfig.GROUP, profile,
+				prefix));
+			savedNamedKeys.put(prefix, saved);
+		}
+		Set<String> keys = saved != null ? new HashSet<>(saved) : new HashSet<>();
 		for (String key : lifetimeUnsaved.keySet())
 		{
-			if (key.startsWith(LIFETIME_WORKER_KEY))
+			if (key.startsWith(prefix))
 			{
 				keys.add(key);
 			}
@@ -3009,35 +3194,88 @@ public class TrawlingPlusPlugin extends Plugin
 		return keys;
 	}
 
-	/** The hardest worker page's lines: the crewmate longest on the nets, then the bait used. */
-	private List<BookPage.Line> hardestWorkerLines()
+	/** The crewmate with the highest lifetime count under this prefix, with the count, or null with none yet. */
+	private Map.Entry<String, Integer> topCrewmate(String prefix)
 	{
-		String hardest = null;
-		int most = 0;
-		for (String key : workerKeys())
+		Map.Entry<String, Integer> top = null;
+		for (String key : namedKeys(prefix))
 		{
-			int ticks = lifetime(key);
-			if (ticks > most)
+			int count = lifetime(key);
+			if (count > 0 && (top == null || count > top.getValue()))
 			{
-				most = ticks;
-				hardest = key.substring(LIFETIME_WORKER_KEY.length());
+				top = Map.entry(key.substring(prefix.length()), count);
 			}
 		}
+		return top;
+	}
+
+	/** The hardest worker page's lines: the crewmate longest on the nets, and the one who has caught the most. */
+	private List<BookPage.Line> hardestWorkerLines()
+	{
 		List<BookPage.Line> lines = new ArrayList<>();
-		lines.add(BookPage.heading("Hardest worker"));
+		String hardestTip = "The crewmate who has spent longest working the nets.";
+		lines.add(BookPage.heading("Hardest worker").tip(hardestTip));
+		Map.Entry<String, Integer> hardest = topCrewmate(LIFETIME_WORKER_KEY);
 		if (hardest == null)
 		{
-			lines.add(BookPage.centred("None yet"));
+			lines.add(BookPage.centred("None yet").tip(hardestTip));
 		}
 		else
 		{
-			lines.add(BookPage.centred(hardest));
-			lines.add(BookPage.centred(hoursMinutes(most)));
+			lines.add(BookPage.centred(hardest.getKey()).tip(hardestTip));
+			lines.add(BookPage.centred(hoursMinutes(hardest.getValue())).tip(hardestTip));
 		}
 		lines.add(BookPage.blank());
-		lines.add(BookPage.heading("Bait used"));
-		lines.add(BookPage.centred(QuantityFormatter.formatNumber(lifetime(LIFETIME_BAIT_KEY))));
+		String catcherTip = "The crewmate who has caught the most fish.";
+		lines.add(BookPage.heading("Top catcher").tip(catcherTip));
+		Map.Entry<String, Integer> catcher = topCrewmate(LIFETIME_CATCHER_KEY);
+		if (catcher == null)
+		{
+			lines.add(BookPage.centred("None yet").tip(catcherTip));
+		}
+		else
+		{
+			lines.add(BookPage.centred(catcher.getKey()).tip(catcherTip));
+			lines.add(BookPage.centred(QuantityFormatter.formatNumber(catcher.getValue()) + " fish").tip(catcherTip));
+		}
 		return lines;
+	}
+
+	/**
+	 * Adds held time to a lifetime count, and to the same count for this session, less whatever of it was already held
+	 * when the session's counts were reset.
+	 */
+	private void countHeld(String key, int amount)
+	{
+		lifetimeUnsaved.merge(key, amount, Integer::sum);
+		int session = amount - heldBeforeSession.getOrDefault(key, 0);
+		heldBeforeSession.remove(key);
+		if (session > 0)
+		{
+			sessionCounts.merge(key, session, Integer::sum);
+		}
+	}
+
+	/** Notes everything being held as the session's counts reset, so none of it goes to the new session. */
+	private void holdBackFromSession()
+	{
+		heldBeforeSession.clear();
+		if (heldTrawlTicks > 0)
+		{
+			heldBeforeSession.put(LIFETIME_TRAWL_TICKS_KEY, heldTrawlTicks);
+		}
+		if (heldCaptainNetTicks > 0)
+		{
+			heldBeforeSession.put(LIFETIME_CAPTAIN_NET_KEY, heldCaptainNetTicks);
+		}
+		heldBeforeSession.putAll(heldCrewNetTicks);
+	}
+
+	/** Adds to a lifetime count, and to the same count for this session. */
+	private void countLifetime(String key, int amount)
+	{
+		lifetimeUnsaved.merge(key, amount, Integer::sum);
+		sessionCounts.merge(key, amount, Integer::sum);
 	}
 
 	/** A lifetime count, by its key in the account's profile: what is saved there, and what hasn't been yet. */
@@ -3079,11 +3317,28 @@ public class TrawlingPlusPlugin extends Plugin
 			return;
 		}
 
+		// Every catch adds to what is unsaved, so the best session is never left behind.
+		int session = caughtTotal - caughtBeforeReset;
+		if (session > savedLifetime(LIFETIME_BEST_SESSION_KEY))
+		{
+			configManager.setRSProfileConfiguration(TrawlingPlusConfig.GROUP, LIFETIME_BEST_SESSION_KEY, session);
+		}
+
 		for (Map.Entry<String, Integer> unsaved : lifetimeUnsaved.entrySet())
 		{
 			String key = unsaved.getKey();
 			configManager.setRSProfileConfiguration(TrawlingPlusConfig.GROUP, key,
 				savedLifetime(key) + unsaved.getValue());
+			if (configManager.getRSProfileKey().equals(savedNamedKeysProfile))
+			{
+				for (Map.Entry<String, Set<String>> named : savedNamedKeys.entrySet())
+				{
+					if (key.startsWith(named.getKey()))
+					{
+						named.getValue().add(key);
+					}
+				}
+			}
 		}
 		lifetimeUnsaved.clear();
 	}

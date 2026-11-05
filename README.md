@@ -98,7 +98,7 @@ Every route was recorded in-game and is accurate to the tile when no smoothing i
   own section.
 - **Trawling log**: shows or hides the trawling log button, in its own section, with switches for
   the lifetime stars, for drawing the book with your resource pack's sprites (off by default) and
-  for animated page turns.
+  for animating the cover and page turns.
 - **Fishing spot arrow**: shows or hides the fishing spot arrow and sets its colour.
 - **Cargo hold highlight**: shows or hides the cargo hold's outline and sets its colour.
 - **Net highlights**: shows or hides the net outlines and sets their colours.

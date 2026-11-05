@@ -913,7 +913,7 @@ public interface TrawlingPlusConfig extends Config
 	@ConfigItem(
 		keyName = "animatedBook",
 		name = "Animated",
-		description = "Turn the pages with an animation.<br>Off to change pages at once.",
+		description = "Swing the cover open and shut, and turn<br>the pages, with an animation. Off to<br>open, close and turn pages at once.",
 		position = 79,
 		section = trawlingLogSection
 	)

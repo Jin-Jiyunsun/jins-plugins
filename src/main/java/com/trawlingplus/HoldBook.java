@@ -142,8 +142,8 @@ class HoldBook extends Overlay implements KeyListener
 	private static final int LEFT_PAGE_LEFT = 13;
 	private static final int LEFT_PAGE_RIGHT = (COLUMNS / 2) * TILE + 11;
 	private static final int RIGHT_PAGE_LEFT = (COLUMNS / 2) * TILE + 23;
-	private static final int RIGHT_PAGE_RIGHT = BOOK_WIDTH - 13;
 	private static final int PAGE_WIDTH = LEFT_PAGE_RIGHT - LEFT_PAGE_LEFT;
+	private static final int PAGE_HEIGHT = PAGE_BOTTOM - PAGE_TOP;
 	// The text keeps this far from the sides of its page, so it sits centred on the page, and the title and page
 	// number this far from its top and bottom; the close button and arrows sit this far from their page's corner,
 	// by their visible pixels.
@@ -161,12 +161,30 @@ class HoldBook extends Overlay implements KeyListener
 	private static final float FOLD_SHADE = 0.15f;
 	private static final float LEAF_SHADOW = 0.25f;
 	private static final int LEAF_SHADOW_WIDTH = 24;
-	private static final int PAGE_HEIGHT = PAGE_BOTTOM - PAGE_TOP;
 	// A leaf side is a row taller than its page, for the bookmark ribbon hanging a pixel above the page's top.
 	private static final int LEAF_HEIGHT = PAGE_HEIGHT + 1;
-	// From the middle of the spine to a page's inner edge.
+	// Leaves and the cover swing about the middle of the spine; a leaf's inner edge sits this far from it.
 	private static final double SPINE_MIDDLE = (LEFT_PAGE_RIGHT + RIGHT_PAGE_LEFT) / 2.0;
 	private static final double LEAF_GAP = RIGHT_PAGE_LEFT - SPINE_MIDDLE;
+	// A mouse x no button contains, for buttons drawn without hover.
+	private static final int NO_HOVER = Integer.MIN_VALUE;
+
+	// Opening and closing: the front cover swings over the spine like a leaf, this long, its inside the left half of
+	// the open book. Closed, the book is just its cover, centred where the open book goes.
+	private static final long COVER_MILLIS = 450;
+	// The cover lifts further towards the viewer than a page, and casts a wider shadow on the right page.
+	private static final double COVER_LIFT = 0.3;
+	private static final int COVER_SHADOW_WIDTH = 40;
+	private static final int COVER_WIDTH = BOOK_WIDTH - (int) SPINE_MIDDLE;
+	// The cover, made in the frame's own leather colours: a darker hinge along the spine, a tooled panel set in from
+	// the edges, the frame's corner pieces at the fore edge and the title in gold leaf.
+	private static final int COVER_HINGE = 6;
+	// The hinge and the groove's dark line are the leather this much darker.
+	private static final float COVER_DARKER = 0.75f;
+	private static final int COVER_PANEL_INSET = 12;
+	private static final String COVER_TITLE = "Trawling Log";
+	private static final int COVER_TITLE_Y = 70;
+	private static final Color GOLD_LEAF = new Color(214, 172, 72);
 
 	// The button is centred on a space the size of the hold's own close button, just left of it; where that can't be
 	// found, where the close button usually is, from the frame's top right. It is the Collections Logged book
@@ -177,8 +195,8 @@ class HoldBook extends Overlay implements KeyListener
 	private static final int BUTTON_FISH = SpriteID.Staticons.FISHING;
 	private static final int FISH_TOP = 8;
 	private static final int FISH_SIZE = 15;
-	private static final double COVER_MIDDLE_X = 10.65;
-	private static final double COVER_MIDDLE_Y = 10.78;
+	private static final double BUTTON_COVER_X = 10.65;
+	private static final double BUTTON_COVER_Y = 10.78;
 	// How far the fish sits off the cover's middle, in px: 1 right and 1 up.
 	private static final int FISH_NUDGE_X = 1;
 	private static final int FISH_NUDGE_Y = -1;
@@ -233,6 +251,7 @@ class HoldBook extends Overlay implements KeyListener
 	private BufferedImage iconHovered;
 	// Optional: a page signed without it just has the name.
 	private BufferedImage seal;
+	private BufferedImage cover;
 
 	// The hold's close button, looked for each tick while its screen is open until found, then kept until it closes.
 	private Widget holdClose;
@@ -289,6 +308,11 @@ class HoldBook extends Overlay implements KeyListener
 	// The two sides of the turning leaf, parchment and page, drawn again each frame of a turn.
 	private BufferedImage leafRight;
 	private BufferedImage leafLeft;
+	// When the cover last started swinging, 0 for never, and whether it was opening; the inside of the cover, the
+	// left half of the open book, drawn again each frame of the swing.
+	private volatile long coverStart;
+	private volatile boolean coverOpening;
+	private BufferedImage coverInside;
 	// Whether the book has been opened since the plugin started, after which it opens where it was left.
 	private volatile boolean openedThisSession;
 	// The bookmarked spread's left page, -1 for none, or null until read from the config.
@@ -318,6 +342,8 @@ class HoldBook extends Overlay implements KeyListener
 		turnFrom = -1;
 		leafRight = null;
 		leafLeft = null;
+		coverStart = 0;
+		coverInside = null;
 		openedThisSession = false;
 		bookmark = null;
 		seen = null;
@@ -330,6 +356,7 @@ class HoldBook extends Overlay implements KeyListener
 		icon = null;
 		iconHovered = null;
 		seal = null;
+		cover = null;
 		holdClose = null;
 		spritesTriedTick = -1;
 		spritesMissingLogged = false;
@@ -357,8 +384,13 @@ class HoldBook extends Overlay implements KeyListener
 		}
 		if (hold == null || hold.isHidden() || !loadSprites())
 		{
-			// The book belongs to the hold's screen and closes with it.
+			// The book belongs to the hold's screen and closes with it, at once, letting go of the images only a turn
+			// or swing draws into.
 			open = false;
+			coverStart = 0;
+			leafRight = null;
+			leafLeft = null;
+			coverInside = null;
 			forgetBounds();
 			holdClose = null;
 			closeTriedTick = -1;
@@ -400,7 +432,10 @@ class HoldBook extends Overlay implements KeyListener
 		}
 		buttonBounds = button;
 
-		if (!open)
+		long now = System.currentTimeMillis();
+		long swung = now - coverStart;
+		boolean swinging = coverStart > 0 && swung < COVER_MILLIS;
+		if (!open && !swinging)
 		{
 			forgetBookBounds();
 			return null;
@@ -414,8 +449,6 @@ class HoldBook extends Overlay implements KeyListener
 		int y = frameBounds.y + (frameBounds.height - BOOK_HEIGHT) / 2;
 		x = Math.max(viewX, Math.min(x, viewX + client.getViewportWidth() - BOOK_WIDTH));
 		y = Math.max(viewY, Math.min(y, viewY + client.getViewportHeight() - BOOK_HEIGHT));
-		graphics.drawImage(frame, x, y, null);
-		bookBounds = new Rectangle(x, y, BOOK_WIDTH, BOOK_HEIGHT);
 
 		if (tick != pagesReadTick)
 		{
@@ -424,15 +457,29 @@ class HoldBook extends Overlay implements KeyListener
 		}
 		List<BookPage> showing = pages;
 		int first = Math.min(spread, lastSpread(showing.size()));
+
+		if (swinging)
+		{
+			// Clicks on the book while it opens do nothing, and none are kept while it closes.
+			forgetBookBounds();
+			bookBounds = open ? new Rectangle(x, y, BOOK_WIDTH, BOOK_HEIGHT) : null;
+			double eased = eased(swung, COVER_MILLIS);
+			double angle = Math.PI * (coverOpening ? eased : 1 - eased);
+			drawCover(graphics, showing, first, angle, x, y);
+			return null;
+		}
+
+		graphics.drawImage(frame, x, y, null);
+		bookBounds = new Rectangle(x, y, BOOK_WIDTH, BOOK_HEIGHT);
 		int from = turnFrom;
-		long turned = System.currentTimeMillis() - turnStart;
+		long turned = now - turnStart;
 		boolean turning = from >= 0 && from != first && from < showing.size() && turned < TURN_MILLIS;
 		// While turning, the pages either side of the leaf: the lower spread's left page and the higher one's right.
 		int lower = turning ? Math.min(from, first) : first;
 		int higher = turning ? Math.max(from, first) : first;
 		int top = y + PAGE_TOP + TITLE_INSET;
-		drawPage(graphics, showing, lower, x + LEFT_PAGE_LEFT + TEXT_INSET, top);
-		drawPage(graphics, showing, higher + 1, x + RIGHT_PAGE_LEFT + TEXT_INSET, top);
+		drawPage(graphics, showing, lower, x + LEFT_PAGE_LEFT, y + PAGE_TOP);
+		drawPage(graphics, showing, higher + 1, x + RIGHT_PAGE_LEFT, y + PAGE_TOP);
 		if (!menuOpen && !turning)
 		{
 			showTip(first, mouseX - (x + LEFT_PAGE_LEFT + TEXT_INSET), mouseY - top);
@@ -441,7 +488,7 @@ class HoldBook extends Overlay implements KeyListener
 
 		// The buttons belong to their pages and turn with them, uncovering the next page's as the leaf lifts. Hovering
 		// shows only while no page is turning; clicks go to the spread being turned to.
-		int hoverX = turning || menuOpen ? Integer.MIN_VALUE : mouseX;
+		int hoverX = turning || menuOpen ? NO_HOVER : mouseX;
 		drawLeftButtons(graphics, lower, x + LEFT_PAGE_LEFT, y + PAGE_TOP, hoverX, mouseY);
 		drawRightButtons(graphics, higher, showing.size(), x + RIGHT_PAGE_LEFT, y + PAGE_TOP, hoverX, mouseY);
 		closeBounds = closeAt(x + RIGHT_PAGE_LEFT, y + PAGE_TOP);
@@ -456,12 +503,18 @@ class HoldBook extends Overlay implements KeyListener
 
 		if (turning)
 		{
-			double eased = (1 - Math.cos(Math.PI * turned / TURN_MILLIS)) / 2;
+			double eased = eased(turned, TURN_MILLIS);
 			// Lying on the right page at 0, on the left at pi.
 			double angle = Math.PI * (first > from ? eased : 1 - eased);
 			drawLeaf(graphics, showing, lower + 1, higher, angle, x, y);
 		}
 		return null;
+	}
+
+	/** How far through a swing this long it is, from 0 to 1, easing in and out. */
+	private static double eased(long elapsed, long millis)
+	{
+		return (1 - Math.cos(Math.PI * elapsed / millis)) / 2;
 	}
 
 	/** A spread's left page buttons, the page's top left given: the back arrow and the bookmark, past the cover. */
@@ -513,41 +566,87 @@ class HoldBook extends Overlay implements KeyListener
 			pageY + PAGE_HEIGHT - CORNER_INSET - arrowLeft.getHeight(), arrowRight.getWidth(), arrowRight.getHeight());
 	}
 
-	/**
-	 * The turning leaf, its right side the page given lying on the right, its left side the page lying on the left,
-	 * at the given angle over the spine (0 lying right, pi lying left). Drawn a pixel column at a time from the side
-	 * facing up, each column taller the further it stands off the book, as if lifting towards the viewer, then
-	 * shaded, with a shadow cast on the page beyond its edge.
-	 */
+	/** The turning leaf: its right side the page given lying on the right, its left side the one lying on the left. */
 	private void drawLeaf(Graphics2D graphics, List<BookPage> showing, int rightPage, int leftPage, double angle, int x,
 		int y)
+	{
+		boolean facingRight = Math.cos(angle) >= 0;
+		BufferedImage face = leafSide(showing, facingRight ? rightPage : leftPage, facingRight);
+		Rectangle under = new Rectangle(x + (facingRight ? RIGHT_PAGE_LEFT : LEFT_PAGE_LEFT), y + PAGE_TOP, PAGE_WIDTH,
+			PAGE_HEIGHT);
+		drawSwing(graphics, face, angle, x + SPINE_MIDDLE, LEAF_GAP, y + PAGE_TOP - 1, 1, TURN_LIFT, under,
+			LEAF_SHADOW_WIDTH);
+	}
+
+	/**
+	 * Opening or closing: the right half of the open book, slid towards the middle the more closed it is, with the
+	 * cover swinging over the spine (0 closed, pi open), its inside the open book's left half.
+	 */
+	private void drawCover(Graphics2D graphics, List<BookPage> showing, int first, double angle, int x, int y)
+	{
+		x -= (int) Math.round(COVER_WIDTH / 2.0 * (1 + Math.cos(angle)) / 2);
+		int half = (int) SPINE_MIDDLE;
+		graphics.drawImage(frame, x + half, y, x + BOOK_WIDTH, y + BOOK_HEIGHT, half, 0, BOOK_WIDTH, BOOK_HEIGHT, null);
+		drawPage(graphics, showing, first + 1, x + RIGHT_PAGE_LEFT, y + PAGE_TOP);
+		drawRightButtons(graphics, first, showing.size(), x + RIGHT_PAGE_LEFT, y + PAGE_TOP, NO_HOVER, 0);
+		boolean facingRight = Math.cos(angle) >= 0;
+		Rectangle under = new Rectangle(x + half, y, COVER_WIDTH, BOOK_HEIGHT);
+		drawSwing(graphics, facingRight ? cover : coverInside(showing, first), angle, x + SPINE_MIDDLE, 0, y, 0,
+			COVER_LIFT, under, COVER_SHADOW_WIDTH);
+	}
+
+	/** The inside of the cover: the open book's left half, with the left page and its buttons. */
+	private BufferedImage coverInside(List<BookPage> showing, int first)
+	{
+		if (coverInside == null)
+		{
+			coverInside = new BufferedImage(COVER_WIDTH, BOOK_HEIGHT, BufferedImage.TYPE_INT_ARGB);
+		}
+		Graphics2D g = coverInside.createGraphics();
+		g.setComposite(AlphaComposite.Src);
+		g.drawImage(frame, 0, 0, COVER_WIDTH, BOOK_HEIGHT, 0, 0, COVER_WIDTH, BOOK_HEIGHT, null);
+		g.setComposite(AlphaComposite.SrcOver);
+		drawPage(g, showing, first, LEFT_PAGE_LEFT, PAGE_TOP);
+		drawLeftButtons(g, first, LEFT_PAGE_LEFT, PAGE_TOP, NO_HOVER, 0);
+		g.dispose();
+		return coverInside;
+	}
+
+	/**
+	 * Something swinging over the spine, a leaf or the cover: the side facing up, whose inner edge sits gap px from the
+	 * spine, at the given angle (0 lying right, pi lying left), its top at top. Drawn a pixel column at a time, each
+	 * column taller the further it stands off the book, up to the given share taller at its edge when upright, as if
+	 * lifting towards the viewer, then shaded below its first skipped rows. It casts a shadow this wide beyond its
+	 * edge, kept to the area under it.
+	 */
+	private static void drawSwing(Graphics2D graphics, BufferedImage face, double angle, double spine, double gap,
+		double top, int skipped, double turnLift, Rectangle under, int shadowWidth)
 	{
 		double cos = Math.cos(angle);
 		double sin = Math.sin(angle);
 		boolean facingRight = cos >= 0;
-		BufferedImage face = leafSide(showing, facingRight ? rightPage : leftPage, facingRight);
-		double spine = x + SPINE_MIDDLE;
-		double middleY = y + PAGE_TOP - 1 + LEAF_HEIGHT / 2.0;
-		double reach = LEAF_GAP + PAGE_WIDTH;
-		double lift = TURN_LIFT * sin / reach;
-		double hinge = spine + LEAF_GAP * cos / (1 - lift * LEAF_GAP);
-		double edge = spine + reach * cos / (1 - lift * reach);
-		double hingeScale = 1 / (1 - lift * LEAF_GAP);
+		int width = face.getWidth();
+		int faceHeight = face.getHeight();
+		double middleY = top + faceHeight / 2.0;
+		double reach = gap + width;
+		double lift = turnLift * sin / reach;
+		double hingeScale = 1 / (1 - lift * gap);
 		double edgeScale = 1 / (1 - lift * reach);
+		double hinge = spine + gap * cos * hingeScale;
+		double edge = spine + reach * cos * edgeScale;
 		float standing = (float) (1 - Math.abs(cos));
 
 		Paint paint = graphics.getPaint();
 		Shape clip = graphics.getClip();
 		Object interpolation = graphics.getRenderingHint(RenderingHints.KEY_INTERPOLATION);
 
-		// The shadow, on the page beyond the leaf's edge, fading away from it.
-		double shadowEnd = edge + (facingRight ? 1 : -1) * LEAF_SHADOW_WIDTH * sin;
-		int pageLeft = x + (facingRight ? RIGHT_PAGE_LEFT : LEFT_PAGE_LEFT);
-		graphics.clipRect(pageLeft, y + PAGE_TOP, PAGE_WIDTH, PAGE_HEIGHT);
+		// The shadow, beyond the edge, fading away from it.
+		double shadowEnd = edge + (facingRight ? 1 : -1) * shadowWidth * sin;
+		graphics.clip(under);
 		graphics.setPaint(new GradientPaint((float) edge, 0, new Color(0, 0, 0, LEAF_SHADOW * (float) sin),
 			(float) shadowEnd, 0, new Color(0, 0, 0, 0)));
 		int shadowLeft = (int) Math.floor(Math.min(edge, shadowEnd));
-		graphics.fillRect(shadowLeft, y + PAGE_TOP, (int) Math.ceil(Math.max(edge, shadowEnd)) - shadowLeft, PAGE_HEIGHT);
+		graphics.fillRect(shadowLeft, under.y, (int) Math.ceil(Math.max(edge, shadowEnd)) - shadowLeft, under.height);
 		graphics.setClip(clip);
 
 		// Each pixel column: how far along the leaf it shows, from where it sits off the spine.
@@ -558,19 +657,19 @@ class HoldBook extends Overlay implements KeyListener
 		{
 			double offset = column + 0.5 - spine;
 			double along = offset / (cos + lift * offset);
-			if (!(along >= LEAF_GAP && along < reach))
+			if (!(along >= gap && along < reach))
 			{
 				continue;
 			}
-			int source = Math.min(PAGE_WIDTH - 1, (int) (along - LEAF_GAP));
+			int source = Math.min(width - 1, (int) (along - gap));
 			if (!facingRight)
 			{
-				source = PAGE_WIDTH - 1 - source;
+				source = width - 1 - source;
 			}
-			double height = LEAF_HEIGHT / (1 - lift * along);
+			double height = faceHeight / (1 - lift * along);
 			int columnTop = (int) Math.round(middleY - height / 2);
 			int columnBottom = (int) Math.round(middleY + height / 2);
-			graphics.drawImage(face, column, columnTop, column + 1, columnBottom, source, 0, source + 1, LEAF_HEIGHT,
+			graphics.drawImage(face, column, columnTop, column + 1, columnBottom, source, 0, source + 1, faceHeight,
 				null);
 		}
 		if (interpolation != null)
@@ -578,12 +677,12 @@ class HoldBook extends Overlay implements KeyListener
 			graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION, interpolation);
 		}
 
-		// Darker the more upright it stands, and darker still by the fold: over the page, below the ribbon's top row.
+		// Darker the more upright it stands, and darker still by the fold.
 		Path2D.Double outline = new Path2D.Double();
-		outline.moveTo(hinge, middleY - (LEAF_HEIGHT / 2.0 - 1) * hingeScale);
-		outline.lineTo(edge, middleY - (LEAF_HEIGHT / 2.0 - 1) * edgeScale);
-		outline.lineTo(edge, middleY + LEAF_HEIGHT / 2.0 * edgeScale);
-		outline.lineTo(hinge, middleY + LEAF_HEIGHT / 2.0 * hingeScale);
+		outline.moveTo(hinge, middleY - (faceHeight / 2.0 - skipped) * hingeScale);
+		outline.lineTo(edge, middleY - (faceHeight / 2.0 - skipped) * edgeScale);
+		outline.lineTo(edge, middleY + faceHeight / 2.0 * edgeScale);
+		outline.lineTo(hinge, middleY + faceHeight / 2.0 * hingeScale);
 		outline.closePath();
 		float shade = LEAF_SHADE * standing;
 		graphics.setPaint(new GradientPaint((float) hinge, 0, new Color(0, 0, 0, shade + FOLD_SHADE * (float) sin),
@@ -602,6 +701,14 @@ class HoldBook extends Overlay implements KeyListener
 		if (side == null)
 		{
 			side = new BufferedImage(PAGE_WIDTH, LEAF_HEIGHT, BufferedImage.TYPE_INT_ARGB);
+			if (right)
+			{
+				leafRight = side;
+			}
+			else
+			{
+				leafLeft = side;
+			}
 		}
 		Graphics2D g = side.createGraphics();
 		g.setComposite(AlphaComposite.Clear);
@@ -616,22 +723,37 @@ class HoldBook extends Overlay implements KeyListener
 		}
 		if (right)
 		{
-			drawRightButtons(g, page - 1, showing.size(), 0, 1, Integer.MIN_VALUE, 0);
+			drawRightButtons(g, page - 1, showing.size(), 0, 1, NO_HOVER, 0);
 		}
 		else
 		{
-			drawLeftButtons(g, page, 0, 1, Integer.MIN_VALUE, 0);
+			drawLeftButtons(g, page, 0, 1, NO_HOVER, 0);
 		}
 		g.dispose();
-		if (right)
-		{
-			leafRight = side;
-		}
-		else
-		{
-			leafLeft = side;
-		}
 		return side;
+	}
+
+	/**
+	 * Opens or closes the book, swinging the cover if animated: from where it is if it was already swinging the other
+	 * way.
+	 */
+	private void setOpen(boolean value)
+	{
+		if (open == value)
+		{
+			return;
+		}
+		open = value;
+		turnFrom = -1;
+		if (!config.animatedBook())
+		{
+			coverStart = 0;
+			return;
+		}
+		long now = System.currentTimeMillis();
+		long swung = now - coverStart;
+		coverStart = swung < COVER_MILLIS ? now - (COVER_MILLIS - swung) : now;
+		coverOpening = value;
 	}
 
 	/** Starts turning from one spread to another, which then shows. */
@@ -714,13 +836,13 @@ class HoldBook extends Overlay implements KeyListener
 		}
 	}
 
-	private void drawPage(Graphics2D graphics, List<BookPage> showing, int page, int x, int y)
+	/** A page, given its top left, its image starting under the title inset. */
+	private void drawPage(Graphics2D graphics, List<BookPage> showing, int page, int pageX, int pageY)
 	{
 		BufferedImage image = pageImage(showing, page);
 		if (image != null)
 		{
-			// The image reaches out over the page's side margins, which only a seal ever draws into.
-			graphics.drawImage(image, x - TEXT_INSET, y, null);
+			graphics.drawImage(image, pageX, pageY + TITLE_INSET, null);
 		}
 	}
 
@@ -741,8 +863,7 @@ class HoldBook extends Overlay implements KeyListener
 		if (pageImages.get(page) == null || !content.equals(pagesDrawn.get(page)))
 		{
 			Map<Rectangle, String> tips = new HashMap<>();
-			pageImages.set(page, buildPage(content, page + 1, PAGE_WIDTH - 2 * TEXT_INSET,
-				PAGE_HEIGHT - TITLE_INSET, tips));
+			pageImages.set(page, buildPage(content, page + 1, tips));
 			pageTips.set(page, tips);
 			pagesDrawn.set(page, content);
 		}
@@ -755,10 +876,13 @@ class HoldBook extends Overlay implements KeyListener
 	 * the right edge, or a blank line), and its number at the foot. Each line with a tooltip is put in tips, by where
 	 * it was drawn.
 	 */
-	private BufferedImage buildPage(BookPage content, int number, int width, int height, Map<Rectangle, String> tips)
+	private BufferedImage buildPage(BookPage content, int number, Map<Rectangle, String> tips)
 	{
-		// Wider than the text by the side margins, which a seal may hang over; drawn to with the text's left edge at 0.
-		BufferedImage image = new BufferedImage(width + 2 * TEXT_INSET, height, BufferedImage.TYPE_INT_ARGB);
+		// The page's full width, side margins included, which a seal may hang over, and from under the title inset to
+		// the foot; drawn to with the text's left edge at 0.
+		int width = PAGE_WIDTH - 2 * TEXT_INSET;
+		int height = PAGE_HEIGHT - TITLE_INSET;
+		BufferedImage image = new BufferedImage(PAGE_WIDTH, height, BufferedImage.TYPE_INT_ARGB);
 		Graphics2D g = image.createGraphics();
 		g.translate(TEXT_INSET, 0);
 		String title = content.getTitle();
@@ -1049,13 +1173,13 @@ class HoldBook extends Overlay implements KeyListener
 		b.drawImage(buttonBook, 0, 0, null);
 		BufferedImage fishOnly = trim(buttonFish, new Rectangle(0, FISH_TOP, buttonFish.getWidth(),
 			buttonFish.getHeight() - FISH_TOP));
-		BufferedImage fish = shrunk(trim(fishOnly, visible(fishOnly)), FISH_SIZE);
-		b.drawImage(fish, (int) Math.round(COVER_MIDDLE_X - fish.getWidth() / 2.0) + FISH_NUDGE_X,
-			(int) Math.round(COVER_MIDDLE_Y - fish.getHeight() / 2.0) + FISH_NUDGE_Y, null);
+		BufferedImage fish = shrunk(trimmed(fishOnly), FISH_SIZE);
+		b.drawImage(fish, (int) Math.round(BUTTON_COVER_X - fish.getWidth() / 2.0) + FISH_NUDGE_X,
+			(int) Math.round(BUTTON_COVER_Y - fish.getHeight() / 2.0) + FISH_NUDGE_Y, null);
 		b.dispose();
 		// Cut down to their visible pixels, so they sit by what shows rather than by their transparent padding.
-		arrowLeft = trim(left, visible(left));
-		arrowRight = trim(right, visible(right));
+		arrowLeft = trimmed(left);
+		arrowRight = trimmed(right);
 		Rectangle crossShows = visible(cross).union(visible(crossHovered));
 		close = trim(cross, crossShows);
 		closeHovered = trim(crossHovered, crossShows);
@@ -1064,7 +1188,8 @@ class HoldBook extends Overlay implements KeyListener
 		BufferedImage waxSeal = sprite(SEAL);
 		// The Fishing icon pressed into it is the game's own, hook and all, whatever a resource pack does.
 		seal = waxSeal == null ? null
-			: imprinted(saturated(trim(waxSeal, visible(waxSeal)), SEAL_SATURATION), trim(buttonFish, visible(buttonFish)));
+			: imprinted(saturated(trimmed(waxSeal), SEAL_SATURATION), trimmed(buttonFish));
+		cover = buildCover(built, titles);
 		// Pages already drawn are drawn again, with the new sprites.
 		pageImages.clear();
 		pageTips.clear();
@@ -1073,6 +1198,71 @@ class HoldBook extends Overlay implements KeyListener
 		titleFont = titles;
 		frame = built;
 		return true;
+	}
+
+	/**
+	 * The front cover, in the leather colours of the frame's right edge: a darker hinge along the spine, a beveled
+	 * edge, a tooled panel, the frame's own corner pieces at the fore edge and the title in gold leaf.
+	 */
+	private BufferedImage buildCover(BufferedImage book, QuillFont titles)
+	{
+		int w = COVER_WIDTH;
+		int h = BOOK_HEIGHT;
+		// Read across the frame's right edge at its middle: its leather, the leather's highlight, then its outline.
+		int middle = BOOK_HEIGHT / 2;
+		Color leather = new Color(book.getRGB(BOOK_WIDTH - 5, middle));
+		Color light = new Color(book.getRGB(BOOK_WIDTH - 3, middle));
+		Color outline = new Color(book.getRGB(BOOK_WIDTH - 2, middle));
+		Color dark = new Color((int) (leather.getRed() * COVER_DARKER), (int) (leather.getGreen() * COVER_DARKER),
+			(int) (leather.getBlue() * COVER_DARKER));
+		BufferedImage built = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
+		Graphics2D g = built.createGraphics();
+		g.setColor(leather);
+		g.fillRect(0, 0, w, h);
+		g.setColor(dark);
+		g.fillRect(0, 0, COVER_HINGE, h);
+		g.drawLine(0, h - 2, w - 2, h - 2);
+		g.setColor(light);
+		g.drawLine(COVER_HINGE, 1, COVER_HINGE, h - 2);
+		g.drawLine(0, 1, w - 2, 1);
+		g.drawLine(w - 2, 1, w - 2, h - 2);
+		g.setColor(outline);
+		g.drawRect(0, 0, w - 1, h - 1);
+
+		// A groove: a dark line with a light one just below and right of it.
+		int panelLeft = COVER_HINGE + COVER_PANEL_INSET;
+		int panelWidth = w - panelLeft - COVER_PANEL_INSET - 1;
+		int panelHeight = h - 2 * COVER_PANEL_INSET - 1;
+		g.setColor(dark);
+		g.drawRect(panelLeft, COVER_PANEL_INSET, panelWidth, panelHeight);
+		g.setColor(light);
+		g.drawRect(panelLeft + 1, COVER_PANEL_INSET + 1, panelWidth, panelHeight);
+
+		// The frame's green corner pieces, where the cover's corners lie on the open book.
+		for (int corner : new int[]{0, h - TILE})
+		{
+			for (int fy = corner; fy < corner + TILE; fy++)
+			{
+				for (int fx = BOOK_WIDTH - TILE; fx < BOOK_WIDTH; fx++)
+				{
+					int pixel = book.getRGB(fx, fy);
+					int r = pixel >> 16 & 0xff;
+					int gr = pixel >> 8 & 0xff;
+					int b = pixel & 0xff;
+					if ((pixel >>> 24) != 0 && gr > r + 8 && gr > b)
+					{
+						built.setRGB(fx - (BOOK_WIDTH - w), fy, pixel);
+					}
+				}
+			}
+		}
+
+		int middleX = (w + COVER_HINGE) / 2;
+		int titleX = middleX - titles.width(COVER_TITLE) / 2;
+		titles.draw(g, COVER_TITLE, titleX + 1, COVER_TITLE_Y + 1, outline);
+		titles.draw(g, COVER_TITLE, titleX, COVER_TITLE_Y, GOLD_LEAF);
+		g.dispose();
+		return built;
 	}
 
 	/** One ribbon tail from behind the seal: its top left corner, leaning this far sideways by its notched end. */
@@ -1280,6 +1470,12 @@ class HoldBook extends Overlay implements KeyListener
 			: new Rectangle(left, top, right - left + 1, bottom - top + 1);
 	}
 
+	/** Cut down to its visible pixels. */
+	private static BufferedImage trimmed(BufferedImage image)
+	{
+		return trim(image, visible(image));
+	}
+
 	private static BufferedImage trim(BufferedImage image, Rectangle area)
 	{
 		Rectangle inside = area.intersection(new Rectangle(0, 0, image.getWidth(), image.getHeight()));
@@ -1390,8 +1586,7 @@ class HoldBook extends Overlay implements KeyListener
 			}
 			if (inside(buttonBounds, event))
 			{
-				open = !open;
-				turnFrom = -1;
+				setOpen(!open);
 				if (open && !bookSeen())
 				{
 					seen = true;
@@ -1408,7 +1603,7 @@ class HoldBook extends Overlay implements KeyListener
 			{
 				if (inside(closeBounds, event))
 				{
-					open = false;
+					setOpen(false);
 				}
 				else if (inside(leftBounds, event))
 				{
@@ -1428,7 +1623,7 @@ class HoldBook extends Overlay implements KeyListener
 			}
 			else if (open && overWorld)
 			{
-				open = false;
+				setOpen(false);
 			}
 			return event;
 		}
@@ -1474,7 +1669,7 @@ class HoldBook extends Overlay implements KeyListener
 	{
 		if (open && event.getKeyCode() == KeyEvent.VK_ESCAPE)
 		{
-			open = false;
+			setOpen(false);
 		}
 	}
 

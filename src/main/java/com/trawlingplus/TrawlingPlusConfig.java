@@ -95,6 +95,13 @@ public interface TrawlingPlusConfig extends Config
 	String sidePanelSection = "sidePanel";
 
 	@ConfigSection(
+		name = "Net highlights",
+		description = "Outlines on the trawling nets that need you",
+		position = 54
+	)
+	String netHighlightSection = "netHighlights";
+
+	@ConfigSection(
 		name = "Notifications",
 		description = "Alerts for the nets, the hold and the shoal",
 		position = 55
@@ -861,8 +868,8 @@ public interface TrawlingPlusConfig extends Config
 
 	@ConfigItem(
 		keyName = "showHoldBook",
-		name = "Hold book",
-		description = "Show a button beside the cargo hold's close button<br>that opens the Trawling Plus book.",
+		name = "Trawling log",
+		description = "Show a button beside the cargo hold's close button<br>that opens the trawling log.",
 		position = 54,
 		section = hudSection
 	)
@@ -941,6 +948,44 @@ public interface TrawlingPlusConfig extends Config
 	default boolean showNetCorrect()
 	{
 		return true;
+	}
+
+	@ConfigItem(
+		keyName = "highlightNets",
+		name = "Show",
+		description = "Outline a net that is lowered with nobody<br>operating it, or full.",
+		position = 54,
+		section = netHighlightSection
+	)
+	default boolean highlightNets()
+	{
+		return true;
+	}
+
+	@Alpha
+	@ConfigItem(
+		keyName = "idleNetColour",
+		name = "Unattended",
+		description = "Outline of a lowered net with nobody<br>operating it.",
+		position = 55,
+		section = netHighlightSection
+	)
+	default Color idleNetColour()
+	{
+		return new Color(230, 40, 40);
+	}
+
+	@Alpha
+	@ConfigItem(
+		keyName = "fullNetColour",
+		name = "Full",
+		description = "Outline of the lowered nets while they are full.",
+		position = 56,
+		section = netHighlightSection
+	)
+	default Color fullNetColour()
+	{
+		return new Color(255, 215, 0);
 	}
 
 	@ConfigItem(

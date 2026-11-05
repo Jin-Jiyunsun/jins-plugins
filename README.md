@@ -34,14 +34,17 @@ and keeps track of your nets, bait and cargo hold from a HUD on the boat.
   saved to your RuneLite profile for each account, which the total's "Reset lifetime" clears: hold
   Shift while right-clicking it to see that option. An optional info box shows the fish in your
   own nets.
-- **Catch book**: a button on the cargo hold opens a book of the fish you've caught this session
-  and in total, with a worker log of your and your crew's catches, time on the nets and bait used.
+- **Trawling log**: a button on the cargo hold opens a book of the fish you've caught this session
+  and in total, with a worker log of your and your crew's catches, time on the nets, your hardest
+  working crewmate and bait used. Shift right-click the button to reset the lifetime counts.
 - **Fishing spot arrow**: after sea spot fishing, an arrow beside your boat points
   the way back to the spot, such as after banking. It hides while you fish, near the spot, and when your
   hold is nearly full.
 - **Cargo hold highlight**: while sea spot fishing, your boat's cargo hold is outlined once
   your inventory is full, ready to empty your catch into. Like the arrow, it hides when your hold is
   nearly full.
+- **Net highlights**: a lowered net with nobody on it is outlined in red, and the nets in yellow once
+  they're full. On another player's boat only you count as being on a net.
 - **Side panel depth guide**: highlights which depth each trawling net should be set to, and ticks
   it once it's set correctly.
 - **Notifications**: optional alerts for full nets, a full cargo hold, a shoal about to leave its stop,
@@ -90,9 +93,10 @@ Every route was recorded in-game and is accurate to the tile when no smoothing i
 - **Cargo hold**: shows or hides the cargo hold display, in the heads up display section.
 - **Info boxes**: shows or hides the fish caught, total caught and fish in nets info boxes, in their
   own section.
-- **Hold book**: shows or hides the catch book button.
+- **Trawling log**: shows or hides the trawling log button.
 - **Fishing spot arrow**: shows or hides the fishing spot arrow and sets its colour.
 - **Cargo hold highlight**: shows or hides the cargo hold's outline and sets its colour.
+- **Net highlights**: shows or hides the net outlines and sets their colours.
 - **Arrow style**: arrows on the water can face the camera (the default), stand upright along the
   route, or lie flat on the water.
 - **Fish**: switch each fish on or off to focus on the ones you're after. A fish that's switched

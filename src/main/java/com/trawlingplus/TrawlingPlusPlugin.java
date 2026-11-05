@@ -45,6 +45,7 @@ import net.runelite.api.events.GameObjectSpawned;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.events.ItemContainerChanged;
+import net.runelite.api.events.MenuOpened;
 import net.runelite.api.events.NpcSpawned;
 import net.runelite.api.events.VarbitChanged;
 import net.runelite.api.events.WidgetClosed;
@@ -78,11 +79,13 @@ import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.input.KeyManager;
 import net.runelite.client.input.MouseManager;
+import net.runelite.client.ui.JagexColors;
 import net.runelite.client.ui.overlay.OverlayManager;
 import net.runelite.client.ui.overlay.OverlayMenuEntry;
 import net.runelite.client.ui.overlay.infobox.InfoBoxManager;
 import net.runelite.client.ui.overlay.worldmap.WorldMapPoint;
 import net.runelite.client.ui.overlay.worldmap.WorldMapPointManager;
+import net.runelite.client.util.ColorUtil;
 import net.runelite.client.util.QuantityFormatter;
 import net.runelite.client.util.Text;
 
@@ -176,6 +179,24 @@ public class TrawlingPlusPlugin extends Plugin
 		VarbitID.SAILING_SIDEPANEL_BOAT_TRAWLING_NET_1_DEPTH
 	};
 
+	// The trawling net objects by tier: the skiff's single net, and the sloop's starboard and port nets.
+	private static final Set<Integer> SINGLE_NETS = Set.of(ObjectID.SAILING_ROPE_TRAWLING_NET,
+		ObjectID.SAILING_LINEN_TRAWLING_NET, ObjectID.SAILING_HEMP_TRAWLING_NET, ObjectID.SAILING_COTTON_TRAWLING_NET);
+	private static final Set<Integer> STARBOARD_NETS = Set.of(ObjectID.SAILING_ROPE_TRAWLING_NET_3X8_STARBOARD,
+		ObjectID.SAILING_LINEN_TRAWLING_NET_3X8_STARBOARD, ObjectID.SAILING_HEMP_TRAWLING_NET_3X8_STARBOARD,
+		ObjectID.SAILING_COTTON_TRAWLING_NET_3X8_STARBOARD);
+	private static final Set<Integer> PORT_NETS = Set.of(ObjectID.SAILING_ROPE_TRAWLING_NET_3X8_PORT,
+		ObjectID.SAILING_LINEN_TRAWLING_NET_3X8_PORT, ObjectID.SAILING_HEMP_TRAWLING_NET_3X8_PORT,
+		ObjectID.SAILING_COTTON_TRAWLING_NET_3X8_PORT);
+	// The hotspot the sloop's starboard and port nets are built on, as the net slot varbits name them.
+	private static final int STARBOARD_HOTSPOT = 7;
+	private static final int PORT_HOTSPOT = 8;
+	// How far, in tiles, someone on a net can stand from the net's object.
+	private static final int NET_REACH_TILES = 2;
+	// How many ticks a lowered net goes unattended before it is outlined, so stepping on and off it every
+	// other tick to fish faster doesn't flash it.
+	private static final int NET_IDLE_GRACE_TICKS = 2;
+
 	// The nets share one catch of up to this many fish, however many are fitted.
 	private static final int NET_CAPACITY = 250;
 
@@ -189,6 +210,8 @@ public class TrawlingPlusPlugin extends Plugin
 	// found empty or raised.
 	private static final long FISH_LINE_LINGER_MILLIS = 60_000;
 
+	// Colour codes at the start of a chat line, as in "@mes_hl_red@Your net is not deep enough...".
+	private static final Pattern CHAT_COLOUR = Pattern.compile("^(?:@[a-z_]+@)+");
 	// "You catch four giant krill!", "You catch a haddock!", "Jolly Jim catches three giant krill!"
 	private static final Pattern CATCH = Pattern.compile("^(?:You catch|.+ catches) (\\S+) ");
 
@@ -215,6 +238,11 @@ public class TrawlingPlusPlugin extends Plugin
 	// The account's lifetime ticks on a net: the player's on any boat, and every crewmate's on the player's own.
 	private static final String LIFETIME_CAPTAIN_NET_KEY = "lifetimeNetTicksByCaptain";
 	private static final String LIFETIME_CREW_NET_KEY = "lifetimeNetTicksByCrew";
+	// Each crewmate's lifetime ticks on a net are kept under this key, plus their name.
+	private static final String LIFETIME_WORKER_KEY = "lifetimeNetTicks_";
+	// Set once an account's lifetime counts have had their one-off reset, so the fish counts from 1.4.1 start
+	// over with the Worker log's.
+	private static final String LIFETIME_FRESH_KEY = "lifetimeFreshStart";
 	// What anyone on a trawling net shows, the player or a crewmate, whatever the boat's size.
 	private static final Set<Integer> NET_ANIMATIONS = Set.of(
 		AnimationID.SAILING_HUMAN_TRAWLING_NET_KANDARIN_2X5_DROP_LEVEL01,
@@ -461,6 +489,13 @@ public class TrawlingPlusPlugin extends Plugin
 	private int fishInNets = -1;
 	// The tick of the last trawling catch, or -1 if none since starting.
 	private int lastCatchTick = -1;
+	// Net ticks since a shoal came into view, held for the captain and, by lifetime key, the crew, until a catch or an
+	// attempt in reach by that side proves the visit.
+	private int heldCaptainNetTicks;
+	private final Map<String, Integer> heldCrewNetTicks = new HashMap<>();
+	// Whether each side's visit has been proven, so its net ticks count straight away until no shoal is in view.
+	private boolean captainNetProven;
+	private boolean crewNetProven;
 	private String fishLabel = fishLabel(-1);
 	// When the nets were last emptied, found empty or raised, or -1.
 	private long fishActivityMillis = -1;
@@ -539,6 +574,12 @@ public class TrawlingPlusPlugin extends Plugin
 	private final Map<Integer, Integer> clickboxByView = new HashMap<>();
 	// The cargo hold on each boat in sight, by its world view.
 	private final Map<Integer, GameObject> holdByView = new HashMap<>();
+	// The trawling net objects on each boat, by the boat's world view id.
+	private final Map<Integer, Set<GameObject>> netsByView = new HashMap<>();
+	// The nets to outline this tick: true for full, false for lowered with nobody on it.
+	private final Map<GameObject, Boolean> netHighlights = new HashMap<>();
+	// The tick each lowered net was first seen with nobody on it, until someone is on it again.
+	private final Map<GameObject, Integer> netIdleSince = new HashMap<>();
 	private final Map<Integer, Shoal> shoals = new HashMap<>();
 	// How many of each fish the nets have caught, by the name a catch gives it, and of every fish together, since the
 	// client started. Kept while the plugin is switched off; only the total's Reset clears them.
@@ -555,6 +596,8 @@ public class TrawlingPlusPlugin extends Plugin
 	// the captain's and crew's, and the bait used. Saved now and then rather than on every catch, and always on
 	// logout or switching off.
 	private final Map<String, Integer> lifetimeUnsaved = new HashMap<>();
+	// The account profile last checked for its one-off lifetime reset.
+	private String freshChecked;
 
 	@Override
 	protected void startUp() throws IOException
@@ -1227,6 +1270,7 @@ public class TrawlingPlusPlugin extends Plugin
 			entities.remove(view.getId());
 			clickboxByView.remove(view.getId());
 			holdByView.remove(view.getId());
+			netsByView.remove(view.getId());
 			shoals.remove(view.getId());
 		}
 	}
@@ -1243,6 +1287,10 @@ public class TrawlingPlusPlugin extends Plugin
 		{
 			holdByView.put(object.getWorldView().getId(), object);
 		}
+		if (isNet(object.getId()) && object.getWorldView() != null)
+		{
+			netsByView.computeIfAbsent(object.getWorldView().getId(), view -> new HashSet<>()).add(object);
+		}
 	}
 
 	@Subscribe
@@ -1254,12 +1302,18 @@ public class TrawlingPlusPlugin extends Plugin
 			// Only clear it if it's still the current clickbox; mixed shoals swap objects in place.
 			clickboxByView.remove(object.getWorldView().getId(), object.getId());
 			holdByView.remove(object.getWorldView().getId(), object);
+			Set<GameObject> nets = netsByView.get(object.getWorldView().getId());
+			if (nets != null)
+			{
+				nets.remove(object);
+			}
 		}
 	}
 
 	@Subscribe
 	public void onGameTick(GameTick event)
 	{
+		freshStart();
 		if (client.getTickCount() % LIFETIME_SAVE_TICKS == 0)
 		{
 			saveLifetime();
@@ -1280,10 +1334,13 @@ public class TrawlingPlusPlugin extends Plugin
 		{
 			stopTracking();
 			showGuides = false;
+			netHighlights.clear();
+			netIdleSince.clear();
 			return;
 		}
 
 		countNetTime(own != null);
+		findNetHighlights(aboard, own != null);
 
 		// The boat's hold, looked for until it is found, which is once it has been opened or emptied into, and then
 		// kept; and whether the boat is still near the sea spots, while sea spot fishing. Both whatever the
@@ -1385,7 +1442,7 @@ public class TrawlingPlusPlugin extends Plugin
 			return;
 		}
 
-		// Shoals already in the scene when the plugin starts won't fire spawn events, so look for
+		// Shoals and nets already in the scene when the plugin starts won't fire spawn events, so look for
 		// them once. Each world entity's own scene is only a few tiles across, so this is cheap.
 		for (WorldEntity entity : top.worldEntities())
 		{
@@ -1412,6 +1469,10 @@ public class TrawlingPlusPlugin extends Plugin
 							if (object != null && isShoalClickbox(object.getId()))
 							{
 								clickboxByView.put(view.getId(), object.getId());
+							}
+							if (object != null && isNet(object.getId()))
+							{
+								netsByView.computeIfAbsent(view.getId(), id -> new HashSet<>()).add(object);
 							}
 						}
 					}
@@ -1949,7 +2010,8 @@ public class TrawlingPlusPlugin extends Plugin
 			return;
 		}
 
-		String message = Text.removeTags(event.getMessage());
+		// Some lines lead with a colour code such as "@mes_hl_red@", which removeTags leaves in.
+		String message = CHAT_COLOUR.matcher(Text.removeTags(event.getMessage())).replaceFirst("");
 		if (message.startsWith("Your crew start moving the contents of the cargo hold"))
 		{
 			// Asking the crew on the dock to move everything in the hold to the bank empties it. This is said
@@ -2012,6 +2074,16 @@ public class TrawlingPlusPlugin extends Plugin
 		// came from the nets.
 		Matcher catchLine = CATCH.matcher(message);
 		int catchCount = catchLine.find() ? number(catchLine.group(1)) : -1;
+		// A catch, or a net trying for a shoal in reach ("Your net is not deep enough to catch fish from the nearby
+		// bluefin shoal.", "Jolly Jim's net is too deep..."), shows that side is working a shoal rather than passing one.
+		if (catchCount > 0)
+		{
+			proveNetTime(message.startsWith("You catch"));
+		}
+		else if (message.contains("catch fish from the nearby"))
+		{
+			proveNetTime(message.startsWith("Your net"));
+		}
 		if (catchCount > 0)
 		{
 			countCatch(message.substring(catchLine.end()), catchCount, message.startsWith("You catch"));
@@ -2025,8 +2097,10 @@ public class TrawlingPlusPlugin extends Plugin
 			{
 				notifier.notify(config.notifyHoldFull(), "The cargo hold is full.");
 			}
-			else if (message.startsWith("Your net has no more space"))
+			else if (message.startsWith("Your net has no more space") && operatedNetAtDepth())
 			{
+				// A net at the wrong depth can catch a halved single fish, rounded down to none, which says the
+				// same, so it only counts from the net the player is on, set to the shoal's depth.
 				notifier.notify(config.notifyNetsFull(), "The trawling nets are full.");
 			}
 			return;
@@ -2040,9 +2114,11 @@ public class TrawlingPlusPlugin extends Plugin
 			return;
 		}
 
-		if (message.contains("baited a nearby"))
+		// "You bait a nearby <species> shoal..." or "<crewmate> has baited a nearby <species> shoal...".
+		if (message.startsWith("You bait a nearby") || message.contains("baited a nearby"))
 		{
 			baitAnnouncedTick = client.getTickCount();
+			lifetimeUnsaved.merge(LIFETIME_BAIT_KEY, 1, Integer::sum);
 			return;
 		}
 
@@ -2211,6 +2287,152 @@ public class TrawlingPlusPlugin extends Plugin
 		{
 			setFish(Math.min(NET_CAPACITY, fish));
 		}
+	}
+
+	/** The nets to outline: true for full, false for lowered with nobody on it. */
+	Map<GameObject, Boolean> getNetHighlights()
+	{
+		return netHighlights;
+	}
+
+	/**
+	 * Works out which of the boat's nets to outline: each lowered net, yellow while the nets are full (known only on
+	 * the player's own boat), otherwise red with nobody on it. On the player's own boat the crew count as on a net;
+	 * on another player's boat only the player does.
+	 */
+	private void findNetHighlights(WorldEntity boat, boolean ownDeck)
+	{
+		netHighlights.clear();
+		Set<GameObject> nets = netsByView.get(boat.getWorldView().getId());
+		if (nets == null || nets.isEmpty() || !config.highlightNets())
+		{
+			netIdleSince.clear();
+			return;
+		}
+
+		Set<GameObject> worked = new HashSet<>();
+		Player player = client.getLocalPlayer();
+		if (player != null && NET_ANIMATIONS.contains(player.getAnimation()))
+		{
+			markWorked(nets, player.getLocalLocation(), worked);
+		}
+		WorldView deck = boat.getWorldView();
+		if (ownDeck)
+		{
+			for (NPC npc : deck.npcs())
+			{
+				if (NET_ANIMATIONS.contains(npc.getAnimation()))
+				{
+					markWorked(nets, npc.getLocalLocation(), worked);
+				}
+			}
+		}
+
+		boolean full = ownDeck && netsFull();
+		int tick = client.getTickCount();
+		netIdleSince.keySet().retainAll(nets);
+		for (GameObject net : nets)
+		{
+			int slot = netSlot(net.getId());
+			boolean lowered = slot >= 0 && client.getVarbitValue(NET_DEPTHS[slot]) > 0;
+			if (!lowered || worked.contains(net))
+			{
+				netIdleSince.remove(net);
+			}
+			else
+			{
+				netIdleSince.putIfAbsent(net, tick);
+			}
+			if (!lowered)
+			{
+				continue;
+			}
+			if (full)
+			{
+				netHighlights.put(net, true);
+			}
+			else if (netIdleSince.containsKey(net) && tick - netIdleSince.get(net) >= NET_IDLE_GRACE_TICKS)
+			{
+				netHighlights.put(net, false);
+			}
+		}
+	}
+
+	/** Marks the net nearest someone on a net as worked, if they stand within reach of it. */
+	private static void markWorked(Set<GameObject> nets, LocalPoint at, Set<GameObject> worked)
+	{
+		GameObject net = netAt(nets, at);
+		if (net != null)
+		{
+			worked.add(net);
+		}
+	}
+
+	/** The net nearest a place, if within reach of it, or null. */
+	private static GameObject netAt(Set<GameObject> nets, LocalPoint at)
+	{
+		if (nets == null || at == null)
+		{
+			return null;
+		}
+		GameObject nearest = null;
+		long nearestSquared = Long.MAX_VALUE;
+		for (GameObject net : nets)
+		{
+			LocalPoint netAt = net.getLocalLocation();
+			long dx = netAt.getX() - at.getX();
+			long dy = netAt.getY() - at.getY();
+			long squared = dx * dx + dy * dy;
+			if (squared < nearestSquared)
+			{
+				nearestSquared = squared;
+				nearest = net;
+			}
+		}
+		long reach = (long) NET_REACH_TILES * Perspective.LOCAL_TILE_SIZE;
+		return nearestSquared <= reach * reach ? nearest : null;
+	}
+
+	/** Whether the player is on a net set to the nearest shoal's depth. */
+	private boolean operatedNetAtDepth()
+	{
+		Player player = client.getLocalPlayer();
+		WorldEntity boat = aboardBoat;
+		if (player == null || boat == null || !NET_ANIMATIONS.contains(player.getAnimation()))
+		{
+			return false;
+		}
+		GameObject net = netAt(netsByView.get(boat.getWorldView().getId()), player.getLocalLocation());
+		int slot = net == null ? -1 : netSlot(net.getId());
+		int wanted = getNearestDepth().netDepth();
+		return slot >= 0 && wanted > 0 && client.getVarbitValue(NET_DEPTHS[slot]) == wanted;
+	}
+
+	/**
+	 * The slot a net object is in, 0 or 1, for its depth varbit, or -1 if it isn't fitted. The skiff's single net is
+	 * whichever slot is filled; the sloop's are found by the hotspot each slot names.
+	 */
+	private int netSlot(int id)
+	{
+		if (SINGLE_NETS.contains(id))
+		{
+			return client.getVarbitValue(NET_SLOTS[0]) > 0 ? 0 : client.getVarbitValue(NET_SLOTS[1]) > 0 ? 1 : -1;
+		}
+		boolean starboard = STARBOARD_NETS.contains(id);
+		int hotspot = starboard ? STARBOARD_HOTSPOT : PORT_HOTSPOT;
+		for (int slot = 0; slot < NET_SLOTS.length; slot++)
+		{
+			if (client.getVarbitValue(NET_SLOTS[slot]) == hotspot)
+			{
+				return slot;
+			}
+		}
+		return -1;
+	}
+
+	private static boolean isNet(int id)
+	{
+		return SINGLE_NETS.contains(id) || STARBOARD_NETS.contains(id) || PORT_NETS.contains(id);
 	}
 
 	/**
@@ -2537,6 +2759,60 @@ public class TrawlingPlusPlugin extends Plugin
 		}
 	}
 
+	/** Puts Reset lifetime on the menu while Shift is held over the hold book's button. */
+	@Subscribe
+	public void onMenuOpened(MenuOpened event)
+	{
+		Point mouse = client.getMouseCanvasPosition();
+		if (!client.isKeyPressed(KeyCode.KC_SHIFT) || mouse == null || !holdBook.overButton(mouse.getX(), mouse.getY()))
+		{
+			return;
+		}
+		client.getMenu().createMenuEntry(-1)
+			.setOption(RESET_LIFETIME)
+			.setTarget(ColorUtil.wrapWithColorTag("Trawling Log", JagexColors.MENU_TARGET))
+			.setType(MenuAction.RUNELITE)
+			.onClick(entry -> resetLifetime());
+	}
+
+	/** Resets each account's lifetime counts once, the first time it is seen with the flag unset. */
+	private void freshStart()
+	{
+		String profile = configManager.getRSProfileKey();
+		if (profile == null || profile.equals(freshChecked))
+		{
+			return;
+		}
+		freshChecked = profile;
+		if (configManager.getRSProfileConfiguration(TrawlingPlusConfig.GROUP, LIFETIME_FRESH_KEY) == null)
+		{
+			resetLifetime();
+			configManager.setRSProfileConfiguration(TrawlingPlusConfig.GROUP, LIFETIME_FRESH_KEY, true);
+		}
+	}
+
+	/**
+	 * Every lifetime count: each fish, the captain's and crew's catches and time on nets, each crewmate's time on
+	 * nets, and the bait used.
+	 */
+	private void resetLifetime()
+	{
+		for (String kind : CAUGHT_FISH.keySet())
+		{
+			configManager.unsetRSProfileConfiguration(TrawlingPlusConfig.GROUP, lifetimeKey(kind));
+		}
+		Set<String> keys = workerKeys();
+		keys.addAll(List.of(LIFETIME_CAPTAIN_KEY, LIFETIME_CREW_KEY, LIFETIME_CAPTAIN_NET_KEY,
+			LIFETIME_CREW_NET_KEY, LIFETIME_BAIT_KEY));
+		lifetimeUnsaved.clear();
+		heldCaptainNetTicks = 0;
+		heldCrewNetTicks.clear();
+		for (String key : keys)
+		{
+			configManager.unsetRSProfileConfiguration(TrawlingPlusConfig.GROUP, key);
+		}
+	}
+
 	/**
 	 * Reset on the total's info box starts every count of fish caught over, and Reset lifetime, there while Shift
 	 * is held, every lifetime count.
@@ -2551,17 +2827,7 @@ public class TrawlingPlusPlugin extends Plugin
 
 		if (event.getEntry() == resetLifetimeEntry)
 		{
-			// Every lifetime count: each fish, the captain's and crew's catches and time on nets, and the bait used.
-			lifetimeUnsaved.clear();
-			for (String kind : CAUGHT_FISH.keySet())
-			{
-				configManager.unsetRSProfileConfiguration(TrawlingPlusConfig.GROUP, lifetimeKey(kind));
-			}
-			for (String key : List.of(LIFETIME_CAPTAIN_KEY, LIFETIME_CREW_KEY, LIFETIME_CAPTAIN_NET_KEY,
-				LIFETIME_CREW_NET_KEY, LIFETIME_BAIT_KEY))
-			{
-				configManager.unsetRSProfileConfiguration(TrawlingPlusConfig.GROUP, key);
-			}
+			resetLifetime();
 			return;
 		}
 
@@ -2581,7 +2847,7 @@ public class TrawlingPlusPlugin extends Plugin
 
 	/**
 	 * The hold book's pages: two pages to open the book, the fish caught since the counts were last reset, the
-	 * account's lifetime catches, each with a total, then the Worker log. Client thread only.
+	 * account's lifetime catches, each with a total, then the Worker log over two pages. Client thread only.
 	 */
 	List<BookPage> bookPages()
 	{
@@ -2622,11 +2888,11 @@ public class TrawlingPlusPlugin extends Plugin
 			BookPage.blank(),
 			BookPage.heading("Time on nets"),
 			BookPage.row("Captain", hoursMinutes(lifetime(LIFETIME_CAPTAIN_NET_KEY))),
-			BookPage.row("Crew", hoursMinutes(lifetime(LIFETIME_CREW_NET_KEY))),
-			BookPage.blank(),
-			BookPage.row("Bait usage", QuantityFormatter.formatNumber(lifetime(LIFETIME_BAIT_KEY)))));
+			BookPage.row("Crew", hoursMinutes(lifetime(LIFETIME_CREW_NET_KEY)))));
+		// The Worker log's second page, across from it, so it has no title of its own.
+		BookPage hardest = new BookPage("", hardestWorkerLines());
 		return List.of(cover, foreword, new BookPage("This session", session), new BookPage("Lifetime", life),
-			workers);
+			workers, hardest);
 	}
 
 	/** Ticks as hours and two-digit minutes, such as "12h 34m". */
@@ -2638,18 +2904,34 @@ public class TrawlingPlusPlugin extends Plugin
 
 	/**
 	 * Adds a tick on a net for the player, on any boat, and one for each crewmate on a net when the deck is the
-	 * player's own.
+	 * player's own, while a trawling shoal is in view. Until a catch or an attempt in reach by that side proves the
+	 * visit, its ticks are held back, and dropped if the shoal leaves view first, so passing a shoal isn't counted.
 	 */
 	private void countNetTime(boolean ownDeck)
 	{
 		Player player = client.getLocalPlayer();
+		if (!shoalInView())
+		{
+			heldCaptainNetTicks = 0;
+			heldCrewNetTicks.clear();
+			captainNetProven = false;
+			crewNetProven = false;
+			return;
+		}
 		if (player == null)
 		{
 			return;
 		}
 		if (NET_ANIMATIONS.contains(player.getAnimation()))
 		{
-			lifetimeUnsaved.merge(LIFETIME_CAPTAIN_NET_KEY, 1, Integer::sum);
+			if (captainNetProven)
+			{
+				lifetimeUnsaved.merge(LIFETIME_CAPTAIN_NET_KEY, 1, Integer::sum);
+			}
+			else
+			{
+				heldCaptainNetTicks++;
+			}
 		}
 
 		WorldView deck = player.getWorldView();
@@ -2657,18 +2939,105 @@ public class TrawlingPlusPlugin extends Plugin
 		{
 			return;
 		}
+		Map<String, Integer> into = crewNetProven ? lifetimeUnsaved : heldCrewNetTicks;
 		int crew = 0;
 		for (NPC npc : deck.npcs())
 		{
 			if (NET_ANIMATIONS.contains(npc.getAnimation()))
 			{
 				crew++;
+				if (npc.getName() != null)
+				{
+					into.merge(LIFETIME_WORKER_KEY + npc.getName(), 1, Integer::sum);
+				}
 			}
 		}
 		if (crew > 0)
 		{
-			lifetimeUnsaved.merge(LIFETIME_CREW_NET_KEY, crew, Integer::sum);
+			into.merge(LIFETIME_CREW_NET_KEY, crew, Integer::sum);
 		}
+	}
+
+	/**
+	 * Counts the captain's or the crew's net time held back for the shoal in view, and every tick of theirs on nets
+	 * after it while one stays in view.
+	 */
+	private void proveNetTime(boolean captain)
+	{
+		if (!shoalInView())
+		{
+			return;
+		}
+		if (captain && !captainNetProven)
+		{
+			captainNetProven = true;
+			lifetimeUnsaved.merge(LIFETIME_CAPTAIN_NET_KEY, heldCaptainNetTicks, Integer::sum);
+			heldCaptainNetTicks = 0;
+		}
+		else if (!captain && !crewNetProven)
+		{
+			crewNetProven = true;
+			heldCrewNetTicks.forEach((key, ticks) -> lifetimeUnsaved.merge(key, ticks, Integer::sum));
+			heldCrewNetTicks.clear();
+		}
+	}
+
+	/** Whether any trawling shoal is loaded in the scene, which time on nets needs to count. */
+	private boolean shoalInView()
+	{
+		// Kept from spawns whatever Show guides is set to, unlike the shoals followed for the guides.
+		return !clickboxByView.isEmpty();
+	}
+
+	/** Each crewmate's lifetime net time key in the account's profile, saved or not yet. */
+	private Set<String> workerKeys()
+	{
+		Set<String> keys = new HashSet<>();
+		String profile = configManager.getRSProfileKey();
+		if (profile != null)
+		{
+			keys.addAll(configManager.getRSProfileConfigurationKeys(TrawlingPlusConfig.GROUP, profile,
+				LIFETIME_WORKER_KEY));
+		}
+		for (String key : lifetimeUnsaved.keySet())
+		{
+			if (key.startsWith(LIFETIME_WORKER_KEY))
+			{
+				keys.add(key);
+			}
+		}
+		return keys;
+	}
+
+	/** The hardest worker page's lines: the crewmate longest on the nets, then the bait used. */
+	private List<BookPage.Line> hardestWorkerLines()
+	{
+		String hardest = null;
+		int most = 0;
+		for (String key : workerKeys())
+		{
+			int ticks = lifetime(key);
+			if (ticks > most)
+			{
+				most = ticks;
+				hardest = key.substring(LIFETIME_WORKER_KEY.length());
+			}
+		}
+		List<BookPage.Line> lines = new ArrayList<>();
+		lines.add(BookPage.heading("Hardest worker"));
+		if (hardest == null)
+		{
+			lines.add(BookPage.centred("None yet"));
+		}
+		else
+		{
+			lines.add(BookPage.centred(hardest));
+			lines.add(BookPage.centred(hoursMinutes(most)));
+		}
+		lines.add(BookPage.blank());
+		lines.add(BookPage.heading("Bait used"));
+		lines.add(BookPage.centred(QuantityFormatter.formatNumber(lifetime(LIFETIME_BAIT_KEY))));
+		return lines;
 	}
 
 	/** A lifetime count, by its key in the account's profile: what is saved there, and what hasn't been yet. */
@@ -2865,10 +3234,6 @@ public class TrawlingPlusPlugin extends Plugin
 			baitedShoal = nearestShoal;
 			baitedWasStopped = nearestShoal.stopped();
 			ticksSinceBait = 0;
-			if (ownBoat != null)
-			{
-				lifetimeUnsaved.merge(LIFETIME_BAIT_KEY, 1, Integer::sum);
-			}
 			if (holdTick != tick)
 			{
 				// The hold's contents sent on the same tick as the bait already have that offcut taken out.
@@ -3094,6 +3459,9 @@ public class TrawlingPlusPlugin extends Plugin
 		entities.clear();
 		clickboxByView.clear();
 		holdByView.clear();
+		netsByView.clear();
+		netHighlights.clear();
+		netIdleSince.clear();
 		shoals.clear();
 		showGuides = false;
 		stopTracking();

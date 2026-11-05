@@ -695,6 +695,13 @@ class HoldBook extends Overlay implements KeyListener
 		return bounds != null && bounds.contains(event.getPoint());
 	}
 
+	/** Whether the book's button is drawn under a point on the canvas. */
+	boolean overButton(int x, int y)
+	{
+		Rectangle button = buttonBounds;
+		return button != null && button.contains(x, y);
+	}
+
 	/**
 	 * The mouse, handled as the Hub's Gauntlet Chest Popup handles its popup. Only left presses count, and none while
 	 * the game's right-click menu is open (as of the last frame drawn), so picking a menu option over the book still

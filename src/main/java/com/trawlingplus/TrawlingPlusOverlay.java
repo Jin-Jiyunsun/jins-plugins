@@ -19,6 +19,8 @@ import java.awt.image.BufferedImage;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import javax.inject.Inject;
@@ -62,6 +64,11 @@ class TrawlingPlusOverlay extends Overlay
 	// How far faded in the hold's outline is and when that was worked out, or -1 once faded out.
 	private double holdOutlineFade;
 	private long lastHoldOutlineMillis = -1;
+	// How far faded in each net's outline is, and the colour it last had so it can fade out in it; when that was
+	// worked out, or -1 once all are faded out.
+	private final Map<GameObject, Double> netFades = new HashMap<>();
+	private final Map<GameObject, Color> netColours = new HashMap<>();
+	private long lastNetFadeMillis = -1;
 	private final Polygon stopCircle = new Polygon();
 	private final Path2D.Double stopCurve = new Path2D.Double();
 	// Which of a circle's points each placed corner is, so a gap where some were off the map is known.
@@ -565,6 +572,7 @@ class TrawlingPlusOverlay extends Overlay
 	private Dimension draw(Graphics2D graphics)
 	{
 		drawHoldOutline();
+		drawNetOutlines();
 		WorldView top = client.getTopLevelWorldView();
 		frameBeyond = top == null ? 0 : tilesBeyondScene(top);
 		WorldEntity afloat = waterKnown || top == null ? null : plugin.getBoat();
@@ -2184,6 +2192,52 @@ class TrawlingPlusOverlay extends Overlay
 				}
 			}
 		}
+	}
+
+	/**
+	 * Outlines each net that needs the player: yellow while the nets are full, red while lowered and unattended.
+	 * Each fades in and out with Animated, like the hold's.
+	 */
+	private void drawNetOutlines()
+	{
+		Map<GameObject, Boolean> nets = plugin.getNetHighlights();
+		// Nothing to show or fade out, as nearly always: no further work this frame.
+		if (nets.isEmpty() && netFades.isEmpty() || !config.highlightNets())
+		{
+			netFades.clear();
+			netColours.clear();
+			lastNetFadeMillis = -1;
+			return;
+		}
+		long now = System.currentTimeMillis();
+		double step = !config.animatedHud() ? 1 : lastNetFadeMillis < 0 ? 0
+			: Math.max(0, now - lastNetFadeMillis) / HELM_FADE_MILLIS;
+		Color full = config.fullNetColour();
+		Color idle = config.idleNetColour();
+		for (Map.Entry<GameObject, Boolean> net : nets.entrySet())
+		{
+			netColours.put(net.getKey(), net.getValue() ? full : idle);
+			netFades.putIfAbsent(net.getKey(), 0.0);
+		}
+		Iterator<Map.Entry<GameObject, Double>> fades = netFades.entrySet().iterator();
+		while (fades.hasNext())
+		{
+			Map.Entry<GameObject, Double> fade = fades.next();
+			GameObject net = fade.getKey();
+			double through = nets.containsKey(net) ? Math.min(1, fade.getValue() + step)
+				: Math.max(0, fade.getValue() - step);
+			if (through <= 0 && !nets.containsKey(net))
+			{
+				fades.remove();
+				netColours.remove(net);
+				continue;
+			}
+			fade.setValue(through);
+			double shown = through * through * (3 - 2 * through);
+			outlineRenderer.drawOutline(net, HOLD_OUTLINE_WIDTH, withOpacity(netColours.get(net), shown),
+				HOLD_OUTLINE_FEATHER);
+		}
+		lastNetFadeMillis = netFades.isEmpty() ? -1 : now;
 	}
 
 	/**

@@ -1560,11 +1560,12 @@ class HoldBook extends Overlay implements KeyListener
 		return bounds != null && bounds.contains(event.getPoint());
 	}
 
-	/** Whether the book's button is drawn under a point on the canvas. */
+	/** Whether the book's button shows under a point on the canvas, not hidden behind the open book. */
 	boolean overButton(int x, int y)
 	{
 		Rectangle button = buttonBounds;
-		return button != null && button.contains(x, y);
+		Rectangle book = bookBounds;
+		return button != null && button.contains(x, y) && !(open && book != null && book.contains(x, y));
 	}
 
 	/**
@@ -1584,7 +1585,8 @@ class HoldBook extends Overlay implements KeyListener
 			{
 				return event;
 			}
-			if (inside(buttonBounds, event))
+			// The open book covers the button wherever they overlap.
+			if (inside(buttonBounds, event) && !(open && inside(bookBounds, event)))
 			{
 				setOpen(!open);
 				if (open && !bookSeen())

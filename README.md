@@ -5,56 +5,60 @@
 </p>
 
 Shows the routes that deep sea trawling shoals swim, so you can find and follow one without
-guessing where it's headed next. Marks stops, fishing range and dangerous water along the way,
-and keeps track of your nets, bait and cargo hold from a HUD on the boat.
+guessing where it's headed next. Marks stops, fishing range and dangerous water, tracks your nets,
+bait and cargo hold from a display on the boat, and keeps a trawling log of everything you catch.
 
 ## Features
 
-- **Shoal routes drawn as a loop or as the next few stops**: every route is drawn in game and
-  optionally on the world map/minimap, with stops marked and an arrow showing which way the
-  nearest shoal is currently heading. The plugin automatically shows you the nearest route.
-- **Fishable area**: a square or circle round the nearest shoal showing how close your boat needs
-  to be to fish it, plus a dot on the boat showing whether you're in range. Both change to a
-  special colour while the shoal is shimmering, glistening or vibrant.
-- **Dangerous water**: stretches of route that pass close to where sea creatures that attack boats
-  spawn are drawn in red on the maps or on the route in the water, and the world map marks each
-  spawn with a skull icon.
-- **Heads up display**: a pill on the boat showing time left at the current stop, fish caught in
-  the nets, bait remaining, a hold-full warning and each net's depth. When all it would show is an
-  empty or unknown fish count, it hides while you're not trawling: no net lowered, no fish in the
-  nets or hold, and no catch for 3 minutes.
-- **Cargo hold display**: while sea spot fishing with a rod, net, harpoon, lobster pot or
-  karambwan vessel, a second pill shows how many fish are in your boat's hold, out of how
-  many fit alongside the rest of your cargo, and how many of each of the last three kinds you put
-  in, with any others together. It stacks above the heads up display, works on a raft too, and
-  warns when the hold is full. Open the hold once each session so it can count what's inside.
-- **Info boxes**: an info box for each fish your nets have caught, on your boat or anyone else's,
-  with your crew's catches on your own boat, plus one for every fish together. The counts last until the client is
-  closed; right-click the total to reset them. Hovering over a box also shows your lifetime count,
-  saved to your RuneLite profile for each account, which the total's "Reset lifetime" clears: hold
-  Shift while right-clicking it to see that option. An optional info box shows the fish in your
-  own nets.
-- **Trawling log**: a button on the cargo hold opens a book of the fish you've caught this session
-  and in total, with a worker log of your and your crew's catches, time on the nets, your hardest
-  working crewmate and top catcher, and statistics: fish per hour this session and lifetime, while
-  trawling (trips to bank included) and on the nets, Trawler's trust's extra fish, nets filled from
-  empty, your best session and bait used. Click the ribbon at the top of a page to bookmark it, so
-  the book opens there each session. Shift right-click the button to reset the lifetime counts.
-- **Fishing spot arrow**: after sea spot fishing, an arrow beside your boat points
-  the way back to the spot, such as after banking. It hides while you fish, near the spot, and when your
-  hold is nearly full.
-- **Cargo hold highlight**: while sea spot fishing, your boat's cargo hold is outlined once
-  your inventory is full, ready to empty your catch into. Like the arrow, it hides when your hold is
-  nearly full.
-- **Net highlights**: a lowered net with nobody on it is outlined in red, and the nets in yellow once
-  they're full. On another player's boat only you count as being on a net.
-- **Side panel depth guide**: highlights which depth each trawling net should be set to, and ticks
-  it once it's set correctly.
-- **Notifications**: optional alerts for full nets, a full cargo hold, a shoal about to leave its stop,
-  a shoal changing to a depth your nets aren't set to, a shoal turning shimmering, glistening or
-  vibrant, or being knocked off the net.
-- **Other players' boats**: on someone else's boat, the routes, fishable area, side panel depth guide
-  and notifications still work. The heads up display and cargo hold features are for your own boat only.
+### Routes
+
+- **Shoal routes**: the nearest shoal's route, drawn in the water as a loop or the next few stops,
+  with stops marked and an arrow showing which way the shoal is heading. Also optionally on the minimap and
+  world map.
+- **Fishable area**: roughly how close your boat needs to be to fish the nearest shoal, with a dot on the
+  boat showing whether you're in range. Turns gold while the shoal is shimmering, glistening or
+  vibrant.
+- **Dangerous water**: route stretches near sea creatures that can attack boats are drawn in red, with
+  skulls on the world map.
+- **Side panel depth guide**: highlights the depth each net should be at, and ticks it once it is.
+
+### On your boat
+
+- **Heads up display**: time left at the stop, fish in the nets, bait left, net depths and a
+  hold-full warning. Hides while you're not trawling.
+- **Cargo hold display**: while sea spot fishing (such as anglerfish), how full your hold is and the last few kinds of
+  fish you put in. Starts tracking once you view the cargo hold's contents.
+- **Fishing spot arrow**: points back to your sea spot after you leave it, such as to bank.
+- **Cargo hold highlight**: outlines your hold once your inventory is full while sea spot fishing.
+- **Net highlights**: a lowered net with nobody on it is outlined in red, and full nets in yellow.
+
+### Tracking
+
+- **Info boxes**: fish caught this session by kind and in total, with your lifetime count on hover,
+  and optionally the fish in your nets.
+- **Trawling log**: a book on the cargo hold screen. See below.
+
+### Notifications
+
+Optional alerts for full nets, a full hold, a shoal about to leave its stop or changing to the
+wrong depth, a shoal turning special, or being knocked off the net.
+
+On someone else's boat, the routes, fishable area, depth guide and notifications still work.
+
+## Trawling log
+
+<!-- trawling log webp -->
+
+A button on the cargo hold screen opens a book of your trawling:
+
+- **Catches**: fish caught this session and in your lifetime, with stars for lifetime milestones.
+- **Statistics**: fish per hour, Trawler's trust's extra fish, nets filled, your best session and
+  bait used.
+- **Worker log**: your and your crew's catches, time on the nets, and your hardest working and top
+  catching crewmates.
+- **Bookmark**: click the ribbon on a page to set the page the book will open to at the start of each session.
+
+Shift right-click the button or the total info box to reset the lifetime counts.
 
 <p align="center">
   <img width="800" height="669" alt="nextstop" src="https://github.com/user-attachments/assets/0bc124e7-0984-4843-bc2c-130bedfb8747" />
@@ -73,39 +77,14 @@ Every route was recorded in-game and is accurate to the tile when no smoothing i
 
 ## Settings
 
-- **Show guides**: whether route lines, arrows and stop markers show all the time or only while
-  your boat has trawling nets fitted.
-- **Show on maps**: minimap, world map, both or off.
+Highly customisable: almost every feature can be switched off or recoloured. Here's a quick rundown of some settings:
+
+- **Show guides**: show routes all the time, or only while your boat has trawling nets fitted.
 - **Route display**: the whole route, or only the next few stops.
-- **Show danger**: where dangerous water is marked in red: on the route in the water, on the maps,
-  both or off.
-- **Clear around boat**: hides the route line, direction arrows and stops under your boat, fading
-  them out around its hull.
-- Each part of the display is toggleable. The route line, direction arrows, stops, the shoal's
-  heading arrow, the fishable area, the heads up display and the side panel have their own
-  section in the config panel.
-- **Special colour**: the colours the fishable area and fishing point turn while the shoal is
-  shimmering, glistening or vibrant, in the fishable area section. Gold by default.
-- **Display position**: the heads up display can sit at the helm, the bow, above the sails or over
-  the shoal.
-- **Smooth position**: the heads up display moves smoothly with the boat.
-- **Timer bar**: moves the game's stop timer bar from over the shoal to the bottom of the heads up
-  display, sized to match it.
-- **Animated**: the heads up display fades its lines in and out and grows to fit them. Turn it off
-  for instant changes.
-- **Cargo hold**: shows or hides the cargo hold display, in the heads up display section.
-- **Info boxes**: shows or hides the fish caught, total caught and fish in nets info boxes, in their
-  own section.
-- **Trawling log**: shows or hides the trawling log button, in its own section, with switches for
-  the lifetime stars, for drawing the book with your resource pack's sprites (off by default) and
-  for animating the cover and page turns.
-- **Fishing spot arrow**: shows or hides the fishing spot arrow and sets its colour.
-- **Cargo hold highlight**: shows or hides the cargo hold's outline and sets its colour.
-- **Net highlights**: shows or hides the net outlines and sets their colours.
-- **Arrow style**: arrows on the water can face the camera (the default), stand upright along the
-  route, or lie flat on the water.
-- **Fish**: switch each fish on or off to focus on the ones you're after. A fish that's switched
-  off has its routes, shoals and map markers hidden.
+- **Show danger**: mark dangerous water on the route, the maps, both or neither.
+- **Display position**: put the heads up display at the helm, bow, sails or over the shoal.
+- **Timer bar**: move the game's stop timer bar into the heads up display.
+- **Fish**: switch each fish off to hide its routes and shoals.
 
 ### License
 

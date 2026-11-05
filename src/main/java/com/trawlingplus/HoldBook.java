@@ -4,9 +4,14 @@ import java.awt.AlphaComposite;
 import java.awt.Color;
 import java.awt.Composite;
 import java.awt.Dimension;
+import java.awt.GradientPaint;
 import java.awt.Graphics2D;
 import java.awt.Image;
+import java.awt.Paint;
 import java.awt.Rectangle;
+import java.awt.RenderingHints;
+import java.awt.Shape;
+import java.awt.geom.Path2D;
 import java.awt.event.KeyEvent;
 import java.awt.event.MouseEvent;
 import java.awt.image.BufferedImage;
@@ -147,6 +152,22 @@ class HoldBook extends Overlay implements KeyListener
 	private static final int NUMBER_INSET = 10;
 	private static final int CORNER_INSET = 6;
 
+	// A page turn: the leaf swings over the spine in this long, easing in and out, drawn in one-pixel strips, each
+	// taller the further it stands off the page, up to this share taller at the leaf's outer edge when upright.
+	private static final long TURN_MILLIS = 350;
+	private static final double TURN_LIFT = 0.15;
+	// The leaf darkens as it stands up, more towards the fold, and casts a shadow this wide on the page it passes over.
+	private static final float LEAF_SHADE = 0.3f;
+	private static final float FOLD_SHADE = 0.15f;
+	private static final float LEAF_SHADOW = 0.25f;
+	private static final int LEAF_SHADOW_WIDTH = 24;
+	private static final int PAGE_HEIGHT = PAGE_BOTTOM - PAGE_TOP;
+	// A leaf side is a row taller than its page, for the bookmark ribbon hanging a pixel above the page's top.
+	private static final int LEAF_HEIGHT = PAGE_HEIGHT + 1;
+	// From the middle of the spine to a page's inner edge.
+	private static final double SPINE_MIDDLE = (LEFT_PAGE_RIGHT + RIGHT_PAGE_LEFT) / 2.0;
+	private static final double LEAF_GAP = RIGHT_PAGE_LEFT - SPINE_MIDDLE;
+
 	// The button is centred on a space the size of the hold's own close button, just left of it; where that can't be
 	// found, where the close button usually is, from the frame's top right. It is the Collections Logged book
 	// (25 x 25) with the Fishing skill icon's fish on its cover: the icon's rod and hook (its top 8 rows) cut off, the
@@ -262,6 +283,12 @@ class HoldBook extends Overlay implements KeyListener
 	private volatile boolean open;
 	// The left page of the spread showing.
 	private volatile int spread;
+	// The left page of the spread last turned from, -1 for none, and when that turn started.
+	private volatile int turnFrom = -1;
+	private volatile long turnStart;
+	// The two sides of the turning leaf, parchment and page, drawn again each frame of a turn.
+	private BufferedImage leafRight;
+	private BufferedImage leafLeft;
 	// Whether the book has been opened since the plugin started, after which it opens where it was left.
 	private volatile boolean openedThisSession;
 	// The bookmarked spread's left page, -1 for none, or null until read from the config.
@@ -288,6 +315,9 @@ class HoldBook extends Overlay implements KeyListener
 	{
 		open = false;
 		spread = 0;
+		turnFrom = -1;
+		leafRight = null;
+		leafLeft = null;
 		openedThisSession = false;
 		bookmark = null;
 		seen = null;
@@ -394,55 +424,239 @@ class HoldBook extends Overlay implements KeyListener
 		}
 		List<BookPage> showing = pages;
 		int first = Math.min(spread, lastSpread(showing.size()));
-		int textWidth = PAGE_WIDTH - 2 * TEXT_INSET;
+		int from = turnFrom;
+		long turned = System.currentTimeMillis() - turnStart;
+		boolean turning = from >= 0 && from != first && from < showing.size() && turned < TURN_MILLIS;
+		// While turning, the pages either side of the leaf: the lower spread's left page and the higher one's right.
+		int lower = turning ? Math.min(from, first) : first;
+		int higher = turning ? Math.max(from, first) : first;
 		int top = y + PAGE_TOP + TITLE_INSET;
-		drawPage(graphics, showing, first, x + LEFT_PAGE_LEFT + TEXT_INSET, top, textWidth);
-		drawPage(graphics, showing, first + 1, x + RIGHT_PAGE_LEFT + TEXT_INSET, top, textWidth);
-		if (!menuOpen)
+		drawPage(graphics, showing, lower, x + LEFT_PAGE_LEFT + TEXT_INSET, top);
+		drawPage(graphics, showing, higher + 1, x + RIGHT_PAGE_LEFT + TEXT_INSET, top);
+		if (!menuOpen && !turning)
 		{
 			showTip(first, mouseX - (x + LEFT_PAGE_LEFT + TEXT_INSET), mouseY - top);
 			showTip(first + 1, mouseX - (x + RIGHT_PAGE_LEFT + TEXT_INSET), mouseY - top);
 		}
 
-		Rectangle closeButton = new Rectangle(x + RIGHT_PAGE_RIGHT - CORNER_INSET - close.getWidth(),
-			y + PAGE_TOP + CORNER_INSET, close.getWidth(), close.getHeight());
-		graphics.drawImage(closeButton.contains(mouseX, mouseY) ? closeHovered : close, closeButton.x, closeButton.y,
-			null);
-		closeBounds = closeButton;
-
+		// The buttons belong to their pages and turn with them, uncovering the next page's as the leaf lifts. Hovering
+		// shows only while no page is turning; clicks go to the spread being turned to.
+		int hoverX = turning || menuOpen ? Integer.MIN_VALUE : mouseX;
+		drawLeftButtons(graphics, lower, x + LEFT_PAGE_LEFT, y + PAGE_TOP, hoverX, mouseY);
+		drawRightButtons(graphics, higher, showing.size(), x + RIGHT_PAGE_LEFT, y + PAGE_TOP, hoverX, mouseY);
+		closeBounds = closeAt(x + RIGHT_PAGE_LEFT, y + PAGE_TOP);
 		// The book opens on the cover anyway, so the first spread has no bookmark.
-		bookmarkBounds = first == 0 ? null
-			: drawBookmark(graphics, x + LEFT_PAGE_LEFT + RIBBON_LEFT, y + PAGE_TOP - 1, first, mouseX, mouseY);
+		bookmarkBounds = first == 0 ? null : ribbonAt(x + LEFT_PAGE_LEFT, y + PAGE_TOP);
+		leftBounds = first == 0 ? null : leftArrowAt(x + LEFT_PAGE_LEFT, y + PAGE_TOP);
+		rightBounds = first + 2 < showing.size() ? rightArrowAt(x + RIGHT_PAGE_LEFT, y + PAGE_TOP) : null;
+		if (bookmarkBounds != null && bookmarkBounds.contains(hoverX, mouseY))
+		{
+			tooltipManager.add(new Tooltip(bookmarkedSpread() == first ? UNBOOKMARK_TIP : BOOKMARK_TIP));
+		}
 
-		int arrowY = y + PAGE_BOTTOM - CORNER_INSET - arrowLeft.getHeight();
-		leftBounds = first > 0 ? drawArrow(graphics, arrowLeft, x + LEFT_PAGE_LEFT + CORNER_INSET, arrowY) : null;
-		rightBounds = first + 2 < showing.size()
-			? drawArrow(graphics, arrowRight, x + RIGHT_PAGE_RIGHT - CORNER_INSET - arrowRight.getWidth(), arrowY)
-			: null;
+		if (turning)
+		{
+			double eased = (1 - Math.cos(Math.PI * turned / TURN_MILLIS)) / 2;
+			// Lying on the right page at 0, on the left at pi.
+			double angle = Math.PI * (first > from ? eased : 1 - eased);
+			drawLeaf(graphics, showing, lower + 1, higher, angle, x, y);
+		}
 		return null;
 	}
 
-	/**
-	 * The bookmark ribbon hanging from the top of the left page, red when this spread is the one marked, with a
-	 * tooltip saying what clicking it does.
-	 */
-	private Rectangle drawBookmark(Graphics2D graphics, int x, int y, int first, int mouseX, int mouseY)
+	/** A spread's left page buttons, the page's top left given: the back arrow and the bookmark, past the cover. */
+	private void drawLeftButtons(Graphics2D graphics, int first, int pageX, int pageY, int mouseX, int mouseY)
 	{
-		Rectangle bounds = new Rectangle(x, y, RIBBON_WIDTH, RIBBON_HEIGHT);
+		if (first == 0)
+		{
+			return;
+		}
+		Rectangle arrow = leftArrowAt(pageX, pageY);
+		graphics.drawImage(arrowLeft, arrow.x, arrow.y, null);
+		Rectangle ribbon = ribbonAt(pageX, pageY);
+		drawBookmark(graphics, ribbon.x, ribbon.y, first, ribbon.contains(mouseX, mouseY));
+	}
+
+	/** A spread's right page buttons, the page's top left given: the close button, and the next arrow if any. */
+	private void drawRightButtons(Graphics2D graphics, int first, int pageCount, int pageX, int pageY, int mouseX,
+		int mouseY)
+	{
+		Rectangle cross = closeAt(pageX, pageY);
+		graphics.drawImage(cross.contains(mouseX, mouseY) ? closeHovered : close, cross.x, cross.y, null);
+		if (first + 2 < pageCount)
+		{
+			Rectangle arrow = rightArrowAt(pageX, pageY);
+			graphics.drawImage(arrowRight, arrow.x, arrow.y, null);
+		}
+	}
+
+	private Rectangle closeAt(int pageX, int pageY)
+	{
+		return new Rectangle(pageX + PAGE_WIDTH - CORNER_INSET - close.getWidth(), pageY + CORNER_INSET,
+			close.getWidth(), close.getHeight());
+	}
+
+	private static Rectangle ribbonAt(int pageX, int pageY)
+	{
+		return new Rectangle(pageX + RIBBON_LEFT, pageY - 1, RIBBON_WIDTH, RIBBON_HEIGHT);
+	}
+
+	private Rectangle leftArrowAt(int pageX, int pageY)
+	{
+		return new Rectangle(pageX + CORNER_INSET, pageY + PAGE_HEIGHT - CORNER_INSET - arrowLeft.getHeight(),
+			arrowLeft.getWidth(), arrowLeft.getHeight());
+	}
+
+	private Rectangle rightArrowAt(int pageX, int pageY)
+	{
+		return new Rectangle(pageX + PAGE_WIDTH - CORNER_INSET - arrowRight.getWidth(),
+			pageY + PAGE_HEIGHT - CORNER_INSET - arrowLeft.getHeight(), arrowRight.getWidth(), arrowRight.getHeight());
+	}
+
+	/**
+	 * The turning leaf, its right side the page given lying on the right, its left side the page lying on the left,
+	 * at the given angle over the spine (0 lying right, pi lying left). Drawn a pixel column at a time from the side
+	 * facing up, each column taller the further it stands off the book, as if lifting towards the viewer, then
+	 * shaded, with a shadow cast on the page beyond its edge.
+	 */
+	private void drawLeaf(Graphics2D graphics, List<BookPage> showing, int rightPage, int leftPage, double angle, int x,
+		int y)
+	{
+		double cos = Math.cos(angle);
+		double sin = Math.sin(angle);
+		boolean facingRight = cos >= 0;
+		BufferedImage face = leafSide(showing, facingRight ? rightPage : leftPage, facingRight);
+		double spine = x + SPINE_MIDDLE;
+		double middleY = y + PAGE_TOP - 1 + LEAF_HEIGHT / 2.0;
+		double reach = LEAF_GAP + PAGE_WIDTH;
+		double lift = TURN_LIFT * sin / reach;
+		double hinge = spine + LEAF_GAP * cos / (1 - lift * LEAF_GAP);
+		double edge = spine + reach * cos / (1 - lift * reach);
+		double hingeScale = 1 / (1 - lift * LEAF_GAP);
+		double edgeScale = 1 / (1 - lift * reach);
+		float standing = (float) (1 - Math.abs(cos));
+
+		Paint paint = graphics.getPaint();
+		Shape clip = graphics.getClip();
+		Object interpolation = graphics.getRenderingHint(RenderingHints.KEY_INTERPOLATION);
+
+		// The shadow, on the page beyond the leaf's edge, fading away from it.
+		double shadowEnd = edge + (facingRight ? 1 : -1) * LEAF_SHADOW_WIDTH * sin;
+		int pageLeft = x + (facingRight ? RIGHT_PAGE_LEFT : LEFT_PAGE_LEFT);
+		graphics.clipRect(pageLeft, y + PAGE_TOP, PAGE_WIDTH, PAGE_HEIGHT);
+		graphics.setPaint(new GradientPaint((float) edge, 0, new Color(0, 0, 0, LEAF_SHADOW * (float) sin),
+			(float) shadowEnd, 0, new Color(0, 0, 0, 0)));
+		int shadowLeft = (int) Math.floor(Math.min(edge, shadowEnd));
+		graphics.fillRect(shadowLeft, y + PAGE_TOP, (int) Math.ceil(Math.max(edge, shadowEnd)) - shadowLeft, PAGE_HEIGHT);
+		graphics.setClip(clip);
+
+		// Each pixel column: how far along the leaf it shows, from where it sits off the spine.
+		graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+		int start = (int) Math.floor(Math.min(hinge, edge));
+		int end = (int) Math.ceil(Math.max(hinge, edge));
+		for (int column = start; column < end; column++)
+		{
+			double offset = column + 0.5 - spine;
+			double along = offset / (cos + lift * offset);
+			if (!(along >= LEAF_GAP && along < reach))
+			{
+				continue;
+			}
+			int source = Math.min(PAGE_WIDTH - 1, (int) (along - LEAF_GAP));
+			if (!facingRight)
+			{
+				source = PAGE_WIDTH - 1 - source;
+			}
+			double height = LEAF_HEIGHT / (1 - lift * along);
+			int columnTop = (int) Math.round(middleY - height / 2);
+			int columnBottom = (int) Math.round(middleY + height / 2);
+			graphics.drawImage(face, column, columnTop, column + 1, columnBottom, source, 0, source + 1, LEAF_HEIGHT,
+				null);
+		}
+		if (interpolation != null)
+		{
+			graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION, interpolation);
+		}
+
+		// Darker the more upright it stands, and darker still by the fold: over the page, below the ribbon's top row.
+		Path2D.Double outline = new Path2D.Double();
+		outline.moveTo(hinge, middleY - (LEAF_HEIGHT / 2.0 - 1) * hingeScale);
+		outline.lineTo(edge, middleY - (LEAF_HEIGHT / 2.0 - 1) * edgeScale);
+		outline.lineTo(edge, middleY + LEAF_HEIGHT / 2.0 * edgeScale);
+		outline.lineTo(hinge, middleY + LEAF_HEIGHT / 2.0 * hingeScale);
+		outline.closePath();
+		float shade = LEAF_SHADE * standing;
+		graphics.setPaint(new GradientPaint((float) hinge, 0, new Color(0, 0, 0, shade + FOLD_SHADE * (float) sin),
+			(float) edge, 0, new Color(0, 0, 0, shade)));
+		graphics.fill(outline);
+		graphics.setPaint(paint);
+	}
+
+	/**
+	 * One side of the turning leaf: the page's parchment from the frame, a row down, with the page and its buttons
+	 * drawn on it.
+	 */
+	private BufferedImage leafSide(List<BookPage> showing, int page, boolean right)
+	{
+		BufferedImage side = right ? leafRight : leafLeft;
+		if (side == null)
+		{
+			side = new BufferedImage(PAGE_WIDTH, LEAF_HEIGHT, BufferedImage.TYPE_INT_ARGB);
+		}
+		Graphics2D g = side.createGraphics();
+		g.setComposite(AlphaComposite.Clear);
+		g.fillRect(0, 0, PAGE_WIDTH, LEAF_HEIGHT);
+		g.setComposite(AlphaComposite.SrcOver);
+		int pageLeft = right ? RIGHT_PAGE_LEFT : LEFT_PAGE_LEFT;
+		g.drawImage(frame, 0, 1, PAGE_WIDTH, LEAF_HEIGHT, pageLeft, PAGE_TOP, pageLeft + PAGE_WIDTH, PAGE_BOTTOM, null);
+		BufferedImage content = pageImage(showing, page);
+		if (content != null)
+		{
+			g.drawImage(content, 0, 1 + TITLE_INSET, null);
+		}
+		if (right)
+		{
+			drawRightButtons(g, page - 1, showing.size(), 0, 1, Integer.MIN_VALUE, 0);
+		}
+		else
+		{
+			drawLeftButtons(g, page, 0, 1, Integer.MIN_VALUE, 0);
+		}
+		g.dispose();
+		if (right)
+		{
+			leafRight = side;
+		}
+		else
+		{
+			leafLeft = side;
+		}
+		return side;
+	}
+
+	/** Starts turning from one spread to another, which then shows. */
+	private void turn(int from, int to)
+	{
+		if (from == to)
+		{
+			return;
+		}
+		turnStart = System.currentTimeMillis();
+		turnFrom = config.animatedBook() ? from : -1;
+		spread = to;
+	}
+
+	/** The bookmark ribbon hanging from the top of a spread's left page, red when that spread is the one marked. */
+	private void drawBookmark(Graphics2D graphics, int x, int y, int first, boolean hovered)
+	{
 		int marked = bookmarkedSpread();
 		boolean set = marked == first;
-		boolean hovered = !menuOpen && bounds.contains(mouseX, mouseY);
 		graphics.setColor(set ? (hovered ? RIBBON_SET_HOVERED : RIBBON_SET)
 			: hovered ? RIBBON_HOVERED : marked >= 0 ? RIBBON_ELSEWHERE : RIBBON_UNSET);
 		int middle = x + RIBBON_WIDTH / 2;
 		graphics.fillPolygon(new int[]{x, x + RIBBON_WIDTH, x + RIBBON_WIDTH, middle + 1, middle, x},
 			new int[]{y, y, y + RIBBON_HEIGHT, y + RIBBON_HEIGHT - RIBBON_NOTCH, y + RIBBON_HEIGHT - RIBBON_NOTCH,
 				y + RIBBON_HEIGHT}, 6);
-		if (hovered)
-		{
-			tooltipManager.add(new Tooltip(set ? UNBOOKMARK_TIP : BOOKMARK_TIP));
-		}
-		return bounds;
 	}
 
 	/** Forgets what was read from the old RuneLite profile's config, for when the user switches profiles. */
@@ -477,13 +691,6 @@ class HoldBook extends Overlay implements KeyListener
 		return marked;
 	}
 
-	private Rectangle drawArrow(Graphics2D graphics, BufferedImage arrow, int x, int y)
-	{
-		Rectangle bounds = new Rectangle(x, y, arrow.getWidth(), arrow.getHeight());
-		graphics.drawImage(arrow, x, y, null);
-		return bounds;
-	}
-
 	/** The left page of the last spread for this many pages. */
 	private static int lastSpread(int pageCount)
 	{
@@ -507,11 +714,22 @@ class HoldBook extends Overlay implements KeyListener
 		}
 	}
 
-	private void drawPage(Graphics2D graphics, List<BookPage> showing, int page, int x, int y, int width)
+	private void drawPage(Graphics2D graphics, List<BookPage> showing, int page, int x, int y)
+	{
+		BufferedImage image = pageImage(showing, page);
+		if (image != null)
+		{
+			// The image reaches out over the page's side margins, which only a seal ever draws into.
+			graphics.drawImage(image, x - TEXT_INSET, y, null);
+		}
+	}
+
+	/** A page's image, drawn again only when the page has changed; null past the last page. */
+	private BufferedImage pageImage(List<BookPage> showing, int page)
 	{
 		if (page >= showing.size())
 		{
-			return;
+			return null;
 		}
 		while (pageImages.size() <= page)
 		{
@@ -523,13 +741,12 @@ class HoldBook extends Overlay implements KeyListener
 		if (pageImages.get(page) == null || !content.equals(pagesDrawn.get(page)))
 		{
 			Map<Rectangle, String> tips = new HashMap<>();
-			pageImages.set(page, buildPage(content, page + 1, width,
-				PAGE_BOTTOM - PAGE_TOP - TITLE_INSET, tips));
+			pageImages.set(page, buildPage(content, page + 1, PAGE_WIDTH - 2 * TEXT_INSET,
+				PAGE_HEIGHT - TITLE_INSET, tips));
 			pageTips.set(page, tips);
 			pagesDrawn.set(page, content);
 		}
-		// The image reaches out over the page's side margins, which only a seal ever draws into.
-		graphics.drawImage(pageImages.get(page), x - TEXT_INSET, y, null);
+		return pageImages.get(page);
 	}
 
 	/**
@@ -1174,6 +1391,7 @@ class HoldBook extends Overlay implements KeyListener
 			if (inside(buttonBounds, event))
 			{
 				open = !open;
+				turnFrom = -1;
 				if (open && !bookSeen())
 				{
 					seen = true;
@@ -1194,11 +1412,13 @@ class HoldBook extends Overlay implements KeyListener
 				}
 				else if (inside(leftBounds, event))
 				{
-					spread = Math.max(0, Math.min(spread, lastSpread(pages.size())) - 2);
+					int from = Math.min(spread, lastSpread(pages.size()));
+					turn(from, Math.max(0, from - 2));
 				}
 				else if (inside(rightBounds, event))
 				{
-					spread = Math.min(spread + 2, lastSpread(pages.size()));
+					int from = Math.min(spread, lastSpread(pages.size()));
+					turn(from, Math.min(from + 2, lastSpread(pages.size())));
 				}
 				else if (inside(bookmarkBounds, event))
 				{

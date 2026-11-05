@@ -16,6 +16,7 @@ public interface TrawlingPlusConfig extends Config
 	String GROUP = "trawling-plus";
 	String SMOOTHING_KEY = "routeSmoothing";
 	String TIMER_BAR_KEY = "showTimerBar";
+	String BOOK_RESOURCE_PACKS_KEY = "bookResourcePacks";
 
 	int MIN_ANIMATION_SECONDS = 3;
 	int MAX_ANIMATION_SECONDS = 10;
@@ -114,6 +115,13 @@ public interface TrawlingPlusConfig extends Config
 		position = 71
 	)
 	String infoBoxSection = "infoBoxes";
+
+	@ConfigSection(
+		name = "Trawling log",
+		description = "The book of catches and statistics opened from the cargo hold",
+		position = 75
+	)
+	String trawlingLogSection = "trawlingLog";
 
 	enum LineThickness
 	{
@@ -868,14 +876,38 @@ public interface TrawlingPlusConfig extends Config
 
 	@ConfigItem(
 		keyName = "showHoldBook",
-		name = "Trawling log",
+		name = "Show",
 		description = "Show a button beside the cargo hold's close button<br>that opens the trawling log.",
-		position = 54,
-		section = hudSection
+		position = 76,
+		section = trawlingLogSection
 	)
 	default boolean showHoldBook()
 	{
 		return true;
+	}
+
+	@ConfigItem(
+		keyName = "showLifetimeStars",
+		name = "Lifetime stars",
+		description = "Show stars beside each fish on the Lifetime page,<br>bronze, silver then gold as more are caught.",
+		position = 77,
+		section = trawlingLogSection
+	)
+	default boolean showLifetimeStars()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = BOOK_RESOURCE_PACKS_KEY,
+		name = "Resource packs",
+		description = "Draw the book with a resource pack's sprites<br>where it replaces the game's own.",
+		position = 78,
+		section = trawlingLogSection
+	)
+	default boolean bookResourcePacks()
+	{
+		return false;
 	}
 
 	@ConfigItem(

@@ -96,7 +96,8 @@ Every route was recorded in-game and is accurate to the tile when no smoothing i
 - **Cargo hold**: shows or hides the cargo hold display, in the heads up display section.
 - **Info boxes**: shows or hides the fish caught, total caught and fish in nets info boxes, in their
   own section.
-- **Trawling log**: shows or hides the trawling log button.
+- **Trawling log**: shows or hides the trawling log button, in its own section, with switches for
+  the lifetime stars and for drawing the book with your resource pack's sprites (off by default).
 - **Fishing spot arrow**: shows or hides the fishing spot arrow and sets its colour.
 - **Cargo hold highlight**: shows or hides the cargo hold's outline and sets its colour.
 - **Net highlights**: shows or hides the net outlines and sets their colours.

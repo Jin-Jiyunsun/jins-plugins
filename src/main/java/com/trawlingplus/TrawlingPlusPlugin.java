@@ -77,6 +77,7 @@ import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.events.ClientShutdown;
 import net.runelite.client.events.ConfigChanged;
 import net.runelite.client.events.InfoBoxMenuClicked;
+import net.runelite.client.events.ProfileChanged;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
@@ -231,15 +232,16 @@ public class TrawlingPlusPlugin extends Plugin
 		"marlin");
 	private static final String RESET_CATCHES = "Reset";
 	// The lifetime counts at which each fish earns its next star on the trawling log: three stars, each bronze, silver
-	// then gold. Each doubles the last, starting from 500 for giant krill, scaled for the others by their average catch
-	// chance from their level requirement to 99 (Jagex's figures, on the OSRS wiki), and snapped to round numbers.
+	// then gold. The last follows how long players stay on each fish: low for the early shoals they train past, high
+	// for the late ones. Each star takes 1.6 times as many as the one before, counted back from there, and snapped to
+	// round numbers.
 	private static final Map<String, int[]> STAR_MILESTONES = Map.of(
-		"giant krill", new int[]{500, 1_000, 2_000, 4_000, 8_000, 16_000, 32_000, 64_000, 128_000},
-		"haddock", new int[]{450, 950, 1_900, 3_800, 7_600, 15_200, 30_300, 60_600, 121_000},
-		"yellowfin", new int[]{450, 900, 1_800, 3_600, 7_300, 14_600, 29_200, 58_400, 117_000},
-		"halibut", new int[]{450, 850, 1_700, 3_400, 6_900, 13_800, 27_500, 55_000, 110_000},
-		"bluefin", new int[]{400, 800, 1_600, 3_200, 6_500, 12_900, 25_800, 51_600, 103_000},
-		"marlin", new int[]{350, 700, 1_400, 2_900, 5_800, 11_500, 23_000, 46_000, 92_100});
+		"giant krill", new int[]{250, 350, 600, 950, 1_500, 2_400, 3_900, 6_200, 10_000},
+		"haddock", new int[]{350, 550, 900, 1_400, 2_300, 3_700, 5_900, 9_400, 15_000},
+		"yellowfin", new int[]{600, 950, 1_500, 2_400, 3_800, 6_100, 9_800, 15_600, 25_000},
+		"halibut", new int[]{800, 1_300, 2_100, 3_300, 5_300, 8_500, 13_700, 21_900, 35_000},
+		"bluefin", new int[]{1_200, 1_900, 3_000, 4_800, 7_600, 12_200, 19_500, 31_200, 50_000},
+		"marlin", new int[]{1_400, 2_200, 3_600, 5_700, 9_200, 14_600, 23_400, 37_500, 60_000});
 	// The trawling log's tooltips, each shown over a heading and its number.
 	private static final String FISH_PER_HOUR_TIP = "Every fish caught over the time spent trawling."
 		+ "</br>Includes banking, sailing between shoals"
@@ -1225,12 +1227,25 @@ public class TrawlingPlusPlugin extends Plugin
 		return Integer.parseInt(text);
 	}
 
+	/** The book's bookmark and first-open highlight are kept per RuneLite profile, so they're read again. */
+	@Subscribe
+	public void onProfileChanged(ProfileChanged event)
+	{
+		holdBook.profileChanged();
+	}
+
 	@Subscribe
 	public void onConfigChanged(ConfigChanged event)
 	{
 		if (TrawlingPlusConfig.GROUP.equals(event.getGroup()) && TrawlingPlusConfig.TIMER_BAR_KEY.equals(event.getKey()))
 		{
 			hideStopBar = config.showTimerBar();
+		}
+
+		if (TrawlingPlusConfig.GROUP.equals(event.getGroup())
+			&& TrawlingPlusConfig.BOOK_RESOURCE_PACKS_KEY.equals(event.getKey()))
+		{
+			clientThread.invoke(holdBook::rebuildSprites);
 		}
 
 		if (TrawlingPlusConfig.GROUP.equals(event.getGroup())
@@ -2966,7 +2981,8 @@ public class TrawlingPlusPlugin extends Plugin
 			int lifetime = lifetime(lifetimeKey(kind));
 			lifeTotal += lifetime;
 			session.add(BookPage.row(name, QuantityFormatter.formatNumber(caught.getOrDefault(kind, 0))));
-			life.add(starredRow(kind, name, lifetime));
+			life.add(config.showLifetimeStars() ? starredRow(kind, name, lifetime)
+				: BookPage.row(name, QuantityFormatter.formatNumber(lifetime)));
 		}
 		// Half a blank line sets the total apart from the fish above it.
 		session.add(BookPage.blank());

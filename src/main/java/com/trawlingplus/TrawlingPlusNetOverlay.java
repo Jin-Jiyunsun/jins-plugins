@@ -107,8 +107,10 @@ class TrawlingPlusNetOverlay extends Overlay
 			graphics.clip(window.getBounds());
 		}
 
-		// The buttons are only wanted for the guide, and only carry an action while someone is operating that net.
-		List<Widget> buttons = config.showNetButton() ? netButtons() : Collections.emptyList();
+		// The buttons are only wanted for the guide, and only carry an action while they can be pressed: on anyone's
+		// boat, as a captain may let guests set the nets.
+		boolean guide = config.showNetButton();
+		List<Widget> buttons = guide ? netButtons() : Collections.emptyList();
 		long now = System.currentTimeMillis();
 		int wanted = plugin.getNearestDepth().netDepth();
 		for (NetRow net : netRows(rows))
@@ -146,7 +148,7 @@ class TrawlingPlusNetOverlay extends Overlay
 					drawTick(graphics, left, middle, TICK);
 				}
 			}
-			else if (config.showNetButton())
+			else if (guide)
 			{
 				// Lowering a net takes it deeper, so the button to press follows the numbers.
 				Rectangle press = guideButton(buttons, net, middle, depth < wanted, now);
@@ -169,18 +171,22 @@ class TrawlingPlusNetOverlay extends Overlay
 	private List<NetRow> netRows(Widget rows)
 	{
 		List<NetRow> nets = new ArrayList<>();
+		// By where each picture is on screen against the rows' own left edge, not its place in whatever holds it,
+		// which can sit further right, as the portraits do.
+		int left = rows.getBounds().x;
 		for (Widget child : children(rows))
 		{
-			if (child == null || child.getRelativeX() >= PICTURE_COLUMN)
+			Rectangle bounds = child == null ? null : child.getBounds();
+			if (bounds == null || bounds.x - left >= PICTURE_COLUMN)
 			{
 				continue;
 			}
 
 			int sprite = child.getSpriteId();
 			boolean net = sprite >= NET_PICTURE_RAISED && sprite <= NET_PICTURE_DEEPEST;
-			Rectangle bounds = child.getBounds();
 			// Some frames hand back a picture the panel has not laid out yet.
-			if (net && !child.isHidden() && bounds.y >= 0 && bounds.height > 0)
+			boolean laidOut = !child.isHidden() && bounds.y >= 0 && bounds.height > 0;
+			if (net && laidOut)
 			{
 				NetRow row = new NetRow(child.getIndex(), sprite - NET_PICTURE_RAISED, bounds);
 				lastSeen.put(child.getIndex(), row);
@@ -193,10 +199,11 @@ class TrawlingPlusNetOverlay extends Overlay
 			}
 			else
 			{
+				// The depth as last seen, but drawn where the row is now, which moves as the list scrolls.
 				NetRow seen = lastSeen.get(child.getIndex());
-				if (seen != null)
+				if (seen != null && laidOut)
 				{
-					nets.add(seen);
+					nets.add(new NetRow(seen.index, seen.depth, bounds));
 				}
 			}
 		}
@@ -238,14 +245,19 @@ class TrawlingPlusNetOverlay extends Overlay
 		if (press != null)
 		{
 			Rectangle bounds = press.getBounds();
-			lastButtons.put(net.index, new SeenButton(bounds, lowering, now));
+			lastButtons.put(net.index, new SeenButton(bounds, middle, lowering, now));
 			return bounds;
 		}
 
+		// Moved with its row, which may have scrolled since.
 		SeenButton seen = lastButtons.get(net.index);
-		return seen != null && seen.lowering == lowering && now - seen.millis <= BUTTON_GRACE_MILLIS
-			? seen.bounds
-			: null;
+		if (seen == null || seen.lowering != lowering || now - seen.millis > BUTTON_GRACE_MILLIS)
+		{
+			return null;
+		}
+		Rectangle moved = new Rectangle(seen.bounds);
+		moved.translate(0, middle - seen.middle);
+		return moved;
 	}
 
 	private static Widget buttonOnRow(List<Widget> buttons, int middle, boolean lowering)
@@ -381,12 +393,15 @@ class TrawlingPlusNetOverlay extends Overlay
 	private static final class SeenButton
 	{
 		final Rectangle bounds;
+		// The middle of its row's picture when found.
+		final int middle;
 		final boolean lowering;
 		final long millis;
 
-		SeenButton(Rectangle bounds, boolean lowering, long millis)
+		SeenButton(Rectangle bounds, int middle, boolean lowering, long millis)
 		{
 			this.bounds = bounds;
+			this.middle = middle;
 			this.lowering = lowering;
 			this.millis = millis;
 		}

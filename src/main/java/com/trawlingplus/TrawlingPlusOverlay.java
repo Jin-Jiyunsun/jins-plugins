@@ -1160,8 +1160,9 @@ class TrawlingPlusOverlay extends Overlay
 		// in either guides mode, even on a raft, which has no nets for the guides to wait on.
 		long now = System.currentTimeMillis();
 		boolean hold = layOutHold(graphics, now);
-		// Only on the player's own boat: everything on it is counted for that boat alone.
-		boolean helm = plugin.showGuides() && plugin.getOwnBoat() != null && drawTrawling(graphics, now, hold);
+		// On someone else's boat everything but the hold full warning, as their hold isn't the player's to count.
+		boolean helm = plugin.showGuides() && plugin.getBoat() != null
+			&& (plugin.getOwnBoat() != null || config.hudOnOtherBoats()) && drawTrawling(graphics, now, hold);
 		if (hold && !helm)
 		{
 			drawHoldAlone(graphics, now);
@@ -1192,13 +1193,14 @@ class TrawlingPlusOverlay extends Overlay
 			fadingBarFull = barFull;
 		}
 		boolean[] wanted = helmWanted;
+		boolean own = plugin.getOwnBoat() != null;
 		wanted[DEPTH_LINE] = boat != null && config.showShoalDepth() && depth != ShoalDepth.UNKNOWN;
 		wanted[TIME_LINE] = seconds >= 0;
 		wanted[BAR_LINE] = barFull >= 0;
 		wanted[BAITED_LINE] = boat != null && config.showBaited() && (plugin.isBaited() || plugin.isOutOfBait());
 		wanted[FISH_LINE] = boat != null && config.showFishInNets() && plugin.netsFitted() && plugin.fishLineWanted(now);
 		// The hold's own display says when it is full, when that is up.
-		wanted[HOLD_LINE] = boat != null && config.showFishInNets() && plugin.isHoldFull() && !hold;
+		wanted[HOLD_LINE] = own && boat != null && config.showFishInNets() && plugin.isHoldFull() && !hold;
 		// "Fish: 0" or "Fish: ?" on its own, while not trawling, isn't worth showing, so the display fades out.
 		if (wanted[FISH_LINE] && !wanted[DEPTH_LINE] && !wanted[TIME_LINE] && !wanted[BAR_LINE] && !wanted[BAITED_LINE]
 			&& !wanted[HOLD_LINE] && !plugin.isTrawling())

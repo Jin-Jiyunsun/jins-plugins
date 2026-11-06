@@ -300,6 +300,9 @@ class HoldBook extends Overlay implements KeyListener
 	private final TooltipManager tooltipManager;
 
 	private volatile boolean open;
+	// Opened from the hold's right-click menu rather than its button: then it sits in the middle of the game view,
+	// whether or not the hold's screen is up, and only Escape and its own close button shut it.
+	private volatile boolean anywhere;
 	// The left page of the spread showing.
 	private volatile int spread;
 	// The left page of the spread last turned from, -1 for none, and when that turn started.
@@ -338,6 +341,7 @@ class HoldBook extends Overlay implements KeyListener
 	void reset()
 	{
 		open = false;
+		anywhere = false;
 		spread = 0;
 		turnFrom = -1;
 		leafRight = null;
@@ -378,15 +382,22 @@ class HoldBook extends Overlay implements KeyListener
 	public Dimension render(Graphics2D graphics)
 	{
 		Widget hold = config.showHoldBook() ? client.getWidget(InterfaceID.SailingBoatCargohold.FRAME) : null;
-		if (hold != null && !hold.isHidden())
+		boolean holdUp = hold != null && !hold.isHidden();
+		long now = System.currentTimeMillis();
+		long swung = now - coverStart;
+		boolean swinging = coverStart > 0 && swung < COVER_MILLIS;
+		// Opened from anywhere, it stays up, and swings shut, without the hold's screen.
+		boolean free = config.showHoldBook() && anywhere && (open || swinging);
+		if (holdUp || free)
 		{
 			forgetChangedSprites();
 		}
-		if (hold == null || hold.isHidden() || !loadSprites())
+		if (!holdUp && !free || !loadSprites())
 		{
-			// The book belongs to the hold's screen and closes with it, at once, letting go of the images only a turn
-			// or swing draws into.
+			// Opened from the button, the book belongs to the hold's screen and closes with it, at once, letting go
+			// of the images only a turn or swing draws into.
 			open = false;
+			anywhere = false;
 			coverStart = 0;
 			leafRight = null;
 			leafLeft = null;
@@ -397,14 +408,48 @@ class HoldBook extends Overlay implements KeyListener
 			return null;
 		}
 
-		Rectangle frameBounds = hold.getBounds();
 		Point mouse = client.getMouseCanvasPosition();
 		int mouseX = mouse.getX();
 		int mouseY = mouse.getY();
 		menuOpen = client.isMenuOpen();
-		overWorld = open && !menuOpen && walkingUnderMouse();
-		// Looked for again each tick until found: the game may not have built it on the screen's first frame.
+		overWorld = open && !anywhere && !menuOpen && walkingUnderMouse();
 		int tick = client.getTickCount();
+		if (holdUp)
+		{
+			drawButton(graphics, hold, tick, mouseX, mouseY);
+		}
+		else
+		{
+			buttonBounds = null;
+			holdClose = null;
+			closeTriedTick = -1;
+		}
+
+		if (!open && !swinging)
+		{
+			forgetBookBounds();
+			return null;
+		}
+
+		// Over the middle of the hold's screen, which it is no bigger than, or of the game view when opened from
+		// anywhere, kept inside the game view: in fixed size mode the view stops short of the side panels and chat,
+		// so the book never covers them.
+		int viewX = client.getViewportXOffset();
+		int viewY = client.getViewportYOffset();
+		Rectangle around = holdUp && !anywhere ? hold.getBounds()
+			: new Rectangle(viewX, viewY, client.getViewportWidth(), client.getViewportHeight());
+		int x = around.x + (around.width - BOOK_WIDTH) / 2;
+		int y = around.y + (around.height - BOOK_HEIGHT) / 2;
+		x = Math.max(viewX, Math.min(x, viewX + client.getViewportWidth() - BOOK_WIDTH));
+		y = Math.max(viewY, Math.min(y, viewY + client.getViewportHeight() - BOOK_HEIGHT));
+		return drawBook(graphics, tick, now, swung, swinging, x, y, mouseX, mouseY);
+	}
+
+	/** The button on the hold's screen, just left of its close button, pulsing until the book is first opened. */
+	private void drawButton(Graphics2D graphics, Widget hold, int tick, int mouseX, int mouseY)
+	{
+		Rectangle frameBounds = hold.getBounds();
+		// Looked for again each tick until found: the game may not have built it on the screen's first frame.
 		if (holdClose == null && tick != closeTriedTick)
 		{
 			holdClose = findClose(hold, 0);
@@ -431,25 +476,12 @@ class HoldBook extends Overlay implements KeyListener
 			graphics.setComposite(before);
 		}
 		buttonBounds = button;
+	}
 
-		long now = System.currentTimeMillis();
-		long swung = now - coverStart;
-		boolean swinging = coverStart > 0 && swung < COVER_MILLIS;
-		if (!open && !swinging)
-		{
-			forgetBookBounds();
-			return null;
-		}
-
-		// Over the middle of the hold's screen, which it is no bigger than, kept inside the game view: in fixed size
-		// mode the view stops short of the side panels and chat, so the book never covers them.
-		int viewX = client.getViewportXOffset();
-		int viewY = client.getViewportYOffset();
-		int x = frameBounds.x + (frameBounds.width - BOOK_WIDTH) / 2;
-		int y = frameBounds.y + (frameBounds.height - BOOK_HEIGHT) / 2;
-		x = Math.max(viewX, Math.min(x, viewX + client.getViewportWidth() - BOOK_WIDTH));
-		y = Math.max(viewY, Math.min(y, viewY + client.getViewportHeight() - BOOK_HEIGHT));
-
+	/** The open book, or the cover swinging, at the given place. */
+	private Dimension drawBook(Graphics2D graphics, int tick, long now, long swung, boolean swinging, int x, int y,
+		int mouseX, int mouseY)
+	{
 		if (tick != pagesReadTick)
 		{
 			pages = plugin.bookPages();
@@ -731,6 +763,35 @@ class HoldBook extends Overlay implements KeyListener
 		}
 		g.dispose();
 		return side;
+	}
+
+	/**
+	 * Opens the book from the hold's right-click menu, in the middle of the game view, wherever the player is: it stays
+	 * up until Escape or its close button.
+	 */
+	void openAnywhere()
+	{
+		anywhere = true;
+		if (!open)
+		{
+			openBook();
+		}
+	}
+
+	/** Opens the book, at the bookmark the first time each session, and stops the button pulsing for good. */
+	private void openBook()
+	{
+		setOpen(true);
+		if (!bookSeen())
+		{
+			seen = true;
+			configManager.setConfiguration(TrawlingPlusConfig.GROUP, SEEN_KEY, true);
+		}
+		if (!openedThisSession)
+		{
+			openedThisSession = true;
+			spread = Math.max(0, bookmarkedSpread());
+		}
 	}
 
 	/**
@@ -1588,16 +1649,14 @@ class HoldBook extends Overlay implements KeyListener
 			// The open book covers the button wherever they overlap.
 			if (inside(buttonBounds, event) && !(open && inside(bookBounds, event)))
 			{
-				setOpen(!open);
-				if (open && !bookSeen())
+				if (open)
 				{
-					seen = true;
-					configManager.setConfiguration(TrawlingPlusConfig.GROUP, SEEN_KEY, true);
+					setOpen(false);
 				}
-				if (open && !openedThisSession)
+				else
 				{
-					openedThisSession = true;
-					spread = Math.max(0, bookmarkedSpread());
+					anywhere = false;
+					openBook();
 				}
 				event.consume();
 			}

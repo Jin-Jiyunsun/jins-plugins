@@ -43,7 +43,8 @@ bait and cargo hold from a display on the boat, and keeps a trawling log of ever
 Optional alerts for full nets, a full hold, a shoal about to leave its stop or changing to the
 wrong depth, a shoal turning special, or being knocked off the net.
 
-On someone else's boat, the routes, fishable area, depth guide and notifications still work.
+On someone else's boat, everything works except the cargo hold features, the hold full warning and your crew's
+stats, with the fish count following your own net there.
 
 ## Trawling log
 
@@ -51,7 +52,8 @@ On someone else's boat, the routes, fishable area, depth guide and notifications
 <img width="800" height="508" alt="trawlinglog" src="https://github.com/user-attachments/assets/7b9ab598-e055-4cb8-a2da-4ec909397d6c" />
 </p>
 
-A button on the cargo hold screen opens a book of your trawling:
+A button on the cargo hold screen opens a book of your trawling. To read it anywhere on the boat, even while
+working the nets, right-click the cargo hold and choose Open Trawling Log.
 
 - **Catches**: fish caught this session and in your lifetime, with stars for lifetime milestones.
 - **Statistics**: fish per hour, Trawler's trust's extra fish, nets filled, your best session and
@@ -60,7 +62,7 @@ A button on the cargo hold screen opens a book of your trawling:
   catching crewmates.
 - **Bookmark**: click the ribbon on a page to set the page the book will open to at the start of each session.
 
-Shift right-click the button or the total info box to reset the lifetime counts.
+Right-click the button or the total info box to reset the session, or Shift right-click to reset the lifetime counts.
 
 ## Route data
 

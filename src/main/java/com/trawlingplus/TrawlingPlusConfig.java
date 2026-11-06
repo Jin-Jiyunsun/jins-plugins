@@ -16,6 +16,7 @@ public interface TrawlingPlusConfig extends Config
 	String GROUP = "trawling-plus";
 	String SMOOTHING_KEY = "routeSmoothing";
 	String TIMER_BAR_KEY = "showTimerBar";
+	String HUD_ON_OTHER_BOATS_KEY = "hudOnOtherBoats";
 	String BOOK_RESOURCE_PACKS_KEY = "bookResourcePacks";
 
 	int MIN_ANIMATION_SECONDS = 3;
@@ -669,10 +670,22 @@ public interface TrawlingPlusConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = HUD_ON_OTHER_BOATS_KEY,
+		name = "Other boats",
+		description = "Show the display on other players' boats too,<br>all but the hold full warning, as their hold<br>isn't yours to count. Show turns it off<br>everywhere.",
+		position = 37,
+		section = hudSection
+	)
+	default boolean hudOnOtherBoats()
+	{
+		return true;
+	}
+
+	@ConfigItem(
 		keyName = "animatedHud",
 		name = "Animated",
 		description = "Fade the display's lines in and out, and grow<br>and shrink it to fit. Off to show every<br>change at once.",
-		position = 37,
+		position = 38,
 		section = hudSection
 	)
 	default boolean animatedHud()
@@ -684,7 +697,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "hudPosition",
 		name = "Position",
 		description = "Where on the boat the display sits.<br><b>Helm</b>: above the helm.<br><b>Bow</b>: above the front of the boat.<br><b>Sails</b>: above the sails.<br><b>Shoal</b>: above the nearest shoal, or the<br>helm with none in sight.",
-		position = 38,
+		position = 39,
 		section = hudSection
 	)
 	default HudPosition hudPosition()
@@ -696,7 +709,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "smoothHud",
 		name = "Smooth position",
 		description = "Ease the display smoothly after the boat<br>as it moves, instead of following it exactly.",
-		position = 39,
+		position = 40,
 		section = hudSection
 	)
 	default boolean smoothHud()
@@ -708,7 +721,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "showShoalDepth",
 		name = "Depth",
 		description = "Show the nearest shoal's depth. Coloured by the<br>Depth colours section.",
-		position = 40,
+		position = 41,
 		section = hudSection
 	)
 	default boolean showShoalDepth()
@@ -720,7 +733,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "showDepthTick",
 		name = "Tick on correct depth",
 		description = "Show a tick beside the HUD depth when it's correct.",
-		position = 41,
+		position = 42,
 		section = hudSection
 	)
 	default boolean showDepthTick()
@@ -732,7 +745,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "showTimeAtStop",
 		name = "Time left at stop",
 		description = "Show how long until the shoal swims on.",
-		position = 42,
+		position = 43,
 		section = hudSection
 	)
 	default boolean showTimeAtStop()
@@ -744,7 +757,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "timeLeftColour",
 		name = "Time left colour",
 		description = "Colour of the time left at stop.",
-		position = 43,
+		position = 44,
 		section = hudSection
 	)
 	default Color timeLeftColour()
@@ -756,7 +769,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = TIMER_BAR_KEY,
 		name = "Timer bar",
 		description = "Show the game's bar for the time left at a stop<br>at the bottom of the display, in place of the<br>one over the shoal.",
-		position = 44,
+		position = 45,
 		section = hudSection
 	)
 	default boolean showTimerBar()
@@ -768,7 +781,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "showFishInNets",
 		name = "Fish in nets",
 		description = "Show how many fish are in the nets, and a<br>warning when the hold is full. Hides once the<br>nets are raised and have been empty for a<br>minute. Shows ? when unsure, until the nets are<br>emptied or opened.",
-		position = 45,
+		position = 46,
 		section = hudSection
 	)
 	default boolean showFishInNets()
@@ -780,7 +793,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "fishInNetsColour",
 		name = "Fish in nets colour",
 		description = "Colour of the fish in nets count.",
-		position = 46,
+		position = 47,
 		section = hudSection
 	)
 	default Color fishInNetsColour()
@@ -792,7 +805,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "showBaited",
 		name = "Baited",
 		description = "Show if the shoal is baited, and how much bait<br>is left. Shows ? until the hold is opened to<br>count the bait in it.",
-		position = 47,
+		position = 48,
 		section = hudSection
 	)
 	default boolean showBaited()
@@ -804,7 +817,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "baitedColour",
 		name = "Baited colour",
 		description = "Colour of the baited status.",
-		position = 48,
+		position = 49,
 		section = hudSection
 	)
 	default Color baitedColour()
@@ -816,7 +829,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "showCargoHold",
 		name = "Cargo hold",
 		description = "Show how full the hold is and the fish in it<br>while sea spot fishing.",
-		position = 49,
+		position = 50,
 		section = hudSection
 	)
 	default boolean showCargoHold()
@@ -828,7 +841,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "showSpotArrow",
 		name = "Fishing spot arrow",
 		description = "While sea spot fishing, point an arrow from<br>the boat towards the spot you're fishing.",
-		position = 50,
+		position = 51,
 		section = hudSection
 	)
 	default boolean showSpotArrow()
@@ -841,7 +854,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "spotArrowColour",
 		name = "Fishing spot arrow colour",
 		description = "Colour of the fishing spot arrow.",
-		position = 51,
+		position = 52,
 		section = hudSection
 	)
 	default Color spotArrowColour()
@@ -853,7 +866,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "highlightCargoHold",
 		name = "Cargo hold highlight",
 		description = "While sea spot fishing, outline the cargo hold<br>when your inventory is full.",
-		position = 52,
+		position = 53,
 		section = hudSection
 	)
 	default boolean highlightCargoHold()
@@ -866,7 +879,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "cargoHoldHighlightColour",
 		name = "Cargo hold highlight colour",
 		description = "Colour of the cargo hold's outline.",
-		position = 53,
+		position = 54,
 		section = hudSection
 	)
 	default Color cargoHoldHighlightColour()
@@ -918,6 +931,18 @@ public interface TrawlingPlusConfig extends Config
 		section = trawlingLogSection
 	)
 	default boolean animatedBook()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "holdMenuOpensBook",
+		name = "Open from hold",
+		description = "Add Open Trawling Log to the cargo hold's<br>right-click menu, to read the book anywhere<br>on the boat.",
+		position = 80,
+		section = trawlingLogSection
+	)
+	default boolean holdMenuOpensBook()
 	{
 		return true;
 	}

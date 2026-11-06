@@ -28,4 +28,58 @@ public interface TrawlingPlusDebugConfig extends Config
 	{
 		return true;
 	}
+
+	@ConfigSection(
+		name = "Debug: curiosities",
+		description = "Fake finds for the trawling log's Curiosities pages",
+		position = 2
+	)
+	String curiositiesSection = "curiosities";
+
+	String FAKE_CURIOSITIES_KEY = "fakeCuriosities";
+
+	@ConfigItem(
+		keyName = FAKE_CURIOSITIES_KEY,
+		name = "Fake finds",
+		description = "Turning on gives this account a random mix of found<br>and not found curiosities, some by"
+			+ " crewmates and<br>some from before the log was kept. Turning off<br>clears them all.",
+		position = 3,
+		section = curiositiesSection
+	)
+	default boolean fakeCuriosities()
+	{
+		return false;
+	}
+
+	String FAKE_MESSAGE_KEY = "fakeCuriosityMessage";
+
+	@ConfigItem(
+		keyName = FAKE_MESSAGE_KEY,
+		name = "Fake message",
+		description = "Picking one puts that game message in the chatbox,<br>only on this client, as if it had"
+			+ " happened. A rare<br>catch also counts as one fish caught.",
+		position = 4,
+		section = curiositiesSection
+	)
+	default FakeMessage fakeCuriosityMessage()
+	{
+		return FakeMessage.NONE;
+	}
+
+	enum FakeMessage
+	{
+		NONE(null),
+		PLAYER_MARLIN("You catch a swift marlin!"),
+		CREW_KRILL("Jolly Jim catches a giant blue krill!"),
+		PLAYER_ORANGEFIN("You catch a orangefin!"),
+		PAINT("You've received some paint!"),
+		LOG_HADDOCK("New item added to your collection log: <col=ef1020>Golden haddock</col>");
+
+		final String message;
+
+		FakeMessage(String message)
+		{
+			this.message = message;
+		}
+	}
 }

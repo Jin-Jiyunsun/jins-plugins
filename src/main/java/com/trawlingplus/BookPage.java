@@ -4,10 +4,10 @@ import java.util.List;
 import lombok.Value;
 
 /**
- * One page of the hold book: a title and its lines, and maybe a name signed at its foot. A line is text, wrapped to
- * the page and either left aligned or centred, a centred heading in faded ink, a row with a name on the left and a
- * value on the right, or a blank line. Pages are compared by what they hold, so the book redraws one only when it
- * changes.
+ * One page of the hold book: a title and its lines, and maybe a name signed at its foot or an item's picture above its
+ * number. A line is text, wrapped to the page and either left aligned or centred, a centred heading in faded ink, a
+ * row with a name on the left and a value on the right, or a blank line. Pages are compared by what they hold, so the
+ * book redraws one only when it changes.
  */
 @Value
 class BookPage
@@ -16,6 +16,10 @@ class BookPage
 	List<Line> lines;
 	// Signed at the foot of the page beside a wax seal, or null for none.
 	String signature;
+	// An item drawn just above the page number, or 0 for none.
+	int picture;
+	// The picture as a faint shape only, for an item not yet found.
+	boolean silhouette;
 
 	BookPage(String title, List<Line> lines)
 	{
@@ -24,9 +28,16 @@ class BookPage
 
 	BookPage(String title, List<Line> lines, String signature)
 	{
+		this(title, lines, signature, 0, false);
+	}
+
+	BookPage(String title, List<Line> lines, String signature, int picture, boolean silhouette)
+	{
 		this.title = title;
 		this.lines = lines;
 		this.signature = signature;
+		this.picture = picture;
+		this.silhouette = silhouette;
 	}
 
 	@Value
@@ -43,42 +54,57 @@ class BookPage
 		// For a row, how many star milestones it has reached (three stars, each bronze, silver then gold), drawn in a
 		// column after the name; -1 for a row without stars.
 		int stars;
+		// Wrapped so its lines come out about even, a line break starting a new paragraph: left aligned in a block
+		// centred on the page, or each line centred.
+		boolean balanced;
 
 		/** The same line, with a tooltip shown while the mouse is over it. */
 		Line tip(String text)
 		{
-			return new Line(left, right, centred, faded, text, stars);
+			return new Line(left, right, centred, faded, text, stars, balanced);
 		}
 
 		/** The same row, with stars for this many milestones reached. */
 		Line withStars(int reached)
 		{
-			return new Line(left, right, centred, faded, tooltip, reached);
+			return new Line(left, right, centred, faded, tooltip, reached, balanced);
 		}
 	}
 
 	static Line text(String text)
 	{
-		return new Line(text, null, false, false, null, -1);
+		return new Line(text, null, false, false, null, -1, false);
 	}
 
 	static Line centred(String text)
 	{
-		return new Line(text, null, true, false, null, -1);
+		return new Line(text, null, true, false, null, -1, false);
 	}
 
 	static Line heading(String text)
 	{
-		return new Line(text, null, true, true, null, -1);
+		return new Line(text, null, true, true, null, -1, false);
 	}
 
 	static Line blank()
 	{
-		return new Line("", null, false, false, null, -1);
+		return new Line("", null, false, false, null, -1, false);
 	}
 
 	static Line row(String name, String value)
 	{
-		return new Line(name, value, false, false, null, -1);
+		return new Line(name, value, false, false, null, -1, false);
+	}
+
+	/** A journal entry: balanced lines, left aligned in a block centred on the page. */
+	static Line entry(String text)
+	{
+		return new Line(text, null, false, false, null, -1, true);
+	}
+
+	/** A hint in faded ink: balanced lines, each centred. */
+	static Line hint(String text)
+	{
+		return new Line(text, null, true, true, null, -1, true);
 	}
 }

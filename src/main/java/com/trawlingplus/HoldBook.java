@@ -20,6 +20,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import javax.inject.Inject;
 import javax.swing.SwingUtilities;
 import lombok.extern.slf4j.Slf4j;
@@ -32,6 +33,7 @@ import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.SpriteID;
 import net.runelite.api.widgets.Widget;
 import net.runelite.client.config.ConfigManager;
+import net.runelite.client.game.ItemManager;
 import net.runelite.client.input.KeyListener;
 import net.runelite.client.input.MouseAdapter;
 import net.runelite.client.input.MouseListener;
@@ -40,6 +42,7 @@ import net.runelite.client.ui.overlay.OverlayLayer;
 import net.runelite.client.ui.overlay.OverlayPosition;
 import net.runelite.client.ui.overlay.tooltip.Tooltip;
 import net.runelite.client.ui.overlay.tooltip.TooltipManager;
+import net.runelite.client.util.AsyncBufferedImage;
 
 /**
  * A button on the cargo hold's screen, and the book it opens: drawn from the game's own Fractured Archive book
@@ -214,6 +217,14 @@ class HoldBook extends Overlay implements KeyListener
 
 	private static final Color INK = new Color(40, 26, 12);
 	private static final Color FADED_INK = new Color(40, 26, 12, 140);
+	// A page's item picture: its gap above the page number, and as a silhouette, the ink's alpha.
+	private static final int PICTURE_ABOVE_NUMBER = 6;
+	private static final int SILHOUETTE_ALPHA = 45;
+	// The shadow and outline colours the item manager draws around an item's picture.
+	private static final int ITEM_SHADOW = 0x302020;
+	private static final int ITEM_OUTLINE = 0x000001;
+	// The most lines a journal entry takes before its paragraphs are joined to save room.
+	private static final int MAX_ENTRY_LINES = 5;
 
 	// The bookmark: a ribbon drawn hanging from the top of the left page, faded until the spread showing is the one
 	// marked, then red. Pixel sizes, with a notch cut into its foot.
@@ -298,6 +309,7 @@ class HoldBook extends Overlay implements KeyListener
 
 	private final ConfigManager configManager;
 	private final TooltipManager tooltipManager;
+	private final ItemManager itemManager;
 
 	private volatile boolean open;
 	// Opened from the hold's right-click menu rather than its button: then it sits in the middle of the game view,
@@ -323,10 +335,18 @@ class HoldBook extends Overlay implements KeyListener
 	// Whether the book has ever been opened in this RuneLite profile, or null until read from the config.
 	private volatile Boolean seen;
 
+	// Item pictures for the pages, by item id, as the item manager finishes loading them.
+	private final Map<Integer, BufferedImage> pictures = new ConcurrentHashMap<>();
+	// Items whose picture has been asked for.
+	private final Map<Integer, Boolean> picturesAsked = new ConcurrentHashMap<>();
+	// Set when a picture arrives, so the pages are drawn again with it.
+	private volatile boolean picturesChanged;
+
 	@Inject
 	HoldBook(Client client, TrawlingPlusConfig config, TrawlingPlusPlugin plugin, ConfigManager configManager,
-		TooltipManager tooltipManager)
+		TooltipManager tooltipManager, ItemManager itemManager)
 	{
+		this.itemManager = itemManager;
 		this.tooltipManager = tooltipManager;
 		this.client = client;
 		this.config = config;
@@ -372,6 +392,9 @@ class HoldBook extends Overlay implements KeyListener
 		pagesDrawn.clear();
 		pages = Collections.emptyList();
 		pagesReadTick = -1;
+		pictures.clear();
+		picturesAsked.clear();
+		picturesChanged = false;
 		bodyFont = null;
 		titleFont = null;
 		menuOpen = false;
@@ -486,6 +509,12 @@ class HoldBook extends Overlay implements KeyListener
 		{
 			pages = plugin.bookPages();
 			pagesReadTick = tick;
+		}
+		if (picturesChanged)
+		{
+			// A picture arrived: the pages showing it are drawn again.
+			picturesChanged = false;
+			Collections.fill(pageImages, null);
 		}
 		List<BookPage> showing = pages;
 		int first = Math.min(spread, lastSpread(showing.size()));
@@ -964,7 +993,22 @@ class HoldBook extends Overlay implements KeyListener
 		}
 		for (BookPage.Line text : content.getLines())
 		{
-			if (text.getRight() == null)
+			if (text.isBalanced())
+			{
+				List<String> parts = balanced(text.getLeft(), text.isCentred(), width);
+				int block = 0;
+				for (String part : parts)
+				{
+					block = Math.max(block, bodyFont.width(part));
+				}
+				for (String part : parts)
+				{
+					int x = text.isCentred() ? (width - bodyFont.width(part)) / 2 : (width - block) / 2;
+					bodyFont.draw(g, part, x, line, text.isFaded() ? FADED_INK : INK);
+					line += lineHeight;
+				}
+			}
+			else if (text.getRight() == null)
 			{
 				if (text.getLeft().isEmpty())
 				{
@@ -999,6 +1043,20 @@ class HoldBook extends Overlay implements KeyListener
 		// The image runs to the foot of the page so a seal can hang below the number; the number keeps its inset.
 		int numberTop = height - NUMBER_INSET - bodyFont.height();
 		bodyFont.draw(g, page, (width - bodyFont.width(page)) / 2, numberTop, FADED_INK);
+
+		if (content.getPicture() > 0)
+		{
+			BufferedImage picture = picture(content.getPicture());
+			if (picture != null)
+			{
+				if (content.isSilhouette())
+				{
+					picture = silhouette(picture);
+				}
+				g.drawImage(picture, (width - picture.getWidth()) / 2,
+					numberTop - picture.getHeight() - PICTURE_ABOVE_NUMBER, null);
+			}
+		}
 
 		String signature = content.getSignature();
 		if (signature != null)
@@ -1064,6 +1122,120 @@ class HoldBook extends Overlay implements KeyListener
 	{
 		return row >= 0 && row < STAR.length && column >= 0 && column < STAR[row].length()
 			&& STAR[row].charAt(column) == '#';
+	}
+
+	/**
+	 * Text wrapped so its lines come out about even, each line break starting a new paragraph: of the widths taking no
+	 * more lines than the full width, the one leaving the least ragged edge (a paragraph's last line may run up to
+	 * half short), the widest on a tie. An entry, left aligned, that would run past its most lines joins its
+	 * paragraphs into one.
+	 */
+	private List<String> balanced(String text, boolean centred, int width)
+	{
+		if (!centred && wrapAll(text, width).size() > MAX_ENTRY_LINES)
+		{
+			text = text.replace('\n', ' ');
+		}
+		int lineCount = wrapAll(text, width).size();
+		List<String> best = wrapAll(text, width);
+		long bestCost = Long.MAX_VALUE;
+		for (int measure = width; measure > 0; measure--)
+		{
+			List<List<String>> paragraphs = new ArrayList<>();
+			int count = 0;
+			for (String paragraph : text.split("\n"))
+			{
+				List<String> lines = wrap(paragraph, bodyFont, measure);
+				paragraphs.add(lines);
+				count += lines.size();
+			}
+			if (count != lineCount)
+			{
+				break;
+			}
+			long cost = raggedness(paragraphs);
+			if (cost < bestCost)
+			{
+				bestCost = cost;
+				best = new ArrayList<>();
+				paragraphs.forEach(best::addAll);
+			}
+		}
+		return best;
+	}
+
+	private List<String> wrapAll(String text, int width)
+	{
+		List<String> lines = new ArrayList<>();
+		for (String paragraph : text.split("\n"))
+		{
+			lines.addAll(wrap(paragraph, bodyFont, width));
+		}
+		return lines;
+	}
+
+	/** How far short of the block's widest line the lines fall, squared and summed. */
+	private long raggedness(List<List<String>> paragraphs)
+	{
+		int block = 0;
+		for (List<String> lines : paragraphs)
+		{
+			for (String line : lines)
+			{
+				block = Math.max(block, bodyFont.width(line));
+			}
+		}
+		long cost = 0;
+		for (List<String> lines : paragraphs)
+		{
+			for (int i = 0; i < lines.size(); i++)
+			{
+				long slack = block - bodyFont.width(lines.get(i));
+				if (i == lines.size() - 1)
+				{
+					// A paragraph's last line may run short, but not down to a word or two.
+					slack = Math.max(0, slack - block / 2);
+				}
+				cost += slack * slack;
+			}
+		}
+		return cost;
+	}
+
+	/** An item's picture, or null until the item manager has it, when the pages are drawn again. */
+	private BufferedImage picture(int itemId)
+	{
+		BufferedImage picture = pictures.get(itemId);
+		if (picture == null && picturesAsked.putIfAbsent(itemId, true) == null)
+		{
+			AsyncBufferedImage image = itemManager.getImage(itemId);
+			image.onLoaded(() ->
+			{
+				pictures.put(itemId, image);
+				picturesChanged = true;
+			});
+		}
+		return picture;
+	}
+
+	/** The item's own pixels, without its outline or shadow, in faint ink. */
+	private static BufferedImage silhouette(BufferedImage picture)
+	{
+		BufferedImage shape = new BufferedImage(picture.getWidth(), picture.getHeight(), BufferedImage.TYPE_INT_ARGB);
+		int ink = SILHOUETTE_ALPHA << 24 | INK.getRGB() & 0xffffff;
+		for (int y = 0; y < picture.getHeight(); y++)
+		{
+			for (int x = 0; x < picture.getWidth(); x++)
+			{
+				int pixel = picture.getRGB(x, y);
+				int rgb = pixel & 0xffffff;
+				if (pixel >>> 24 != 0 && rgb != ITEM_SHADOW && rgb != ITEM_OUTLINE)
+				{
+					shape.setRGB(x, y, ink);
+				}
+			}
+		}
+		return shape;
 	}
 
 	private static List<String> wrap(String text, QuillFont font, int width)

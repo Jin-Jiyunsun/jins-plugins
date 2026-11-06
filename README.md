@@ -60,6 +60,8 @@ working the nets, right-click the cargo hold and choose Open Trawling Log.
   bait used.
 - **Worker log**: your and your crew's catches, time on the nets, and your hardest working and top
   catching crewmates.
+- **Curiosities**: a page for each rare find from trawling (the six rare fish, Angler's paint and Soup), written up
+  when you or your crew find it. Ones found before are added when you open your collection log.
 - **Bookmark**: click the ribbon on a page to set the page the book will open to at the start of each session.
 
 Right-click the button or the total info box to reset the session, or Shift right-click to reset the lifetime counts.

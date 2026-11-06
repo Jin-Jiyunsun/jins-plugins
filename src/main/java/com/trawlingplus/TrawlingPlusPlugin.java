@@ -4,12 +4,16 @@ import com.google.gson.Gson;
 import com.google.inject.Provides;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.WeakHashMap;
@@ -74,6 +78,7 @@ import net.runelite.client.callback.ClientThread;
 import net.runelite.client.callback.RenderCallback;
 import net.runelite.client.callback.RenderCallbackManager;
 import net.runelite.client.config.ConfigManager;
+import net.runelite.client.eventbus.EventBus;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.events.ClientShutdown;
 import net.runelite.client.events.ConfigChanged;
@@ -266,6 +271,9 @@ public class TrawlingPlusPlugin extends Plugin
 	private static final String LIFETIME_WORKER_KEY = "lifetimeNetTicks_";
 	// Each crewmate's lifetime fish caught on the player's own boat are kept under this key, plus their name.
 	private static final String LIFETIME_CATCHER_KEY = "lifetimeCatches_";
+	// A curiosity's saved date when it is known only from the collection log.
+	static final String CURIOSITY_FROM_LOG = "log";
+	private static final DateTimeFormatter JOURNAL_DATE = DateTimeFormatter.ofPattern("d MMM yyyy", Locale.UK);
 	// Set once an account's lifetime counts have had their one-off reset, so the fish counts from 1.4.1 start
 	// over with the Worker log's.
 	private static final String LIFETIME_FRESH_KEY = "lifetimeFreshStart";
@@ -432,6 +440,12 @@ public class TrawlingPlusPlugin extends Plugin
 
 	@Inject
 	private HoldBook holdBook;
+
+	@Inject
+	private CuriosityTracker curiosityTracker;
+
+	@Inject
+	private EventBus eventBus;
 
 	@Inject
 	private MouseManager mouseManager;
@@ -727,6 +741,7 @@ public class TrawlingPlusPlugin extends Plugin
 		overlayManager.add(holdBook);
 		mouseManager.registerMouseListener(holdBook.mouse);
 		keyManager.registerKeyListener(holdBook);
+		eventBus.register(curiosityTracker);
 		clientThread.invoke(this::findExistingShoals);
 		clientThread.invoke(this::addCatchBoxes);
 		log.debug("Trawling Plus started with {} routes, {} points to draw them from", routes.size(),
@@ -745,6 +760,8 @@ public class TrawlingPlusPlugin extends Plugin
 		overlayManager.remove(holdBook);
 		mouseManager.unregisterMouseListener(holdBook.mouse);
 		keyManager.unregisterKeyListener(holdBook);
+		eventBus.unregister(curiosityTracker);
+		curiosityTracker.reset();
 		clientThread.invoke(holdBook::reset);
 		worldMapPointManager.removeIf(DangerMarker.class::isInstance);
 		worldMapPointManager.removeIf(ShoalMarker.class::isInstance);
@@ -3111,7 +3128,7 @@ public class TrawlingPlusPlugin extends Plugin
 
 	/**
 	 * Every lifetime count: each fish, the captain's and crew's catches and time on nets, each crewmate's time on
-	 * nets, the bait used and the Statistics.
+	 * nets, the bait used and the Statistics. The Curiosities found are a record, not a count, and are never cleared.
 	 */
 	private void resetLifetime()
 	{
@@ -3269,8 +3286,61 @@ public class TrawlingPlusPlugin extends Plugin
 			BookPage.blank(),
 			BookPage.heading("Bait used").tip(BAIT_TIP),
 			BookPage.centred(QuantityFormatter.formatNumber(lifetime(LIFETIME_BAIT_KEY))).tip(BAIT_TIP)));
-		return List.of(cover, foreword, new BookPage("This session", session), new BookPage("Lifetime", life),
-			sessionRates, lifetimeRates, statistics, moreStatistics, workers, hardest);
+		List<BookPage> book = new ArrayList<>(List.of(cover, foreword, new BookPage("This session", session),
+			new BookPage("Lifetime", life), sessionRates, lifetimeRates, statistics, moreStatistics, workers, hardest));
+		addCuriosities(book);
+		return book;
+	}
+
+	/**
+	 * The Curiosities at the back of the book: a page saying how many have been found, then one per curiosity found,
+	 * earliest first (those from before the log was kept first of all), its entry, date found and picture, then those
+	 * not yet found, each with its hint and a faint shape of it.
+	 */
+	private void addCuriosities(List<BookPage> book)
+	{
+		// Found pages by the date they were found, as saved ("2026-11-12" sorts by date), the log's before any.
+		List<Map.Entry<String, BookPage>> found = new ArrayList<>();
+		List<BookPage> unfound = new ArrayList<>();
+		for (Curiosity curiosity : Curiosity.values())
+		{
+			String date = configManager.getRSProfileConfiguration(TrawlingPlusConfig.GROUP, curiosity.foundKey());
+			if (date == null)
+			{
+				unfound.add(new BookPage(curiosity.getUnfoundTitle(), List.of(BookPage.hint(curiosity.getHint())),
+					null, curiosity.getItemId(), true));
+				continue;
+			}
+			boolean beforeTheLog = CURIOSITY_FROM_LOG.equals(date);
+			String finder = configManager.getRSProfileConfiguration(TrawlingPlusConfig.GROUP, curiosity.finderKey());
+			found.add(Map.entry(beforeTheLog ? "" : date, new BookPage(curiosity.getName(), List.of(
+				BookPage.heading(beforeTheLog ? Curiosity.BEFORE_THE_LOG : journalDate(date)),
+				BookPage.blank(),
+				BookPage.entry(curiosity.entryFor(finder, beforeTheLog))),
+				null, curiosity.getItemId(), false)));
+		}
+		// A stable sort, so finds on the same day keep the curiosities' own order.
+		found.sort(Map.Entry.comparingByKey());
+		book.add(new BookPage("Curiosities", List.of(
+			BookPage.centred("Odd things the sea has given up, written down as they were found."),
+			BookPage.blank(),
+			BookPage.heading("Found"),
+			BookPage.centred(found.size() + " of " + Curiosity.values().length))));
+		found.forEach(entry -> book.add(entry.getValue()));
+		book.addAll(unfound);
+	}
+
+	/** A saved date ("2026-11-12") as the journal writes it ("12 Nov 2026"), or as saved if it can't be read. */
+	private static String journalDate(String saved)
+	{
+		try
+		{
+			return LocalDate.parse(saved).format(JOURNAL_DATE);
+		}
+		catch (DateTimeParseException e)
+		{
+			return saved;
+		}
 	}
 
 	/**
@@ -3787,7 +3857,7 @@ public class TrawlingPlusPlugin extends Plugin
 	/**
 	 * Whether the player is stood on another player's boat, as of the last tick.
 	 */
-	private boolean onOtherBoat()
+	boolean onOtherBoat()
 	{
 		return aboardBoat != null && ownBoat == null;
 	}

@@ -67,6 +67,9 @@ class TrawlingPlusNetOverlay extends Overlay
 	// as nobody operating the net, so the highlight is held for up to a game tick rather than dropped.
 	private final Map<Integer, SeenButton> lastButtons = new HashMap<>();
 	private static final long BUTTON_GRACE_MILLIS = 600;
+	// How long a net's depth is drawn from what was last seen while its picture is blank or hidden, as it briefly is
+	// while the net is raised or lowered: long enough to cover that, short enough that a stale one soon goes.
+	private static final long ROW_GRACE_MILLIS = 1200;
 
 	private final Client client;
 	private final TrawlingPlusPlugin plugin;
@@ -113,7 +116,7 @@ class TrawlingPlusNetOverlay extends Overlay
 		List<Widget> buttons = guide ? netButtons() : Collections.emptyList();
 		long now = System.currentTimeMillis();
 		int wanted = plugin.getNearestDepth().netDepth();
-		for (NetRow net : netRows(rows))
+		for (NetRow net : netRows(rows, now))
 		{
 			// The picture of a net is its depth, so a row can never be labelled with another net.
 			int depth = net.depth;
@@ -168,7 +171,7 @@ class TrawlingPlusNetOverlay extends Overlay
 	 * of the four depth pictures; for the moments a net's picture is anything else, it is drawn as it was
 	 * last seen.
 	 */
-	private List<NetRow> netRows(Widget rows)
+	private List<NetRow> netRows(Widget rows, long now)
 	{
 		List<NetRow> nets = new ArrayList<>();
 		// By where each picture is on screen against the rows' own left edge, not its place in whatever holds it,
@@ -188,7 +191,7 @@ class TrawlingPlusNetOverlay extends Overlay
 			boolean laidOut = !child.isHidden() && bounds.y >= 0 && bounds.height > 0;
 			if (net && laidOut)
 			{
-				NetRow row = new NetRow(child.getIndex(), sprite - NET_PICTURE_RAISED, bounds);
+				NetRow row = new NetRow(child.getIndex(), sprite - NET_PICTURE_RAISED, bounds, now);
 				lastSeen.put(child.getIndex(), row);
 				nets.add(row);
 			}
@@ -199,11 +202,12 @@ class TrawlingPlusNetOverlay extends Overlay
 			}
 			else
 			{
-				// The depth as last seen, but drawn where the row is now, which moves as the list scrolls.
+				// The depth as last seen, for a moment: drawn where the row is now, which moves as the list scrolls,
+				// or where it was while it isn't laid out.
 				NetRow seen = lastSeen.get(child.getIndex());
-				if (seen != null && laidOut)
+				if (seen != null && now - seen.millis <= ROW_GRACE_MILLIS)
 				{
-					nets.add(new NetRow(seen.index, seen.depth, bounds));
+					nets.add(laidOut ? new NetRow(seen.index, seen.depth, bounds, seen.millis) : seen);
 				}
 			}
 		}
@@ -378,12 +382,15 @@ class TrawlingPlusNetOverlay extends Overlay
 		final int index;
 		final int depth;
 		final Rectangle picture;
+		// When the net's picture was last actually seen.
+		final long millis;
 
-		NetRow(int index, int depth, Rectangle picture)
+		NetRow(int index, int depth, Rectangle picture, long millis)
 		{
 			this.index = index;
 			this.depth = depth;
 			this.picture = picture;
+			this.millis = millis;
 		}
 	}
 

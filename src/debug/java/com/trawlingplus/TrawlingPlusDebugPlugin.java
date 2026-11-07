@@ -95,11 +95,10 @@ public class TrawlingPlusDebugPlugin extends Plugin
 				// Left not found.
 				continue;
 			}
-			String date = random.nextInt(4) == 0 ? TrawlingPlusPlugin.CURIOSITY_FROM_LOG
+			String date = random.nextInt(4) == 0 ? Curiosity.FROM_LOG
 				: LocalDate.now().minusDays(random.nextInt(365)).toString();
 			configManager.setRSProfileConfiguration(TrawlingPlusConfig.GROUP, curiosity.foundKey(), date);
-			if (!TrawlingPlusPlugin.CURIOSITY_FROM_LOG.equals(date) && curiosity.getCrewEntry() != null
-				&& random.nextBoolean())
+			if (!Curiosity.FROM_LOG.equals(date) && curiosity.getCrewEntry() != null && random.nextBoolean())
 			{
 				configManager.setRSProfileConfiguration(TrawlingPlusConfig.GROUP, curiosity.finderKey(),
 					CREW[random.nextInt(CREW.length)]);

@@ -4,10 +4,10 @@ import java.util.List;
 import lombok.Value;
 
 /**
- * One page of the hold book: a title and its lines, and maybe a name signed at its foot or an item's picture above its
- * number. A line is text, wrapped to the page and either left aligned or centred, a centred heading in faded ink, a
- * row with a name on the left and a value on the right, or a blank line. Pages are compared by what they hold, so the
- * book redraws one only when it changes.
+ * One page of the hold book: a title and its lines, and maybe a name signed at its foot, an item's picture above its
+ * number, or a tab for the section it starts. A line is text, wrapped to the page and either left aligned or centred,
+ * a centred heading in faded ink, a row with a name on the left and a value on the right, or a blank line. Pages are
+ * compared by what they hold, so the book redraws one only when it changes.
  */
 @Value
 class BookPage
@@ -20,6 +20,8 @@ class BookPage
 	int picture;
 	// The picture as a faint shape only, for an item not yet found.
 	boolean silhouette;
+	// For the first page of a section, the section's name, shown on a tab under the page; null for none.
+	String tab;
 
 	BookPage(String title, List<Line> lines)
 	{
@@ -33,11 +35,23 @@ class BookPage
 
 	BookPage(String title, List<Line> lines, String signature, int picture, boolean silhouette)
 	{
+		this(title, lines, signature, picture, silhouette, null);
+	}
+
+	private BookPage(String title, List<Line> lines, String signature, int picture, boolean silhouette, String tab)
+	{
 		this.title = title;
 		this.lines = lines;
 		this.signature = signature;
 		this.picture = picture;
 		this.silhouette = silhouette;
+		this.tab = tab;
+	}
+
+	/** The same page, starting a section with this name on its tab. */
+	BookPage withTab(String name)
+	{
+		return new BookPage(title, lines, signature, picture, silhouette, name);
 	}
 
 	@Value

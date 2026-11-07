@@ -948,6 +948,18 @@ public interface TrawlingPlusConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "sectionRibbons",
+		name = "Section ribbons",
+		description = "Hang a ribbon under the book for each section,<br>to jump straight to it. Off for a cleaner<br>look.",
+		position = 81,
+		section = trawlingLogSection
+	)
+	default boolean sectionRibbons()
+	{
+		return true;
+	}
+
+	@ConfigItem(
 		keyName = "shallowDepthColour",
 		name = "Shallow",
 		description = "Colour of shallow depth.",

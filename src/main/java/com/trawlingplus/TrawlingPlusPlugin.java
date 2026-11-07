@@ -271,8 +271,6 @@ public class TrawlingPlusPlugin extends Plugin
 	private static final String LIFETIME_WORKER_KEY = "lifetimeNetTicks_";
 	// Each crewmate's lifetime fish caught on the player's own boat are kept under this key, plus their name.
 	private static final String LIFETIME_CATCHER_KEY = "lifetimeCatches_";
-	// A curiosity's saved date when it is known only from the collection log.
-	static final String CURIOSITY_FROM_LOG = "log";
 	private static final DateTimeFormatter JOURNAL_DATE = DateTimeFormatter.ofPattern("d MMM yyyy", Locale.UK);
 	// Set once an account's lifetime counts have had their one-off reset, so the fish counts from 1.4.1 start
 	// over with the Worker log's.
@@ -3286,8 +3284,11 @@ public class TrawlingPlusPlugin extends Plugin
 			BookPage.blank(),
 			BookPage.heading("Bait used").tip(BAIT_TIP),
 			BookPage.centred(QuantityFormatter.formatNumber(lifetime(LIFETIME_BAIT_KEY))).tip(BAIT_TIP)));
-		List<BookPage> book = new ArrayList<>(List.of(cover, foreword, new BookPage("This session", session),
-			new BookPage("Lifetime", life), sessionRates, lifetimeRates, statistics, moreStatistics, workers, hardest));
+		// Each section's first page carries its tab.
+		List<BookPage> book = new ArrayList<>(List.of(cover, foreword,
+			new BookPage("This session", session).withTab("Catches"), new BookPage("Lifetime", life),
+			sessionRates, lifetimeRates, statistics.withTab("Statistics"), moreStatistics,
+			workers.withTab("Worker log"), hardest));
 		addCuriosities(book);
 		return book;
 	}
@@ -3311,7 +3312,7 @@ public class TrawlingPlusPlugin extends Plugin
 					null, curiosity.getItemId(), true));
 				continue;
 			}
-			boolean beforeTheLog = CURIOSITY_FROM_LOG.equals(date);
+			boolean beforeTheLog = Curiosity.FROM_LOG.equals(date);
 			String finder = configManager.getRSProfileConfiguration(TrawlingPlusConfig.GROUP, curiosity.finderKey());
 			found.add(Map.entry(beforeTheLog ? "" : date, new BookPage(curiosity.getName(), List.of(
 				BookPage.heading(beforeTheLog ? Curiosity.BEFORE_THE_LOG : journalDate(date)),
@@ -3325,7 +3326,7 @@ public class TrawlingPlusPlugin extends Plugin
 			BookPage.centred("Odd things the sea has given up, written down as they were found."),
 			BookPage.blank(),
 			BookPage.heading("Found"),
-			BookPage.centred(found.size() + " of " + Curiosity.values().length))));
+			BookPage.centred(found.size() + " of " + Curiosity.values().length))).withTab("Curiosities"));
 		found.forEach(entry -> book.add(entry.getValue()));
 		book.addAll(unfound);
 	}

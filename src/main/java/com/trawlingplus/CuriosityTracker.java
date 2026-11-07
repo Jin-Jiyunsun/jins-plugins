@@ -60,8 +60,6 @@ class CuriosityTracker
 	// The tick of the last pet message, or -1, and whether it said the backpack.
 	private int petTick = -1;
 	private boolean petToBackpack;
-	// The open collection log page's items and those obtained, as last read, or null while it is closed.
-	private String lastLogPage;
 	// How many Soup items were in the inventory when the pet message came.
 	private int soupInInventory;
 
@@ -82,7 +80,6 @@ class CuriosityTracker
 	{
 		playerCatchTick = -1;
 		petTick = -1;
-		lastLogPage = null;
 	}
 
 	@Subscribe
@@ -163,33 +160,17 @@ class CuriosityTracker
 		Widget items = client.getWidget(InterfaceID.Collection.ITEMS);
 		if (items == null || items.isHidden())
 		{
-			lastLogPage = null;
 			return;
 		}
 		List<Widget> shown = new ArrayList<>();
 		collectItems(items, shown);
-		StringBuilder page = new StringBuilder();
-		for (Widget item : shown)
-		{
-			// The log shows items not yet obtained faded out.
-			if (item.getOpacity() == 0)
-			{
-				page.append(' ').append(item.getItemId());
-			}
-		}
-		String obtained = shown.size() + ":" + page;
-		if (obtained.equals(lastLogPage))
-		{
-			return;
-		}
-		lastLogPage = obtained;
-		log.debug("Collection log page shows {} items, obtained:{}", shown.size(), page);
 		for (Widget item : shown)
 		{
 			Curiosity curiosity = byItem.get(item.getItemId());
+			// The log shows items not yet obtained faded out.
 			if (curiosity != null && item.getOpacity() == 0 && foundDate(curiosity) == null)
 			{
-				save(curiosity, TrawlingPlusPlugin.CURIOSITY_FROM_LOG, null);
+				save(curiosity, Curiosity.FROM_LOG, null);
 			}
 		}
 	}

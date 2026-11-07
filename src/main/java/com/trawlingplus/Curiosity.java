@@ -52,7 +52,8 @@ enum Curiosity
 		null,
 		"Even in the lonely sea, you can find a new friend.");
 
-	// The date line for a find known only from the collection log, with no date of its own.
+	// The saved date of a find known only from the collection log, and the date line its page shows instead.
+	static final String FROM_LOG = "log";
 	static final String BEFORE_THE_LOG = "Before this log was kept";
 
 	private final int itemId;

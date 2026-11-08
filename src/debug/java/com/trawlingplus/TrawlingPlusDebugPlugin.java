@@ -103,6 +103,11 @@ public class TrawlingPlusDebugPlugin extends Plugin
 				configManager.setRSProfileConfiguration(TrawlingPlusConfig.GROUP, curiosity.finderKey(),
 					CREW[random.nextInt(CREW.length)]);
 			}
+			else if (!Curiosity.FROM_LOG.equals(date) && curiosity.getElsewhereEntry() != null && random.nextBoolean())
+			{
+				configManager.setRSProfileConfiguration(TrawlingPlusConfig.GROUP, curiosity.finderKey(),
+					Curiosity.FOUND_ELSEWHERE);
+			}
 		}
 	}
 

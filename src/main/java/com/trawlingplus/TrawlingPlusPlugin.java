@@ -209,6 +209,8 @@ public class TrawlingPlusPlugin extends Plugin
 
 	// The nets share one catch of up to this many fish, however many are fitted.
 	private static final int NET_CAPACITY = 250;
+	// Nets this full count as filled, so emptying a little early, before a catch is lost to full nets, still counts.
+	private static final int NETS_FILLED_AT = 240;
 
 	// How many ticks after the hold's screen closes a deposit made just before can still leave the inventory.
 	private static final int DEPOSIT_TICKS = 2;
@@ -253,7 +255,7 @@ public class TrawlingPlusPlugin extends Plugin
 		+ "</br>Includes banking, sailing between shoals"
 		+ "</br>and breaks of up to 30 minutes.";
 	private static final String TRUST_TIP = "Extra fish given by Trawler's trust.";
-	private static final String FILLED_TIP = "Times your nets went from empty to full,</br>on your own boat.";
+	private static final String FILLED_TIP = "Times your nets went from empty to full</br>(240 fish or more), on your own boat.";
 	private static final String BEST_TIP = "The most fish caught in one session.";
 	private static final String BAIT_TIP = "Fish offcuts laid as bait by you and your crew,</br>on your own boat.";
 	private static final String RESET_LIFETIME = "Reset lifetime";
@@ -548,7 +550,7 @@ public class TrawlingPlusPlugin extends Plugin
 	// Whether the nets have been seen emptied since they last filled, so topping them back up after taking a few
 	// fish out isn't another fill.
 	private boolean netsEmptied;
-	// The tick of the last trawling catch, or -1 if none since starting.
+	// The tick of the player's or crew's last trawling catch, on any boat, or -1 if none since starting.
 	private int lastCatchTick = -1;
 	// Logged-in ticks since the last counted catch, held until the next one adds them to the time spent trawling,
 	// or -1 when there has been no catch within TRAWL_GAP_TICKS.
@@ -1127,6 +1129,9 @@ public class TrawlingPlusPlugin extends Plugin
 			// Sea spot fishing outlasts a logout or disconnect, the way the hold does; only its away timer starts over,
 			// as the tick count needn't carry on from where it was.
 			awayFromSpotsTick = -1;
+			// Ticks noted before don't carry over either.
+			lastCatchTick = -1;
+			curiosityTracker.reset();
 		}
 
 		if (event.getGameState() == GameState.LOGIN_SCREEN)
@@ -2130,8 +2135,7 @@ public class TrawlingPlusPlugin extends Plugin
 			return;
 		}
 
-		// Some lines lead with a colour code such as "@mes_hl_red@", which removeTags leaves in.
-		String message = CHAT_COLOUR.matcher(Text.removeTags(event.getMessage())).replaceFirst("");
+		String message = chatText(event.getMessage());
 		if (message.startsWith("Your crew start moving the contents of the cargo hold"))
 		{
 			// Asking the crew on the dock to move everything in the hold to the bank empties it. This is said
@@ -2159,7 +2163,7 @@ public class TrawlingPlusPlugin extends Plugin
 				fishingSpot = false;
 			}
 
-			boolean start = SEA_START.matcher(message).find();
+			boolean start = message.startsWith("You ") && SEA_START.matcher(message).find();
 			boolean seaCatch = fishingSpot && message.startsWith("You catch ");
 			if (start || seaCatch)
 			{
@@ -2192,8 +2196,9 @@ public class TrawlingPlusPlugin extends Plugin
 
 		// The player's catches are counted on anyone's boat. Sea spot catches are never trawled fish, so a catch
 		// naming one came from the nets.
+		// Most lines are neither, so the pattern only runs on ones that could be a catch.
 		Matcher catchLine = CATCH.matcher(message);
-		int catchCount = catchLine.find() ? number(catchLine.group(1)) : -1;
+		int catchCount = mightBeCatch(message) && catchLine.find() ? number(catchLine.group(1)) : -1;
 		// A catch, or a net trying for a shoal in reach ("Your net is not deep enough to catch fish from the nearby
 		// bluefin shoal.", "Jolly Jim's net is too deep..."), shows that side is working a shoal rather than passing one.
 		if (catchCount > 0)
@@ -2328,7 +2333,7 @@ public class TrawlingPlusPlugin extends Plugin
 			}
 			if (fish >= 0 && fishInNets >= 0)
 			{
-				if (netsEmptied && fishInNets + fish >= NET_CAPACITY)
+				if (netsEmptied && fishInNets + fish >= NETS_FILLED_AT)
 				{
 					countLifetime(LIFETIME_NETS_FILLED_KEY, 1);
 					netsEmptied = false;
@@ -2546,6 +2551,8 @@ public class TrawlingPlusPlugin extends Plugin
 	{
 		if (caught > 0)
 		{
+			// Trawling there too, as the own boat's catches say.
+			lastCatchTick = client.getTickCount();
 			if (fishInNets >= 0)
 			{
 				setFish(Math.min(NET_CAPACITY, fishInNets + caught));
@@ -2606,8 +2613,28 @@ public class TrawlingPlusPlugin extends Plugin
 		{
 			return message.substring(0, net);
 		}
+		if (!message.contains(" lowers the net."))
+		{
+			return null;
+		}
 		Matcher lowers = CREW_LOWERS.matcher(message);
 		return lowers.find() ? lowers.group(1) : null;
+	}
+
+	/**
+	 * A game message as plain text: without tags, and without the colour codes some lines lead with, such as
+	 * "@mes_hl_red@", which removeTags leaves in. Each step only runs on a line that has what it removes.
+	 */
+	static String chatText(String raw)
+	{
+		String text = raw.indexOf('<') >= 0 ? Text.removeTags(raw) : raw;
+		return text.startsWith("@") ? CHAT_COLOUR.matcher(text).replaceFirst("") : text;
+	}
+
+	/** Whether a line could be a catch, the player's or a crewmate's, before the catch patterns are run on it. */
+	static boolean mightBeCatch(String message)
+	{
+		return message.startsWith("You catch ") || message.contains(" catches ");
 	}
 
 	/**
@@ -2641,6 +2668,11 @@ public class TrawlingPlusPlugin extends Plugin
 	/** Stops counting a crewmate as working a net once the player tells them to rest: "Jolly Jim, take a rest!" */
 	private void restCrewmate(ChatMessage event)
 	{
+		// Checked first, as most public chat isn't this.
+		if (!event.getMessage().contains("take a rest!"))
+		{
+			return;
+		}
 		Player player = client.getLocalPlayer();
 		if (player == null || player.getName() == null
 			|| !Text.sanitize(event.getName()).equals(Text.sanitize(player.getName())))
@@ -2770,9 +2802,23 @@ public class TrawlingPlusPlugin extends Plugin
 	boolean isTrawling()
 	{
 		CargoHold hold = boatHold;
-		return netsLowered || fishInNets > 0
-			|| lastCatchTick >= 0 && client.getTickCount() - lastCatchTick <= TRAWL_AWAY_TICKS
-			|| hold != null && hold.trawled() > 0;
+		return netsLowered || fishInNets > 0 || caughtRecently() || hold != null && hold.trawled() > 0;
+	}
+
+	/** Whether a trawling catch, the player's or the crew's, came in the last 3 minutes. */
+	boolean caughtRecently()
+	{
+		return within(lastCatchTick, client.getTickCount(), TRAWL_AWAY_TICKS);
+	}
+
+	/**
+	 * Whether a tick noted earlier (-1 for none) is at most this many ticks before now. One that seems to be after now,
+	 * as from before a logout if the tick count starts over, counts as too long ago.
+	 */
+	static boolean within(int then, int now, int ticks)
+	{
+		int since = now - then;
+		return then >= 0 && since >= 0 && since <= ticks;
 	}
 
 	/**
@@ -2953,10 +2999,13 @@ public class TrawlingPlusPlugin extends Plugin
 	/**
 	 * Sets the count without anything having been done with the nets, for logging in, stepping off the boat
 	 * or the plugin starting, and forgets any recent activity so the fish line doesn't come up by itself.
+	 * Logging out and stepping off both empty the nets, so a known empty count here also counts as
+	 * emptied, and the next time they fill is a fill from empty; an unknown count doesn't.
 	 */
 	private void resetFish(int fish)
 	{
 		setFish(fish);
+		netsEmptied = fish == 0;
 		fishActivityMillis = -1;
 	}
 

@@ -23,7 +23,6 @@ import net.runelite.api.gameval.NpcID;
 import net.runelite.api.widgets.Widget;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
-import net.runelite.client.util.Text;
 
 /**
  * Notes when each curiosity is first found, for the trawling log's Curiosities pages, per account: from the catch
@@ -35,8 +34,26 @@ import net.runelite.client.util.Text;
 @Singleton
 class CuriosityTracker
 {
-	// "You catch a giant blue krill!", "Jolly Jim catches an orangefin!" (the game says "a orangefin" for the player).
-	private static final Pattern RARE_CATCH = Pattern.compile("^(?:You catch|(.+) catches) an? ([a-z ]+)!$");
+	// The curiosities caught in the nets.
+	private static final Curiosity[] RARE_FISH = {Curiosity.GIANT_BLUE_KRILL, Curiosity.GOLDEN_HADDOCK,
+		Curiosity.ORANGEFIN, Curiosity.HUGE_HALIBUT, Curiosity.PURPLEFIN, Curiosity.SWIFT_MARLIN};
+	// How a catch line of each ends, " purplefin!", checked before the pattern runs.
+	private static final String[] RARE_ENDINGS = new String[RARE_FISH.length];
+	// "You catch a giant blue krill!", "Jolly Jim catches an orangefin!" (the game says "a orangefin" for the player),
+	// naming only the rare fish.
+	private static final Pattern RARE_CATCH;
+
+	static
+	{
+		StringBuilder names = new StringBuilder();
+		for (int i = 0; i < RARE_FISH.length; i++)
+		{
+			String name = RARE_FISH[i].getName().toLowerCase();
+			RARE_ENDINGS[i] = " " + name + "!";
+			names.append(i == 0 ? "" : "|").append(Pattern.quote(name));
+		}
+		RARE_CATCH = Pattern.compile("^(?:You catch|(.+) catches) an? (" + names + ")!$");
+	}
 	private static final String PAINT = "You've received some paint!";
 	private static final String COLLECTION_LOG = "New item added to your collection log: ";
 	// A pet arriving as a follower, or into the backpack when a follower is already out. Every pet says these, so
@@ -47,7 +64,8 @@ class CuriosityTracker
 	private static final int PET_TICKS = 3;
 	// Paint only comes from the player's own net catching, so it only counts this soon after one of their catches.
 	private static final int PAINT_AFTER_CATCH_TICKS = 30;
-	private static final Pattern CHAT_COLOUR = Pattern.compile("^(?:@[a-z_]+@)+");
+	// How long after the collection log line saves a find the crewmate's catch line can still name its finder.
+	private static final int FINDER_TICKS = 2;
 
 	private final Client client;
 	private final ConfigManager configManager;
@@ -62,6 +80,9 @@ class CuriosityTracker
 	private boolean petToBackpack;
 	// How many Soup items were in the inventory when the pet message came.
 	private int soupInInventory;
+	// The find the collection log line just saved without a finder, and the tick it did, or null.
+	private Curiosity awaitingFinder;
+	private int awaitingFinderTick;
 
 	@Inject
 	CuriosityTracker(Client client, ConfigManager configManager, TrawlingPlusPlugin plugin)
@@ -80,6 +101,7 @@ class CuriosityTracker
 	{
 		playerCatchTick = -1;
 		petTick = -1;
+		awaitingFinder = null;
 	}
 
 	@Subscribe
@@ -90,34 +112,38 @@ class CuriosityTracker
 		{
 			return;
 		}
-		String message = CHAT_COLOUR.matcher(Text.removeTags(event.getMessage())).replaceFirst("");
+		String message = TrawlingPlusPlugin.chatText(event.getMessage());
 		int tick = client.getTickCount();
 		if (message.startsWith("You catch "))
 		{
 			playerCatchTick = tick;
 		}
 
+		// The pattern only runs on lines ending in a rare fish's name.
 		Matcher rare = RARE_CATCH.matcher(message);
-		if (rare.matches())
+		if (endsWithRareFish(message) && rare.matches())
 		{
 			Curiosity curiosity = byName.get(rare.group(2));
 			String crewmate = rare.group(1);
 			// A crewmate's catch only counts on the player's own boat, as the crew's catches do.
-			if (curiosity != null && (crewmate == null || !plugin.onOtherBoat()))
+			if (crewmate == null || !plugin.onOtherBoat())
 			{
 				found(curiosity, crewmate);
 			}
 		}
-		else if (message.equals(PAINT) && playerCatchTick >= 0 && tick - playerCatchTick <= PAINT_AFTER_CATCH_TICKS)
+		else if (message.equals(PAINT) && TrawlingPlusPlugin.within(playerCatchTick, tick, PAINT_AFTER_CATCH_TICKS))
 		{
 			found(Curiosity.ANGLERS_PAINT, null);
 		}
 		else if (message.startsWith(COLLECTION_LOG))
 		{
 			Curiosity curiosity = byName.get(message.substring(COLLECTION_LOG.length()).trim().toLowerCase());
-			if (curiosity != null)
+			if (curiosity != null && found(curiosity, curiosity == Curiosity.SOUP ? soupFinder() : null)
+				&& curiosity.getCrewEntry() != null)
 			{
-				found(curiosity, null);
+				// The catch line naming who caught it can arrive just after.
+				awaitingFinder = curiosity;
+				awaitingFinderTick = tick;
 			}
 		}
 		else if (message.equals(PET_FOLLOWING) || message.equals(PET_BACKPACK))
@@ -136,7 +162,7 @@ class CuriosityTracker
 		{
 			return;
 		}
-		if (client.getTickCount() - petTick > PET_TICKS)
+		if (!TrawlingPlusPlugin.within(petTick, client.getTickCount(), PET_TICKS))
 		{
 			petTick = -1;
 			return;
@@ -147,8 +173,17 @@ class CuriosityTracker
 		if (soup)
 		{
 			petTick = -1;
-			found(Curiosity.SOUP, null);
+			found(Curiosity.SOUP, soupFinder());
 		}
+	}
+
+	/**
+	 * Soup comes from any Sailing activity, so one found with no trawling catch in the last 3 minutes is marked as
+	 * found elsewhere, and its page doesn't tell of the nets.
+	 */
+	private String soupFinder()
+	{
+		return plugin.caughtRecently() ? null : Curiosity.FOUND_ELSEWHERE;
 	}
 
 	/**
@@ -197,22 +232,28 @@ class CuriosityTracker
 	}
 
 	/**
-	 * Notes a curiosity found now, by a crewmate or (null) the player, unless it already has been. A crewmate's catch
-	 * arriving after the collection log line for the same find gives it its finder.
+	 * Notes a curiosity found now, by a crewmate or (null) the player, unless it already has been; returns whether it
+	 * was saved. A saved find is never changed, except that a crewmate's catch line arriving within a couple of ticks
+	 * of the collection log line that saved it, for the same item, names its finder.
 	 */
-	private void found(Curiosity curiosity, String crewmate)
+	private boolean found(Curiosity curiosity, String crewmate)
 	{
-		String today = LocalDate.now().toString();
-		String date = foundDate(curiosity);
-		if (date == null)
+		if (foundDate(curiosity) == null)
 		{
-			save(curiosity, today, crewmate);
+			save(curiosity, LocalDate.now().toString(), crewmate);
+			return true;
 		}
-		else if (date.equals(today) && crewmate != null && curiosity.getCrewEntry() != null
-			&& configManager.getRSProfileConfiguration(TrawlingPlusConfig.GROUP, curiosity.finderKey()) == null)
+		if (curiosity == awaitingFinder && TrawlingPlusPlugin.within(awaitingFinderTick, client.getTickCount(), FINDER_TICKS))
 		{
-			configManager.setRSProfileConfiguration(TrawlingPlusConfig.GROUP, curiosity.finderKey(), crewmate);
+			// Only the one catch line straight after the log line, whoever it names.
+			awaitingFinder = null;
+			if (crewmate != null)
+			{
+				log.debug("Curiosity finder: {} by {}", curiosity.getName(), crewmate);
+				configManager.setRSProfileConfiguration(TrawlingPlusConfig.GROUP, curiosity.finderKey(), crewmate);
+			}
 		}
+		return false;
 	}
 
 	private void save(Curiosity curiosity, String date, String crewmate)
@@ -223,10 +264,22 @@ class CuriosityTracker
 		}
 		log.debug("Curiosity found: {} on {} by {}", curiosity.getName(), date, crewmate);
 		configManager.setRSProfileConfiguration(TrawlingPlusConfig.GROUP, curiosity.foundKey(), date);
-		if (crewmate != null && curiosity.getCrewEntry() != null)
+		if (crewmate != null && (curiosity.getCrewEntry() != null || Curiosity.FOUND_ELSEWHERE.equals(crewmate)))
 		{
 			configManager.setRSProfileConfiguration(TrawlingPlusConfig.GROUP, curiosity.finderKey(), crewmate);
 		}
+	}
+
+	private static boolean endsWithRareFish(String message)
+	{
+		for (String ending : RARE_ENDINGS)
+		{
+			if (message.endsWith(ending))
+			{
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private String foundDate(Curiosity curiosity)

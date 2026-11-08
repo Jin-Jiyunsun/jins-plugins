@@ -50,11 +50,15 @@ enum Curiosity
 		"I found a sea turtle trapped in my nets, he seems to have taken a liking to me and has followed me ever"
 			+ " since! I named him Soup.",
 		null,
-		"Even in the lonely sea, you can find a new friend.");
+		"Even in the lonely sea, you can find a new friend.",
+		"A sea turtle climbed aboard today and refused to leave. The crew have grown fond of him."
+			+ "\nI named him Soup.");
 
 	// The saved date of a find known only from the collection log, and the date line its page shows instead.
 	static final String FROM_LOG = "log";
 	static final String BEFORE_THE_LOG = "Before this log was kept";
+	// Saved as the finder of a find made away from the nets, for which the page tells its elsewhere entry.
+	static final String FOUND_ELSEWHERE = "elsewhere";
 
 	private final int itemId;
 	private final String name;
@@ -63,8 +67,16 @@ enum Curiosity
 	// The crew's entry, after the crewmate's name, or null for a find only the player makes.
 	private final String crewEntry;
 	private final String hint;
+	// The entry for one found away from the nets, or null for a find only the nets give.
+	private final String elsewhereEntry;
 
 	Curiosity(int itemId, String name, String unfoundTitle, String entry, String crewEntry, String hint)
+	{
+		this(itemId, name, unfoundTitle, entry, crewEntry, hint, null);
+	}
+
+	Curiosity(int itemId, String name, String unfoundTitle, String entry, String crewEntry, String hint,
+		String elsewhereEntry)
 	{
 		this.itemId = itemId;
 		this.name = name;
@@ -72,6 +84,7 @@ enum Curiosity
 		this.entry = entry;
 		this.crewEntry = crewEntry;
 		this.hint = hint;
+		this.elsewhereEntry = elsewhereEntry;
 	}
 
 	/** The profile key holding the date it was first found ("2026-11-12"), or "log" when known only from the log. */
@@ -80,22 +93,28 @@ enum Curiosity
 		return "curiosityFound_" + itemId;
 	}
 
-	/** The profile key holding the name of the crewmate who found it, unset when the player did. */
+	/**
+	 * The profile key holding the name of the crewmate who found it, or "elsewhere" when found away from the nets,
+	 * unset when the player found it in the nets.
+	 */
 	String finderKey()
 	{
 		return "curiosityFinder_" + itemId;
 	}
 
 	/**
-	 * Its entry: the crewmate's, after their name, when one found it, or the player's; told as long ago ("I once
+	 * Its entry: the crewmate's, after their name, when one found it, or the player's; the elsewhere entry when found
+	 * away from the nets, or before the log was kept, as the log can't say where; told as long ago ("I once
 	 * caught...") when found before the log was kept.
 	 */
 	String entryFor(String finder, boolean beforeTheLog)
 	{
-		if (finder != null && crewEntry != null)
+		boolean elsewhere = FOUND_ELSEWHERE.equals(finder);
+		if (finder != null && !elsewhere && crewEntry != null)
 		{
 			return finder + crewEntry;
 		}
-		return beforeTheLog ? entry.replace(" today", "").replaceFirst("^I ", "I once ") : entry;
+		String text = elsewhereEntry != null && (elsewhere || beforeTheLog) ? elsewhereEntry : entry;
+		return beforeTheLog ? text.replace(" today", "").replaceFirst("^I ", "I once ") : text;
 	}
 }

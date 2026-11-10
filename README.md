@@ -38,10 +38,14 @@ bait and cargo hold from a display on the boat, and keeps a trawling log of ever
   and optionally the fish in your nets.
 - **Trawling log**: a book on the cargo hold screen. See below.
 
+### Ocean encounters
+
+Optional outlines and alerts for giant clams that are empty or offering a pearl, clue turtles, and lost crates and
+caskets from the tier you pick.
+
 ### Notifications
 
-Optional alerts for full nets, a full hold, a shoal about to leave its stop or changing to the
-wrong depth, a shoal turning special, or being knocked off the net.
+Optional alerts for full nets, a full hold, a shoal leaving, changing depth or turning special, and numb hands, with optional plain messages.
 
 On someone else's boat, everything works except the cargo hold features, the hold full warning and your crew's
 stats, with the fish count following your own net there.

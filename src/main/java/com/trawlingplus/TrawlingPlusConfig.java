@@ -111,6 +111,13 @@ public interface TrawlingPlusConfig extends Config
 	String notificationsSection = "notifications";
 
 	@ConfigSection(
+		name = "Ocean encounters",
+		description = "Outlines and alerts for what surfaces around<br>a moving boat",
+		position = 58
+	)
+	String encountersSection = "oceanEncounters";
+
+	@ConfigSection(
 		name = "Info boxes",
 		description = "Counts of fish shown as info boxes",
 		position = 71
@@ -119,10 +126,64 @@ public interface TrawlingPlusConfig extends Config
 
 	@ConfigSection(
 		name = "Trawling log",
-		description = "The book of catches and statistics opened from the cargo hold",
+		description = "The book of catches and statistics opened<br>from the cargo hold",
 		position = 75
 	)
 	String trawlingLogSection = "trawlingLog";
+
+	/**
+	 * The lowest lost crate to outline and notify of, by the wood it is made of. In the order of the crates
+	 * themselves.
+	 */
+	enum CrateTier
+	{
+		WOODEN("Wooden"),
+		OAK("Oak"),
+		TEAK("Teak"),
+		MAHOGANY("Mahogany"),
+		CAMPHOR("Camphor"),
+		IRONWOOD("Ironwood");
+
+		private final String name;
+
+		CrateTier(String name)
+		{
+			this.name = name;
+		}
+
+		@Override
+		public String toString()
+		{
+			return name;
+		}
+	}
+
+	/**
+	 * The lowest lost casket to outline and notify of, by the clue tier inside. In the order of the caskets
+	 * themselves.
+	 */
+	enum CasketTier
+	{
+		BEGINNER("Beginner"),
+		EASY("Easy"),
+		MEDIUM("Medium"),
+		HARD("Hard"),
+		ELITE("Elite"),
+		MASTER("Master");
+
+		private final String name;
+
+		CasketTier(String name)
+		{
+			this.name = name;
+		}
+
+		@Override
+		public String toString()
+		{
+			return name;
+		}
+	}
 
 	enum LineThickness
 	{
@@ -732,7 +793,7 @@ public interface TrawlingPlusConfig extends Config
 	@ConfigItem(
 		keyName = "showDepthTick",
 		name = "Tick on correct depth",
-		description = "Show a tick beside the HUD depth when it's correct.",
+		description = "Show a tick beside the display's depth when<br>it's correct.",
 		position = 42,
 		section = hudSection
 	)
@@ -1047,7 +1108,7 @@ public interface TrawlingPlusConfig extends Config
 	@ConfigItem(
 		keyName = "idleNetColour",
 		name = "Unattended",
-		description = "Outline of a lowered net with nobody<br>operating it.",
+		description = "Colour of a lowered net with nobody<br>operating it.",
 		position = 55,
 		section = netHighlightSection
 	)
@@ -1060,7 +1121,7 @@ public interface TrawlingPlusConfig extends Config
 	@ConfigItem(
 		keyName = "fullNetColour",
 		name = "Full",
-		description = "Outline of the lowered nets while they are full.",
+		description = "Colour of the lowered nets while they are full.",
 		position = 56,
 		section = netHighlightSection
 	)
@@ -1127,6 +1188,18 @@ public interface TrawlingPlusConfig extends Config
 	default Notification notifyHoldFull()
 	{
 		return Notification.OFF;
+	}
+
+	@ConfigItem(
+		keyName = "plainNotifications",
+		name = "Plain messages",
+		description = "Use short, to the point notification messages<br>instead of flavour text.",
+		position = 63,
+		section = notificationsSection
+	)
+	default boolean plainNotifications()
+	{
+		return false;
 	}
 
 	@ConfigItem(
@@ -1273,7 +1346,7 @@ public interface TrawlingPlusConfig extends Config
 	@ConfigItem(
 		keyName = "showTotalCaughtInfoBox",
 		name = "Total caught",
-		description = "Show an info box for every fish the nets<br>have caught together. Right-click it to<br>reset the counts.",
+		description = "Show an info box for every fish the nets<br>have caught together. Right-click it to<br>reset the session.",
 		position = 73,
 		section = infoBoxSection
 	)
@@ -1285,7 +1358,7 @@ public interface TrawlingPlusConfig extends Config
 	@ConfigItem(
 		keyName = "showFishInNetsInfoBox",
 		name = "Fish in nets",
-		description = "Show an info box for the fish in the nets<br>on your own boat.",
+		description = "Show an info box for the fish in your nets.<br>On another player's boat, your own net only.",
 		position = 74,
 		section = infoBoxSection
 	)
@@ -1364,5 +1437,90 @@ public interface TrawlingPlusConfig extends Config
 	default boolean showMarlin()
 	{
 		return true;
+	}
+
+	@Alpha
+	@ConfigItem(
+		keyName = "encounterColour",
+		name = "Highlight colour",
+		description = "Colour of the outline on the encounters<br>picked below.",
+		position = 82,
+		section = encountersSection
+	)
+	default Color encounterColour()
+	{
+		return new Color(0, 255, 255);
+	}
+
+	@ConfigItem(
+		keyName = "notifyGiantClam",
+		name = "Giant clam",
+		description = "Outline and notify when a giant clam surfaces<br>empty or offering a pearl.",
+		position = 83,
+		section = encountersSection
+	)
+	default Notification notifyGiantClam()
+	{
+		return Notification.OFF;
+	}
+
+	@ConfigItem(
+		keyName = "notifyLostCrate",
+		name = "Lost crate",
+		description = "Outline and notify when a lost crate surfaces,<br>from the wood picked below.",
+		position = 84,
+		section = encountersSection
+	)
+	default Notification notifyLostCrate()
+	{
+		return Notification.OFF;
+	}
+
+	@ConfigItem(
+		keyName = "crateTier",
+		name = "Crates from",
+		description = "The lowest lost crate to outline and notify of,<br>by its wood.",
+		position = 85,
+		section = encountersSection
+	)
+	default CrateTier crateTier()
+	{
+		return CrateTier.WOODEN;
+	}
+
+	@ConfigItem(
+		keyName = "notifyLostCasket",
+		name = "Lost casket",
+		description = "Outline and notify when a lost casket surfaces,<br>from the clue tier picked below.",
+		position = 86,
+		section = encountersSection
+	)
+	default Notification notifyLostCasket()
+	{
+		return Notification.OFF;
+	}
+
+	@ConfigItem(
+		keyName = "casketTier",
+		name = "Caskets from",
+		description = "The lowest lost casket to outline and notify of,<br>by its clue tier.",
+		position = 87,
+		section = encountersSection
+	)
+	default CasketTier casketTier()
+	{
+		return CasketTier.BEGINNER;
+	}
+
+	@ConfigItem(
+		keyName = "notifyClueTurtle",
+		name = "Clue turtle",
+		description = "Outline and notify when a clue turtle surfaces.",
+		position = 88,
+		section = encountersSection
+	)
+	default Notification notifyClueTurtle()
+	{
+		return Notification.OFF;
 	}
 }

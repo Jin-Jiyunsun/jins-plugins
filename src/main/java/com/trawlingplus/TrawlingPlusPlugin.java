@@ -445,6 +445,12 @@ public class TrawlingPlusPlugin extends Plugin
 	private CuriosityTracker curiosityTracker;
 
 	@Inject
+	private OceanEncounters oceanEncounters;
+
+	@Inject
+	private OceanEncounterOverlay encounterOverlay;
+
+	@Inject
 	private EventBus eventBus;
 
 	@Inject
@@ -742,6 +748,9 @@ public class TrawlingPlusPlugin extends Plugin
 		mouseManager.registerMouseListener(holdBook.mouse);
 		keyManager.registerKeyListener(holdBook);
 		eventBus.register(curiosityTracker);
+		eventBus.register(oceanEncounters);
+		overlayManager.add(encounterOverlay);
+		clientThread.invoke(oceanEncounters::findExisting);
 		clientThread.invoke(this::findExistingShoals);
 		clientThread.invoke(this::addCatchBoxes);
 		log.debug("Trawling Plus started with {} routes, {} points to draw them from", routes.size(),
@@ -762,6 +771,9 @@ public class TrawlingPlusPlugin extends Plugin
 		keyManager.unregisterKeyListener(holdBook);
 		eventBus.unregister(curiosityTracker);
 		curiosityTracker.reset();
+		eventBus.unregister(oceanEncounters);
+		overlayManager.remove(encounterOverlay);
+		clientThread.invoke(oceanEncounters::reset);
 		clientThread.invoke(holdBook::reset);
 		worldMapPointManager.removeIf(DangerMarker.class::isInstance);
 		worldMapPointManager.removeIf(ShoalMarker.class::isInstance);
@@ -1512,7 +1524,8 @@ public class TrawlingPlusPlugin extends Plugin
 			String mixed = MIXED_BY_CLICKBOX.get(clickbox);
 			if (mixed != null && shoal.getClickbox() != 0 && shoal.getClickbox() != clickbox)
 			{
-				notifier.notify(config.notifySpecialShoal(), "A shoal has turned " + mixed.toLowerCase() + ".");
+				notifier.notify(config.notifySpecialShoal(), config.plainNotifications()
+					? "A shoal has turned " + mixed.toLowerCase() + "." : specialShoalMessage(mixed));
 			}
 			shoal.setClickbox(clickbox);
 
@@ -1791,8 +1804,9 @@ public class TrawlingPlusPlugin extends Plugin
 		{
 			leavingWarned = true;
 			notifier.notify(config.notifyShoalLeaving(), seconds == 0
-				? "The shoal is leaving its stop."
-				: "The shoal leaves its stop in " + seconds + " seconds.");
+				? (config.plainNotifications() ? "The shoal is leaving its stop." : "The shoal stirs and swims off.")
+				: (config.plainNotifications() ? "The shoal leaves its stop in " : "The shoal grows restless. It will move on in ")
+					+ seconds + (seconds == 1 ? " second." : " seconds."));
 		}
 		leavingWasStopped = stopped;
 	}
@@ -1814,7 +1828,34 @@ public class TrawlingPlusPlugin extends Plugin
 		{
 			depthWarnedShoal = shoal;
 			depthWarned = depth;
-			notifier.notify(config.notifyDepthChange(), "The shoal depth is now " + depth.toString().toLowerCase() + ".");
+			notifier.notify(config.notifyDepthChange(), config.plainNotifications()
+				? "The shoal depth is now " + depth.toString().toLowerCase() + "." : depthMessage(depth));
+		}
+	}
+
+	private static String depthMessage(ShoalDepth depth)
+	{
+		switch (depth)
+		{
+			case SHALLOW:
+				return "The shoal rises into the shallows.";
+			case DEEP:
+				return "The shoal dives into the deep.";
+			default:
+				return "The shoal settles at moderate depth.";
+		}
+	}
+
+	private static String specialShoalMessage(String mixed)
+	{
+		switch (mixed)
+		{
+			case "Shimmering":
+				return "The shoal begins to shimmer!";
+			case "Glistening":
+				return "The shoal begins to glisten!";
+			default:
+				return "The shoal bursts into vibrant colour!";
 		}
 	}
 
@@ -2149,7 +2190,8 @@ public class TrawlingPlusPlugin extends Plugin
 		{
 			// Only said when the game knocks the player off, so stepping off by choice never notifies. Said on
 			// anyone's boat.
-			notifier.notify(config.notifyStoppedOperating(), "You stopped operating the net.");
+			notifier.notify(config.notifyStoppedOperating(), config.plainNotifications()
+				? "You stopped operating the net." : "Your numb hands slip from the net.");
 			return;
 		}
 
@@ -2275,7 +2317,8 @@ public class TrawlingPlusPlugin extends Plugin
 			CargoHold record = boatRecord();
 			if (noRoom && !record.fullWarning())
 			{
-				notifier.notify(config.notifyHoldFull(), "Your cargo hold is full.");
+				notifier.notify(config.notifyHoldFull(), config.plainNotifications()
+					? "Your cargo hold is full." : "Your cargo hold is packed to the brim.");
 			}
 			record.setFullWarning(noRoom);
 			if (noRoom)
@@ -2316,7 +2359,8 @@ public class TrawlingPlusPlugin extends Plugin
 			// and then every time it is said.
 			if (netsFull())
 			{
-				notifier.notify(config.notifyNetsFull(), "Your trawling nets are full.");
+				notifier.notify(config.notifyNetsFull(), config.plainNotifications()
+					? "Your trawling nets are full." : "Your nets are bursting with fish.");
 			}
 		}
 		else if (netsFitted())
@@ -2569,7 +2613,8 @@ public class TrawlingPlusPlugin extends Plugin
 			{
 				// The hold had no room for them all, and doesn't say how many stayed. Not the player's hold to keep a
 				// record of, so the message notifies every time it is said.
-				notifier.notify(config.notifyHoldFull(), "The cargo hold is full.");
+				notifier.notify(config.notifyHoldFull(), config.plainNotifications()
+					? "The cargo hold is full." : "The cargo hold is packed to the brim.");
 				setFish(-1);
 			}
 			else
@@ -2593,7 +2638,8 @@ public class TrawlingPlusPlugin extends Plugin
 		{
 			// Said now and then with room left, so it goes by the count; with the count unknown, only from the net
 			// the player is on, set to the shoal's depth, as a net at the wrong depth says it falsely.
-			notifier.notify(config.notifyNetsFull(), "The trawling nets are full.");
+			notifier.notify(config.notifyNetsFull(), config.plainNotifications()
+				? "Your trawling net is full." : "Your net is bursting with fish.");
 		}
 	}
 

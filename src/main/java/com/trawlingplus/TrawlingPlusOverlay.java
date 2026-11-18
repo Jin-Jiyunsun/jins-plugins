@@ -15,6 +15,7 @@ import java.awt.RenderingHints;
 import java.awt.Stroke;
 import java.awt.geom.Line2D;
 import java.awt.geom.Path2D;
+import java.awt.geom.PathIterator;
 import java.awt.image.BufferedImage;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -44,15 +45,12 @@ import net.runelite.client.ui.overlay.Overlay;
 import net.runelite.client.ui.overlay.OverlayLayer;
 import net.runelite.client.ui.overlay.OverlayPosition;
 import net.runelite.client.ui.overlay.outline.ModelOutlineRenderer;
-import net.runelite.client.ui.overlay.OverlayUtil;
 
 class TrawlingPlusOverlay extends Overlay
 {
-	// Stops are drawn as a square this many tiles across, roughly the size of a shoal.
+	// Stops are drawn as a square this many tiles across, roughly the size of a shoal. A round stop is the circle
+	// through the middle of each side of that square.
 	private static final int STOP_SIZE = 3;
-	// A round stop is the circle through the middle of each side of that square: a smooth curve through
-	// STOP_CURVE_POINTS points of it, into the same polygon and path each time.
-	private static final int STOP_CURVE_POINTS = 8;
 	// How wide the cargo hold's outline is, and how far it feathers out, in pixels.
 	private static final int HOLD_OUTLINE_WIDTH = 2;
 	private static final int HOLD_OUTLINE_FEATHER = 2;
@@ -69,10 +67,13 @@ class TrawlingPlusOverlay extends Overlay
 	private final Map<GameObject, Double> netFades = new HashMap<>();
 	private final Map<GameObject, Color> netColours = new HashMap<>();
 	private long lastNetFadeMillis = -1;
-	private final Polygon stopCircle = new Polygon();
-	private final Path2D.Double stopCurve = new Path2D.Double();
-	// Which of a circle's points each placed corner is, so a gap where some were off the map is known.
-	private final int[] circleSteps = new int[AREA_POINTS];
+	// A round stop's outline on screen, and the points of a ring placed on screen, reused between frames: where each
+	// landed, whether it could be placed, and whether all of the last ring could.
+	private final Path2D.Double stopRing = new Path2D.Double();
+	private final double[] ringPointX = new double[AREA_POINTS];
+	private final double[] ringPointY = new double[AREA_POINTS];
+	private final boolean[] ringPlaced = new boolean[AREA_POINTS];
+	private boolean ringWhole;
 
 	// What an empty deck tile holds, shared rather than made afresh for each one while the deck is looked through.
 	private static final GameObject[] NO_OBJECTS = new GameObject[0];
@@ -231,22 +232,26 @@ class TrawlingPlusOverlay extends Overlay
 	private boolean spotArrowBlocked;
 	private int spotCheckTick = -1;
 
-	// The fishable area, and the stroke it is drawn with, kept between frames: the shape is redrawn every
-	// frame but never changes size, and the thickness only changes when a setting does.
-	private final Polygon area = new Polygon();
-	// A round area is a smooth curve through this many of its points, as round as the full count at a quarter of
-	// the placing.
-	private static final int AREA_CURVE_POINTS = 16;
-	private final Path2D.Double areaCurve = new Path2D.Double();
-	private Stroke areaStroke;
-	private int areaThickness;
-	// The same for the stops' outline, which every stop is drawn with.
-	private Stroke stopStroke;
-	private int stopThickness;
-	// And the route line's, round ended, and flat ended for the pieces faded near the boat.
-	private Stroke lineStroke;
-	private Stroke fadedLineStroke;
-	private int lineThickness;
+	// The fishable area's outline on screen, kept between frames.
+	private final Path2D.Double areaRing = new Path2D.Double();
+	// Lines and outlines are drawn as straight pieces, each running this many pixels past its ends, with flat-ended
+	// strokes made once for each thickness.
+	private final Line2D.Double linePiece = new Line2D.Double();
+	// The route line and its danger stretches, built afresh into the same two each time one is drawn.
+	private final Line routeLine = new Line();
+	private final Line dangerLine = new Line();
+	private static final double PIECE_OVERLAP = 0.125;
+	private final Stroke[] buttStrokes = new Stroke[4];
+	// An area's outline flattened to points (x, y pairs), its outline as pieces, and each pixel row's crossings of it,
+	// kept between frames.
+	private static final double AREA_FLATNESS = 0.25;
+	private static final int ROW_CROSSINGS = 4;
+	private double[] areaPoints = new double[256];
+	private boolean[] runStarts = new boolean[128];
+	private double[] areaPieces = new double[512];
+	private double[] rowCrossings = new double[0];
+	private int[] rowCounts = new int[0];
+	private final double[] segment = new double[6];
 
 	// Whole route leaves the route out when less than this much of it, in tiles, is inside the loaded map:
 	// a scrap at the edge of the view says nothing and only costs drawing. Worked out once a tick, for the
@@ -259,9 +264,9 @@ class TrawlingPlusOverlay extends Overlay
 	// How many tiles the loaded map reaches beyond the scene, worked out once a frame rather than for every
 	// point placed.
 	private int frameBeyond;
-	// How many steps of see-through the route line's faded pieces are drawn in, and a path for each, kept between
-	// frames so they aren't made afresh.
+	// How many steps of see-through the route line's faded pieces are drawn in, and the colour of each this frame.
 	private static final int FADE_LEVELS = 16;
+	private final Color[] fadeColours = new Color[FADE_LEVELS + 1];
 	// Given how long each frame's drawing took, for the dev-only debug plugin to measure with. Null, and not timed at
 	// all, in the released plugin. While timing, the route line's share and the part of that spent stroking it are
 	// added up as the frame draws.
@@ -276,13 +281,6 @@ class TrawlingPlusOverlay extends Overlay
 	interface DrawTimer
 	{
 		void took(long total, long line, long stroke);
-	}
-	private final Path2D.Double[] fadeLevels = new Path2D.Double[FADE_LEVELS];
-	{
-		for (int level = 0; level < FADE_LEVELS; level++)
-		{
-			fadeLevels[level] = new Path2D.Double();
-		}
 	}
 	// The sea's height, which is the same everywhere, read once at the boat and reused for every point placed on
 	// the water, and read again after each scene load. Until it is read, each point looks up its own.
@@ -834,9 +832,9 @@ class TrawlingPlusOverlay extends Overlay
 			double toX = view.getBaseX() + view.getSizeX() + beyond;
 			double toY = view.getBaseY() + view.getSizeY() + beyond;
 
-			Line line = new Line();
+			Line line = routeLine.reset();
 			// The dangerous stretches, drawn red in place of the line.
-			Line danger = dangerOnRoute(route) ? new Line() : null;
+			Line danger = dangerOnRoute(route) ? dangerLine.reset() : null;
 			boolean wasDangerous = false;
 			for (int block = 0; block < route.blockCount(); block++)
 			{
@@ -1961,8 +1959,8 @@ class TrawlingPlusOverlay extends Overlay
 			// Starts where the shoal is along the route rather than where the shoal itself is, so the line
 			// only ever gets shorter as the shoal swims along it. Joining it to the shoal instead leaves a
 			// first piece that swings about, since a smoothed route never runs exactly through the shoal.
-			Line line = new Line();
-			Line danger = dangerOnRoute(route) ? new Line() : null;
+			Line line = routeLine.reset();
+			Line danger = dangerOnRoute(route) ? dangerLine.reset() : null;
 			double[] start = route.pointAt(distance);
 			boolean wasDangerous = route.dangerAtDistance(distance);
 			addRoutePoint(line, danger, view, wasDangerous, wasDangerous, start[0], start[1]);
@@ -2014,52 +2012,43 @@ class TrawlingPlusOverlay extends Overlay
 
 	private void strokeLine(Graphics2D graphics, Line line, double opacity, Color colour)
 	{
-		// Round joins and caps so the short segments the curve is drawn with blend into one smooth line.
 		graphics.setColor(opacity >= 1 ? colour : withOpacity(colour, opacity));
-		lineStrokes(config.routeLineThickness().pixels());
-		graphics.setStroke(lineStroke);
-		graphics.draw(line.path);
-		if (line.fadedCount == 0)
+		graphics.setStroke(buttStroke(config.routeLineThickness().pixels()));
+		drawPieces(graphics, line.pieces, line.pieceCount);
+		if (line.fadedCount > 0)
 		{
-			return;
+			drawFadedPieces(graphics, line, opacity, colour);
 		}
+	}
 
-		// Each faded piece takes one solid colour, how much of it shows rounded to one of FADE_LEVELS steps, and the
-		// pieces at each step are drawn together as one path: a handful of plain draws rather than a gradient each,
-		// which is one of the slowest things Java2D draws. Flat ended, since the round ends of see-through pieces
-		// would overlap and show as darker beads; pieces at the same step that meet are joined instead.
-		graphics.setStroke(fadedLineStroke);
-		for (Path2D.Double level : fadeLevels)
-		{
-			level.reset();
-		}
+	/**
+	 * Draws the route line's pieces faded near the boat one at a time, with the line's stroke already set, each in one
+	 * solid colour, how much of it shows rounded to one of FADE_LEVELS steps (a gradient each is one of the slowest
+	 * things Java2D draws), as the rest of the line is drawn.
+	 */
+	private void drawFadedPieces(Graphics2D graphics, Line line, double opacity, Color colour)
+	{
+		Object strokeControl = graphics.getRenderingHint(RenderingHints.KEY_STROKE_CONTROL);
+		graphics.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE);
+		Arrays.fill(fadeColours, null);
 		double[] f = line.faded;
-		int lastLevel = -1;
-		for (int k = 0; k < line.fadedCount; k += 6)
+		int count = line.fadedCount;
+		for (int k = 0; k < count; k += 6)
 		{
 			int level = (int) Math.round((f[k + 4] + f[k + 5]) / 2 * FADE_LEVELS);
 			if (level <= 0)
 			{
-				lastLevel = -1;
 				continue;
 			}
-			Path2D.Double path = fadeLevels[level - 1];
-			if (level != lastLevel || k == 0 || f[k] != f[k - 4] || f[k + 1] != f[k - 3])
+			if (fadeColours[level] == null)
 			{
-				path.moveTo(f[k], f[k + 1]);
+				fadeColours[level] = withOpacity(colour, opacity * level / FADE_LEVELS);
 			}
-			path.lineTo(f[k + 2], f[k + 3]);
-			lastLevel = level;
+			graphics.setColor(fadeColours[level]);
+			drawPiece(graphics, f[k], f[k + 1], f[k + 2], f[k + 3]);
 		}
-		for (int level = 1; level <= FADE_LEVELS; level++)
-		{
-			Path2D.Double path = fadeLevels[level - 1];
-			if (path.getCurrentPoint() != null)
-			{
-				graphics.setColor(withOpacity(colour, opacity * level / FADE_LEVELS));
-				graphics.draw(path);
-			}
-		}
+		graphics.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL,
+			strokeControl != null ? strokeControl : RenderingHints.VALUE_STROKE_DEFAULT);
 	}
 
 	/**
@@ -2545,23 +2534,29 @@ class TrawlingPlusOverlay extends Overlay
 	private Path2D flatArrowhead(WorldView view, double x, double y, double dx, double dy, double halfLength,
 		double halfWidth, double notch)
 	{
-		// Given up on at the first corner that can't be placed, rather than placing the rest for nothing.
-		Point tip = toCanvas(view, x + dx * halfLength, y + dy * halfLength);
-		Point left = tip == null ? null
-			: toCanvas(view, x - dx * halfLength - dy * halfWidth, y - dy * halfLength + dx * halfWidth);
-		Point back = left == null ? null : toCanvas(view, x - dx * notch, y - dy * notch);
-		Point right = back == null ? null
-			: toCanvas(view, x - dx * halfLength + dy * halfWidth, y - dy * halfLength - dx * halfWidth);
-		if (right == null)
+		// Placed exactly, as the route line is, and given up on at the first corner that can't be, rather than placing
+		// the rest for nothing.
+		Path2D.Double arrow = new Path2D.Double();
+		if (!place(view, x + dx * halfLength, y + dy * halfLength))
 		{
 			return null;
 		}
-
-		Path2D.Double arrow = new Path2D.Double();
-		arrow.moveTo(tip.getX(), tip.getY());
-		arrow.lineTo(left.getX(), left.getY());
-		arrow.lineTo(back.getX(), back.getY());
-		arrow.lineTo(right.getX(), right.getY());
+		arrow.moveTo(placedX, placedY);
+		if (!place(view, x - dx * halfLength - dy * halfWidth, y - dy * halfLength + dx * halfWidth))
+		{
+			return null;
+		}
+		arrow.lineTo(placedX, placedY);
+		if (!place(view, x - dx * notch, y - dy * notch))
+		{
+			return null;
+		}
+		arrow.lineTo(placedX, placedY);
+		if (!place(view, x - dx * halfLength + dy * halfWidth, y - dy * halfLength - dx * halfWidth))
+		{
+			return null;
+		}
+		arrow.lineTo(placedX, placedY);
 		arrow.closePath();
 		return arrow;
 	}
@@ -2631,8 +2626,14 @@ class TrawlingPlusOverlay extends Overlay
 		double ny = ux;
 		double length = halfLength * perTile;
 		double width = halfWidth * perTile;
+		// Its middle placed exactly, as the route line is, so it sits on the line rather than up to half a pixel off.
 		double cx = middle.getX();
 		double cy = middle.getY();
+		if (place(view, x, y))
+		{
+			cx = placedX;
+			cy = placedY;
+		}
 
 		Path2D.Double arrow = new Path2D.Double();
 		arrow.moveTo(cx + ux * length, cy + uy * length);
@@ -2747,95 +2748,95 @@ class TrawlingPlusOverlay extends Overlay
 		Shape area;
 		if (config.stopShape() == TrawlingPlusConfig.FishableShape.CIRCLE)
 		{
-			area = stopCircle(view, route.stopX(stop), route.stopY(stop));
+			area = ring(view, route.stopX(stop), route.stopY(stop), STOP_SIZE / 2.0, CIRCLE_X, CIRCLE_Y, 1, stopRing);
 		}
 		else
 		{
-			LocalPoint local = toLocal(view, route.stopX(stop), route.stopY(stop));
-			area = local == null ? null : Perspective.getCanvasTileAreaPoly(client, local, STOP_SIZE);
+			area = squareRing(view, route.stopX(stop), route.stopY(stop), STOP_SIZE / 2.0, stopRing);
 		}
 		if (area != null)
 		{
-			OverlayUtil.renderPolygon(graphics, area, withOpacity(colour, opacity), withOpacity(STOP_FILL, opacity),
-				stopOutline(config.stopThickness().pixels()));
+			drawArea(graphics, area, withOpacity(colour, opacity), withOpacity(STOP_FILL, opacity),
+				config.stopThickness().pixels());
 		}
 	}
 
 	/**
-	 * A round stop around a point in world tiles, or null when too little of it is on the loaded map to draw.
+	 * A square ring, its sides a radius in tiles from a point: just its four corners, which on flat water is the whole of
+	 * it, unless one can't be placed, when it is walked round a point at a time so the part that can still draws.
 	 */
-	private Shape stopCircle(WorldView view, double x, double y)
+	private Shape squareRing(WorldView view, double x, double y, double radius, Path2D.Double into)
 	{
-		return roundOutline(view, x, y, STOP_SIZE / 2.0, STOP_CURVE_POINTS, stopCircle, stopCurve);
+		Shape square = ring(view, x, y, radius, SQUARE_X, SQUARE_Y, AREA_POINTS_PER_SIDE, into);
+		return ringWhole ? square : ring(view, x, y, radius, SQUARE_X, SQUARE_Y, 1, into);
 	}
 
 	/**
-	 * A circle on the water around a point in world tiles, of a radius in tiles, as it lands on screen: a smooth
-	 * curve through a few points of it, which is as round as many more at a fraction of the placing. Points off the
-	 * loaded map are left out, and the curve goes straight across the gap they leave, so the part that is on it still
-	 * draws; null when fewer than three are on it. Into the given polygon and path, reused between frames.
+	 * A ring on the water around a point in world tiles, as it lands on screen, into the given path: every given step
+	 * of a shape's points (a circle's or square's, of a radius in tiles), joined by straight lines. Enough points are
+	 * placed that a circle is round whatever its size on screen; a smooth curve through a few instead overshot into
+	 * hooks where some lay close to the camera and far apart on screen. Points that can't be placed, as behind the
+	 * camera or off the loaded map, leave a gap rather than a line across it. Null when fewer than three are placed.
 	 */
-	private Shape roundOutline(WorldView view, double x, double y, double radius, int points, Polygon corners,
-		Path2D.Double curve)
+	private Shape ring(WorldView view, double x, double y, double radius, double[] shapeX, double[] shapeY, int every,
+		Path2D.Double into)
 	{
-		corners.reset();
-		for (int step = 0; step < points; step++)
+		int count = 0;
+		int placed = 0;
+		int gap = -1;
+		for (int step = 0; step < AREA_POINTS; step += every)
 		{
-			int of = step * (AREA_POINTS / points);
-			Point edge = toCanvas(view, x + CIRCLE_X[of] * radius, y + CIRCLE_Y[of] * radius);
-			if (edge != null)
+			boolean on = place(view, x + shapeX[step] * radius, y + shapeY[step] * radius);
+			ringPlaced[count] = on;
+			if (on)
 			{
-				circleSteps[corners.npoints] = step;
-				corners.addPoint(edge.getX(), edge.getY());
+				ringPointX[count] = placedX;
+				ringPointY[count] = placedY;
+				placed++;
 			}
+			else if (gap < 0)
+			{
+				gap = count;
+			}
+			count++;
 		}
-		return corners.npoints < 3 ? null : smoothLoop(corners, circleSteps, points, curve);
-	}
+		ringWhole = gap < 0;
+		if (placed < 3)
+		{
+			return null;
+		}
 
-	/**
-	 * A smooth closed curve through the corners of a polygon placed round a circle of a number of points, into the
-	 * given path: each stretch between two corners that are next to each other round the circle is a cubic curve
-	 * heading the way the corners either side of it lie (a Catmull-Rom spline), and one across a gap where points
-	 * were left out is straight. Which point of the circle each corner is comes from steps.
-	 */
-	private static Path2D smoothLoop(Polygon corners, int[] steps, int points, Path2D.Double into)
-	{
-		int[] xs = corners.xpoints;
-		int[] ys = corners.ypoints;
-		int n = corners.npoints;
 		into.reset();
-		into.moveTo(xs[0], ys[0]);
-		for (int k = 0; k < n; k++)
+		if (ringWhole)
 		{
-			int next = (k + 1) % n;
-			if (!besideOnCircle(steps[k], steps[next], points))
+			into.moveTo(ringPointX[0], ringPointY[0]);
+			for (int k = 1; k < count; k++)
 			{
-				into.lineTo(xs[next], ys[next]);
-				continue;
+				into.lineTo(ringPointX[k], ringPointY[k]);
 			}
-			// A neighbour missing from the far side of either end leaves that end heading along the stretch itself.
-			int before = (k + n - 1) % n;
-			int after = (next + 1) % n;
-			if (!besideOnCircle(steps[before], steps[k], points))
-			{
-				before = k;
-			}
-			if (!besideOnCircle(steps[next], steps[after], points))
-			{
-				after = next;
-			}
-			into.curveTo(
-				xs[k] + (xs[next] - xs[before]) / 6.0, ys[k] + (ys[next] - ys[before]) / 6.0,
-				xs[next] - (xs[after] - xs[k]) / 6.0, ys[next] - (ys[after] - ys[k]) / 6.0,
-				xs[next], ys[next]);
+			into.closePath();
+			return into;
 		}
-		into.closePath();
+		// Starting just after a gap, so a run that wraps round past the first point is drawn as one.
+		boolean drawing = false;
+		for (int k = 1; k <= count; k++)
+		{
+			int at = (gap + k) % count;
+			if (!ringPlaced[at])
+			{
+				drawing = false;
+			}
+			else if (drawing)
+			{
+				into.lineTo(ringPointX[at], ringPointY[at]);
+			}
+			else
+			{
+				into.moveTo(ringPointX[at], ringPointY[at]);
+				drawing = true;
+			}
+		}
 		return into;
-	}
-
-	private static boolean besideOnCircle(int step, int next, int points)
-	{
-		return (next - step + points) % points == 1;
 	}
 
 	/**
@@ -2929,43 +2930,11 @@ class TrawlingPlusOverlay extends Overlay
 		WorldView view = areaView;
 		double[] at = {areaX, areaY};
 
-		// Walked around the shape a point at a time, so one running off the loaded map still draws the
-		// part that is on it. The same shape every frame, so it is drawn into the same polygon rather
-		// than a new one, off points worked out once. A circle is a smooth curve through a few of its
-		// points while they are all on the map.
-		Shape outline;
-		if (config.fishableAreaShape() == TrawlingPlusConfig.FishableShape.CIRCLE)
-		{
-			outline = roundOutline(view, at[0], at[1], FISHABLE_REACH, AREA_CURVE_POINTS, area, areaCurve);
-		}
-		else
-		{
-			// Just its four corners, which on flat water is the whole square. Only when one can't be placed, as when
-			// it is behind a low camera, is it walked round a point at a time so the rest still draws.
-			area.reset();
-			for (int step = 0; step < AREA_POINTS; step += AREA_POINTS_PER_SIDE)
-			{
-				Point corner = toCanvas(view, at[0] + SQUARE_X[step] * FISHABLE_REACH, at[1] + SQUARE_Y[step] * FISHABLE_REACH);
-				if (corner != null)
-				{
-					area.addPoint(corner.getX(), corner.getY());
-				}
-			}
-			boolean corners = area.npoints == 4;
-			if (!corners)
-			{
-				area.reset();
-				for (int step = 0; step < AREA_POINTS; step++)
-				{
-					Point edge = toCanvas(view, at[0] + SQUARE_X[step] * FISHABLE_REACH, at[1] + SQUARE_Y[step] * FISHABLE_REACH);
-					if (edge != null)
-					{
-						area.addPoint(edge.getX(), edge.getY());
-					}
-				}
-			}
-			outline = corners || area.npoints >= AREA_POINTS / 4 ? area : null;
-		}
+		// Walked around the shape a point at a time, so one running off the loaded map or behind the camera still
+		// draws the part that can be.
+		Shape outline = config.fishableAreaShape() == TrawlingPlusConfig.FishableShape.CIRCLE
+			? ring(view, at[0], at[1], FISHABLE_REACH, CIRCLE_X, CIRCLE_Y, 1, areaRing)
+			: squareRing(view, at[0], at[1], FISHABLE_REACH, areaRing);
 
 		if (outline == null)
 		{
@@ -2977,10 +2946,8 @@ class TrawlingPlusOverlay extends Overlay
 		boolean faded = fishingPointFade < 1;
 		Color line = areaColour();
 		Color fill = areaSpecial ? config.specialAreaFillColour() : config.fishableAreaFillColour();
-		OverlayUtil.renderPolygon(graphics, outline,
-			faded ? withOpacity(line, fishingPointFade) : line,
-			faded ? withOpacity(fill, fishingPointFade) : fill,
-			areaOutline(config.fishableAreaThickness().pixels()));
+		drawArea(graphics, outline, faded ? withOpacity(line, fishingPointFade) : line,
+			faded ? withOpacity(fill, fishingPointFade) : fill, config.fishableAreaThickness().pixels());
 	}
 
 	/**
@@ -3732,37 +3699,241 @@ class TrawlingPlusOverlay extends Overlay
 		return fadeBounds.intersects(left, top, Math.abs(toCanvasX - fromCanvasX) + 1, Math.abs(toCanvasY - fromCanvasY) + 1);
 	}
 
-	private Stroke stopOutline(int pixels)
+	/**
+	 * Draws straight pieces (from x, y, to x, y) with the stroke already set, each as its own line: Java2D fills each
+	 * as a parallelogram, far quicker than stroking them as one path. Pure stroking keeps each piece's ends where they
+	 * are rather than nudged to the pixel grid on their own, which opens gaps between them.
+	 */
+	private void drawPieces(Graphics2D graphics, double[] p, int count)
 	{
-		if (stopStroke == null || pixels != stopThickness)
+		Object strokeControl = graphics.getRenderingHint(RenderingHints.KEY_STROKE_CONTROL);
+		graphics.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE);
+		for (int k = 0; k < count; k += 4)
 		{
-			stopThickness = pixels;
-			stopStroke = new BasicStroke(pixels);
+			drawPiece(graphics, p[k], p[k + 1], p[k + 2], p[k + 3]);
 		}
-		return stopStroke;
+		graphics.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL,
+			strokeControl != null ? strokeControl : RenderingHints.VALUE_STROKE_DEFAULT);
 	}
 
 	/**
-	 * Makes the route line's strokes afresh only when its thickness setting or its joins change.
+	 * Draws one straight piece, running a fraction of a pixel past each end: where two pieces meet, of one line or of
+	 * two in different colours, that covers the faint seam left where their soft edges touch, and a loose end is longer
+	 * by too little to see. Nothing for a piece whose ends landed on the same spot.
 	 */
-	private void lineStrokes(int pixels)
+	private void drawPiece(Graphics2D graphics, double fromX, double fromY, double toX, double toY)
 	{
-		if (lineStroke == null || pixels != lineThickness)
+		double dx = toX - fromX;
+		double dy = toY - fromY;
+		double length = span(dx, dy);
+		if (length == 0)
 		{
-			lineThickness = pixels;
-			lineStroke = new BasicStroke(pixels, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND);
-			fadedLineStroke = new BasicStroke(pixels, BasicStroke.CAP_BUTT, BasicStroke.JOIN_ROUND);
+			return;
+		}
+		double over = PIECE_OVERLAP / length;
+		linePiece.setLine(fromX - dx * over, fromY - dy * over, toX + dx * over, toY + dy * over);
+		graphics.draw(linePiece);
+	}
+
+	/**
+	 * Fills and outlines a stop or the fishable area. The fill goes in a pixel row at a time with no soft edge, which
+	 * the outline drawn over it hides, and is left out when fully clear; the outline is drawn piece by piece like the
+	 * route line.
+	 */
+	private void drawArea(Graphics2D graphics, Shape shape, Color line, Color fill, int pixels)
+	{
+		// One closed loop, or the runs of one with gaps where it couldn't be placed, which the outline leaves open and
+		// the fill closes straight across.
+		int points = 0;
+		int runs = 0;
+		boolean closed = false;
+		for (PathIterator walk = shape.getPathIterator(null, AREA_FLATNESS); !walk.isDone(); walk.next())
+		{
+			int type = walk.currentSegment(segment);
+			if (type == PathIterator.SEG_CLOSE)
+			{
+				closed = true;
+				continue;
+			}
+			if (points * 2 + 2 > areaPoints.length)
+			{
+				areaPoints = Arrays.copyOf(areaPoints, areaPoints.length * 2);
+				runStarts = Arrays.copyOf(runStarts, areaPoints.length / 2);
+			}
+			runStarts[points] = type == PathIterator.SEG_MOVETO;
+			if (runStarts[points])
+			{
+				runs++;
+			}
+			areaPoints[points * 2] = segment[0];
+			areaPoints[points * 2 + 1] = segment[1];
+			points++;
+		}
+		boolean loop = closed && runs == 1;
+		// A loop that comes back to where it began ends on its first point again.
+		if (loop && points > 1 && areaPoints[0] == areaPoints[points * 2 - 2]
+			&& areaPoints[1] == areaPoints[points * 2 - 1])
+		{
+			points--;
+		}
+		if (points < 3)
+		{
+			return;
+		}
+
+		if (fill.getAlpha() > 0)
+		{
+			graphics.setColor(fill);
+			if (!fillRows(graphics, points))
+			{
+				graphics.fill(shape);
+			}
+		}
+
+		if (areaPieces.length < points * 4)
+		{
+			areaPieces = new double[points * 8];
+		}
+		int pieces = 0;
+		for (int i = 0; i < points; i++)
+		{
+			int j = i + 1;
+			if (j == points ? !loop : runStarts[j])
+			{
+				continue;
+			}
+			j = j == points ? 0 : j;
+			areaPieces[pieces++] = areaPoints[i * 2];
+			areaPieces[pieces++] = areaPoints[i * 2 + 1];
+			areaPieces[pieces++] = areaPoints[j * 2];
+			areaPieces[pieces++] = areaPoints[j * 2 + 1];
+		}
+		if (line.getAlpha() > 0)
+		{
+			graphics.setColor(line);
+			graphics.setStroke(buttStroke(pixels));
+			drawPieces(graphics, areaPieces, pieces);
 		}
 	}
 
-	private Stroke areaOutline(int pixels)
+	/**
+	 * Fills the flattened area a pixel row at a time, each row once, in the colour already set: a pixel is filled when
+	 * its middle is inside. Gives back false, having drawn nothing, for a shape folding over itself so much that a row
+	 * crosses it more than a few times.
+	 */
+	private boolean fillRows(Graphics2D graphics, int points)
 	{
-		if (areaStroke == null || pixels != areaThickness)
+		double[] pts = areaPoints;
+		double minY = Double.MAX_VALUE;
+		double maxY = -Double.MAX_VALUE;
+		for (int i = 0; i < points; i++)
 		{
-			areaThickness = pixels;
-			areaStroke = new BasicStroke(pixels);
+			minY = Math.min(minY, pts[i * 2 + 1]);
+			maxY = Math.max(maxY, pts[i * 2 + 1]);
 		}
-		return areaStroke;
+		// Only the rows and columns on the canvas, and in the clip when there is one: part of an area near the camera
+		// can land a very long way off screen.
+		int top = Math.max((int) Math.ceil(minY - 0.5), 0);
+		int bottom = Math.min((int) Math.ceil(maxY - 0.5), client.getCanvasHeight());
+		int left = 0;
+		int right = client.getCanvasWidth();
+		Rectangle clip = graphics.getClipBounds();
+		if (clip != null)
+		{
+			top = Math.max(top, clip.y);
+			bottom = Math.min(bottom, clip.y + clip.height);
+			left = Math.max(left, clip.x);
+			right = Math.min(right, clip.x + clip.width);
+		}
+		int rows = bottom - top;
+		if (rows <= 0)
+		{
+			return true;
+		}
+		if (rowCounts.length < rows)
+		{
+			rowCounts = new int[rows * 2];
+			rowCrossings = new double[rows * 2 * ROW_CROSSINGS];
+		}
+		Arrays.fill(rowCounts, 0, rows, 0);
+
+		for (int i = 0; i < points; i++)
+		{
+			int j = i + 1 == points ? 0 : i + 1;
+			double x0 = pts[i * 2];
+			double y0 = pts[i * 2 + 1];
+			double x1 = pts[j * 2];
+			double y1 = pts[j * 2 + 1];
+			if (y0 == y1)
+			{
+				continue;
+			}
+			if (y0 > y1)
+			{
+				double swap = x0;
+				x0 = x1;
+				x1 = swap;
+				swap = y0;
+				y0 = y1;
+				y1 = swap;
+			}
+			double slope = (x1 - x0) / (y1 - y0);
+			// Each row whose middle is from this edge's top end, included, to its bottom end, not.
+			int from = Math.max((int) Math.ceil(y0 - 0.5), top);
+			int to = Math.min((int) Math.ceil(y1 - 0.5), bottom);
+			for (int y = from; y < to; y++)
+			{
+				int row = y - top;
+				int count = rowCounts[row];
+				if (count == ROW_CROSSINGS)
+				{
+					return false;
+				}
+				rowCrossings[row * ROW_CROSSINGS + count] = x0 + (y + 0.5 - y0) * slope;
+				rowCounts[row] = count + 1;
+			}
+		}
+
+		for (int row = 0; row < rows; row++)
+		{
+			int count = rowCounts[row];
+			int base = row * ROW_CROSSINGS;
+			// Few enough to sort by hand.
+			for (int a = 1; a < count; a++)
+			{
+				double x = rowCrossings[base + a];
+				int b = a - 1;
+				while (b >= 0 && rowCrossings[base + b] > x)
+				{
+					rowCrossings[base + b + 1] = rowCrossings[base + b];
+					b--;
+				}
+				rowCrossings[base + b + 1] = x;
+			}
+			for (int a = 0; a + 1 < count; a += 2)
+			{
+				int from = Math.max((int) Math.ceil(rowCrossings[base + a] - 0.5), left);
+				int to = Math.min((int) Math.ceil(rowCrossings[base + a + 1] - 0.5), right);
+				if (to > from)
+				{
+					graphics.fillRect(from, top + row, to - from, 1);
+				}
+			}
+		}
+		return true;
+	}
+
+	/**
+	 * A butt-ended stroke of a thickness, made once.
+	 */
+	private Stroke buttStroke(int pixels)
+	{
+		int at = Math.max(1, Math.min(buttStrokes.length - 1, pixels));
+		if (buttStrokes[at] == null)
+		{
+			buttStrokes[at] = new BasicStroke(at, BasicStroke.CAP_BUTT, BasicStroke.JOIN_MITER);
+		}
+		return buttStrokes[at];
 	}
 
 	/**
@@ -3876,7 +4047,11 @@ class TrawlingPlusOverlay extends Overlay
 	 */
 	private static final class Line
 	{
-		private final Path2D.Double path = new Path2D.Double();
+		// Its straight pieces: from x, y, to x, y.
+		private double[] pieces = new double[256];
+		private int pieceCount;
+		private double endX;
+		private double endY;
 		private boolean connected;
 		// The last point added, in world tiles, for cutting the line at the edge of the boat's clear area.
 		private boolean hasLast;
@@ -3891,17 +4066,36 @@ class TrawlingPlusOverlay extends Overlay
 		private double[] faded = new double[0];
 		private int fadedCount;
 
+		/**
+		 * Empties it to be built again, keeping the room it has grown.
+		 */
+		Line reset()
+		{
+			pieceCount = 0;
+			fadedCount = 0;
+			connected = false;
+			hasLast = false;
+			lastShown = 0;
+			lastPlaced = false;
+			return this;
+		}
+
 		void add(double x, double y)
 		{
-			if (connected)
+			if (connected && (x != endX || y != endY))
 			{
-				path.lineTo(x, y);
+				if (pieceCount + 4 > pieces.length)
+				{
+					pieces = Arrays.copyOf(pieces, pieces.length * 2);
+				}
+				pieces[pieceCount++] = endX;
+				pieces[pieceCount++] = endY;
+				pieces[pieceCount++] = x;
+				pieces[pieceCount++] = y;
 			}
-			else
-			{
-				path.moveTo(x, y);
-				connected = true;
-			}
+			endX = x;
+			endY = y;
+			connected = true;
 		}
 
 		/**

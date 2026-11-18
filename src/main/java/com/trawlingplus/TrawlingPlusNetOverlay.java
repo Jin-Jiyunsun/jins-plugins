@@ -40,6 +40,7 @@ class TrawlingPlusNetOverlay extends Overlay
 
 	// The letter for each of the four net pictures, in the same order: raised, then the three fishing depths.
 	private static final String[] LETTERS = {"R", "S", "M", "D"};
+	private static final BasicStroke TWO_PIXELS = new BasicStroke(2);
 	private static final Color RAISED_COLOUR = Color.WHITE;
 
 	private static final Color HIGHLIGHT = new Color(255, 200, 0);
@@ -355,7 +356,7 @@ class TrawlingPlusNetOverlay extends Overlay
 	static void drawTick(Graphics2D graphics, int left, int middle, Color colour)
 	{
 		graphics.setColor(colour);
-		graphics.setStroke(new BasicStroke(2));
+		graphics.setStroke(TWO_PIXELS);
 		graphics.drawLine(left, middle, left + 3, middle + 4);
 		graphics.drawLine(left + 3, middle + 4, left + TICK_WIDTH, middle - 5);
 	}
@@ -370,7 +371,7 @@ class TrawlingPlusNetOverlay extends Overlay
 		graphics.setColor(new Color(HIGHLIGHT.getRed(), HIGHLIGHT.getGreen(), HIGHLIGHT.getBlue(), 110));
 		graphics.fillRoundRect(button.x, button.y, button.width, button.height, 6, 6);
 		graphics.setColor(new Color(HIGHLIGHT.getRed(), HIGHLIGHT.getGreen(), HIGHLIGHT.getBlue(), 220));
-		graphics.setStroke(new BasicStroke(2));
+		graphics.setStroke(TWO_PIXELS);
 		graphics.drawRoundRect(button.x, button.y, button.width - 1, button.height - 1, 6, 6);
 	}
 

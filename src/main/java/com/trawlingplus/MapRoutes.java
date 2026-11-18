@@ -31,6 +31,9 @@ final class MapRoutes
 	// About how far apart the points of the drawn line should be on screen, in pixels. Closer than this
 	// and they land on top of each other; further apart and a bend starts to show as a cut corner.
 	private static final double LINE_STEP = 2;
+	// Strokes by thickness, and the shoal dot's edge, made once rather than every frame.
+	private static final BasicStroke[] STROKES = {null, new BasicStroke(1), new BasicStroke(2), new BasicStroke(3)};
+	private static final BasicStroke DOT_EDGE = STROKES[1];
 
 	private MapRoutes()
 	{
@@ -127,7 +130,7 @@ final class MapRoutes
 			}
 		}
 
-		graphics.setStroke(new BasicStroke(thickness));
+		graphics.setStroke(thickness > 0 && thickness < STROKES.length ? STROKES[thickness] : new BasicStroke(thickness));
 		graphics.setColor(config.routeColour());
 		graphics.draw(line);
 		if (danger != null)
@@ -233,7 +236,7 @@ final class MapRoutes
 		graphics.fillOval(at.getX() - size, at.getY() - size, size * 2, size * 2);
 		// Outlined, so it stays visible whatever the map underneath it is coloured.
 		graphics.setColor(Color.BLACK);
-		graphics.setStroke(new BasicStroke(1));
+		graphics.setStroke(DOT_EDGE);
 		graphics.drawOval(at.getX() - size, at.getY() - size, size * 2, size * 2);
 	}
 

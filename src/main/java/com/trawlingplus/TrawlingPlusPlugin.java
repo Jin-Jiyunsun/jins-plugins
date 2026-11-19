@@ -1133,6 +1133,8 @@ public class TrawlingPlusPlugin extends Plugin
 		{
 			trawledRouteName = route.getName();
 			predictedArrowTicksLeft = PREDICTED_ARROW_TIMEOUT_TICKS;
+			// Caught from, so in sight: no arrow until it has been out of sight, rather than for its first few ticks.
+			trawledInViewTicks = PREDICTED_ARROW_HOLD_TICKS;
 		}
 	}
 

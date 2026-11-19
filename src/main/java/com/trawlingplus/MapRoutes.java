@@ -40,9 +40,8 @@ final class MapRoutes
 	// rather than every frame.
 	private static final BasicStroke[] STROKES = {null, flat(1), flat(2), flat(3)};
 	private static final BasicStroke ARROW_STROKE = new BasicStroke(1.5f, BasicStroke.CAP_BUTT, BasicStroke.JOIN_MITER);
-	// A shoal's mark: how far its arrow sits clear of its dot, in pixels, and the thin dark edge round both. The
-	// arrow's goes under its colour, a little wider, so its thin barbs keep their colour.
-	private static final int MARK_GAP = 2;
+	// The thin dark edge round a shoal's mark. The arrow's goes under its colour, a little wider, so its thin barbs
+	// keep their colour.
 	private static final Color MARK_EDGE = Color.BLACK;
 	private static final BasicStroke DOT_EDGE = new BasicStroke(1);
 	private static final BasicStroke MARK_ARROW_EDGE =
@@ -386,6 +385,11 @@ final class MapRoutes
 				double alongY = towardY / step;
 				double backX = tipX - alongX * size;
 				double backY = tipY - alongY * size;
+				// Whole arrows only, so none pokes past a round map's edge.
+				if (!onto.contains(backX, backY))
+				{
+					continue;
+				}
 				barb.setLine(backX - alongY * aside, backY + alongX * aside, tipX, tipY);
 				graphics.draw(barb);
 				barb.setLine(backX + alongY * aside, backY - alongX * aside, tipX, tipY);
@@ -415,24 +419,18 @@ final class MapRoutes
 	}
 
 	/**
-	 * A shoal's mark: a dot this many pixels across, and an arrow this long just ahead of it pointing along a step on
-	 * screen (none for no step), both smooth with a thin dark edge.
+	 * A shoal's mark, smooth with a thin dark edge: while moving, an arrow this long centred on it pointing along a
+	 * step on screen; with no step, a dot this many pixels across.
 	 */
 	static void mark(Graphics2D graphics, double x, double y, Color colour, int dot, int arrow, double towardX,
 		double towardY)
 	{
 		Object[] hints = smooth(graphics);
-		double step = Math.sqrt(towardX * towardX + towardY * towardY);
-		if (step >= 1e-6)
+		if (towardX * towardX + towardY * towardY >= 1e-12)
 		{
-			double away = dot / 2.0 + MARK_GAP + arrow / 2.0;
-			Path2D head = arrowhead(Math.round(x + towardX / step * away), Math.round(y + towardY / step * away),
-				towardX, towardY, arrow);
-			graphics.setColor(MARK_EDGE);
-			graphics.setStroke(MARK_ARROW_EDGE);
-			graphics.draw(head);
-			graphics.setColor(colour);
-			graphics.fill(head);
+			edgedArrow(graphics, x, y, colour, arrow, towardX, towardY);
+			restore(graphics, hints);
+			return;
 		}
 		Ellipse2D.Double circle = new Ellipse2D.Double(x - dot / 2.0, y - dot / 2.0, dot, dot);
 		graphics.setColor(colour);
@@ -441,6 +439,62 @@ final class MapRoutes
 		graphics.setStroke(DOT_EDGE);
 		graphics.draw(circle);
 		restore(graphics, hints);
+	}
+
+	/**
+	 * A mark drawn this frame, for its right-click menu: its route (null for none) and middle. Client thread only.
+	 */
+	static final class Clickable
+	{
+		private ShoalRoute route;
+		private double x;
+		private double y;
+		private double reach;
+
+		void clear()
+		{
+			route = null;
+		}
+
+		void drawn(ShoalRoute route, double x, double y, int size)
+		{
+			this.route = route;
+			this.x = x;
+			this.y = y;
+			reach = size / 2.0 + 2;
+		}
+
+		/**
+		 * Its route if a point on the canvas is on it, or null.
+		 */
+		ShoalRoute at(int atX, int atY)
+		{
+			double dx = atX - x;
+			double dy = atY - y;
+			return route != null && dx * dx + dy * dy <= reach * reach ? route : null;
+		}
+	}
+
+	/**
+	 * A shoal mark's arrow on its own, centred on a point and pointing along a step on screen.
+	 */
+	static void pointer(Graphics2D graphics, double x, double y, Color colour, int arrow, double towardX,
+		double towardY)
+	{
+		Object[] hints = smooth(graphics);
+		edgedArrow(graphics, x, y, colour, arrow, towardX, towardY);
+		restore(graphics, hints);
+	}
+
+	private static void edgedArrow(Graphics2D graphics, double x, double y, Color colour, int arrow, double towardX,
+		double towardY)
+	{
+		Path2D head = arrowhead(x, y, towardX, towardY, arrow);
+		graphics.setColor(MARK_EDGE);
+		graphics.setStroke(MARK_ARROW_EDGE);
+		graphics.draw(head);
+		graphics.setColor(colour);
+		graphics.fill(head);
 	}
 
 	/**

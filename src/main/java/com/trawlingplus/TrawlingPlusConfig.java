@@ -1538,7 +1538,7 @@ public interface TrawlingPlusConfig extends Config
 		name = "Predicted arrow",
 		description = "While aboard, point an arrow from the boat<br>to where the shoal you last trawled likely is,<br>"
 			+ "until it's back in sight. It goes after 10<br>minutes without a catch.",
-		position = 92,
+		position = 94,
 		section = mapsSection
 	)
 	default boolean showPredictedArrow()
@@ -1555,6 +1555,32 @@ public interface TrawlingPlusConfig extends Config
 		section = mapsSection
 	)
 	default boolean showPredictedOnMap()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "predictedMapEdgeArrow",
+		name = "Map edge arrow",
+		description = "While aboard, point to the shoal you last<br>trawled from the world map's edge when it's<br>"
+			+ "off the part of the map showing.",
+		position = 92,
+		section = mapsSection
+	)
+	default boolean predictedMapEdgeArrow()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "predictedMinimapEdgeArrow",
+		name = "Minimap edge arrow",
+		description = "While aboard, point to the shoal you last<br>trawled from the minimap's edge when it's<br>"
+			+ "off the minimap.",
+		position = 93,
+		section = mapsSection
+	)
+	default boolean predictedMinimapEdgeArrow()
 	{
 		return true;
 	}

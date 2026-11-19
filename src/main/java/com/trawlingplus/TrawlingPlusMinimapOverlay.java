@@ -18,8 +18,7 @@ import net.runelite.client.ui.overlay.OverlayLayer;
 import net.runelite.client.ui.overlay.OverlayPosition;
 
 /**
- * Draws the nearest shoal route on the minimap, without direction arrows, which at its size cost more to place than
- * they're worth.
+ * Draws the nearest shoal route on the minimap, with sparse direction arrows as on the world map.
  */
 class TrawlingPlusMinimapOverlay extends Overlay
 {
@@ -31,9 +30,14 @@ class TrawlingPlusMinimapOverlay extends Overlay
 	};
 
 	private static final int THICKNESS = 1;
-	// A shoal's mark: its dot, this many pixels across, and the arrow just ahead of it while it's moving.
+	private static final int ARROW = 6;
+	// A shoal's mark: its dot while still, this many pixels across, or its arrow while moving; and the arrow at the
+	// minimap's edge pointing to the last trawled one off it.
 	private static final int SHOAL_DOT = 6;
-	private static final int HEADING_ARROW = 8;
+	private static final int HEADING_ARROW = 9;
+	private static final int EDGE_ARROW = 11;
+	// How far the edge arrow's middle sits inside the minimap's round edge.
+	private static final int EDGE_ARROW_INSET = 8;
 
 	// How far either side of the boat the minimap's placing is measured from, in tiles, so whole-pixel rounding barely
 	// matters; and how far from the player the minimap is asked to place a point, in local units.
@@ -125,8 +129,12 @@ class TrawlingPlusMinimapOverlay extends Overlay
 		{
 			MapRoutes.MapTimer timer = MapRoutes.mapTimer;
 			long started = timer == null ? 0 : System.nanoTime();
+			boolean danger = config.showDanger().onMaps();
+			// The arrows first, so the line runs over them.
+			MapRoutes.arrows(graphics, config, route, mapView, ARROW, fromX, fromY, toX, toY,
+				danger ? MapRoutes.withAlphaOf(config.dangerColour(), config.directionArrowColour()) : null);
 			MapRoutes.route(graphics, config, route, mapView, THICKNESS, fromX, fromY, toX, toY,
-				config.showDanger().onMaps() ? MapRoutes.withAlphaOf(config.dangerColour(), config.routeColour()) : null);
+				danger ? MapRoutes.withAlphaOf(config.dangerColour(), config.routeColour()) : null);
 			if (timer != null)
 			{
 				timer.mapTook(MapRoutes.MapTimer.MINIMAP, System.nanoTime() - started);
@@ -134,16 +142,64 @@ class TrawlingPlusMinimapOverlay extends Overlay
 		}
 
 		// Only a shoal the client is drawing in the world may be marked on the map.
+		ShoalRoute trawled = plugin.getTrawledRoute();
+		double[] trawledAt = null;
 		for (Shoal shoal : plugin.getShoals())
 		{
 			if (plugin.isShown(shoal) && shoal.rendered(client))
 			{
 				MapRoutes.shoal(graphics, config, client, shoal, mapView, SHOAL_DOT, HEADING_ARROW);
+				if (trawled != null && shoal.getRoute() == trawled)
+				{
+					trawledAt = MapRoutes.alongRoute(shoal, client);
+				}
 			}
 		}
 
+		drawEdgeArrow(graphics, bounds, radius, trawled, trawledAt);
+
 		graphics.setClip(clip);
 		return null;
+	}
+
+	/**
+	 * While aboard, an arrow just inside the minimap's round edge pointing to the last trawled shoal while it's off
+	 * the minimap: where the game has it if in view, or else where it likely is.
+	 */
+	private void drawEdgeArrow(Graphics2D graphics, Rectangle bounds, double radius, ShoalRoute trawled,
+		double[] at)
+	{
+		if (trawled == null || !config.predictedMinimapEdgeArrow() || plugin.getAboardBoat() == null
+			|| plugin.isEdgeArrowHidden() || !plugin.getShownRoutes().contains(trawled))
+		{
+			return;
+		}
+		if (at == null)
+		{
+			double along = plugin.getForecast().distance(trawled, System.currentTimeMillis());
+			at = along < 0 ? null : trawled.pointAt(along);
+		}
+		if (at == null)
+		{
+			return;
+		}
+		double x = mapView.x(at[0], at[1]);
+		double y = mapView.y(at[0], at[1]);
+		if (mapView.contains(x, y))
+		{
+			return;
+		}
+		double towardX = x - bounds.getCenterX();
+		double towardY = y - bounds.getCenterY();
+		double away = Math.sqrt(towardX * towardX + towardY * towardY);
+		double room = radius - EDGE_ARROW_INSET;
+		if (away < 1e-6 || room <= 0)
+		{
+			return;
+		}
+		double arrowX = bounds.getCenterX() + towardX / away * room;
+		double arrowY = bounds.getCenterY() + towardY / away * room;
+		MapRoutes.pointer(graphics, arrowX, arrowY, config.shoalHeadingArrowColour(), EDGE_ARROW, towardX, towardY);
 	}
 
 	/**

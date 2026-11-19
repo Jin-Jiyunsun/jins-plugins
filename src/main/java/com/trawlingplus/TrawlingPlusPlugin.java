@@ -10,6 +10,7 @@ import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -46,6 +47,7 @@ import net.runelite.api.WorldEntity;
 import net.runelite.api.coords.LocalPoint;
 import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.WorldView;
+import net.runelite.api.events.BeforeRender;
 import net.runelite.api.events.ChatMessage;
 import net.runelite.api.events.ClientTick;
 import net.runelite.api.events.GameObjectDespawned;
@@ -765,11 +767,7 @@ public class TrawlingPlusPlugin extends Plugin
 			shoalIconsSeen.clear();
 			mapRegionsSeen.clear();
 			forecast.clear();
-			trawledRouteName = null;
-			trawledRoute = null;
-			predictedSpot = null;
-			trawledInViewTicks = 0;
-			predictedArrowTicksLeft = 0;
+			untrack();
 			// Nothing going into or out of the holds is counted while switched off, so what they hold is no longer known.
 			holdsByAccount.clear();
 			holds = new HashMap<>();
@@ -1058,6 +1056,10 @@ public class TrawlingPlusPlugin extends Plugin
 	// after trawling is done; and the ticks left.
 	private static final int PREDICTED_ARROW_TIMEOUT_TICKS = 1000;
 	private int predictedArrowTicksLeft;
+	// Whether the maps' edge arrows are dismissed until the next catch.
+	private boolean edgeArrowDismissed;
+	// Entries the plugin put on the open menu, taken off once it closes.
+	private final List<MenuEntry> addedMenuEntries = new ArrayList<>();
 
 	/**
 	 * Finds once a tick the last trawled shoal's route, which the world map marks until another is trawled, and where
@@ -1098,11 +1100,42 @@ public class TrawlingPlusPlugin extends Plugin
 		ShoalRoute route = nearestShoal == null ? null : nearestShoal.getRoute();
 		if (route != null)
 		{
-			trawledRouteName = route.getName();
-			predictedArrowTicksLeft = PREDICTED_ARROW_TIMEOUT_TICKS;
-			// Caught from, so in sight: no arrow until it has been out of sight, rather than for its first few ticks.
-			trawledInViewTicks = PREDICTED_ARROW_HOLD_TICKS;
+			track(route);
 		}
+	}
+
+	/**
+	 * Follows a shoal's route as the last trawled, as a catch from it does.
+	 */
+	private void track(ShoalRoute route)
+	{
+		trawledRouteName = route.getName();
+		predictedArrowTicksLeft = PREDICTED_ARROW_TIMEOUT_TICKS;
+		edgeArrowDismissed = false;
+		// In sight: no arrow until it has been out of sight, rather than for its first few ticks.
+		trawledInViewTicks = PREDICTED_ARROW_HOLD_TICKS;
+	}
+
+	/**
+	 * Forgets the last trawled shoal, its map marks and arrows with it.
+	 */
+	private void untrack()
+	{
+		trawledRouteName = null;
+		trawledRoute = null;
+		edgeArrowDismissed = false;
+		predictedSpot = null;
+		trawledInViewTicks = 0;
+		predictedArrowTicksLeft = 0;
+	}
+
+	/**
+	 * Whether the maps' edge arrows are hidden: dismissed since the last catch, or timed out like the arrow off
+	 * the boat.
+	 */
+	boolean isEdgeArrowHidden()
+	{
+		return edgeArrowDismissed || predictedArrowTicksLeft <= 0;
 	}
 
 	/**
@@ -3200,6 +3233,23 @@ public class TrawlingPlusPlugin extends Plugin
 	}
 
 	/**
+	 * Takes the plugin's own menu entries off before the first frame drawn after the menu closes, so none lingers in
+	 * the left click's text.
+	 */
+	@Subscribe
+	public void onBeforeRender(BeforeRender event)
+	{
+		if (!addedMenuEntries.isEmpty() && !client.isMenuOpen())
+		{
+			for (MenuEntry entry : addedMenuEntries)
+			{
+				client.getMenu().removeMenuEntry(entry);
+			}
+			addedMenuEntries.clear();
+		}
+	}
+
+	/**
 	 * Puts Reset lifetime on the total's menu while Shift is held, and takes it off again once it isn't.
 	 */
 	@Subscribe
@@ -3225,26 +3275,60 @@ public class TrawlingPlusPlugin extends Plugin
 		}
 	}
 
-	/** Puts Reset session on the menu over the hold book's button, and Reset lifetime too while Shift is held. */
+	/**
+	 * Adds an entry to the menu at an index (-1 for as high as it may go), kept to be taken off again once the menu
+	 * closes. Never on top, where it would be the left click.
+	 */
+	private MenuEntry addMenuEntry(int index)
+	{
+		int top = client.getMenu().getMenuEntries().length - 1;
+		MenuEntry entry = client.getMenu().createMenuEntry(Math.max(0, index < 0 ? top : Math.min(index, top)));
+		addedMenuEntries.add(entry);
+		return entry;
+	}
+
+	/**
+	 * Adds "<option> <route> shoal" to the menu, running an action of the plugin's own; nothing is sent to the game.
+	 */
+	private void addShoalEntry(int index, String option, ShoalRoute route, Runnable action)
+	{
+		addMenuEntry(index)
+			.setOption(option)
+			.setTarget(ColorUtil.wrapWithColorTag(route.getName() + " shoal", JagexColors.MENU_TARGET))
+			.setType(MenuAction.RUNELITE)
+			.onClick(clicked -> action.run());
+	}
+
+	/**
+	 * Adds the plugin's own entries to the menu just opened: on the cargo hold, shoals, the world map orb and the
+	 * world map's marks, and Reset session (with Reset lifetime while Shift is held) over the hold book's button.
+	 */
 	@Subscribe
 	public void onMenuOpened(MenuOpened event)
 	{
 		addOpenLog();
+		addTrackShoal();
+		addUntrackOrb();
 		Point mouse = client.getMouseCanvasPosition();
-		if (mouse == null || !holdBook.overButton(mouse.getX(), mouse.getY()))
+		if (mouse == null)
+		{
+			return;
+		}
+		addWorldMapEntries(mouse);
+		if (!holdBook.overButton(mouse.getX(), mouse.getY()))
 		{
 			return;
 		}
 		String target = ColorUtil.wrapWithColorTag("Trawling Log", JagexColors.MENU_TARGET);
 		if (client.isKeyPressed(KeyCode.KC_SHIFT))
 		{
-			client.getMenu().createMenuEntry(-1)
+			addMenuEntry(-1)
 				.setOption(RESET_LIFETIME)
 				.setTarget(target)
 				.setType(MenuAction.RUNELITE)
 				.onClick(entry -> resetLifetime());
 		}
-		client.getMenu().createMenuEntry(-1)
+		addMenuEntry(-1)
 			.setOption(RESET_SESSION)
 			.setTarget(target)
 			.setType(MenuAction.RUNELITE)
@@ -3335,13 +3419,85 @@ public class TrawlingPlusPlugin extends Plugin
 			MenuEntry entry = entries[i];
 			if (entry.getType() == MenuAction.EXAMINE_OBJECT && CARGO_HOLDS.contains(entry.getIdentifier()))
 			{
-				client.getMenu().createMenuEntry(i)
+				addMenuEntry(i)
 					.setOption("Open")
 					.setTarget(ColorUtil.wrapWithColorTag("Trawling Log", JagexColors.MENU_TARGET))
 					.setType(MenuAction.RUNELITE)
 					.onClick(clicked -> holdBook.openAnywhere());
 				return;
 			}
+		}
+	}
+
+	/**
+	 * Puts Track on a shoal's right-click menu, just below its own options, following it as a catch would; or Untrack
+	 * on the one already followed, forgetting it. Neither sends anything to the game.
+	 */
+	private void addTrackShoal()
+	{
+		Set<Integer> done = new HashSet<>();
+		MenuEntry[] entries = client.getMenu().getMenuEntries();
+		// Each entry added moves the ones above it up a place.
+		int added = 0;
+		// From the bottom of the menu up, so each shoal's entry goes below all of its options.
+		for (int i = 0; i < entries.length; i++)
+		{
+			MenuEntry entry = entries[i];
+			Shoal shoal = OBJECT_OPTIONS.contains(entry.getType()) && isShoalClickbox(entry.getIdentifier())
+				? shoals.get(entry.getWorldViewId()) : null;
+			ShoalRoute route = shoal == null ? null : shoal.getRoute();
+			if (route == null || !done.add(entry.getWorldViewId()))
+			{
+				continue;
+			}
+			if (route.getName().equals(trawledRouteName))
+			{
+				addShoalEntry(i + added++, "Untrack", route, this::untrack);
+			}
+			else
+			{
+				addShoalEntry(i + added++, "Track", route, () -> track(route));
+			}
+		}
+	}
+
+	/**
+	 * Puts Untrack on the world map orb's menu, just below its own options, while a shoal is followed.
+	 */
+	private void addUntrackOrb()
+	{
+		ShoalRoute route = trawledRoute;
+		if (route == null)
+		{
+			return;
+		}
+		MenuEntry[] entries = client.getMenu().getMenuEntries();
+		for (int i = 0; i < entries.length; i++)
+		{
+			if (WORLD_MAP_ORBS.contains(entries[i].getParam1()))
+			{
+				addShoalEntry(i, "Untrack", route, this::untrack);
+				return;
+			}
+		}
+	}
+
+	/**
+	 * Puts Untrack on the menu over the last trawled shoal's mark on the world map, and Dismiss over its edge arrow,
+	 * hiding both maps' edge arrows until the next catch. The minimap's arrow can't take one, as RuneLite's minimap
+	 * zoom takes its right clicks.
+	 */
+	private void addWorldMapEntries(Point mouse)
+	{
+		ShoalRoute marked = mapOverlay.trawledMarkAt(mouse.getX(), mouse.getY());
+		if (marked != null)
+		{
+			addShoalEntry(-1, "Untrack", marked, this::untrack);
+		}
+		ShoalRoute pointed = mapOverlay.edgeArrowAt(mouse.getX(), mouse.getY());
+		if (pointed != null)
+		{
+			addShoalEntry(-1, "Dismiss", pointed, () -> edgeArrowDismissed = true);
 		}
 	}
 
@@ -4154,6 +4310,18 @@ public class TrawlingPlusPlugin extends Plugin
 		}
 		return nearest;
 	}
+
+	// The world map orb by the minimap, in each of the game's layouts of it.
+	private static final Set<Integer> WORLD_MAP_ORBS = Set.of(
+		InterfaceID.Orbs.ORB_WORLDMAP, InterfaceID.Orbs.WORLDMAP,
+		InterfaceID.OrbsNomap.ORB_WORLDMAP, InterfaceID.OrbsNomap.WORLDMAP,
+		InterfaceID.OrbsOsm.ORB_WORLDMAP, InterfaceID.OrbsOsm.WORLDMAP,
+		InterfaceID.OrbsOsmNomap.ORB_WORLDMAP, InterfaceID.OrbsOsmNomap.WORLDMAP);
+
+	// A game object's menu options, whose identifier is the object's id.
+	private static final Set<MenuAction> OBJECT_OPTIONS = EnumSet.of(MenuAction.GAME_OBJECT_FIRST_OPTION,
+		MenuAction.GAME_OBJECT_SECOND_OPTION, MenuAction.GAME_OBJECT_THIRD_OPTION, MenuAction.GAME_OBJECT_FOURTH_OPTION,
+		MenuAction.GAME_OBJECT_FIFTH_OPTION, MenuAction.EXAMINE_OBJECT);
 
 	private static boolean isShoalClickbox(int id)
 	{

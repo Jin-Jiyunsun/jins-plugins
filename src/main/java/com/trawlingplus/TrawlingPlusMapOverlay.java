@@ -32,10 +32,13 @@ class TrawlingPlusMapOverlay extends Overlay
 {
 	private static final int THICKNESS = 2;
 	private static final int ARROW = 6;
-	// A shoal's mark: its dot, this many pixels across; the arrow just ahead of it while it's moving, bigger than the
-	// route's direction arrows; and the game's stop bar under it while it's at a stop, this wide.
+	// A shoal's mark: its dot while still, this many pixels across, or its arrow while moving; the game's stop bar
+	// under it at a stop, this wide; and the arrow at the map's edge pointing to the last trawled one off the map.
 	private static final int SHOAL_DOT = 8;
-	private static final int HEADING_ARROW = 11;
+	private static final int HEADING_ARROW = 12;
+	private static final int EDGE_ARROW = 17;
+	// How far the edge arrow's middle sits inside the map's edge.
+	private static final int EDGE_ARROW_INSET = 12;
 	private static final int BAR_WIDTH = 26;
 	// How many pixels at the bar picture's right end are its end, taken as they are.
 	private static final int BAR_END = 2;
@@ -86,6 +89,8 @@ class TrawlingPlusMapOverlay extends Overlay
 	private final WorldMapOverlay worldMapOverlay;
 	private final SpriteManager spriteManager;
 	private final MapRoutes.MapView mapView = new MapRoutes.MapView();
+	private final MapRoutes.Clickable edgeArrow = new MapRoutes.Clickable();
+	private final MapRoutes.Clickable trawledMark = new MapRoutes.Clickable();
 	// The stop bar's two pictures as a skin or resource pack replaces them, and what each was read from.
 	private final SpritePixels[] barSources = new SpritePixels[2];
 	private final BufferedImage[] barPictures = new BufferedImage[2];
@@ -133,6 +138,8 @@ class TrawlingPlusMapOverlay extends Overlay
 	@Override
 	public Dimension render(Graphics2D graphics)
 	{
+		edgeArrow.clear();
+		trawledMark.clear();
 		TrawlingPlusConfig.ShowOnMaps where = config.showOnMaps();
 		if (client.getGameState() != GameState.LOGGED_IN
 			|| where == TrawlingPlusConfig.ShowOnMaps.OFF
@@ -204,7 +211,7 @@ class TrawlingPlusMapOverlay extends Overlay
 			timer.mapTook(MapRoutes.MapTimer.WORLD_ARROWS, arrowNanos);
 		}
 
-		drawShoals(graphics, mapView);
+		drawShoals(graphics, mapView, within);
 
 		graphics.setClip(clip);
 		return null;
@@ -214,7 +221,7 @@ class TrawlingPlusMapOverlay extends Overlay
 	 * Every shoal as one mark on its route's line: one in view where the game has it along its route, and the last one
 	 * trawled, while out of view, where it likely is.
 	 */
-	private void drawShoals(Graphics2D graphics, MapRoutes.MapView onto)
+	private void drawShoals(Graphics2D graphics, MapRoutes.MapView onto, Rectangle within)
 	{
 		Color colour = config.shoalHeadingArrowColour();
 		int tick = client.getTickCount();
@@ -222,6 +229,8 @@ class TrawlingPlusMapOverlay extends Overlay
 		// By what the game is drawing this frame, so the last trawled shoal's dot hands over the moment it leaves or
 		// comes into view, with neither a gap nor two at once.
 		boolean trawledInView = false;
+		// Where the last trawled shoal is, in view or likely, while it's off the part of the map showing.
+		double[] offMap = null;
 		// Only a shoal the client is drawing in the world is taken from the game. Shoals are dropped as they despawn
 		// anyway, so this is belt and braces.
 		for (Shoal shoal : plugin.getShoals())
@@ -230,11 +239,13 @@ class TrawlingPlusMapOverlay extends Overlay
 			{
 				continue;
 			}
-			trawledInView |= trawled != null && shoal.getRoute() == trawled;
+			boolean isTrawled = trawled != null && shoal.getRoute() == trawled;
+			trawledInView |= isTrawled;
 			double[] at = MapRoutes.alongRoute(shoal, client);
 			Point placed = at == null ? null : onto.at(at[0], at[1]);
 			if (placed == null)
 			{
+				offMap = isTrawled && at != null ? at : offMap;
 				continue;
 			}
 
@@ -244,6 +255,10 @@ class TrawlingPlusMapOverlay extends Overlay
 			boolean heading = left < 0 && at.length > 2;
 			drawMark(graphics, placed, colour, left, heading ? onto.stepX(at[2], at[3]) : 0,
 				heading ? onto.stepY(at[2], at[3]) : 0);
+			if (isTrawled)
+			{
+				noteTrawledMark(graphics, trawled, placed);
+			}
 		}
 
 		// The last trawled shoal, while out of view, where it likely is.
@@ -259,13 +274,79 @@ class TrawlingPlusMapOverlay extends Overlay
 				// At a stop, how much of it is likely left; otherwise the way it's heading, along the route.
 				double left = forecast.stopLeft(trawled, now);
 				drawMark(graphics, placed, colour, left, onto.stepX(at[2], at[3]), onto.stepY(at[2], at[3]));
+				noteTrawledMark(graphics, trawled, placed);
 			}
+			else
+			{
+				offMap = at;
+			}
+		}
+
+		if (offMap != null && config.predictedMapEdgeArrow() && plugin.getAboardBoat() != null
+			&& !plugin.isEdgeArrowHidden())
+		{
+			drawEdgeArrow(graphics, within, trawled, onto.x(offMap[0], offMap[1]), onto.y(offMap[0], offMap[1]), colour);
 		}
 	}
 
 	/**
-	 * A shoal's dot, and while at a stop the game's stop bar under it with this much left (-1 for none), or while
-	 * moving an arrow just ahead of it pointing along a step on screen (none for no step).
+	 * An arrow just inside the map's edge, on the line from the map's middle to a point off it, pointing at it.
+	 */
+	private void drawEdgeArrow(Graphics2D graphics, Rectangle within, ShoalRoute route, double x, double y,
+		Color colour)
+	{
+		double towardX = x - within.getCenterX();
+		double towardY = y - within.getCenterY();
+		double roomX = within.width / 2.0 - EDGE_ARROW_INSET;
+		double roomY = within.height / 2.0 - EDGE_ARROW_INSET;
+		double reach = Math.min(Math.abs(towardX) < 1e-6 ? Double.MAX_VALUE : roomX / Math.abs(towardX),
+			Math.abs(towardY) < 1e-6 ? Double.MAX_VALUE : roomY / Math.abs(towardY));
+		if (roomX <= 0 || roomY <= 0 || reach == Double.MAX_VALUE)
+		{
+			return;
+		}
+		double arrowX = within.getCenterX() + towardX * reach;
+		double arrowY = within.getCenterY() + towardY * reach;
+		MapRoutes.pointer(graphics, arrowX, arrowY, colour, EDGE_ARROW, towardX, towardY);
+		// Only one showing can be right-clicked, not one under the map's panels.
+		Shape showing = graphics.getClip();
+		if (showing == null || showing.contains(arrowX, arrowY))
+		{
+			edgeArrow.drawn(route, arrowX, arrowY, EDGE_ARROW);
+		}
+	}
+
+	/**
+	 * Keeps where the last trawled shoal's mark was drawn, for its right-click menu, unless under the map's panels.
+	 */
+	private void noteTrawledMark(Graphics2D graphics, ShoalRoute route, Point placed)
+	{
+		Shape showing = graphics.getClip();
+		if (showing == null || showing.contains(placed.getX(), placed.getY()))
+		{
+			trawledMark.drawn(route, placed.getX(), placed.getY(), Math.max(SHOAL_DOT, HEADING_ARROW));
+		}
+	}
+
+	/**
+	 * The route of the last trawled shoal's mark under a point on the canvas, or null. Client thread only.
+	 */
+	ShoalRoute trawledMarkAt(int x, int y)
+	{
+		return trawledMark.at(x, y);
+	}
+
+	/**
+	 * The route of the edge arrow under a point on the canvas, or null. Client thread only.
+	 */
+	ShoalRoute edgeArrowAt(int x, int y)
+	{
+		return edgeArrow.at(x, y);
+	}
+
+	/**
+	 * A shoal's mark: while moving, an arrow pointing along a step on screen; else its dot, and at a stop the game's
+	 * stop bar under it with this much left (-1 for none).
 	 */
 	private void drawMark(Graphics2D graphics, Point at, Color colour, double left, double towardX, double towardY)
 	{

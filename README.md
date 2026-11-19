@@ -20,11 +20,15 @@ bait and cargo hold from a display on the boat, and keeps a trawling log of ever
   vibrant.
 - **Dangerous water**: route stretches near sea creatures that can attack boats are drawn in red, with
   skulls on the world map.
+- **Side panel depth guide**: highlights the depth each net should be at, and ticks it once it is.
 - **Predicted shoals**: shoals keep exact time, so the world map keeps showing the last shoal you trawled where it
   likely is while it's out of sight, with its stop timer at a stop. While you're aboard, arrows off your boat and at
   the edge of both maps point back to it, such as after banking, for 10 minutes after your last catch. Right-click a
   shoal to track it without fishing it first, or to untrack it.
-- **Side panel depth guide**: highlights the depth each net should be at, and ticks it once it is.
+
+<p align="center">
+<img width="800" height="693" alt="prediction" src="https://github.com/user-attachments/assets/2981f557-d8c4-40f6-8068-472232ba949c" />
+</p>
 
 ### On your boat
 
@@ -98,11 +102,11 @@ Highly customisable: almost every feature can be switched off or recoloured. Her
 - **Fish**: switch each fish off to hide its routes.
 
 <p align="center">
-  <img width="800" height="669" alt="nextstop" src="https://github.com/user-attachments/assets/0bc124e7-0984-4843-bc2c-130bedfb8747" />
+<img width="800" height="669" alt="nextstop" src="https://github.com/user-attachments/assets/0bc124e7-0984-4843-bc2c-130bedfb8747" />
 </p>
 
-### License
+## Disclaimer on AI & License
+
+This plugin is developed with heavy AI assistance (Claude). Everything is tested in game by myself before shipping.
 
 BSD-2-Clause. See [LICENSE](LICENSE).
-
-While tested by myself in game, this plugin was entirely generated using AI.

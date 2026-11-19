@@ -2,6 +2,7 @@ package com.trawlingplus;
 
 import net.runelite.api.Client;
 import net.runelite.api.Constants;
+import net.runelite.api.NPC;
 import net.runelite.api.Perspective;
 import net.runelite.api.WorldEntity;
 import net.runelite.api.WorldView;
@@ -31,7 +32,19 @@ final class Shoal
 	private double routeDistance = -1;
 
 	private double[] lastPosition;
+	private double[] previousPosition;
 	private double[] lastTarget;
+	// The shoal's stop bar as read on the world map, and the tick it was read on, as it only changes once a tick.
+	private double barNow = -1;
+	private int barNowTick = -1;
+	// Ticks in a row the shoal's position hasn't changed, whether it has been seen moving, and whether on the last
+	// tick it set off from a stop or first sat still at one.
+	private int stillRun;
+	// How many ticks still count as sitting at a stop, for setting off from one: every stop lasts far longer.
+	private static final int SETTLED_TICKS = 10;
+	private boolean sawMove;
+	private boolean left;
+	private boolean arrived;
 	private ShoalDepth depth = ShoalDepth.UNKNOWN;
 	// The last depth read off the shoal's animation rather than guessed, and whether it changed on the last read.
 	private ShoalDepth animatedDepth;
@@ -225,6 +238,46 @@ final class Shoal
 	}
 
 	/**
+	 * Whether the shoal set off from a stop on the last tick: the first tick it moved after sitting still for a while.
+	 */
+	boolean justLeft()
+	{
+		return left;
+	}
+
+	/**
+	 * Whether the shoal was seen coming to a stop on the last tick: the first tick it sat still after moving.
+	 */
+	boolean justArrived()
+	{
+		return arrived;
+	}
+
+	/**
+	 * Whether the shoal's position didn't change on the last tick.
+	 */
+	boolean sittingStill()
+	{
+		return stillRun > 0;
+	}
+
+	/**
+	 * Where the shoal was as of the last tick, or null.
+	 */
+	double[] lastPosition()
+	{
+		return lastPosition;
+	}
+
+	/**
+	 * Where the shoal was the tick before the last, or null.
+	 */
+	double[] previousPosition()
+	{
+		return previousPosition;
+	}
+
+	/**
 	 * Whether the shoal has actually been seen sitting still, as of the last tick. Unlike stopped(), a shoal that
 	 * has only just come into view, with nothing yet to judge it by, doesn't count.
 	 */
@@ -244,6 +297,21 @@ final class Shoal
 	 */
 	void update(double[] position, double[] target)
 	{
+		// Leaving and arriving by the drawn position itself, a tick after the destination shows it, as the route
+		// timing was recorded.
+		left = false;
+		arrived = false;
+		if (lastPosition != null)
+		{
+			boolean same = position[0] == lastPosition[0] && position[1] == lastPosition[1];
+			// Only after a real stop: a tick's pause on the way, near a stop, would otherwise look like leaving it.
+			left = !same && stillRun >= SETTLED_TICKS;
+			arrived = same && stillRun == 0 && sawMove;
+			stillRun = same ? stillRun + 1 : 0;
+			sawMove |= !same;
+		}
+		previousPosition = lastPosition;
+
 		boolean judged = false;
 		if (target != null)
 		{
@@ -406,6 +474,33 @@ final class Shoal
 		return local.getX() >= 0 && local.getY() >= 0
 			&& local.getX() < view.getSizeX() * Perspective.LOCAL_TILE_SIZE
 			&& local.getY() < view.getSizeY() * Perspective.LOCAL_TILE_SIZE;
+	}
+
+	/**
+	 * How full the game's bar over the shoal is on this tick, from 0 to 1, or -1 while there's none: it only shows
+	 * while the shoal is at a stop. Read straight off the shoal once a tick, so it holds wherever the player is.
+	 */
+	double stopBarNow(int tick)
+	{
+		if (tick == barNowTick)
+		{
+			return barNow;
+		}
+		barNowTick = tick;
+		barNow = -1;
+		WorldView view = entity.getWorldView();
+		if (view != null)
+		{
+			for (NPC npc : view.npcs())
+			{
+				if (npc.getHealthScale() > 0 && npc.getHealthRatio() >= 0)
+				{
+					barNow = Math.min(1, (double) npc.getHealthRatio() / npc.getHealthScale());
+					break;
+				}
+			}
+		}
+		return barNow;
 	}
 
 	/**

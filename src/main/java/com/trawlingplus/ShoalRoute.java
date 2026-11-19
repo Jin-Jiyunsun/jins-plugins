@@ -70,7 +70,15 @@ final class ShoalRoute
 	private static final int BLOCK = 64;
 
 	private final String species;
+	private final String name;
 	private final int stopTicks;
+	// The lap's timing, or null legs where it isn't known: how many ticks a shoal sits still at a stop, the share of
+	// each leg swum by each tick of it, the tick of the lap each leg starts on (the last tick still at its stop,
+	// counting from stop 0's) and how many ticks a whole lap takes.
+	private final int stillTicks;
+	private final double[][] legs;
+	private final int[] legStart;
+	private final int lapTicks;
 	private final double[] pathX;
 	private final double[] pathY;
 	private final double[] pathDistance;
@@ -101,7 +109,7 @@ final class ShoalRoute
 	private List<DangerousThreat> dangerousThreats = new ArrayList<>();
 
 	ShoalRoute(String species, String name, int stopTicks, double[][] path, double[][] stops, double[][] safe,
-		List<RouteData.Threat> threats)
+		List<RouteData.Threat> threats, int stillTicks, double[][] legs)
 	{
 		if (path.length < 2 || stops.length == 0)
 		{
@@ -109,7 +117,19 @@ final class ShoalRoute
 		}
 
 		this.species = species;
+		this.name = name;
 		this.stopTicks = stopTicks;
+		boolean timed = legs != null && legs.length == stops.length && stillTicks > 0;
+		this.stillTicks = stillTicks;
+		this.legs = timed ? legs : null;
+		legStart = new int[stops.length];
+		int tick = 0;
+		for (int stop = 0; timed && stop < stops.length; stop++)
+		{
+			legStart[stop] = tick;
+			tick += legs[stop].length + 1 + stillTicks;
+		}
+		lapTicks = tick;
 		this.stops = stops;
 		this.safe = safe == null ? new double[0][] : safe;
 		this.threats = threats == null ? new ArrayList<>() : threats;
@@ -263,7 +283,8 @@ final class ShoalRoute
 			for (RouteData.Route route : species.routes)
 			{
 				routes.add(new ShoalRoute(species.name, route.name, route.stopTicks,
-					shape(route.path, route.stops, smoothing), route.stops, route.safe, route.threats));
+					shape(route.path, route.stops, smoothing), route.stops, route.safe, route.threats, route.stillTicks,
+					route.legs));
 			}
 		}
 		return routes;
@@ -633,6 +654,123 @@ final class ShoalRoute
 	String getSpecies()
 	{
 		return species;
+	}
+
+	String getName()
+	{
+		return name;
+	}
+
+	/**
+	 * Whether the lap's timing is known, so where a shoal will be can be worked out.
+	 */
+	boolean timed()
+	{
+		return legs != null;
+	}
+
+	/**
+	 * How many ticks a lap takes, or 0 where it hasn't been timed.
+	 */
+	int lapTicks()
+	{
+		return lapTicks;
+	}
+
+	/**
+	 * The tick of the lap a shoal leaves a stop on: the last tick it sits still there.
+	 */
+	int leaveTick(int stop)
+	{
+		return legStart[stop];
+	}
+
+	/**
+	 * The tick of the lap a shoal first sits still at a stop.
+	 */
+	int arriveTick(int stop)
+	{
+		int from = (stop + stops.length - 1) % stops.length;
+		return (legStart[from] + legs[from].length + 1) % lapTicks;
+	}
+
+	/**
+	 * How many ticks a shoal sits still at each stop after the one it arrives on.
+	 */
+	int stillTicks()
+	{
+		return stillTicks;
+	}
+
+	/**
+	 * How far round the route a shoal is on a tick of its lap, any whole number of laps either way.
+	 */
+	double distanceAtTick(long tick)
+	{
+		int at = (int) Math.floorMod(tick, (long) lapTicks);
+		int stop = legs.length - 1;
+		while (legStart[stop] > at)
+		{
+			stop--;
+		}
+		int into = at - legStart[stop];
+		double[] leg = legs[stop];
+		double share = into == 0 ? 0 : into > leg.length ? 1 : leg[into - 1];
+		int next = stop + 1 == stops.length ? 0 : stop + 1;
+		return stopDistance[stop] + forward(stopDistance[stop], stopDistance[next]) * share;
+	}
+
+	/**
+	 * How much of its stop a shoal has left on a tick of its lap, from 1 as it arrives down to a tick's worth, or -1
+	 * from the last tick of the stop, as it sets off, and while it is swimming.
+	 */
+	double stopLeft(long tick)
+	{
+		int at = (int) Math.floorMod(tick, (long) lapTicks);
+		int stop = legs.length - 1;
+		while (legStart[stop] > at)
+		{
+			stop--;
+		}
+		int arrive = legStart[stop] + legs[stop].length + 1;
+		if (at < arrive)
+		{
+			return -1;
+		}
+		int leave = stop + 1 == legs.length ? lapTicks : legStart[stop + 1];
+		return (double) (leave - at) / stillTicks;
+	}
+
+	/**
+	 * The tick of the lap a swimming shoal is most likely on, from how far round the route it is.
+	 */
+	int tickAt(double distance)
+	{
+		int stop = 0;
+		double behind = Double.MAX_VALUE;
+		for (int i = 0; i < stops.length; i++)
+		{
+			double gap = forward(stopDistance[i], distance);
+			if (gap < behind)
+			{
+				behind = gap;
+				stop = i;
+			}
+		}
+		int next = stop + 1 == stops.length ? 0 : stop + 1;
+		double whole = forward(stopDistance[stop], stopDistance[next]);
+		double share = whole <= 0 ? 0 : behind / whole;
+		double[] leg = legs[stop];
+		int best = 1;
+		// A leg of a single tick has no share to compare, and its one tick is the answer.
+		for (int into = 2; into <= leg.length; into++)
+		{
+			if (Math.abs(leg[into - 1] - share) < Math.abs(leg[best - 1] - share))
+			{
+				best = into;
+			}
+		}
+		return legStart[stop] + best;
 	}
 
 	double length()

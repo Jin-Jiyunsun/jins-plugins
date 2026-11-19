@@ -20,6 +20,10 @@ bait and cargo hold from a display on the boat, and keeps a trawling log of ever
   vibrant.
 - **Dangerous water**: route stretches near sea creatures that can attack boats are drawn in red, with
   skulls on the world map.
+- **Predicted shoals**: shoals keep exact time, so the world map keeps showing the last shoal you trawled where it
+  likely is while it's out of sight, the same as a shoal in sight: pointing the way it's heading, or with its stop
+  timer at a stop. An arrow off your boat points back to it, such as after banking, for 10 minutes after your last
+  catch.
 - **Side panel depth guide**: highlights the depth each net should be at, and ticks it once it is.
 
 ### On your boat

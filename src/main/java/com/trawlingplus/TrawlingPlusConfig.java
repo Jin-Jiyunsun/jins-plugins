@@ -69,6 +69,13 @@ public interface TrawlingPlusConfig extends Config
 	String areaSection = "fishableArea";
 
 	@ConfigSection(
+		name = "Predicted shoal",
+		description = "Where a shoal likely is while it's out of sight,<br>from when it was last seen",
+		position = 34
+	)
+	String predictedSection = "predictedShoal";
+
+	@ConfigSection(
 		name = "Heads up display",
 		description = "What is shown on your own boat, at the helm",
 		position = 35
@@ -1522,5 +1529,44 @@ public interface TrawlingPlusConfig extends Config
 	default Notification notifyClueTurtle()
 	{
 		return Notification.OFF;
+	}
+
+	@ConfigItem(
+		keyName = "showPredictedArrow",
+		name = "Arrow",
+		description = "While aboard, point an arrow from the boat<br>to where the shoal you last trawled likely is,<br>"
+			+ "until it's back in sight. It goes after 10<br>minutes without a catch.",
+		position = 90,
+		section = predictedSection
+	)
+	default boolean showPredictedArrow()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "showPredictedOnMap",
+		name = "World map",
+		description = "Mark where the shoal you last trawled likely is<br>on the world map while it's out of sight, the<br>"
+			+ "same way as a shoal in sight, until you trawl<br>another.",
+		position = 91,
+		section = predictedSection
+	)
+	default boolean showPredictedOnMap()
+	{
+		return true;
+	}
+
+	@Alpha
+	@ConfigItem(
+		keyName = "predictedShoalColour",
+		name = "Colour",
+		description = "Colour of the arrow off the boat.",
+		position = 92,
+		section = predictedSection
+	)
+	default Color predictedShoalColour()
+	{
+		return new Color(255, 221, 0, 150);
 	}
 }

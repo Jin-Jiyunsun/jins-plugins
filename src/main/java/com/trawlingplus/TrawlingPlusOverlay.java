@@ -231,6 +231,10 @@ class TrawlingPlusOverlay extends Overlay
 	private boolean spotArrowPast;
 	private boolean spotArrowBlocked;
 	private int spotCheckTick = -1;
+	// The same for the arrow to the shoal last trawled, and where it last pointed, kept so it fades out there.
+	private double predictedArrowFade;
+	private long lastPredictedArrowMillis = -1;
+	private double[] predictedTarget;
 
 	// The fishable area's outline on screen, kept between frames.
 	private final Path2D.Double areaRing = new Path2D.Double();
@@ -629,16 +633,26 @@ class TrawlingPlusOverlay extends Overlay
 		boolean loggedIn = client.getGameState() == GameState.LOGGED_IN;
 		// Drawn while wanted or still fading out; switched off, it just isn't drawn.
 		boolean spotArrow = loggedIn && config.showSpotArrow() && (plugin.getFishedSpot() != null || spotArrowFade > 0);
+		// Like the spot arrow, whatever the guides are doing.
+		boolean predictedArrow = loggedIn && config.showPredictedArrow()
+			&& (plugin.getPredictedSpot() != null || predictedArrowFade > 0);
 		if (!loggedIn || !plugin.showGuides())
 		{
 			// Nothing is left clear around the boat without the guides, so the hull's outline isn't placed yet.
 			clearing = false;
 			volume = false;
-			if (spotArrow)
+			if (spotArrow || predictedArrow)
 			{
 				Object antialiasing = graphics.getRenderingHint(RenderingHints.KEY_ANTIALIASING);
 				graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-				drawSpotArrow(graphics, top);
+				if (spotArrow)
+				{
+					drawSpotArrow(graphics, top);
+				}
+				if (predictedArrow)
+				{
+					drawPredictedArrow(graphics, top);
+				}
 				if (antialiasing != null)
 				{
 					graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, antialiasing);
@@ -654,6 +668,10 @@ class TrawlingPlusOverlay extends Overlay
 		if (spotArrow)
 		{
 			drawSpotArrow(graphics, top);
+		}
+		if (predictedArrow)
+		{
+			drawPredictedArrow(graphics, top);
 		}
 
 		// With the route line, stops and direction arrows all off, only the shoals' heading arrows are drawn.
@@ -1135,6 +1153,9 @@ class TrawlingPlusOverlay extends Overlay
 		lastHoldOutlineMillis = -1;
 		spotArrowBlocked = false;
 		spotCheckTick = -1;
+		predictedArrowFade = 0;
+		lastPredictedArrowMillis = -1;
+		predictedTarget = null;
 		steadyMillis = -1;
 		moveStartMillis = -1;
 		waterKnown = false;
@@ -2361,8 +2382,18 @@ class TrawlingPlusOverlay extends Overlay
 	 */
 	private double[] placeSpotArrow(WorldView top)
 	{
-		double[] spot = plugin.getRememberedSpot();
-		WorldEntity boat = plugin.getOwnBoat();
+		double[] place = placeArrowToward(top, plugin.getOwnBoat(), plugin.getRememberedSpot(), spotArrowLength());
+		spotArrowPast = place != null && place[4] > 0;
+		return place;
+	}
+
+	/**
+	 * Where an arrow of the given length off a boat pointing at a place goes this frame, as {x, y, dx, dy, past} in
+	 * world tiles: its middle, the unit way to the place, and 1 where its tip would reach past the place's middle,
+	 * else 0. On an oval round the hull, on the side nearest the place. Null when it can't be placed.
+	 */
+	private double[] placeArrowToward(WorldView top, WorldEntity boat, double[] spot, double length)
+	{
 		WorldEntityConfig hull = boat == null ? null : boat.getConfig();
 		if (spot == null || hull == null || top == null)
 		{
@@ -2433,7 +2464,6 @@ class TrawlingPlusOverlay extends Overlay
 		dx /= across;
 		dy /= across;
 
-		double length = spotArrowLength();
 		double gap = SPOT_ARROW_GAP_TILES;
 		// Shorter ahead than behind: the bow is pointed, so an oval as long both ways leaves more water off the bow.
 		double bowTrim = Math.min(hullAlong, SPOT_ARROW_BOW_TRIM_TILES);
@@ -2444,8 +2474,42 @@ class TrawlingPlusOverlay extends Overlay
 
 
 		// Its tip at or beyond the spot's middle, as with the boat sat on the spot, puts it past the spot, pointing away.
-		spotArrowPast = reach + length / 2 >= across;
-		return new double[]{fromX + dx * reach, fromY + dy * reach, dx, dy};
+		return new double[]{fromX + dx * reach, fromY + dy * reach, dx, dy, reach + length / 2 >= across ? 1 : 0};
+	}
+
+	/**
+	 * Points the way from the boat to where the shoal last trawled likely is, while it is out of sight, with an arrow
+	 * like the fishing spot arrow. Fades in and out like it, pointing where it last did as it fades out.
+	 */
+	private void drawPredictedArrow(Graphics2D graphics, WorldView top)
+	{
+		long now = System.currentTimeMillis();
+		double[] target = plugin.getPredictedSpot();
+		if (target != null)
+		{
+			predictedTarget = target;
+		}
+		double length = spotArrowLength();
+		double[] place = predictedTarget == null ? null
+			: placeArrowToward(top, plugin.getAboardBoat(), predictedTarget, length);
+		boolean wanted = target != null && place != null && place[4] == 0;
+		double step = !config.animatedHud() ? 1 : lastPredictedArrowMillis < 0 ? 0
+			: Math.max(0, now - lastPredictedArrowMillis) / HELM_FADE_MILLIS;
+		predictedArrowFade = wanted ? Math.min(1, predictedArrowFade + step) : Math.max(0, predictedArrowFade - step);
+		lastPredictedArrowMillis = wanted || predictedArrowFade > 0 ? now : -1;
+		if (place == null || predictedArrowFade <= 0)
+		{
+			return;
+		}
+
+		Path2D arrow = flatArrowhead(top, place[0], place[1], place[2], place[3], length / 2,
+			length * SHOAL_ARROW_HALF_WIDTH, length * SHOAL_ARROW_NOTCH);
+		if (arrow != null)
+		{
+			double shown = predictedArrowFade * predictedArrowFade * (3 - 2 * predictedArrowFade);
+			graphics.setColor(withOpacity(config.predictedShoalColour(), shown));
+			graphics.fill(arrow);
+		}
 	}
 
 	/**

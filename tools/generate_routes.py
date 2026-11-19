@@ -44,11 +44,11 @@ def distance_to_loop(point, path):
 
 def dump(data):
     text = json.dumps(data, indent="\t", ensure_ascii=False)
-    # Keep each [x, y] pair, or [x, y, tiles] safe circle, on one line so the file stays readable and diffs
-    # stay small.
+    # Keep every list of plain numbers, as an [x, y] pair, an [x, y, tiles] safe circle or a leg's timing, on one
+    # line so the file stays readable and diffs stay small.
     number = r"-?\d+(?:\.\d+)?"
-    text = re.sub(rf"\[\s+({number}),\s+({number}),\s+({number})\s+\]", r"[\1, \2, \3]", text)
-    return re.sub(rf"\[\s+({number}),\s+({number})\s+\]", r"[\1, \2]", text)
+    return re.sub(rf"\[\s+({number}(?:,\s+{number})*)\s+\]", lambda m: "[" + re.sub(r",\s+", ", ", m.group(1)) + "]",
+                  text)
 
 
 def main():
@@ -90,6 +90,9 @@ def main():
                 "stops": recording["stops"],
                 "path": recording["path"],
             }
+            if "legs" in recording:
+                route["stillTicks"] = recording["stillTicks"]
+                route["legs"] = recording["legs"]
             route.update(hand_kept_by_route.get(recording["route"], {}))
             routes.append(route)
         # Every kind of shoal is written out, recorded routes or not, so what is known about it can be used
@@ -107,7 +110,10 @@ def main():
                   "to a quarter of a tile, listed in the order shoals swim them; the last point connects back to the first. A route may "
                   "also have \"safe\": stretches marked safe by hand as [x, y, tiles] circles, regardless of how close a spawn point "
                   "sits; and \"threats\": where sea creatures that attack boats spawn close enough to threaten it, from the OSRS wiki, "
-                  "as its name, combat level and spawn points. Neither is generated; both are kept as-is by tools/generate_routes.py.",
+                  "as its name, combat level and spawn points. Neither is generated; both are kept as-is by tools/generate_routes.py. "
+                  "Where known, a route also has its timing: \"stillTicks\", how many ticks a shoal sits still at each stop, and "
+                  "\"legs\", one for each stop to the next, the share of that leg swum by each tick between leaving one stop and "
+                  "sitting still at the next.",
         "species": species,
     }
 

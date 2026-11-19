@@ -790,6 +790,12 @@ public class TrawlingPlusPlugin extends Plugin
 			shoalMarkers.clear();
 			shoalIconsSeen.clear();
 			mapRegionsSeen.clear();
+			forecast.clear();
+			trawledRouteName = null;
+			trawledRoute = null;
+			predictedSpot = null;
+			trawledInViewTicks = 0;
+			predictedArrowTicksLeft = 0;
 			// Nothing going into or out of the holds is counted while switched off, so what they hold is no longer known.
 			holdsByAccount.clear();
 			holds = new HashMap<>();
@@ -1071,6 +1077,95 @@ public class TrawlingPlusPlugin extends Plugin
 			BufferedImage.TYPE_INT_ARGB);
 	}
 
+	// Where each route's shoal is in its lap, from when it was last seen, and the route of the shoal last trawled.
+	private final ShoalForecast forecast = new ShoalForecast();
+	private String trawledRouteName;
+	// That route, found again each tick by name, as the routes are built again when the smoothing changes.
+	private volatile ShoalRoute trawledRoute;
+	// Where the arrow off the boat points, the last trawled shoal's likely place, while it is wanted; and how many ticks
+	// in a row that shoal has been in view, the arrow staying a few seconds after it comes back into sight.
+	private volatile double[] predictedSpot;
+	private int trawledInViewTicks;
+	private static final int PREDICTED_ARROW_HOLD_TICKS = 5;
+	// The arrow goes once this many ticks (10 minutes) have passed without a catch, so it isn't left pointing long
+	// after trawling is done; and the ticks left.
+	private static final int PREDICTED_ARROW_TIMEOUT_TICKS = 1000;
+	private int predictedArrowTicksLeft;
+
+	/**
+	 * Finds, once a tick, the last trawled shoal's route, which the world map keeps marking until another is trawled,
+	 * and works out where that shoal likely is for the arrow off the boat: only while aboard, that shoal is out of view
+	 * (or just back in it, for the arrow's few seconds) and it was trawled in the last 10 minutes.
+	 */
+	private void updatePredictedArrow(boolean aboard)
+	{
+		if (predictedArrowTicksLeft > 0)
+		{
+			predictedArrowTicksLeft--;
+		}
+		ShoalRoute found = null;
+		if (trawledRouteName != null)
+		{
+			for (ShoalRoute route : routes)
+			{
+				if (route.getName().equals(trawledRouteName))
+				{
+					found = route;
+				}
+			}
+		}
+		trawledRoute = found;
+		ShoalRoute trawled = predictedArrowTicksLeft > 0 ? found : null;
+		trawledInViewTicks = forecast.inView(trawled) ? trawledInViewTicks + 1 : 0;
+		boolean wanted = aboard && config.showPredictedArrow() && trawled != null
+			&& !hiddenFish.contains(trawled.getSpecies()) && trawledInViewTicks < PREDICTED_ARROW_HOLD_TICKS;
+		double distance = wanted ? forecast.distance(trawled) : -1;
+		predictedSpot = distance >= 0 ? trawled.pointAt(distance) : null;
+	}
+
+	/**
+	 * Notes the route of the shoal being trawled, for the arrow pointing back to it.
+	 */
+	private void noteTrawled()
+	{
+		ShoalRoute route = nearestShoal == null ? null : nearestShoal.getRoute();
+		if (route != null)
+		{
+			trawledRouteName = route.getName();
+			predictedArrowTicksLeft = PREDICTED_ARROW_TIMEOUT_TICKS;
+		}
+	}
+
+	/**
+	 * The route of the shoal last trawled, or null.
+	 */
+	ShoalRoute getTrawledRoute()
+	{
+		return trawledRoute;
+	}
+
+	/**
+	 * Where the arrow off the boat points, the last trawled shoal's likely place as {x, y, dx, dy}, or null while it
+	 * isn't wanted.
+	 */
+	double[] getPredictedSpot()
+	{
+		return predictedSpot;
+	}
+
+	/**
+	 * The boat the player is aboard, theirs or another player's, whether or not the guides are showing, or null.
+	 */
+	WorldEntity getAboardBoat()
+	{
+		return aboardBoat;
+	}
+
+	ShoalForecast getForecast()
+	{
+		return forecast;
+	}
+
 	/**
 	 * Puts the skulls on the world map, or takes them off, to match the settings.
 	 */
@@ -1130,6 +1225,13 @@ public class TrawlingPlusPlugin extends Plugin
 		if (event.getGameState() == GameState.LOADING)
 		{
 			overlay.forgetWater();
+		}
+
+		// Ticks missed while not connected are counted by the clock on the next one.
+		if (event.getGameState() == GameState.HOPPING || event.getGameState() == GameState.LOGIN_SCREEN
+			|| event.getGameState() == GameState.CONNECTION_LOST)
+		{
+			forecast.away();
 		}
 
 		if (event.getGameState() == GameState.HOPPING || event.getGameState() == GameState.LOGIN_SCREEN)
@@ -1436,6 +1538,7 @@ public class TrawlingPlusPlugin extends Plugin
 	@Subscribe
 	public void onGameTick(GameTick event)
 	{
+		forecast.tick(System.currentTimeMillis());
 		freshStart();
 		if (heldTrawlTicks >= 0 && ++heldTrawlTicks > TRAWL_GAP_TICKS)
 		{
@@ -1466,6 +1569,7 @@ public class TrawlingPlusPlugin extends Plugin
 			netHighlights.clear();
 			netIdleSince.clear();
 			findCrewOnNets(null);
+			updatePredictedArrow(false);
 			return;
 		}
 
@@ -1502,6 +1606,7 @@ public class TrawlingPlusPlugin extends Plugin
 		if (!showGuides)
 		{
 			stopTracking();
+			updatePredictedArrow(true);
 			return;
 		}
 
@@ -1551,6 +1656,7 @@ public class TrawlingPlusPlugin extends Plugin
 			if (route != null)
 			{
 				shoal.seedStopTicks(route.stopTicks());
+				forecast.see(shoal, route);
 			}
 		}
 
@@ -1564,6 +1670,7 @@ public class TrawlingPlusPlugin extends Plugin
 		netsAtDepth = netsSetToDepth();
 		checkShoalLeaving();
 		checkDepthChange();
+		updatePredictedArrow(true);
 	}
 
 	private void findExistingShoals()
@@ -2374,6 +2481,7 @@ public class TrawlingPlusPlugin extends Plugin
 			if (fish > 0)
 			{
 				lastCatchTick = client.getTickCount();
+				noteTrawled();
 			}
 			if (fish >= 0 && fishInNets >= 0)
 			{
@@ -2597,6 +2705,7 @@ public class TrawlingPlusPlugin extends Plugin
 		{
 			// Trawling there too, as the own boat's catches say.
 			lastCatchTick = client.getTickCount();
+			noteTrawled();
 			if (fishInNets >= 0)
 			{
 				setFish(Math.min(NET_CAPACITY, fishInNets + caught));

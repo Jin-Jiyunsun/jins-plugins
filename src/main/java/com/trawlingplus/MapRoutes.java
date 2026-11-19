@@ -245,7 +245,7 @@ final class MapRoutes
 	 * of any particular length but mustn't be nothing. Turned by the direction itself rather than by an angle worked
 	 * out from it and back.
 	 */
-	private static Path2D arrowhead(Point at, double towardX, double towardY, int length)
+	static Path2D arrowhead(Point at, double towardX, double towardY, int length)
 	{
 		double size = Math.sqrt(towardX * towardX + towardY * towardY);
 		double sin = towardY / size;

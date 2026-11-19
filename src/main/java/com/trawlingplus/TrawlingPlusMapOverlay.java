@@ -15,7 +15,9 @@ import net.runelite.api.GameState;
 import net.runelite.api.Point;
 import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.gameval.InterfaceID;
+import net.runelite.api.gameval.SpriteID;
 import net.runelite.api.widgets.Widget;
+import net.runelite.client.game.SpriteManager;
 import net.runelite.client.ui.overlay.Overlay;
 import net.runelite.client.ui.overlay.OverlayLayer;
 import net.runelite.client.ui.overlay.OverlayPosition;
@@ -30,7 +32,13 @@ class TrawlingPlusMapOverlay extends Overlay
 {
 	private static final int THICKNESS = 2;
 	private static final int ARROW = 8;
-	private static final int SHOAL = 4;
+	// A shoal's mark: its dot, this many pixels across; the arrow just ahead of it while it's moving, a little bigger
+	// than the route's direction arrows and this far clear of the dot; and the game's stop bar under it while it's at
+	// a stop, this wide.
+	private static final int SHOAL_DOT = 8;
+	private static final int HEADING_ARROW = ARROW + 3;
+	private static final int HEADING_GAP = 2;
+	private static final int BAR_WIDTH = 26;
 
 	// Stretches of route that pass close to where sea creatures that attack boats spawn, and the skull and
 	// crossbones marking each place they spawn close enough to a route to threaten it, placed among the spawns
@@ -81,16 +89,18 @@ class TrawlingPlusMapOverlay extends Overlay
 	private final TrawlingPlusPlugin plugin;
 	private final TrawlingPlusConfig config;
 	private final WorldMapOverlay worldMapOverlay;
+	private final SpriteManager spriteManager;
 
 	@Inject
 	TrawlingPlusMapOverlay(Client client, TrawlingPlusPlugin plugin, TrawlingPlusConfig config,
-		WorldMapOverlay worldMapOverlay)
+		WorldMapOverlay worldMapOverlay, SpriteManager spriteManager)
 	{
 		super(plugin);
 		this.client = client;
 		this.plugin = plugin;
 		this.config = config;
 		this.worldMapOverlay = worldMapOverlay;
+		this.spriteManager = spriteManager;
 		setPosition(OverlayPosition.DYNAMIC);
 		// Right after the world map and at the lowest priority, so markers that RuneLite and other plugins draw
 		// after the same interface at a higher priority sit on top of the routes rather than under them.
@@ -254,18 +264,117 @@ class TrawlingPlusMapOverlay extends Overlay
 				danger ? MapRoutes.withAlphaOf(config.dangerColour(), config.directionArrowColour()) : null);
 		}
 
-		// Only a shoal the client is drawing in the world may be marked on the map. Shoals are dropped
-		// as they despawn anyway, so this is belt and braces, but it says so in the code rather than
-		// leaving it to be worked out from the order events arrive in.
-		for (Shoal shoal : plugin.getShoals())
-		{
-			if (plugin.isShown(shoal) && shoal.rendered(client))
-			{
-				MapRoutes.shoal(graphics, config, client, shoal, onto, SHOAL);
-			}
-		}
+		drawShoals(graphics, onto, perTileX, perTileY);
 
 		graphics.setClip(clip);
 		return null;
+	}
+
+	/**
+	 * Every shoal as one mark, the same whether it's in view or not: a shoal in view where the game has it, and the
+	 * last one trawled, while out of view, where it likely is. Only for that one, out of view, is anything worked out.
+	 */
+	private void drawShoals(Graphics2D graphics, MapRoutes.Projection onto, double perTileX, double perTileY)
+	{
+		Color colour = config.shoalHeadingArrowColour();
+		int tick = client.getTickCount();
+		ShoalRoute trawled = plugin.getTrawledRoute();
+		// By what the game is drawing this frame, so the last trawled shoal's dot hands over the moment it leaves or
+		// comes into view, with neither a gap nor two at once.
+		boolean trawledInView = false;
+		// Only a shoal the client is drawing in the world is taken from the game. Shoals are dropped as they despawn
+		// anyway, so this is belt and braces.
+		for (Shoal shoal : plugin.getShoals())
+		{
+			if (!plugin.isShown(shoal) || !shoal.rendered(client))
+			{
+				continue;
+			}
+			trawledInView |= trawled != null && shoal.getRoute() == trawled;
+			double[] at = shoal.position(client);
+			Point placed = at == null ? null : onto.at(at[0], at[1]);
+			if (placed == null)
+			{
+				continue;
+			}
+
+			// The stop bar over it, read off the game; or else, as for a shoal out of view, the way its route runs where
+			// it is, followed along the route from where it was.
+			double left = shoal.stopBarNow(tick);
+			ShoalRoute route = shoal.getRoute();
+			double[] way = left < 0 && route != null ? route.pointAt(shoal.followRoute(at)) : null;
+			drawMark(graphics, placed, colour, left, way == null ? 0 : way[2] * perTileX, way == null ? 0 : way[3] * perTileY);
+		}
+
+		// The last trawled shoal, while out of view, where it likely is.
+		if (config.showPredictedOnMap() && trawled != null && !trawledInView && plugin.getShownRoutes().contains(trawled))
+		{
+			ShoalForecast forecast = plugin.getForecast();
+			long now = System.currentTimeMillis();
+			double along = forecast.distance(trawled, now);
+			double[] at = along < 0 ? null : trawled.pointAt(along);
+			Point placed = at == null ? null : onto.at(at[0], at[1]);
+			if (placed != null)
+			{
+				// At a stop, how much of it is likely left; otherwise the way it's heading, along the route.
+				double left = forecast.stopLeft(trawled, now);
+				drawMark(graphics, placed, colour, left, left < 0 ? at[2] * perTileX : 0, left < 0 ? at[3] * perTileY : 0);
+			}
+		}
+	}
+
+	/**
+	 * A shoal's dot, and while at a stop the game's stop bar under it with this much left (-1 for none), or while
+	 * moving an arrow just ahead of it pointing along a step on screen (none for no step).
+	 */
+	private void drawMark(Graphics2D graphics, Point at, Color colour, double left, double towardX, double towardY)
+	{
+		graphics.setColor(colour);
+		graphics.fillOval(at.getX() - SHOAL_DOT / 2, at.getY() - SHOAL_DOT / 2, SHOAL_DOT, SHOAL_DOT);
+		if (left >= 0)
+		{
+			drawStopBar(graphics, at.getX(), at.getY() + SHOAL_DOT / 2 + 4, left);
+			return;
+		}
+
+		double step = Math.sqrt(towardX * towardX + towardY * towardY);
+		if (step < 1e-6)
+		{
+			return;
+		}
+		double away = SHOAL_DOT / 2.0 + HEADING_GAP + HEADING_ARROW / 2.0;
+		Point middle = new Point((int) Math.round(at.getX() + towardX / step * away),
+			(int) Math.round(at.getY() + towardY / step * away));
+		Object antialiasing = graphics.getRenderingHint(RenderingHints.KEY_ANTIALIASING);
+		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+		graphics.fill(MapRoutes.arrowhead(middle, towardX, towardY, HEADING_ARROW));
+		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
+			antialiasing != null ? antialiasing : RenderingHints.VALUE_ANTIALIAS_DEFAULT);
+	}
+
+	/**
+	 * The game's own stop bar, never a resource pack's, centred under a point, squeezed smoothly to the mark's width
+	 * as it's drawn and filled to a share of it.
+	 */
+	private void drawStopBar(Graphics2D graphics, int x, int top, double full)
+	{
+		BufferedImage front = spriteManager.getSprite(SpriteID.HeadbarIce90.FRONT, 0);
+		BufferedImage back = spriteManager.getSprite(SpriteID.HeadbarIce90.BACK, 0);
+		if (front == null || back == null)
+		{
+			return;
+		}
+		int high = Math.min(front.getHeight(), back.getHeight());
+		int left = x - BAR_WIDTH / 2;
+		int filled = (int) Math.round(full * BAR_WIDTH);
+		int frontTo = (int) Math.round(full * front.getWidth());
+		int backFrom = (int) Math.round(full * back.getWidth());
+		Object interpolation = graphics.getRenderingHint(RenderingHints.KEY_INTERPOLATION);
+		graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+		graphics.drawImage(front, left, top, left + filled, top + high, 0, 0, frontTo, high, null);
+		graphics.drawImage(back, left + filled, top, left + BAR_WIDTH, top + high, backFrom, 0, back.getWidth(), high,
+			null);
+		graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION,
+			interpolation != null ? interpolation : RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
 	}
 }

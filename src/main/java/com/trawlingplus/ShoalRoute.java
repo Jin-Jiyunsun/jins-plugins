@@ -1258,7 +1258,7 @@ final class ShoalRoute
 	 * How long a line across and down is. Math.hypot guards against overflow these sizes never reach, and costs many
 	 * times as much for it.
 	 */
-	private static double span(double x, double y)
+	static double span(double x, double y)
 	{
 		return Math.sqrt(x * x + y * y);
 	}

@@ -238,13 +238,11 @@ class TrawlingPlusOverlay extends Overlay
 
 	// The fishable area's outline on screen, kept between frames.
 	private final Path2D.Double areaRing = new Path2D.Double();
-	// Lines and outlines are drawn as straight pieces, each running this many pixels past its ends, with flat-ended
-	// strokes made once for each thickness.
+	// Lines and outlines are drawn as straight pieces, with flat-ended strokes made once for each thickness.
 	private final Line2D.Double linePiece = new Line2D.Double();
 	// The route line and its danger stretches, built afresh into the same two each time one is drawn.
 	private final Line routeLine = new Line();
 	private final Line dangerLine = new Line();
-	private static final double PIECE_OVERLAP = 0.125;
 	private final Stroke[] buttStrokes = new Stroke[4];
 	// An area's outline flattened to points (x, y pairs), its outline as pieces, and each pixel row's crossings of it,
 	// kept between frames.
@@ -1271,62 +1269,35 @@ class TrawlingPlusOverlay extends Overlay
 		int count = 0;
 		int depthAt = -1;
 
+		// Text is drawn solid whatever the picked colour says. Out of bait, full nets and a full hold pulse towards
+		// red, in time with each other.
 		if (laid[DEPTH_LINE] && fadingDepth != ShoalDepth.UNKNOWN)
 		{
 			depthAt = count;
-			text[count] = fadingDepth.toString();
-			colour[count] = depthColour(fadingDepth);
-			showing[count] = opacity[DEPTH_LINE];
-			width[count] = letters.stringWidth(text[count])
-				+ (ticked ? TICK_GAP + TrawlingPlusNetOverlay.TICK_WIDTH : 0);
-			count++;
+			count = addHelmLine(count, fadingDepth.toString(), depthColour(fadingDepth), opacity[DEPTH_LINE], letters);
+			width[depthAt] += ticked ? TICK_GAP + TrawlingPlusNetOverlay.TICK_WIDTH : 0;
 		}
 		if (laid[BAITED_LINE])
 		{
-			text[count] = plugin.getBaitedLabel();
-			// Text, so drawn solid whatever the picked colour says.
-			colour[count] = TrawlingPlusNetOverlay.opaque(config.baitedColour());
-			if (plugin.isOutOfBait())
-			{
-				// Out of bait pulses between the picked colour and red, in time with the other warnings.
-				double pulse = warningPulse(now);
-				colour[count] = blend(colour[count], HOLD_FULL_COLOUR, pulse);
-			}
-			showing[count] = opacity[BAITED_LINE];
-			width[count] = letters.stringWidth(text[count]);
-			count++;
+			Color baited = TrawlingPlusNetOverlay.opaque(config.baitedColour());
+			Color shown = plugin.isOutOfBait() ? blend(baited, HOLD_FULL_COLOUR, warningPulse(now)) : baited;
+			count = addHelmLine(count, plugin.getBaitedLabel(), shown, opacity[BAITED_LINE], letters);
 		}
 		if (laid[FISH_LINE])
 		{
-			text[count] = plugin.getFishLabel();
-			colour[count] = TrawlingPlusNetOverlay.opaque(config.fishInNetsColour());
-			if (plugin.netsFull())
-			{
-				// Full nets pulse between the picked colour and red, in time with the hold full warning.
-				double pulse = warningPulse(now);
-				colour[count] = blend(colour[count], HOLD_FULL_COLOUR, pulse);
-			}
-			showing[count] = opacity[FISH_LINE];
-			width[count] = letters.stringWidth(text[count]);
-			count++;
+			Color fish = TrawlingPlusNetOverlay.opaque(config.fishInNetsColour());
+			Color shown = plugin.netsFull() ? blend(fish, HOLD_FULL_COLOUR, warningPulse(now)) : fish;
+			count = addHelmLine(count, plugin.getFishLabel(), shown, opacity[FISH_LINE], letters);
 		}
 		if (laid[TIME_LINE])
 		{
-			text[count] = Math.max(0, Math.round(seconds)) + "s";
-			colour[count] = TrawlingPlusNetOverlay.opaque(config.timeLeftColour());
-			showing[count] = opacity[TIME_LINE];
-			width[count] = letters.stringWidth(text[count]);
-			count++;
+			count = addHelmLine(count, Math.max(0, Math.round(seconds)) + "s",
+				TrawlingPlusNetOverlay.opaque(config.timeLeftColour()), opacity[TIME_LINE], letters);
 		}
 		if (laid[HOLD_LINE])
 		{
-			// Eased back and forth rather than blinking, starting and ending on the first colour.
-			double pulse = warningPulse(now);
-			text[count] = HOLD_FULL;
-			colour[count] = blend(HOLD_FULL_COLOUR, HOLD_FULL_PULSE_COLOUR, pulse);
-			showing[count] = opacity[HOLD_LINE];
-			width[count] = letters.stringWidth(HOLD_FULL);
-			count++;
+			count = addHelmLine(count, HOLD_FULL, blend(HOLD_FULL_COLOUR, HOLD_FULL_PULSE_COLOUR, warningPulse(now)),
+				opacity[HOLD_LINE], letters);
 		}
 
 		double barShowing = opacity[BAR_LINE];
@@ -1445,6 +1416,18 @@ class TrawlingPlusOverlay extends Overlay
 			drawHold(graphics, centre + shiftX, boxTop + shiftY - HOLD_GAP, now);
 		}
 		return true;
+	}
+
+	/**
+	 * Adds a line of text to the display at the helm, after the lines so far, and gives how many there are now.
+	 */
+	private int addHelmLine(int count, String words, Color colour, double opacity, FontMetrics letters)
+	{
+		helmText[count] = words;
+		helmColour[count] = colour;
+		helmShowing[count] = opacity;
+		helmWidth[count] = letters.stringWidth(words);
+		return count + 1;
 	}
 
 	/**
@@ -2066,7 +2049,7 @@ class TrawlingPlusOverlay extends Overlay
 				fadeColours[level] = withOpacity(colour, opacity * level / FADE_LEVELS);
 			}
 			graphics.setColor(fadeColours[level]);
-			drawPiece(graphics, f[k], f[k + 1], f[k + 2], f[k + 3]);
+			MapRoutes.drawPiece(graphics, null, linePiece, f[k], f[k + 1], f[k + 2], f[k + 3]);
 		}
 		graphics.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL,
 			strokeControl != null ? strokeControl : RenderingHints.VALUE_STROKE_DEFAULT);
@@ -2420,7 +2403,7 @@ class TrawlingPlusOverlay extends Overlay
 		}
 		double headX = (bow.getX() - stern.getX()) / (double) Perspective.LOCAL_TILE_SIZE;
 		double headY = (bow.getY() - stern.getY()) / (double) Perspective.LOCAL_TILE_SIZE;
-		double head = span(headX, headY);
+		double head = ShoalRoute.span(headX, headY);
 		if (head < 1e-6)
 		{
 			return null;
@@ -2456,7 +2439,7 @@ class TrawlingPlusOverlay extends Overlay
 
 		double dx = spot[0] - fromX;
 		double dy = spot[1] - fromY;
-		double across = span(dx, dy);
+		double across = ShoalRoute.span(dx, dy);
 		if (across < 1e-6)
 		{
 			return null;
@@ -2559,7 +2542,7 @@ class TrawlingPlusOverlay extends Overlay
 		double[] ahead = route.pointAt(distance + length / 2);
 		double dx = ahead[0] - behind[0];
 		double dy = ahead[1] - behind[1];
-		double across = span(dx, dy);
+		double across = ShoalRoute.span(dx, dy);
 		if (across < 1e-9)
 		{
 			return route.pointAt(distance);
@@ -2680,7 +2663,7 @@ class TrawlingPlusOverlay extends Overlay
 		{
 			perTile = Math.max(perTile, facingMinimum);
 		}
-		double apart = span(ax, ay);
+		double apart = ShoalRoute.span(ax, ay);
 		// Heading straight towards or away from the camera there is no way across the screen to point, so it
 		// points up the screen, the way the route leads off into the distance.
 		double ux = apart < 1e-6 ? 0 : ax / apart;
@@ -2774,20 +2757,11 @@ class TrawlingPlusOverlay extends Overlay
 		double localY = (y - view.getBaseY()) * Perspective.LOCAL_TILE_SIZE + Perspective.LOCAL_HALF_TILE_SIZE;
 		double sightX = localX - frameCameraX;
 		double sightY = localY - frameCameraY;
-		double sight = span(sightX, sightY);
+		double sight = ShoalRoute.span(sightX, sightY);
 		double acrossX = sight < 1e-6 ? 1 : -sightY / sight;
 		double acrossY = sight < 1e-6 ? 0 : sightX / sight;
 		Point side = at == null ? null : toCanvas(view, x + acrossX * FACING_SPAN, y + acrossY * FACING_SPAN);
-		return side == null ? -1 : span(side.getX() - at.getX(), side.getY() - at.getY()) / FACING_SPAN;
-	}
-
-	/**
-	 * How long a line across and down is. Math.hypot guards against overflow these sizes never reach, and costs many
-	 * times as much for it.
-	 */
-	private static double span(double x, double y)
-	{
-		return Math.sqrt(x * x + y * y);
+		return side == null ? -1 : ShoalRoute.span(side.getX() - at.getX(), side.getY() - at.getY()) / FACING_SPAN;
 	}
 
 	private static Path2D path(Point a, Point b, Point c, Point d)
@@ -3377,7 +3351,8 @@ class TrawlingPlusOverlay extends Overlay
 		// outline's edge keeps about the same width as the camera zooms.
 		Point from = toCanvas(top, clearX, clearY);
 		Point to = toCanvas(top, clearX + 1, clearY);
-		double perTile = from == null || to == null ? 0 : span(to.getX() - from.getX(), to.getY() - from.getY());
+		double perTile = from == null || to == null ? 0
+			: ShoalRoute.span(to.getX() - from.getX(), to.getY() - from.getY());
 		silhouetteBand = Math.max(1, perTile * CLEAR_FADE_TILES);
 		fadeBounds.setBounds(silhouette.getBounds());
 		fadeBounds.grow((int) Math.ceil(silhouetteBand), (int) Math.ceil(silhouetteBand));
@@ -3683,7 +3658,7 @@ class TrawlingPlusOverlay extends Overlay
 		{
 			double fromX = line.lastX;
 			double fromY = line.lastY;
-			int steps = Math.max(1, (int) Math.ceil(span(x - fromX, y - fromY) / LINE_FADE_STEP_TILES));
+			int steps = Math.max(1, (int) Math.ceil(ShoalRoute.span(x - fromX, y - fromY) / LINE_FADE_STEP_TILES));
 			for (int step = 1; step < steps; step++)
 			{
 				double stepX = fromX + (x - fromX) * step / steps;
@@ -3774,29 +3749,10 @@ class TrawlingPlusOverlay extends Overlay
 		graphics.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE);
 		for (int k = 0; k < count; k += 4)
 		{
-			drawPiece(graphics, p[k], p[k + 1], p[k + 2], p[k + 3]);
+			MapRoutes.drawPiece(graphics, null, linePiece, p[k], p[k + 1], p[k + 2], p[k + 3]);
 		}
 		graphics.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL,
 			strokeControl != null ? strokeControl : RenderingHints.VALUE_STROKE_DEFAULT);
-	}
-
-	/**
-	 * Draws one straight piece, running a fraction of a pixel past each end: where two pieces meet, of one line or of
-	 * two in different colours, that covers the faint seam left where their soft edges touch, and a loose end is longer
-	 * by too little to see. Nothing for a piece whose ends landed on the same spot.
-	 */
-	private void drawPiece(Graphics2D graphics, double fromX, double fromY, double toX, double toY)
-	{
-		double dx = toX - fromX;
-		double dy = toY - fromY;
-		double length = span(dx, dy);
-		if (length == 0)
-		{
-			return;
-		}
-		double over = PIECE_OVERLAP / length;
-		linePiece.setLine(fromX - dx * over, fromY - dy * over, toX + dx * over, toY + dy * over);
-		graphics.draw(linePiece);
 	}
 
 	/**

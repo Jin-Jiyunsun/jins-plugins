@@ -291,10 +291,10 @@ final class MapRoutes
 	}
 
 	/**
-	 * One straight piece, running a fraction of a pixel past each end, and on a round map only the part inside it.
-	 * Nothing for a piece whose ends landed on the same spot.
+	 * One straight piece, running a fraction of a pixel past each end so pieces meeting leave no seam, and on a round
+	 * map (null for none) only the part inside it. Nothing for a piece whose ends landed on the same spot.
 	 */
-	private static void drawPiece(Graphics2D graphics, MapView onto, Line2D.Double piece, double fromX, double fromY,
+	static void drawPiece(Graphics2D graphics, MapView onto, Line2D.Double piece, double fromX, double fromY,
 		double toX, double toY)
 	{
 		double alongX = toX - fromX;
@@ -308,7 +308,7 @@ final class MapRoutes
 		double over = PIECE_OVERLAP / Math.sqrt(lengthSquared);
 		double start = -over;
 		double end = 1 + over;
-		if (onto.radius > 0)
+		if (onto != null && onto.radius > 0)
 		{
 			// Where the piece crosses the map's edge, from where it meets the circle.
 			double offX = fromX - onto.middleX;

@@ -32,7 +32,9 @@ class TrawlingPlusMinimapOverlay extends Overlay
 	};
 
 	private static final int THICKNESS = 1;
-	private static final int SHOAL = 3;
+	// A shoal's mark: its dot, this many pixels across, and the arrow just ahead of it while it's moving.
+	private static final int SHOAL_DOT = 6;
+	private static final int HEADING_ARROW = 8;
 
 	// How far either side of the boat the two points the minimap's placing is measured from are, in tiles: far enough
 	// that rounding them to whole pixels barely matters. And how far from the player the minimap is asked to place a
@@ -147,7 +149,7 @@ class TrawlingPlusMinimapOverlay extends Overlay
 		{
 			if (plugin.isShown(shoal) && shoal.rendered(client))
 			{
-				MapRoutes.shoal(graphics, config, client, shoal, mapView, SHOAL);
+				MapRoutes.shoal(graphics, config, client, shoal, mapView, SHOAL_DOT, HEADING_ARROW);
 			}
 		}
 

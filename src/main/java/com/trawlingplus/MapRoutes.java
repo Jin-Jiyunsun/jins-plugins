@@ -5,6 +5,7 @@ import java.awt.Color;
 import java.awt.Graphics2D;
 import java.awt.Rectangle;
 import java.awt.RenderingHints;
+import java.awt.geom.Ellipse2D;
 import java.awt.geom.Line2D;
 import java.awt.geom.Path2D;
 import net.runelite.api.Client;
@@ -42,7 +43,14 @@ final class MapRoutes
 	// rather than every frame.
 	private static final BasicStroke[] STROKES = {null, flat(1), flat(2), flat(3)};
 	private static final BasicStroke ARROW_STROKE = new BasicStroke(1.5f, BasicStroke.CAP_BUTT, BasicStroke.JOIN_MITER);
+	// A shoal's mark: how far its arrow sits clear of its dot, in pixels, and the thin dark edge round both, so they
+	// stand out from the map. The arrow's goes under its colour, a little wider, so its thin barbs keep their colour
+	// and it looks as light as the dot's.
+	private static final int MARK_GAP = 2;
+	private static final Color MARK_EDGE = Color.BLACK;
 	private static final BasicStroke DOT_EDGE = new BasicStroke(1);
+	private static final BasicStroke MARK_ARROW_EDGE =
+		new BasicStroke(1.5f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND);
 
 	// Told how long the maps' route drawing takes, by the debug plugin; null otherwise.
 	static MapTimer mapTimer;
@@ -130,6 +138,20 @@ final class MapRoutes
 				return offX * offX + offY * offY <= radius * radius;
 			}
 			return box.contains(x, y);
+		}
+
+		/**
+		 * The step on screen that a step across the world makes, across and down, turned and scaled as the map draws
+		 * it.
+		 */
+		double stepX(double tilesX, double tilesY)
+		{
+			return xByX * tilesX + xByY * tilesY;
+		}
+
+		double stepY(double tilesX, double tilesY)
+		{
+			return yByX * tilesX + yByY * tilesY;
 		}
 
 		/**
@@ -242,7 +264,7 @@ final class MapRoutes
 	 * Turns smoothing on, with each piece landing exactly where it's placed rather than having its ends nudged to the
 	 * pixel grid on its own, and gives back the hints it replaced.
 	 */
-	private static Object[] smooth(Graphics2D graphics)
+	static Object[] smooth(Graphics2D graphics)
 	{
 		Object[] was = {graphics.getRenderingHint(RenderingHints.KEY_ANTIALIASING),
 			graphics.getRenderingHint(RenderingHints.KEY_STROKE_CONTROL)};
@@ -251,7 +273,7 @@ final class MapRoutes
 		return was;
 	}
 
-	private static void restore(Graphics2D graphics, Object[] hints)
+	static void restore(Graphics2D graphics, Object[] hints)
 	{
 		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
 			hints[0] != null ? hints[0] : RenderingHints.VALUE_ANTIALIAS_DEFAULT);
@@ -385,24 +407,51 @@ final class MapRoutes
 	}
 
 	/**
-	 * Where a shoal is right now, as a dot in the colour that marks it on the water.
+	 * Where a shoal is right now, as its mark in the colour of its heading arrow on the water: a dot this many pixels
+	 * across, and while it's moving an arrow this long pointing the way its route runs, turned as the map turns it.
 	 */
 	static void shoal(Graphics2D graphics, TrawlingPlusConfig config, Client client, Shoal shoal,
-		MapView onto, int size)
+		MapView onto, int dot, int arrow)
 	{
-		double[] swimming = alongRoute(shoal, client);
-		Point at = swimming == null ? null : onto.at(swimming[0], swimming[1]);
-		if (at == null)
+		double[] at = alongRoute(shoal, client);
+		Point placed = at == null ? null : onto.at(at[0], at[1]);
+		if (placed == null)
 		{
 			return;
 		}
 
-		graphics.setColor(config.shoalHeadingArrowColour());
-		graphics.fillOval(at.getX() - size, at.getY() - size, size * 2, size * 2);
-		// Outlined, so it stays visible whatever the map underneath it is coloured.
-		graphics.setColor(Color.BLACK);
+		boolean heading = at.length > 2 && shoal.stopBarNow(client.getTickCount()) < 0;
+		mark(graphics, placed.getX(), placed.getY(), config.shoalHeadingArrowColour(), dot, arrow,
+			heading ? onto.stepX(at[2], at[3]) : 0, heading ? onto.stepY(at[2], at[3]) : 0);
+	}
+
+	/**
+	 * A shoal's mark: a dot this many pixels across, and an arrow this long just ahead of it pointing along a step on
+	 * screen (none for no step), both smooth with a thin dark edge.
+	 */
+	static void mark(Graphics2D graphics, double x, double y, Color colour, int dot, int arrow, double towardX,
+		double towardY)
+	{
+		Object[] hints = smooth(graphics);
+		double step = Math.sqrt(towardX * towardX + towardY * towardY);
+		if (step >= 1e-6)
+		{
+			double away = dot / 2.0 + MARK_GAP + arrow / 2.0;
+			Path2D head = arrowhead(Math.round(x + towardX / step * away), Math.round(y + towardY / step * away),
+				towardX, towardY, arrow);
+			graphics.setColor(MARK_EDGE);
+			graphics.setStroke(MARK_ARROW_EDGE);
+			graphics.draw(head);
+			graphics.setColor(colour);
+			graphics.fill(head);
+		}
+		Ellipse2D.Double circle = new Ellipse2D.Double(x - dot / 2.0, y - dot / 2.0, dot, dot);
+		graphics.setColor(colour);
+		graphics.fill(circle);
+		graphics.setColor(MARK_EDGE);
 		graphics.setStroke(DOT_EDGE);
-		graphics.drawOval(at.getX() - size, at.getY() - size, size * 2, size * 2);
+		graphics.draw(circle);
+		restore(graphics, hints);
 	}
 
 	/**

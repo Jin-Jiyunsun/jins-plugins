@@ -13,6 +13,7 @@ import javax.inject.Inject;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
 import net.runelite.api.Point;
+import net.runelite.api.SpritePixels;
 import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.SpriteID;
@@ -33,12 +34,12 @@ class TrawlingPlusMapOverlay extends Overlay
 	private static final int THICKNESS = 2;
 	private static final int ARROW = 6;
 	// A shoal's mark: its dot, this many pixels across; the arrow just ahead of it while it's moving, bigger than the
-	// route's direction arrows and this far clear of the dot; and the game's stop bar under it while it's at a stop,
-	// this wide.
+	// route's direction arrows; and the game's stop bar under it while it's at a stop, this wide.
 	private static final int SHOAL_DOT = 8;
 	private static final int HEADING_ARROW = 11;
-	private static final int HEADING_GAP = 2;
 	private static final int BAR_WIDTH = 26;
+	// How many pixels at the bar picture's right end are its end, taken as they are.
+	private static final int BAR_END = 2;
 
 	// Stretches of route that pass close to where sea creatures that attack boats spawn, and the skull and
 	// crossbones marking each place they spawn close enough to a route to threaten it, placed among the spawns
@@ -90,6 +91,9 @@ class TrawlingPlusMapOverlay extends Overlay
 	private final WorldMapOverlay worldMapOverlay;
 	private final SpriteManager spriteManager;
 	private final MapRoutes.MapView mapView = new MapRoutes.MapView();
+	// The stop bar's two pictures as a skin or resource pack replaces them, and what each was read from.
+	private final SpritePixels[] barSources = new SpritePixels[2];
+	private final BufferedImage[] barPictures = new BufferedImage[2];
 
 	@Inject
 	TrawlingPlusMapOverlay(Client client, TrawlingPlusPlugin plugin, TrawlingPlusConfig config,
@@ -207,7 +211,7 @@ class TrawlingPlusMapOverlay extends Overlay
 			timer.mapTook(MapRoutes.MapTimer.WORLD_ARROWS, arrowNanos);
 		}
 
-		drawShoals(graphics, mapView, zoom, -zoom);
+		drawShoals(graphics, mapView);
 
 		graphics.setClip(clip);
 		return null;
@@ -218,7 +222,7 @@ class TrawlingPlusMapOverlay extends Overlay
 	 * game has it along its route, and the last one trawled, while out of view, where it likely is. Only for that one,
 	 * out of view, is anything worked out.
 	 */
-	private void drawShoals(Graphics2D graphics, MapRoutes.MapView onto, double perTileX, double perTileY)
+	private void drawShoals(Graphics2D graphics, MapRoutes.MapView onto)
 	{
 		Color colour = config.shoalHeadingArrowColour();
 		int tick = client.getTickCount();
@@ -246,7 +250,8 @@ class TrawlingPlusMapOverlay extends Overlay
 			// there.
 			double left = shoal.stopBarNow(tick);
 			boolean heading = left < 0 && at.length > 2;
-			drawMark(graphics, placed, colour, left, heading ? at[2] * perTileX : 0, heading ? at[3] * perTileY : 0);
+			drawMark(graphics, placed, colour, left, heading ? onto.stepX(at[2], at[3]) : 0,
+				heading ? onto.stepY(at[2], at[3]) : 0);
 		}
 
 		// The last trawled shoal, while out of view, where it likely is.
@@ -261,7 +266,7 @@ class TrawlingPlusMapOverlay extends Overlay
 			{
 				// At a stop, how much of it is likely left; otherwise the way it's heading, along the route.
 				double left = forecast.stopLeft(trawled, now);
-				drawMark(graphics, placed, colour, left, left < 0 ? at[2] * perTileX : 0, left < 0 ? at[3] * perTileY : 0);
+				drawMark(graphics, placed, colour, left, onto.stepX(at[2], at[3]), onto.stepY(at[2], at[3]));
 			}
 		}
 	}
@@ -272,52 +277,76 @@ class TrawlingPlusMapOverlay extends Overlay
 	 */
 	private void drawMark(Graphics2D graphics, Point at, Color colour, double left, double towardX, double towardY)
 	{
-		graphics.setColor(colour);
-		graphics.fillOval(at.getX() - SHOAL_DOT / 2, at.getY() - SHOAL_DOT / 2, SHOAL_DOT, SHOAL_DOT);
-		if (left >= 0)
+		boolean stopped = left >= 0;
+		MapRoutes.mark(graphics, at.getX(), at.getY(), colour, SHOAL_DOT, HEADING_ARROW, stopped ? 0 : towardX,
+			stopped ? 0 : towardY);
+		if (stopped)
 		{
 			drawStopBar(graphics, at.getX(), at.getY() + SHOAL_DOT / 2 + 4, left);
-			return;
 		}
-
-		double step = Math.sqrt(towardX * towardX + towardY * towardY);
-		if (step < 1e-6)
-		{
-			return;
-		}
-		double away = SHOAL_DOT / 2.0 + HEADING_GAP + HEADING_ARROW / 2.0;
-		Point middle = new Point((int) Math.round(at.getX() + towardX / step * away),
-			(int) Math.round(at.getY() + towardY / step * away));
-		Object antialiasing = graphics.getRenderingHint(RenderingHints.KEY_ANTIALIASING);
-		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-		graphics.fill(MapRoutes.arrowhead(middle.getX(), middle.getY(), towardX, towardY, HEADING_ARROW));
-		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
-			antialiasing != null ? antialiasing : RenderingHints.VALUE_ANTIALIAS_DEFAULT);
 	}
 
 	/**
-	 * The game's own stop bar, never a resource pack's, centred under a point, squeezed smoothly to the mark's width
-	 * as it's drawn and filled to a share of it.
+	 * The game's stop bar as the helm display shows it, a skin's or resource pack's if one replaces it, centred under a
+	 * point and filled to a share of it. Never resized: the bar is the picture's left part up to its last few pixels,
+	 * which are the picture's own right end, so both ends keep their own pixels.
 	 */
 	private void drawStopBar(Graphics2D graphics, int x, int top, double full)
 	{
-		BufferedImage front = spriteManager.getSprite(SpriteID.HeadbarIce90.FRONT, 0);
-		BufferedImage back = spriteManager.getSprite(SpriteID.HeadbarIce90.BACK, 0);
+		BufferedImage front = barPicture(0, SpriteID.HeadbarIce90.FRONT);
+		BufferedImage back = barPicture(1, SpriteID.HeadbarIce90.BACK);
 		if (front == null || back == null)
 		{
 			return;
 		}
+		int wide = Math.min(BAR_WIDTH, Math.min(front.getWidth(), back.getWidth()));
 		int high = Math.min(front.getHeight(), back.getHeight());
-		int left = x - BAR_WIDTH / 2;
-		int filled = (int) Math.round(full * BAR_WIDTH);
-		int frontTo = (int) Math.round(full * front.getWidth());
-		int backFrom = (int) Math.round(full * back.getWidth());
-		Object interpolation = graphics.getRenderingHint(RenderingHints.KEY_INTERPOLATION);
-		graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
-		graphics.drawImage(front, left, top, left + filled, top + high, 0, 0, frontTo, high, null);
-		graphics.drawImage(back, left + filled, top, left + BAR_WIDTH, top + high, backFrom, 0, back.getWidth(), high,
-			null);
-		graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION,
-			interpolation != null ? interpolation : RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
+		int left = x - wide / 2;
+		int filled = (int) Math.round(full * wide);
+		drawBarPart(graphics, front, left, top, 0, filled, wide, high);
+		drawBarPart(graphics, back, left, top, filled, wide, wide, high);
+	}
+
+	/**
+	 * Columns from one up to another of a bar this wide, from one of its pictures, pixel for pixel: all but the last
+	 * few from the picture's left part, and those from its right end.
+	 */
+	private static void drawBarPart(Graphics2D graphics, BufferedImage picture, int left, int top, int from, int to,
+		int wide, int high)
+	{
+		int split = wide - BAR_END;
+		int shift = picture.getWidth() - wide;
+		if (from < split)
+		{
+			int end = Math.min(to, split);
+			graphics.drawImage(picture, left + from, top, left + end, top + high, from, 0, end, high, null);
+		}
+		if (to > split)
+		{
+			int start = Math.max(from, split);
+			graphics.drawImage(picture, left + start, top, left + to, top + high, start + shift, 0, to + shift, high,
+				null);
+		}
+	}
+
+	/**
+	 * One of the stop bar's two pictures: the one a skin or resource pack has put in the client if there is one, since
+	 * the sprite manager's own lookup skips them, read again only when it changes; the game's own otherwise.
+	 */
+	private BufferedImage barPicture(int which, int id)
+	{
+		SpritePixels replaced = client.getSpriteOverrides().get(id);
+		if (replaced == null)
+		{
+			barSources[which] = null;
+			barPictures[which] = null;
+			return spriteManager.getSprite(id, 0);
+		}
+		if (replaced != barSources[which])
+		{
+			barSources[which] = replaced;
+			barPictures[which] = replaced.toBufferedImage();
+		}
+		return barPictures[which];
 	}
 }

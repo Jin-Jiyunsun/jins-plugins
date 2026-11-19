@@ -5,18 +5,16 @@ import java.util.Map;
 import net.runelite.api.Constants;
 
 /**
- * Where each route's shoal is in its lap, from when it was last seen, so where it is now can be worked out while it is
- * out of sight. Shoals keep exact time, and every world runs the same laps, so one seen once can be followed for the
- * rest of the session. Kept in memory only.
+ * Where each route's shoal is in its lap, from when it was last seen, so it can be followed out of sight: shoals keep
+ * exact time on every world. Kept in memory only.
  */
 final class ShoalForecast
 {
 	// A shoal this close to a stop is taken to be at it, in tiles: it moves about a tile and a half a tick.
 	private static final double STOP_TILES = 3;
 
-	// Game ticks counted this session, those passed while logged out included, when the last was counted, and whether
-	// the client has been disconnected since: logged out, hopping or connection lost. Ticks aren't received then, so the
-	// next is counted by the clock. A freeze isn't: the ticks held up arrive late and are each counted.
+	// Game ticks counted this session, logged out included, when the last was counted, and whether the client has been
+	// away since (logged out, hopping or disconnected), when the next is counted by the clock.
 	private long ticks;
 	private long lastTickMillis = -1;
 	private boolean away;
@@ -29,8 +27,8 @@ final class ShoalForecast
 		// Whether that comes from seeing the shoal set off from or come to a stop, rather than from where it was.
 		boolean exact;
 		long seenTick;
-		// Until then, where it was last seen, worked into a tick of the lap only when a prediction is asked for, which
-		// is never while it stays in view: whether it was sitting still, and how far down its stop's bar was.
+		// Until then, where it was last seen, turned into a tick of the lap only when a prediction is asked for:
+		// whether it was sitting still, and how far down its stop's bar was.
 		double[] estimateAt;
 		boolean estimateStill;
 		double estimateBar;

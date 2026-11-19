@@ -15,9 +15,8 @@ import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.ui.overlay.OverlayManager;
 
 /**
- * Dev-only tools for Trawling Plus, loaded by the dev client and never part of the released plugin: times its main
- * overlay and the maps' route lines through the package-private drawTimer and mapTimer hooks, and fakes Curiosities
- * finds.
+ * Dev-only tools for Trawling Plus, never part of the released plugin: times its drawing through the drawTimer and
+ * mapTimer hooks, and fakes Curiosities finds.
  */
 @PluginDescriptor(
 	name = "Trawling Plus Debug",

@@ -8,11 +8,8 @@ import net.runelite.api.Client;
 import net.runelite.api.SpritePixels;
 
 /**
- * One of the game's own fonts, drawn in an overlay from its letter sprites: the game keeps each font as a group of
- * sprites, one per character in the Windows-1252 character set. A letter is placed by its sprite's offsets within its
- * cell, and moves the pen on by its offset plus its width, as the old game fonts were measured; the game's own
- * spacing tables are not reachable from a plugin, so the spacing may differ from the game's by a pixel here and
- * there. Built and drawn on the client thread only.
+ * One of the game's fonts, drawn from its letter sprites (one per Windows-1252 character) and spaced by each sprite's
+ * offsets and width, so it can sit a pixel off the game's. Client thread only.
  */
 final class QuillFont
 {

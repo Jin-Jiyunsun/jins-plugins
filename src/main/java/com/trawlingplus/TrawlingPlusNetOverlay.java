@@ -27,11 +27,8 @@ import net.runelite.client.ui.overlay.OverlayPosition;
  */
 class TrawlingPlusNetOverlay extends Overlay
 {
-	// A row is a trawling net if its picture is one of these four, which are the net raised, then at
-	// each of the three fishing depths. The panel only gives the raise and lower buttons an action
-	// while someone, the player or a crewmate, is operating that net, so the picture is what the marks
-	// hang off. It has to be the picture itself: the frames and arrows beside it are shared with every
-	// other kind of row.
+	// A row is a trawling net if its picture is one of these four: raised, then each of the three fishing depths. Only
+	// the picture marks a net; the frames and arrows beside it are shared with other rows.
 	private static final int NET_PICTURE_RAISED = SpriteID.IconSailingFacilities24x24._12;
 	private static final int NET_PICTURE_DEEPEST = SpriteID.IconSailingFacilities24x24._15;
 
@@ -58,14 +55,12 @@ class TrawlingPlusNetOverlay extends Overlay
 	// of it. Without this the marks latch onto button frames and arrows as well.
 	private static final int PICTURE_COLUMN = 40;
 
-	// The last depth and place each net was seen with, by its position among the rows. While a net is
-	// being raised or lowered its picture briefly is not one of the four depth pictures, and drawing from
-	// what was last seen keeps the marks from flickering off for those frames.
+	// The last depth and place each net was seen with, by its position among the rows, so the marks don't flicker off
+	// while its picture changes as it's raised or lowered.
 	private final Map<Integer, NetRow> lastSeen = new HashMap<>();
 
-	// The last button highlighted on each net, by the same position, and when it was last found. Between
-	// the steps of a net being raised or lowered its button briefly loses its action, which looks the same
-	// as nobody operating the net, so the highlight is held for up to a game tick rather than dropped.
+	// The last button highlighted on each net, by the same position, and when it was found: held up to a game tick, as
+	// a button briefly loses its action between steps of raising or lowering.
 	private final Map<Integer, SeenButton> lastButtons = new HashMap<>();
 	private static final long BUTTON_GRACE_MILLIS = 600;
 	// How long a net's depth is drawn from what was last seen while its picture is blank or hidden, as it briefly is
@@ -101,9 +96,8 @@ class TrawlingPlusNetOverlay extends Overlay
 			return null;
 		}
 
-		// Rows scroll inside a window, and one scrolled past its edge still reports a place on screen.
-		// Clipping to the window keeps the marks off whatever is drawn beyond it, and cuts a part
-		// scrolled row the same way the panel cuts the row itself.
+		// Rows scroll inside a window, so the marks are clipped to it, cutting a part-scrolled row the same way the
+		// panel does.
 		Widget window = client.getWidget(InterfaceID.SailingSidepanel.FACILITIES_SCROLLABLE);
 		Shape clip = graphics.getClip();
 		if (window != null && !window.isHidden())
@@ -168,9 +162,8 @@ class TrawlingPlusNetOverlay extends Overlay
 	}
 
 	/**
-	 * The trawling nets on the panel with their depths, top row first. A depth is only ever read off one
-	 * of the four depth pictures; for the moments a net's picture is anything else, it is drawn as it was
-	 * last seen.
+	 * The trawling nets on the panel with their depths, top row first, read only off the four depth pictures and drawn
+	 * as last seen while a net's picture is anything else.
 	 */
 	private List<NetRow> netRows(Widget rows, long now)
 	{

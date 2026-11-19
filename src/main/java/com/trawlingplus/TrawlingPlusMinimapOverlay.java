@@ -18,9 +18,8 @@ import net.runelite.client.ui.overlay.OverlayLayer;
 import net.runelite.client.ui.overlay.OverlayPosition;
 
 /**
- * Draws the nearest shoal route on the minimap. Separate from the world map because the two are drawn
- * at different sizes, from different sets of routes, and the minimap leaves out the direction arrows:
- * at its size they cost more to place than they are worth.
+ * Draws the nearest shoal route on the minimap, without direction arrows, which at its size cost more to place than
+ * they're worth.
  */
 class TrawlingPlusMinimapOverlay extends Overlay
 {
@@ -36,9 +35,8 @@ class TrawlingPlusMinimapOverlay extends Overlay
 	private static final int SHOAL_DOT = 6;
 	private static final int HEADING_ARROW = 8;
 
-	// How far either side of the boat the two points the minimap's placing is measured from are, in tiles: far enough
-	// that rounding them to whole pixels barely matters. And how far from the player the minimap is asked to place a
-	// point, in local units, which reaches well past them.
+	// How far either side of the boat the minimap's placing is measured from, in tiles, so whole-pixel rounding barely
+	// matters; and how far from the player the minimap is asked to place a point, in local units.
 	private static final int SCALE_TILES = 64;
 	private static final int REACH = 128 * Perspective.LOCAL_TILE_SIZE;
 	// How much slack to leave around what the minimap can show, in tiles: it's centred on the player rather than on
@@ -81,25 +79,18 @@ class TrawlingPlusMinimapOverlay extends Overlay
 			return null;
 		}
 
-		// The map is round inside a square widget, so a line is cut off where it meets the circle, by hand rather
-		// than by clipping the drawing to a circle: a clip that is not a rectangle takes Java2D off its quick path,
-		// and it is charged for on everything drawn afterwards. The frame laps over the edge of the circle in places
-		// and a line can still meet it there, which is better than the alternatives: drawing under the interface
-		// hides the line behind the map, and pulling the circle in far enough to clear the frame leaves a ring of
-		// map nothing is ever drawn on.
+		// The map is round, so a line is cut off where it meets the circle by hand, as a clip that isn't a rectangle
+		// takes Java2D off its quick path. The frame laps over the circle in places, so a line can meet it there.
 		Rectangle bounds = minimap.getBounds();
 		double radius = Math.min(bounds.width, bounds.height) / 2.0;
 
-		// The route the boat is nearest, the same one the water shows, rather than every route that
-		// reaches the loaded map. It is drawn whether or not its shoal is in view: a shoal swims out of
-		// range long before its route does, and a line that vanishes with the shoal is no use for
-		// steering back to it.
+		// The route the boat is nearest, as on the water, drawn whether or not its shoal is in view so it can be
+		// steered back to.
 		ShoalRoute route = plugin.getNearestRoute();
 		double[] boat = plugin.getBoatPlace();
 
-		// Where tiles land on the minimap, from two points the game places either side of the boat. The minimap turns
-		// the world and scales it the same both ways, so the step one tile north makes is the step east turned a
-		// quarter, and every other point is placed from these with a few sums.
+		// Where tiles land, from two points the game places either side of the boat. The minimap turns and scales the
+		// world evenly, so a step north is a step east turned a quarter.
 		double middleX = boat == null ? view.getBaseX() + view.getSizeX() / 2.0 : boat[0];
 		double middleY = boat == null ? view.getBaseY() + view.getSizeY() / 2.0 : boat[1];
 		Point east = onMinimap(view, middleX + SCALE_TILES, middleY);
@@ -122,10 +113,8 @@ class TrawlingPlusMinimapOverlay extends Overlay
 		Shape clip = graphics.getClip();
 		graphics.clip(bounds);
 
-		// Only the stretch of route the minimap could show, which is a good deal less than the map that
-		// is loaded: the minimap holds a couple of dozen tiles where the scene holds a hundred. Without
-		// this, most of the route is placed on the minimap only to be found outside its edge and thrown
-		// away. With no boat to centre it on, the whole scene is used.
+		// Only the stretch of route the minimap could show, a couple of dozen tiles of the hundred loaded; the whole
+		// scene with no boat to centre on.
 		double reach = radius / pixelsPerTile + EDGE_SLACK;
 		double fromX = boat == null ? view.getBaseX() : boat[0] - reach;
 		double fromY = boat == null ? view.getBaseY() : boat[1] - reach;

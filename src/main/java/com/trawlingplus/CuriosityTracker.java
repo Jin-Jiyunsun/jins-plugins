@@ -25,10 +25,8 @@ import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
 
 /**
- * Notes when each curiosity is first found, for the trawling log's Curiosities pages, per account: from the catch
- * lines and the paint and pet messages as they happen, from the "New item added to your collection log" line, and,
- * for anything found before, from the collection log's own screen whenever the player opens a page of it showing
- * them, checked once a tick while it is open. It only reads; nothing is sent to the game.
+ * Notes when each curiosity is first found, per account, for the trawling log: from the catch, paint and pet messages,
+ * the collection log's new item line, and its screen for earlier finds. Reads only.
  */
 @Slf4j
 @Singleton
@@ -232,9 +230,8 @@ class CuriosityTracker
 	}
 
 	/**
-	 * Notes a curiosity found now, by a crewmate or (null) the player, unless it already has been; returns whether it
-	 * was saved. A saved find is never changed, except that a crewmate's catch line arriving within a couple of ticks
-	 * of the collection log line that saved it, for the same item, names its finder.
+	 * Notes a curiosity found now, by a crewmate or (null) the player, unless already noted; says whether it was saved.
+	 * A crewmate's catch line within a couple of ticks of the log line that saved it names them as the finder.
 	 */
 	private boolean found(Curiosity curiosity, String crewmate)
 	{

@@ -25,9 +25,8 @@ import net.runelite.client.ui.overlay.OverlayPosition;
 import net.runelite.client.ui.overlay.worldmap.WorldMapOverlay;
 
 /**
- * Draws every shoal route on the world map, whether or not its sea is anywhere near, which doubles
- * as a picture of the seas covered so far. Drawn straight after the world map itself, underneath
- * RuneLite's own map markers and anything else drawn over the map afterwards.
+ * Draws every shown shoal route on the world map, straight after the map itself, so RuneLite's and other plugins' map
+ * markers sit on top.
  */
 class TrawlingPlusMapOverlay extends Overlay
 {
@@ -41,12 +40,8 @@ class TrawlingPlusMapOverlay extends Overlay
 	// How many pixels at the bar picture's right end are its end, taken as they are.
 	private static final int BAR_END = 2;
 
-	// Stretches of route that pass close to where sea creatures that attack boats spawn, and the skull and
-	// crossbones marking each place they spawn close enough to a route to threaten it, placed among the spawns
-	// that are that close. The plugin puts the skulls on the map as RuneLite world map points, which gives them
-	// the game's style of tooltip. With Show danger on the maps, the stretches are drawn whenever routes are, on the
-	// minimap too, in the Danger colour; the skulls only on the world map. Where each creature spawns is never drawn
-	// itself.
+	// A skull and crossbones, put on the world map as RuneLite world map points (for the game's style of tooltip) where
+	// sea creatures that attack boats spawn close enough to threaten a route.
 	static final BufferedImage DANGER_ICON = dangerIcon();
 
 	// The tile the map is asked to place, which every other point is placed from.
@@ -114,9 +109,8 @@ class TrawlingPlusMapOverlay extends Overlay
 	}
 
 	/**
-	 * The part of the map showing the world, less the panels the world map puts over it (the overview and the
-	 * list of maps), the same as RuneLite's own map markers leave out. A plain rectangle while neither is
-	 * open, which keeps drawing on Java2D's quick path.
+	 * The part of the map showing the world, less its overview and map list panels, as RuneLite's own markers leave
+	 * out. A plain rectangle while neither is open, which keeps Java2D on its quick path.
 	 */
 	private Shape mapArea(Rectangle within)
 	{
@@ -157,9 +151,8 @@ class TrawlingPlusMapOverlay extends Overlay
 		// is something done before boarding a boat and fitting a net to it.
 		Rectangle within = map.getBounds();
 
-		// One tile placed by the map, and its zoom as the pixels a tile takes up. The map scales and shifts the world
-		// without turning it, north up, so every other point is placed from these with a few sums rather than by asking
-		// the map, which costs far more.
+		// One tile placed by the map, and its zoom in pixels a tile. The map only scales and shifts the world, north
+		// up, so every other point is placed from these with a few sums.
 		Point placed = worldMapOverlay.mapWorldPointToGraphicsPoint(new WorldPoint(PLACED_TILE, PLACED_TILE, 0));
 		double zoom = client.getWorldMap().getWorldMapZoom();
 		if (placed == null || zoom <= 0)
@@ -218,9 +211,8 @@ class TrawlingPlusMapOverlay extends Overlay
 	}
 
 	/**
-	 * Every shoal as one mark on its route's line, the same whether it's in view or not: a shoal in view where the
-	 * game has it along its route, and the last one trawled, while out of view, where it likely is. Only for that one,
-	 * out of view, is anything worked out.
+	 * Every shoal as one mark on its route's line: one in view where the game has it along its route, and the last one
+	 * trawled, while out of view, where it likely is.
 	 */
 	private void drawShoals(Graphics2D graphics, MapRoutes.MapView onto)
 	{
@@ -287,9 +279,8 @@ class TrawlingPlusMapOverlay extends Overlay
 	}
 
 	/**
-	 * The game's stop bar as the helm display shows it, a skin's or resource pack's if one replaces it, centred under a
-	 * point and filled to a share of it. Never resized: the bar is the picture's left part up to its last few pixels,
-	 * which are the picture's own right end, so both ends keep their own pixels.
+	 * The stop bar as the helm display shows it, a skin's or resource pack's if one replaces it, centred under a point
+	 * and filled to a share. Never resized: the picture's left part, then its own right end.
 	 */
 	private void drawStopBar(Graphics2D graphics, int x, int top, double full)
 	{

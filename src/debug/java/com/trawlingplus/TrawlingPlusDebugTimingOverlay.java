@@ -10,10 +10,8 @@ import net.runelite.client.ui.overlay.components.LineComponent;
 import net.runelite.client.ui.overlay.components.TitleComponent;
 
 /**
- * How long Trawling Plus's main overlay takes to draw, over the last WINDOW frames, as average / median in
- * milliseconds: the whole overlay, the route line within it, and the line split into building it (placing its points
- * and working out the fade near the boat) and stroking it (Java2D drawing the path); and the route lines on the
- * minimap and the world map, each over the frames it drew.
+ * How long Trawling Plus draws over the last WINDOW frames, as average / median milliseconds: the main overlay, its
+ * route line split into building and stroking, and the route lines on the minimap and world map.
  */
 class TrawlingPlusDebugTimingOverlay extends OverlayPanel
 	implements TrawlingPlusOverlay.DrawTimer, MapRoutes.MapTimer

@@ -20,9 +20,8 @@ final class Shoal
 	// milliseconds. How long the route takes to draw out is set in the config.
 	private static final double STOP_REVEAL_MILLIS = 300;
 
-	// How long a new section waits before it starts drawing out, in milliseconds. A shoal counts as
-	// heading for its next stop a little before it has finished gliding into the one it is at, so this
-	// gives it time to settle in first.
+	// How long a new section waits before drawing out, in milliseconds, so the shoal can finish gliding into its stop
+	// first.
 	private static final long REVEAL_DELAY_MILLIS = 500;
 
 	private final WorldEntity entity;
@@ -50,18 +49,16 @@ final class Shoal
 	private ShoalDepth animatedDepth;
 	private boolean depthChanged;
 
-	// The bar the game draws over a shoal while it sits at a stop, which empties as the stop runs out,
-	// and how long a stop on this shoal's route lasts. The bar is the same length whatever the route
-	// but a stop is not, so without a known length there is nothing to turn the bar into a time.
+	// The bar the game draws over a shoal at a stop, emptying as the stop runs out, and how long a stop on this route
+	// lasts, without which the bar can't be turned into a time.
 	private int barLeft = -1;
 	private int barScale;
 	private int barStopTicks;
 	private long stopEndsMillis = -1;
 	private boolean sawNoBar;
 
-	// A bar appearing this far below full did not just appear because a stop began. A shoal's world
-	// entity turns up a tick or two before the fish inside it do, so it can look as though there was
-	// no bar when really there was nothing to read it from yet.
+	// A bar first seen this far below full didn't just start: a shoal's entity loads a tick or two before the fish
+	// inside it, so a bar can seem to appear mid stop.
 	private static final int FRESH_SLACK = 6;
 	// Hidden until the shoal is seen swimming, and whenever it sits still.
 	private boolean headingArrowHidden = true;
@@ -131,8 +128,8 @@ final class Shoal
 	}
 
 	/**
-	 * Follows the shoal along its route, giving how far round it now is. Keeping hold of where it was
-	 * is what stops it jumping to the other side of a crossing where a route doubles back on itself.
+	 * Follows the shoal along its route, giving how far round it now is; keeping where it was stops it jumping across
+	 * where a route crosses itself.
 	 */
 	double followRoute(double[] position)
 	{
@@ -181,11 +178,8 @@ final class Shoal
 		}
 		else if (barLeft < 0 || left > barLeft)
 		{
-			// A stop has begun, so the clock is set running for as long as one lasts. When it began is
-			// only known if the shoal was watched through the gap before it and the bar has turned up
-			// full: a bar that was already part way down belongs to a stop that started before anyone
-			// was looking, whether because the shoal was found mid stop or because it had not finished
-			// loading, and that one is not counted at all.
+			// A stop has begun, so its clock is set running, but only if the shoal was watched moving before it and its
+			// bar turned up full; a bar already part way down belongs to a stop that began unseen, which isn't timed.
 			boolean fromTheStart = sawNoBar && scale > 0 && left >= scale - FRESH_SLACK;
 			stopEndsMillis = fromTheStart
 				? System.currentTimeMillis() + (long) barStopTicks * Constants.GAME_TICK_LENGTH
@@ -215,9 +209,8 @@ final class Shoal
 	}
 
 	/**
-	 * How long the shoal has left at this stop, in seconds, or -1 when that is not known exactly. It is
-	 * only known for a stop that was watched from its first tick: a shoal found part way through one
-	 * could only be guessed at from how far down its bar is, and a guess is worse than nothing here.
+	 * How long the shoal has left at this stop, in seconds, or -1 unless the stop was watched from its first tick: a
+	 * guess from how far down the bar is would be worse than nothing.
 	 */
 	double secondsAtStop()
 	{
@@ -287,13 +280,8 @@ final class Shoal
 	}
 
 	/**
-	 * Tracks whether the shoal is swimming or sitting still, once per game tick. The heading arrow
-	 * hides the tick the shoal stops and shows again the tick it moves off.
-	 *
-	 * Judged from where the shoal is heading whenever that can be read. The destination stops changing on
-	 * the tick the last move is sent, and changes again the tick a new one is, where the drawn position
-	 * only settles or sets off a tick later, once the client has glided it there. The position is the fallback
-	 * when there is none.
+	 * Tracks once a tick whether the shoal is swimming or sitting still, for its heading arrow: by where it's heading
+	 * when that can be read, which changes a tick before the drawn position does, else by its position.
 	 */
 	void update(double[] position, double[] target)
 	{
@@ -358,10 +346,8 @@ final class Shoal
 	}
 
 	/**
-	 * How much of the heading arrow to show near the boat, given how much the boat's clear area would show of it
-	 * right now: the same, except that as the boat comes over it, it stays where it was for a second and a half
-	 * before fading, and for a second and a half after the shoal moves off from a stop, it is not hidden at all.
-	 * Coming out from under the boat shows it again at once. Call once per frame it is drawn.
+	 * How much of the heading arrow to show near the boat: as the boat's clear area would, but held 1.5 s before fading
+	 * as the boat covers it, and not hidden for 1.5 s after the shoal leaves a stop. Call once per drawn frame.
 	 */
 	double heldClearShown(double shown, long nowMillis)
 	{
@@ -457,9 +443,8 @@ final class Shoal
 	}
 
 	/**
-	 * Whether the shoal is being drawn in the world right now. Only a shoal the client is rendering
-	 * may be marked on a map: a remembered position is not the plugin's to show, and one that has
-	 * swum out of range is no longer the plugin's to know.
+	 * Whether the shoal is being drawn in the world right now. Only a shoal the client is rendering may be marked on a
+	 * map.
 	 */
 	boolean rendered(Client client)
 	{

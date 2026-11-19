@@ -34,9 +34,8 @@ class RouteData
 		// Stretches marked safe by hand in routes.json despite sitting close to where a sea creature that
 		// attacks boats spawns, as [x, y, tiles] circles, or null where none apply.
 		double[][] safe;
-		// Where sea creatures that attack boats spawn close enough to threaten this route, place by place, or
-		// null where none do. From the OSRS wiki (Boat combat, each creature page), folded in by hand once
-		// under the route each place is close enough to threaten; a place is never split between routes.
+		// Where sea creatures that attack boats spawn close enough to threaten this route, or null for none. Taken by
+		// hand from the OSRS wiki; each place belongs to one route.
 		List<Threat> threats;
 	}
 

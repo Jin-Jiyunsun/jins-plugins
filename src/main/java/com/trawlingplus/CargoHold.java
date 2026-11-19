@@ -5,10 +5,8 @@ import java.util.Arrays;
 import net.runelite.api.gameval.ItemID;
 
 /**
- * What one boat's cargo hold holds of the sea spot catches, and how many of its slots the
- * rest of its cargo takes out of how many. Only known once its screen has been opened, the only time the game
- * sends it, and kept up to date after by what is deposited or withdrawn as it is shut. Every fish takes a slot of
- * its own, since fish don't stack, so the slots left for them are what the rest doesn't take.
+ * What one boat's cargo hold holds of the sea spot catches, and how many slots the rest of its cargo takes (fish don't
+ * stack). Known once its screen is opened, then kept up to date by what goes in and out.
  */
 final class CargoHold
 {

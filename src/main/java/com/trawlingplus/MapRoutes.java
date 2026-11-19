@@ -17,16 +17,13 @@ import net.runelite.api.Point;
  */
 final class MapRoutes
 {
-	// The shape of an arrowhead on a map: half its width, and how far its back edge is notched in, as
-	// fractions of its length. The length is given in pixels rather than tiles, since a map is drawn at
-	// whatever scale it likes and an arrow has to stay big enough to make out without swamping the line.
+	// An arrowhead's half width and back-edge notch, as fractions of its length, which is in pixels so it stays
+	// readable at any zoom.
 	private static final double ARROW_HALF_WIDTH = 0.4;
 	private static final double ARROW_NOTCH = 0.25;
 
-	// No two arrows closer together than this on screen. Arrows sit a fixed number of tiles apart, so
-	// without this they would pile into each other as a map is zoomed out. How many to leave out is
-	// worked out from how far the map is zoomed, never from which of them happen to be on screen: a
-	// thinning that depends on what is visible rearranges itself every time the map is panned.
+	// No two arrows closer than this on screen. How many to leave out depends only on the zoom, never on which are
+	// visible, so they don't rearrange as the map is panned.
 	private static final int ARROW_GAP = 24;
 	// The arrows left are then spread out, which keeps a map from filling up with them: twice as far apart, or a
 	// third further once it's zoomed out below this many pixels a tile, which is all the way out.
@@ -43,9 +40,8 @@ final class MapRoutes
 	// rather than every frame.
 	private static final BasicStroke[] STROKES = {null, flat(1), flat(2), flat(3)};
 	private static final BasicStroke ARROW_STROKE = new BasicStroke(1.5f, BasicStroke.CAP_BUTT, BasicStroke.JOIN_MITER);
-	// A shoal's mark: how far its arrow sits clear of its dot, in pixels, and the thin dark edge round both, so they
-	// stand out from the map. The arrow's goes under its colour, a little wider, so its thin barbs keep their colour
-	// and it looks as light as the dot's.
+	// A shoal's mark: how far its arrow sits clear of its dot, in pixels, and the thin dark edge round both. The
+	// arrow's goes under its colour, a little wider, so its thin barbs keep their colour.
 	private static final int MARK_GAP = 2;
 	private static final Color MARK_EDGE = Color.BLACK;
 	private static final BasicStroke DOT_EDGE = new BasicStroke(1);
@@ -77,9 +73,8 @@ final class MapRoutes
 	}
 
 	/**
-	 * Where world tiles land on a map, and where the map ends. Both maps scale, turn and shift the world the same way
-	 * everywhere, so each point is placed with a few sums from where one tile lands and the steps one tile east and one
-	 * tile north make on screen.
+	 * Where world tiles land on a map, and where the map ends. Both maps scale, turn and shift the world evenly, so a
+	 * point is placed from one tile's place and the steps a tile east and north make.
 	 */
 	static final class MapView
 	{
@@ -174,10 +169,8 @@ final class MapRoutes
 	}
 
 	/**
-	 * One route as a line, simplified to the map's zoom and drawn smoothly as straight pieces, each on its own, which
-	 * Java2D draws far faster than one long path. With a danger colour, the stretches that pass close to where sea
-	 * creatures that attack boats spawn are drawn in it instead. Only the runs of the route that reach the stretch of
-	 * the world given, in tiles, are drawn.
+	 * One route as a line, simplified to the map's zoom and drawn as smooth straight pieces (far faster than one long
+	 * path), danger stretches in the danger colour if given; only runs reaching the given box of tiles.
 	 */
 	static void route(Graphics2D graphics, TrawlingPlusConfig config, ShoalRoute route, MapView onto, int thickness,
 		double fromX, double fromY, double toX, double toY, Color dangerColour)
@@ -212,8 +205,7 @@ final class MapRoutes
 			}
 
 			// Picked up from the last point kept before this run, so the piece running into it is drawn, unless the
-			// line already reaches into it. The first run starts at the route's start, as the loop is closed by the
-			// piece after its last point.
+			// line already reaches into it. The loop is closed by the piece after the last point.
 			int first = route.blockFrom(block);
 			if (at < first)
 			{
@@ -332,10 +324,8 @@ final class MapRoutes
 	}
 
 	/**
-	 * The arrows showing which way round a route is swum, at the spacing set for the ones on the water
-	 * but thinned out so they never crowd each other on a map drawn small. Those on a stretch marked
-	 * dangerous take the danger colour instead, when one is given. Each is two smooth strokes meeting at its tip, which
-	 * Java2D draws faster than a filled arrowhead; the line is drawn over them.
+	 * The arrows showing which way a route is swum, at the water's spacing thinned so they never crowd, in the danger
+	 * colour on dangerous stretches. Each is two smooth strokes meeting at its tip; the line goes over them.
 	 */
 	static void arrows(Graphics2D graphics, TrawlingPlusConfig config, ShoalRoute route, MapView onto, int size,
 		double fromX, double fromY, double toX, double toY, Color dangerColour)
@@ -362,9 +352,8 @@ final class MapRoutes
 		double aside = size * ARROW_HALF_WIDTH;
 		for (int block = 0; block < route.blockCount(); block++)
 		{
-			// The same skipping the line is drawn with. A run of the route covers one stretch of the way
-			// round it, so the arrows on it are the ones whose distances fall inside that stretch, and the
-			// rest are passed over without ever being worked out.
+			// Skipped as the line is: the arrows on a run are those whose distances fall inside its stretch of the
+			// route.
 			if (!route.blockWithin(block, fromX, fromY, toX, toY))
 			{
 				continue;
@@ -455,9 +444,8 @@ final class MapRoutes
 	}
 
 	/**
-	 * Where a shoal is along its route, as the route's point there with the way it runs (x, y, and a step along it),
-	 * so its mark sits on the line however the route is smoothed: smoothing rounds off bends, where the shoal itself
-	 * swims wider. Where the game has it if it has no route, as x and y only; null if it can't be placed.
+	 * Where a shoal is along its route, as the route's point and direction there, so its mark sits on the line however
+	 * the route is smoothed; where the game has it (x, y only) with no route; null if it can't be placed.
 	 */
 	static double[] alongRoute(Shoal shoal, Client client)
 	{
@@ -467,9 +455,8 @@ final class MapRoutes
 	}
 
 	/**
-	 * An arrowhead of the given length in pixels, centred on a point and pointing along a direction, which needn't be
-	 * of any particular length but mustn't be nothing. Turned by the direction itself rather than by an angle worked
-	 * out from it and back.
+	 * An arrowhead of the given length in pixels, centred on a point and pointing along a direction of any non-zero
+	 * length.
 	 */
 	static Path2D arrowhead(double atX, double atY, double towardX, double towardY, int length)
 	{

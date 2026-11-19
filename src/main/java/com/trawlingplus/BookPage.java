@@ -4,10 +4,8 @@ import java.util.List;
 import lombok.Value;
 
 /**
- * One page of the hold book: a title and its lines, and maybe a name signed at its foot, an item's picture above its
- * number, or a tab for the section it starts. A line is text, wrapped to the page and either left aligned or centred,
- * a centred heading in faded ink, a row with a name on the left and a value on the right, or a blank line. Pages are
- * compared by what they hold, so the book redraws one only when it changes.
+ * One page of the hold book: a title, its lines, and optionally a signature, an item's picture or a section tab. Pages
+ * compare by content, so the book redraws a page only when it changes.
  */
 @Value
 class BookPage

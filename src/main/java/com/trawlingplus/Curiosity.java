@@ -103,9 +103,8 @@ enum Curiosity
 	}
 
 	/**
-	 * Its entry: the crewmate's, after their name, when one found it, or the player's; the elsewhere entry when found
-	 * away from the nets, or before the log was kept, as the log can't say where; told as long ago ("I once
-	 * caught...") when found before the log was kept.
+	 * Its entry: the finding crewmate's after their name, or the player's; the elsewhere entry when found away from the
+	 * nets; told as long ago ("I once caught...") when found before the log was kept.
 	 */
 	String entryFor(String finder, boolean beforeTheLog)
 	{

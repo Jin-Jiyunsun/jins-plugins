@@ -78,11 +78,8 @@ class TrawlingPlusOverlay extends Overlay
 	// What an empty deck tile holds, shared rather than made afresh for each one while the deck is looked through.
 	private static final GameObject[] NO_OBJECTS = new GameObject[0];
 
-	// How far a shoal can be fished from, in tiles along each axis. It is the same for every kind of
-	// shoal, but it is not measured from the middle of the boat: it is measured from a point towards the
-	// bow, so a boat pointing its bow at a shoal can fish it from further away than one pointing its
-	// stern. The edge shifts by about half a tile with the way the boat faces, so this sits between where
-	// fishing always works and where it sometimes still does.
+	// How far a shoal can be fished from, in tiles along each axis, from a point towards the bow; the edge shifts about
+	// half a tile with the boat's heading, so this sits between always and sometimes in reach.
 	private static final double FISHABLE_REACH = 8.7;
 
 	// That point on the boat, in local units ahead of its middle towards the bow: two and a quarter
@@ -95,15 +92,9 @@ class TrawlingPlusOverlay extends Overlay
 	// How long the dot takes to fade fully in or out as the fishable area comes and goes, in milliseconds.
 	private static final double FISHING_POINT_FADE_MILLIS = 500;
 
-	// The area the game itself uses is a square lined up with the map: a shoal can be fished while that
-	// point on the boat is within the reach of it along both the x and the y axis. A circle of the same
-	// reach sits just inside it, for anyone who would rather have the rounder guide.
-	//
-	// Either shape is drawn through points spaced around it rather than only a few corners, so one
-	// running off the loaded map still draws the part that is on it, and it follows the height of the
-	// water it crosses. Where each sits never changes, so both are worked out once here, as fractions of
-	// the reach: the square's south side west to east, then east, north and west the same way round, and
-	// the circle anticlockwise from the east.
+	// The fishable area's shapes, as fractions of the reach: the game's own square lined up with the map, and a circle
+	// just inside it, each many points so one running off the loaded map still draws its part. Traced anticlockwise,
+	// the square from its south west corner, the circle from the east.
 	private static final int AREA_POINTS_PER_SIDE = 16;
 	private static final int AREA_POINTS = AREA_POINTS_PER_SIDE * 4;
 	private static final double[] SQUARE_X = new double[AREA_POINTS];
@@ -146,14 +137,11 @@ class TrawlingPlusOverlay extends Overlay
 	// lower over it.
 	private static final int RAFT_CONFIG = 1;
 
-	// Where the display goes at the bow and above the sails, read once per boat type from its deck: how far up the
-	// deck the front of the hull is and how high the top of the tallest thing on it is, both in the deck's local
-	// units, and which boat and deck they were read for. The display sits a little back from the tip,
-	// and a little above the top.
+	// Where the display goes at the bow and over the sails, read once per boat type from its deck in local units: the
+	// front of the hull and the top of the tallest thing on it, with the boat and deck they were read for.
 	private static final int BOW_INSET = Perspective.LOCAL_TILE_SIZE;
-	// How far towards the helm from the bow's spot the display sits over the sails, and how far from their top,
-	// in tenths of a tile, by boat config: the skiff and the sloop. The raft has none, and puts the
-	// display at its bow instead.
+	// How far from the bow's spot towards the helm, and from the sails' top, the display sits over the sails, in tenths
+	// of a tile by boat config; the raft has none and uses its bow.
 	private static final Map<Integer, int[]> SAILS_BY_BOAT = Map.of(2, new int[]{12, -23}, 3, new int[]{21, -27});
 
 	private int anchorConfig = -1;
@@ -183,9 +171,8 @@ class TrawlingPlusOverlay extends Overlay
 	private static final int BAR_LINE = 5;
 	private static final int HELM_LINES = 6;
 
-	// The timer bar: the game's own bar over a shoal, from the same two pictures the game draws it
-	// with, so it looks the same whether they are the game's or RuneLite's high detail ones. Kept below the text,
-	// this far under it.
+	// The timer bar: the game's bar over a shoal, from the same two pictures the game draws it with (or a skin's), kept
+	// this far under the text.
 	private static final int BAR_FRONT = SpriteID.HeadbarIce90.FRONT;
 	private static final int BAR_BACK = SpriteID.HeadbarIce90.BACK;
 	private static final int BAR_GAP = 2;
@@ -209,9 +196,8 @@ class TrawlingPlusOverlay extends Overlay
 	private static final double ARROW_HALF_WIDTH = 0.4;
 	private static final double ARROW_NOTCH = 0.2;
 
-	// The same for the arrow marking where a shoal is and which way it's heading, which also leads a
-	// route as it draws out to the next stop. The heading arrow is drawn last, so it sits on top of
-	// everything else.
+	// The same for the shoal heading arrow, which also leads a route as it draws out to the next stop, and is drawn
+	// last so it sits on top.
 	private static final double SHOAL_ARROW_LENGTH = 2.4;
 	private static final double SHOAL_ARROW_HALF_WIDTH = 1.0 / 2.4;
 	private static final double SHOAL_ARROW_NOTCH = 0.45 / 2.4;
@@ -255,9 +241,8 @@ class TrawlingPlusOverlay extends Overlay
 	private int[] rowCounts = new int[0];
 	private final double[] segment = new double[6];
 
-	// Whole route leaves the route out when less than this much of it, in tiles, is inside the loaded map:
-	// a scrap at the edge of the view says nothing and only costs drawing. Worked out once a tick, for the
-	// route it was last worked out for.
+	// Whole route leaves out a route with less than this much of it, in tiles, inside the loaded map; worked out once a
+	// tick, for the route it was last worked out for.
 	private static final double MIN_LOADED_ROUTE_TILES = 50;
 	// A route passing within this many tiles of the boat is drawn however little of it is loaded: the loaded
 	// map isn't always centred on the boat, so near its edge the route being sailed along can fall short.
@@ -269,9 +254,8 @@ class TrawlingPlusOverlay extends Overlay
 	// How many steps of see-through the route line's faded pieces are drawn in, and the colour of each this frame.
 	private static final int FADE_LEVELS = 16;
 	private final Color[] fadeColours = new Color[FADE_LEVELS + 1];
-	// Given how long each frame's drawing took, for the dev-only debug plugin to measure with. Null, and not timed at
-	// all, in the released plugin. While timing, the route line's share and the part of that spent stroking it are
-	// added up as the frame draws.
+	// Told how long each frame took, by the dev-only debug plugin; null and untimed in the released plugin. While
+	// timing, the route line's share and its stroking are added up.
 	static DrawTimer drawTimer;
 	private boolean timing;
 	private long lineNanos;
@@ -292,9 +276,8 @@ class TrawlingPlusOverlay extends Overlay
 	private TrawlingPlusConfig.ArrowStyle arrowStyle = TrawlingPlusConfig.ArrowStyle.FACING;
 	private double frameCameraX;
 	private double frameCameraY;
-	// The most and fewest pixels a tile may cover for a camera-facing arrow this frame, or -1 for no limit: no more
-	// than the size where the camera is aimed, nor a tenth of the screen's height for an arrow, and no less than half
-	// that size.
+	// The most and fewest pixels a tile may cover for a camera-facing arrow this frame, or -1 for no limit: at most its
+	// size where the camera aims, or a tenth of the screen's height, and at least half that.
 	private static final double FACING_MIN_SCALE = 0.5;
 	private static final double FACING_MAX_SCREEN = 0.1;
 	private double facingLimit = -1;
@@ -304,10 +287,8 @@ class TrawlingPlusOverlay extends Overlay
 	private static final double FACING_MAX_SCALE = 1;
 	// How far apart, in tiles, the places a camera-facing arrow is measured off are.
 	private static final double FACING_SPAN = 2;
-	// This frame's camera, unrounded, for placing the route line on screen and finding which way a camera-facing arrow
-	// points without the screen's whole pixels in the way: where it is in local units, its turn and tilt, its zoom,
-	// and the middle of the game view on screen. Only read when the route line is placed this way (ownProjection) or
-	// arrows face the camera.
+	// This frame's camera, unrounded, for placing the route line and aiming camera-facing arrows: its place in local
+	// units, turn, tilt, zoom and the game view's middle. Read only when either needs it.
 	private boolean ownProjection;
 	private double viewMiddleX;
 	private double viewMiddleY;
@@ -328,13 +309,11 @@ class TrawlingPlusOverlay extends Overlay
 	private double placedX;
 	private double placedY;
 
-	// Whether the route line, direction arrows and stops are left out from under the boat this frame: Clear around
-	// boat is on, the player is aboard, and the hull's outline has been read. Taken from where the boat is drawn
-	// this frame rather than last tick, so the gap glides and turns with it.
+	// Whether the route line, arrows and stops are left out under the boat this frame (Clear around boat, aboard, hull
+	// read), from where the boat is drawn this frame so the gap glides with it.
 	private boolean clearing;
-	// The hull's own outline seen from above, read once per boat type from its model: corners in the deck's
-	// local units, which boat type they are for, and this frame's corners in world tiles with the box round them.
-	// How many corners it is cut down to: the fewest that fit every boat.
+	// The hull's outline from above, read once per boat type from its model, in deck local units, cut to the fewest
+	// corners that fit every boat; and this frame's corners in world tiles with their box.
 	private static final int FOOTPRINT_POINTS = 7;
 	private int footprintConfig = -1;
 	private int footprintTriedTick = -1;
@@ -354,10 +333,8 @@ class TrawlingPlusOverlay extends Overlay
 	// opacity to the other's; a step with both ends at least LINE_FULLY_SHOWN is part of the line as usual.
 	private static final double LINE_FADE_STEP_TILES = 0.25;
 	private static final double LINE_FULLY_SHOWN = 0.995;
-	// The outline stood up into a column CLEAR_HEIGHT_TILES tall, which keeps the hull clear without hiding the
-	// line behind the sails: its outline on screen, from the hull's outline at the waterline and at the top, and
-	// the boat's middle and the camera in local units for telling what is behind the boat. Rebuilt every frame
-	// into the same polygon.
+	// The outline stood up into a column CLEAR_HEIGHT_TILES tall, clearing the hull without hiding the line behind the
+	// sails: its outline on screen, rebuilt each frame, and the boat's middle and camera in local units.
 	private static final double CLEAR_HEIGHT_TILES = 1;
 	// Boat types less tall than that, by their boat config: the skiff, and the raft, which is flat
 	// enough that its outline on the water is all there is to it. There are only these three player boats.
@@ -415,18 +392,9 @@ class TrawlingPlusOverlay extends Overlay
 
 	// How far faded in each line of the display at the helm is, by line.
 	private final double[] helmFades = new double[HELM_LINES];
-	// The hold's display: its title on a line of its own and its fish out of the slots they have under it, the gap
-	// between it and the display at the helm below it, and between its two columns, in pixels. How many kinds of
-	// fish get a line of their own, the ones that went in most recently, and what the line for the rest is called and
-	// its colour. This frame's lines, top first, as the name on the left and the count on the right, in its colour,
-	// in how many lines: the title, the slots, those kinds and the rest, and which of its places each is (the
-	// title, the slots, one per kind, then the rest); how wide its columns are together, and its box as drawn this
-	// frame; whether the hold is full; the order its fish are listed in; and how far faded in it is, and when that
-	// was worked out.
-	// Like the display at the helm, its box grows and shrinks rather than jumping, its lines slide to their new
-	// places, and a fish arriving waits for room and then fades in: per place, how far faded in it is, how far up
-	// from the bottom of the box its baseline is drawn, and whether it was laid out last frame; how wide its
-	// columns and how tall its box are drawn; and the height it is growing from and to, and whether it is half way.
+	// The hold's display, laid out like the display at the helm: its title and slots lines, a line each for the latest
+	// kinds and one for the rest, and per place how far faded in it is and where its baseline sits. Its box grows and
+	// shrinks, and a new fish waits for room before fading in.
 	private static final String HOLD_TITLE = "Fish in Hold:";
 	private static final String HOLD_TOTAL = "Total";
 	private static final int HOLD_GAP = 4;
@@ -445,9 +413,8 @@ class TrawlingPlusOverlay extends Overlay
 	private final int[] holdOrder = new int[CargoHold.SEA_FISH.length];
 	private int holdLines;
 	private int holdWide;
-	// The lines are only written out again when what the hold holds or the font changes: how wide each count is, how
-	// tall a line is and how far down its baseline sits, and the hold, its number of changes and the font they
-	// were written out for.
+	// The lines are written out again only when the hold's contents or the font change: each count's width, the line
+	// height and baseline, and the hold, change count and font they were written for.
 	private final int[] holdRightWidth = new int[HOLD_LINES];
 	private int holdLineHeight;
 	private int holdAscent;
@@ -478,21 +445,16 @@ class TrawlingPlusOverlay extends Overlay
 	private final Color[] helmColour = new Color[HELM_LINES];
 	private final double[] helmShowing = new double[HELM_LINES];
 	private final int[] helmWidth = new int[HELM_LINES];
-	// The display's background grows and shrinks to fit rather than jumping: how tall its text and bar are and how
-	// wide it is drawn, catching up with the real sizes most of the way in about HELM_RESIZE_MILLIS. A line or the
-	// bar arriving in a display already on screen waits until the background has grown at least half way to make
-	// room for it, then fades in: the height it is growing from and to, and whether it is that far yet.
+	// The background grows and shrinks to fit, catching up most of the way in about HELM_RESIZE_MILLIS; a line arriving
+	// waits until it has grown half way, then fades in: the height it grows from and to, and whether it's there.
 	private static final double HELM_RESIZE_MILLIS = 60;
 	private double shownTextHeight;
 	private double shownBarHeight;
 	private double shownWide;
 	private long lastResizeMillis = -1;
-	// Where the display sits on screen, eased briefly towards where it is worked out each frame, and where it was last
-	// drawn. Its place comes in whole pixels, and going slowly it can sit on the edge between two, flicking back and
-	// forth a pixel each frame. Eased, that settles between the two, and the drawn place only moves once the eased one
-	// is most of a pixel away, so it stays put through the flicker and still moves a pixel at a time when turning.
-	// Further off than the snap it goes straight there. Kept well above how far it trails while the boat turns, or it
-	// would trail, catch up in one jump and trail again.
+	// Where the display sits, eased towards where it's worked out each frame, and where it was last drawn: that only
+	// moves once the eased place is most of a pixel away, so it doesn't flick between two pixels. Further off than the
+	// snap, which stays well above how far it trails while turning, it jumps.
 	private static final double HELM_STEADY_MILLIS = 20;
 	private static final double HELM_STEADY_HOLD = 0.75;
 	private static final int HELM_STEADY_SNAP = 64;
@@ -501,9 +463,8 @@ class TrawlingPlusOverlay extends Overlay
 	private int steadyX;
 	private int steadyY;
 	private long steadyMillis = -1;
-	// Moved to another spot, by the Position setting or the shoal coming and going, it glides there over this long
-	// with Animated on, from where it was, eased in and out. Where it glides from is kept as an offset from where it
-	// is going, so it follows the new spot as that moves.
+	// Moved to another spot (by Position, or the shoal coming and going) it glides there over this long with Animated
+	// on, eased in and out, from an offset kept relative to the new spot as it moves.
 	private static final double HELM_MOVE_MILLIS = 500;
 	private TrawlingPlusConfig.HudPosition placedAt;
 	private TrawlingPlusConfig.HudPosition steadyPlacedAt;
@@ -625,9 +586,8 @@ class TrawlingPlusOverlay extends Overlay
 			facingLimit = facingLimit > 0 ? Math.min(facingLimit, screenLimit) : screenLimit;
 			facingMinimum = facingReference > 0 ? facingReference * FACING_MIN_SCALE : -1;
 		}
-		// Routes included: there is no point being shown where the fish are by a boat that cannot
-		// catch them, though how strict to be about that is the Show guides setting.
-		// The fishing spot arrow has nothing to do with nets, so it shows whatever the guides are doing.
+		// Routes included, by the Show guides setting, as there's no point showing where the fish are to a boat that
+		// can't catch them; the fishing spot arrow has nothing to do with nets, so it shows regardless.
 		boolean loggedIn = client.getGameState() == GameState.LOGGED_IN;
 		// Drawn while wanted or still fading out; switched off, it just isn't drawn.
 		boolean spotArrow = loggedIn && config.showSpotArrow() && (plugin.getFishedSpot() != null || spotArrowFade > 0);
@@ -749,9 +709,8 @@ class TrawlingPlusOverlay extends Overlay
 
 	private void drawAllRoutes(Graphics2D graphics, List<PlacedShoal> shoals, long now)
 	{
-		// Only the route the boat is nearest, whether or not its shoal is in view. Drawing every route
-		// that reaches into the loaded scene means several at once in seas where they run close, which
-		// says little and costs a good deal.
+		// Only the route the boat is nearest, whether or not its shoal is in view: every route in the scene would mean
+		// several at once where they run close.
 		WorldView view = client.getTopLevelWorldView();
 		ShoalRoute route = plugin.getNearestRoute();
 		if (view == null || route == null)
@@ -769,9 +728,8 @@ class TrawlingPlusOverlay extends Overlay
 	}
 
 	/**
-	 * Whether enough of the route is inside the loaded map to be worth drawing, rather than a scrap at its
-	 * edge, or it passes close by the boat. The loaded map only moves between ticks, so this is worked out once a tick, and stops counting as
-	 * soon as there is enough.
+	 * Whether enough of the route is inside the loaded map to be worth drawing, or it passes close by the boat; worked
+	 * out once a tick, stopping as soon as there's enough.
 	 */
 	private boolean enoughLoaded(WorldView view, ShoalRoute route, int beyond)
 	{
@@ -839,9 +797,7 @@ class TrawlingPlusOverlay extends Overlay
 		if (config.showRouteLine())
 		{
 			long lineFrom = timeFrom();
-			// Only the runs of the route that reach the loaded map. Most of a route is well outside it,
-			// and a run can be dismissed in four comparisons instead of asking the same of all sixty
-			// four points inside it.
+			// Only the runs of the route that reach the loaded map, any other run dismissed in four comparisons.
 			int beyond = frameBeyond;
 			double fromX = view.getBaseX() - beyond;
 			double fromY = view.getBaseY() - beyond;
@@ -953,9 +909,8 @@ class TrawlingPlusOverlay extends Overlay
 	}
 
 	/**
-	 * In Whole route the line is already drawn, so all that is left of the animation is the arrow at its
-	 * head. When a shoal sets off for a new stop, the arrow runs along the route from the shoal to that
-	 * stop over the animation duration, then fades as it arrives, the same as it does in Next stop only.
+	 * In Whole route the line is already drawn, so the animation is just the arrow at its head: running from the shoal
+	 * to its new stop over the animation duration, then fading as it arrives.
 	 */
 	private void drawHeadArrows(Graphics2D graphics, WorldView view, ShoalRoute route, List<PlacedShoal> shoals,
 		long now)
@@ -1107,9 +1062,8 @@ class TrawlingPlusOverlay extends Overlay
 	}
 
 	/**
-	 * Whether either display on the player's boat could be up this frame: the guides are showing, they are sea spot
-	 * fishing, or the hold's display is still fading out after they stopped. Asked before anything else, so
-	 * with neither, nothing about them is worked out.
+	 * Whether either display on the player's boat could be up this frame (guides showing, sea spot fishing, or the
+	 * hold's display fading out), asked first so nothing is worked out without one.
 	 */
 	boolean displayWanted()
 	{
@@ -1187,9 +1141,8 @@ class TrawlingPlusOverlay extends Overlay
 	}
 
 	/**
-	 * Draws the display at the helm of the player's boat: the depth, time left at the stop, fish in the
-	 * nets, bait and the hold full warning, each line fading in and out on its own, and the hold's display
-	 * above it when that is up. Says whether it drew anything.
+	 * Draws the display at the helm: depth, time left at the stop, fish in the nets, bait and hold full, each line
+	 * fading on its own, with the hold's display above when up. Says whether it drew anything.
 	 */
 	private boolean drawTrawling(Graphics2D graphics, long now, boolean hold)
 	{
@@ -1225,9 +1178,8 @@ class TrawlingPlusOverlay extends Overlay
 			wanted[FISH_LINE] = false;
 		}
 
-		// A line going while another holds the pill up goes at once, and one coming waits for room to be made for it
-		// and then fades in. The display itself arriving or leaving fades as a whole.
-		// With Animated off, everything shows and goes at once.
+		// A line going while another holds the pill up goes at once, one coming waits for room then fades in, and the
+		// whole display fades as it comes and goes. With Animated off, everything shows and goes at once.
 		boolean animated = config.animatedHud();
 		double step = !animated ? 1 : lastHelmFadeMillis < 0 ? 0
 			: Math.max(0, now - lastHelmFadeMillis) / HELM_FADE_MILLIS;
@@ -1367,9 +1319,8 @@ class TrawlingPlusOverlay extends Overlay
 		}
 		roomReady = resizeTo <= resizeFrom || (boxTextHeight + boxBar - resizeFrom) * 2 >= resizeTo - resizeFrom;
 
-		// Kept inside the game view, so zoomed in close, where its place on the boat is off the edge of the
-		// screen, it stops at the edge rather than going out of sight. With the hold's display above it, the two
-		// are kept in as one, so neither is pushed over the other.
+		// Kept inside the game view, so zoomed in close it stops at the screen's edge rather than going out of sight;
+		// with the hold's display above, the two are kept in as one.
 		int boxLeft = left + (wide - boxWide) / 2 - HELM_PADDING;
 		int boxTop = top + textHeight - boxTextHeight - HELM_PADDING;
 		int boxWidth = boxWide + HELM_PADDING * 2;
@@ -1431,9 +1382,8 @@ class TrawlingPlusOverlay extends Overlay
 	}
 
 	/**
-	 * Where the display at the helm, or the hold's in its place, sits on screen: the left end of the baseline of a
-	 * bottom line of text centred there, at the helm, the bow, above the sails, or above the nearest shoal where
-	 * that may be used. Null when it can't be placed.
+	 * Where the display at the helm, or the hold's in its place, sits on screen: the left end of a centred bottom
+	 * line's baseline, at the helm, bow, sails or over the nearest shoal. Null when it can't be placed.
 	 */
 	private Point helmPoint(Graphics2D graphics, WorldEntity boat, WorldView deck, WorldEntityConfig hull,
 		String placedBy, boolean overShoal)
@@ -1452,9 +1402,8 @@ class TrawlingPlusOverlay extends Overlay
 		}
 		placedAt = position;
 
-		// The helm sits a quarter of the hull length behind the middle of the boat, and the text a
-		// tile and a half further back again. A hull an odd number of tiles wide has its middle
-		// tile half a tile off the middle of the view.
+		// The helm sits a quarter of the hull's length behind the boat's middle, and the text a tile and a half further
+		// back; a hull an odd number of tiles wide has its middle tile half a tile off the view's middle.
 		int across = deck.getSizeX() * Perspective.LOCAL_TILE_SIZE / 2;
 		if ((hull.getBoundsWidth() / Perspective.LOCAL_TILE_SIZE) % 2 != 0)
 		{
@@ -1479,9 +1428,8 @@ class TrawlingPlusOverlay extends Overlay
 			}
 			else
 			{
-				// Over the deck a little towards the helm from the bow's spot, which from any angle reads as above the
-				// sails, near the height of their top.
-				// In tenths of a tile, by boat type.
+				// Over the deck a little towards the helm from the bow's spot, which reads as above the sails from any
+				// angle, near the height of their top; in tenths of a tile, by boat type.
 				int[] sails = SAILS_BY_BOAT.get(hull.getId());
 				int back = sails[0] * Perspective.LOCAL_TILE_SIZE / 10;
 				int offset = sails[1] * Perspective.LOCAL_TILE_SIZE / 10;
@@ -1580,9 +1528,8 @@ class TrawlingPlusOverlay extends Overlay
 	}
 
 	/**
-	 * Works out the hold's display for this frame and says whether it is up. Fades in as fishing a spot starts and
-	 * out as it ends, and goes at once when stepping off the boat or switching it off. A fish arriving in it grows
-	 * the box and fades in once there's room, and one going goes at once and the box shrinks after it.
+	 * Works out the hold's display this frame and says whether it's up: fading in and out as spot fishing starts and
+	 * ends, gone at once off the boat or switched off; arriving fish grow the box and fade in, leaving ones go at once.
 	 */
 	private boolean layOutHold(Graphics2D graphics, long now)
 	{
@@ -1671,9 +1618,8 @@ class TrawlingPlusOverlay extends Overlay
 	}
 
 	/**
-	 * Writes out the hold's display's lines: its title, how full the hold is under that, and the fish in it below,
-	 * the three kinds that went in most recently, most first, then the rest together, each name with its count lined
-	 * up on the right; and how wide and tall they are.
+	 * Writes out the hold's display's lines (title, how full, the three latest kinds, most first, then the rest), each
+	 * name with its count on the right, and how wide and tall they are.
 	 */
 	private void writeHoldLines(CargoHold record, FontMetrics letters)
 	{
@@ -1690,9 +1636,8 @@ class TrawlingPlusOverlay extends Overlay
 		holdColour[holdLines] = Color.WHITE;
 		holdLines++;
 
-		// Only the kinds that went in most recently get a line each, so the list never grows to every fish there is:
-		// between two that went in together, or before any deposit has been seen, the one with more. Those are listed
-		// most first, and in the order of the fishing spots between two of the same, and the rest share a line below.
+		// Only the most recently deposited kinds get a line each (the one with more between ties, or before any
+		// deposit), listed most first, in fishing spot order between equals; the rest share a line.
 		int held = 0;
 		for (int kind = 0; kind < CargoHold.SEA_FISH.length; kind++)
 		{
@@ -1732,9 +1677,8 @@ class TrawlingPlusOverlay extends Overlay
 			holdColour[1] = CargoHold.SEA_FISH_COLOURS[holdOrder[0]];
 		}
 
-		// The counts line up on the right of a column as wide as they would be in the widest digit, so the display
-		// doesn't change width by a pixel or two whenever one changes. The fish never outnumber the room for them,
-		// so the slots line is the widest, and only its number of digits counts.
+		// The counts line up in a column as wide as the slots line in the widest digit, as fish never outnumber the
+		// slots, so the display doesn't change width when one changes.
 		int digit = 0;
 		for (char c = '0'; c <= '9'; c++)
 		{
@@ -1856,9 +1800,8 @@ class TrawlingPlusOverlay extends Overlay
 	}
 
 	/**
-	 * Draws the stop bar the way the game does: the full picture up to how far along it is, and the empty one
-	 * after. RuneLite's high detail bars have a pixel of border at each end that is not part of the bar, so there
-	 * it runs between the two.
+	 * Draws the stop bar the way the game does: the full picture up to how far along it is, then the empty one, between
+	 * the pixel of border at each end on RuneLite's high detail bars.
 	 */
 	private void drawBar(Graphics2D graphics, int x, int y, double full, double opacity)
 	{
@@ -1960,9 +1903,8 @@ class TrawlingPlusOverlay extends Overlay
 			int from = route.sampleAt(distance);
 			int steps = Math.floorMod(route.sampleAt(distance + drawn) - from, route.sampleCount());
 
-			// Starts where the shoal is along the route rather than where the shoal itself is, so the line
-			// only ever gets shorter as the shoal swims along it. Joining it to the shoal instead leaves a
-			// first piece that swings about, since a smoothed route never runs exactly through the shoal.
+			// Starts where the shoal is along the route rather than at the shoal, so the line only ever shortens as it
+			// swims, without a first piece swinging about where a smoothed route misses the shoal.
 			Line line = routeLine.reset();
 			Line danger = dangerOnRoute(route) ? dangerLine.reset() : null;
 			double[] start = route.pointAt(distance);
@@ -2026,9 +1968,8 @@ class TrawlingPlusOverlay extends Overlay
 	}
 
 	/**
-	 * Draws the route line's pieces faded near the boat one at a time, with the line's stroke already set, each in one
-	 * solid colour, how much of it shows rounded to one of FADE_LEVELS steps (a gradient each is one of the slowest
-	 * things Java2D draws), as the rest of the line is drawn.
+	 * Draws the route line's faded pieces near the boat, each in one solid colour rounded to FADE_LEVELS steps (a
+	 * gradient each is among the slowest things Java2D draws), with the line's stroke already set.
 	 */
 	private void drawFadedPieces(Graphics2D graphics, Line line, double opacity, Color colour)
 	{
@@ -2274,9 +2215,8 @@ class TrawlingPlusOverlay extends Overlay
 	}
 
 	/**
-	 * Points the way from the boat to the fishing spot at sea being fished, with an arrow like the shoal heading
-	 * arrow on the water off the hull, on the side nearest the spot, going round the boat as it moves. Fades in and
-	 * out like the display on the boat, where it is, the spot's place being kept once the arrow's rules hide it.
+	 * Points from the boat to the fishing spot at sea being fished, with an arrow like the shoal heading arrow off the
+	 * hull, on the side nearest the spot, fading in and out like the display, where it last was.
 	 */
 	private void drawSpotArrow(Graphics2D graphics, WorldView top)
 	{
@@ -2371,9 +2311,9 @@ class TrawlingPlusOverlay extends Overlay
 	}
 
 	/**
-	 * Where an arrow of the given length off a boat pointing at a place goes this frame, as {x, y, dx, dy, past} in
-	 * world tiles: its middle, the unit way to the place, and 1 where its tip would reach past the place's middle,
-	 * else 0. On an oval round the hull, on the side nearest the place. Null when it can't be placed.
+	 * Where an arrow of the given length off a boat pointing at a place goes this frame, as {x, y, dx, dy, past}: its
+	 * middle, the unit way there, and 1 if its tip would pass the place, on an oval round the hull. Null if it can't be
+	 * placed.
 	 */
 	private double[] placeArrowToward(WorldView top, WorldEntity boat, double[] spot, double length)
 	{
@@ -2383,9 +2323,8 @@ class TrawlingPlusOverlay extends Overlay
 			return null;
 		}
 
-		// On an oval round the boat, turning with it, round the middle of its hull (the outline Clear around boat leaves
-		// clear, already placed this frame when that is on): as long and wide as the hull, each plus the gap. Not drawn
-		// until the outline has been read, a tick or so after boarding.
+		// On an oval round the hull's middle (the outline Clear around boat uses, already placed this frame when on),
+		// turning with the boat, as long and wide as the hull plus the gap; not drawn until the outline is read.
 		WorldView deck = boat.getWorldView();
 		LocalPoint pivot = boat.getLocalLocation();
 		if (pivot == null || !clearing && (deck == null || !placeFootprint(top, boat, deck, hull)))
@@ -2531,10 +2470,8 @@ class TrawlingPlusOverlay extends Overlay
 	}
 
 	/**
-	 * Where an arrow of the given length in tiles sits on a route, as {x, y, dx, dy}: aimed from the route
-	 * half its length behind to the route half its length ahead, and centred between the two. On a bend
-	 * that puts both its tip and its tail on the line, where following the direction at its middle sends
-	 * the tip off the outside of the bend.
+	 * Where an arrow of the given length in tiles sits on a route, as {x, y, dx, dy}: aimed from the route half its
+	 * length behind to half its length ahead and centred between, so on a bend both its tip and tail are on the line.
 	 */
 	private static double[] onRoute(ShoalRoute route, double distance, double length)
 	{
@@ -2551,9 +2488,9 @@ class TrawlingPlusOverlay extends Overlay
 	}
 
 	/**
-	 * An arrowhead lying flat on the water, centred on a point of a route and pointing along it, or
-	 * null if any of it can't be drawn. The point is {x, y, dx, dy}, as ShoalRoute.pointAt gives it.
-	 * The length is in tiles; the half width and notch are fractions of it.
+	 * An arrowhead lying flat on the water, centred on a route point {x, y, dx, dy} as ShoalRoute.pointAt gives it and
+	 * pointing along it, or null if any of it can't be drawn; its length in tiles, half width and notch as fractions of
+	 * it.
 	 */
 	private Path2D arrowhead(WorldView view, double[] at, double length, double halfWidthFraction, double notchFraction)
 	{
@@ -2623,24 +2560,21 @@ class TrawlingPlusOverlay extends Overlay
 	}
 
 	/**
-	 * The same arrowhead stood up and turned to face the camera, pointing the way the route runs across the screen,
-	 * centred on the route. Its size comes from a distance measured across the screen at the arrow, which
-	 * perspective never squashes, so it keeps its size whichever way the route runs. Four points placed.
+	 * The same arrowhead stood up to face the camera, pointing the way the route runs across the screen, sized by a
+	 * distance across the screen at the arrow, which perspective never squashes. Four points placed.
 	 */
 	private Path2D facingArrowhead(WorldView view, double x, double y, double dx, double dy, double halfLength,
 		double halfWidth, double notch)
 	{
-		// Which way it points and how big it is are both read off places a couple of tiles apart rather than right
-		// beside it: the screen only places whole pixels, and over a short gap a pixel's rounding swings the arrow
-		// about as the camera moves.
+		// Its way and size are read off places a couple of tiles apart, as over a short gap a pixel's rounding swings
+		// the arrow about as the camera moves.
 		Point middle = toCanvas(view, x, y);
 		if (middle == null)
 		{
 			return null;
 		}
-		// Looking along the route from low down, the places ahead and behind land only a few pixels apart, and
-		// rounding each to a whole pixel swings the arrow about as the camera moves, so the way across the screen
-		// comes from the same sums unrounded.
+		// Seen along the route from low down, the places ahead and behind land only a few pixels apart, so the way
+		// across the screen comes from the same sums unrounded.
 		if (!screenWay(view, x, y, dx, dy))
 		{
 			return null;
@@ -2693,9 +2627,8 @@ class TrawlingPlusOverlay extends Overlay
 	}
 
 	/**
-	 * Which way along the screen a route heading along dx, dy runs at a place on the sea, from FACING_SPAN tiles
-	 * behind it to as far ahead, placed the same way the game places things on screen but without rounding either
-	 * end to a whole pixel, into wayX and wayY. False when either end is off the loaded map or behind the camera.
+	 * Which way along the screen a route heading along dx, dy runs at a place on the sea, from FACING_SPAN tiles behind
+	 * to as far ahead, placed unrounded, into wayX and wayY. False if either end can't be placed.
 	 */
 	private boolean screenWay(WorldView view, double x, double y, double dx, double dy)
 	{
@@ -2747,9 +2680,8 @@ class TrawlingPlusOverlay extends Overlay
 	}
 
 	/**
-	 * How many pixels a tile covers at a place, measured along the ground lying straight across the screen there,
-	 * which the camera looking down never squashes: square to the line from the camera to the place, seen from
-	 * above. -1 when it can't be placed.
+	 * How many pixels a tile covers at a place, measured across the screen square to the camera's line of sight, which
+	 * looking down never squashes; -1 when it can't be placed.
 	 */
 	private double acrossScreen(WorldView view, double x, double y, Point at)
 	{
@@ -2810,11 +2742,9 @@ class TrawlingPlusOverlay extends Overlay
 	}
 
 	/**
-	 * A ring on the water around a point in world tiles, as it lands on screen, into the given path: every given step
-	 * of a shape's points (a circle's or square's, of a radius in tiles), joined by straight lines. Enough points are
-	 * placed that a circle is round whatever its size on screen; a smooth curve through a few instead overshot into
-	 * hooks where some lay close to the camera and far apart on screen. Points that can't be placed, as behind the
-	 * camera or off the loaded map, leave a gap rather than a line across it. Null when fewer than three are placed.
+	 * A ring on the water round a point in world tiles, as it lands on screen, into the given path: every given step of
+	 * a shape's points, joined straight, so a circle is round at any size. Points that can't be placed leave a gap;
+	 * null if fewer than three are.
 	 */
 	private Shape ring(WorldView view, double x, double y, double radius, double[] shapeX, double[] shapeY, int every,
 		Path2D.Double into)
@@ -3114,9 +3044,8 @@ class TrawlingPlusOverlay extends Overlay
 	}
 
 	/**
-	 * Reads, once per boat type, where the display goes at the bow and above the sails: the front of the hull's
-	 * outline on the deck floor, and the height of the top of the tallest thing on the deck, the mast or its sails.
-	 * True once they are known for this boat; the deck is looked through at most once a tick until then, while its
+	 * Reads once per boat type where the display goes at the bow and above the sails: the front of the deck floor's
+	 * hull outline and the top of the tallest thing on deck. True once known; looked for at most once a tick while
 	 * models load.
 	 */
 	private boolean readAnchors(WorldView deck, WorldEntityConfig hull)
@@ -3203,10 +3132,8 @@ class TrawlingPlusOverlay extends Overlay
 	}
 
 	/**
-	 * Reads the hull's outline from above off its model into footLocalX/Y, in the deck's local units, and says how
-	 * many corners it has, or 0 if the hull can't be found yet. The outline comes from the object on the deck's
-	 * lowest level covering the most tiles, the one with the most points if two tie: the deck floor on a sloop
-	 * and a skiff, which spans the whole hull. Done once per boat type, not every frame.
+	 * Reads the hull's outline from above into footLocalX/Y, in deck local units, from the biggest object on the deck's
+	 * lowest level (most points on a tie), and gives its corner count, 0 if not found yet. Once per boat type.
 	 */
 	private int readFootprint(WorldView deck)
 	{
@@ -3264,10 +3191,9 @@ class TrawlingPlusOverlay extends Overlay
 		Polygon outline = new Polygon();
 		outline(flatX, flatY, count, new int[count], new int[count * 2], outline);
 
-		// Thinned to the fewest corners that keep its shape, since each is moved with the boat and placed on screen
-		// every frame: again and again, the corner whose loss changes the outline least goes, which is the one
-		// making the smallest triangle with its neighbours. The bow's point and the stern's corners make big ones,
-		// so they stay. Done once per boat type.
+		// Thins the outline to the fewest corners that keep its shape, as each is placed every frame: dropping the
+		// corner making the smallest triangle with its neighbours again and again, so the bow and stern stay. Once per
+		// boat type.
 		int kept = outline.npoints;
 		int[] keptX = Arrays.copyOf(outline.xpoints, kept);
 		int[] keptY = Arrays.copyOf(outline.ypoints, kept);
@@ -3300,9 +3226,8 @@ class TrawlingPlusOverlay extends Overlay
 	}
 
 	/**
-	 * Outlines on screen the column the hull's outline makes when stood up to this boat's height, and notes where
-	 * the boat and camera are, for telling what the boat stands in front of. False when there is no height, or too
-	 * little of it can be placed.
+	 * Outlines on screen the column the hull's outline makes stood up to this boat's height, and notes where the boat
+	 * and camera are, for telling what it stands in front of. False with no height or too little placed.
 	 */
 	private boolean findVolume(WorldView top)
 	{
@@ -3441,9 +3366,8 @@ class TrawlingPlusOverlay extends Overlay
 	}
 
 	/**
-	 * How much of an arrow or stop centred at a point in world tiles to show near the boat: faded by the hull's outline, and
-	 * where the boat stands in front of it, faded by how far outside the boat's outline on screen it lands, over
-	 * about the same width as the fade on the water.
+	 * How much of an arrow or stop centred at a point in world tiles to show near the boat: faded by the hull's
+	 * outline, and where the boat stands in front of it, by how far outside its outline on screen it lands.
 	 */
 	private double clearShown(WorldView view, double x, double y)
 	{
@@ -3600,10 +3524,9 @@ class TrawlingPlusOverlay extends Overlay
 	}
 
 	/**
-	 * Places a point in world tiles on screen into placedX and placedY, before rounding to a pixel, and says whether
-	 * it could be. On the sea with GPU drawing, worked out here from the camera read once a frame: the same sums as
-	 * RuneLite's Perspective.localToCanvas, which works out four sines and cosines and asks the client for the camera
-	 * again for every point. Anywhere else, through RuneLite.
+	 * Places a point in world tiles on screen into placedX and placedY, unrounded, and says whether it could be: on the
+	 * sea with GPU drawing from the camera read once a frame, with RuneLite's localToCanvas sums; elsewhere through
+	 * RuneLite.
 	 */
 	private boolean place(WorldView view, double x, double y)
 	{
@@ -3632,9 +3555,8 @@ class TrawlingPlusOverlay extends Overlay
 	}
 
 	/**
-	 * Adds the next point of a route line, in world tiles, faded out where it passes under or behind the boat when
-	 * that is to be left clear, the same as arrows and stops. A piece of line that comes near the boat is split into
-	 * short steps so the fade follows the outline smoothly; the rest is added as it is.
+	 * Adds the next point of a route line, in world tiles, faded under or behind the boat when that's left clear; a
+	 * piece coming near the boat is split into short steps so the fade follows the outline smoothly.
 	 */
 	private void addPoint(Line line, WorldView view, double x, double y)
 	{
@@ -3670,9 +3592,8 @@ class TrawlingPlusOverlay extends Overlay
 	}
 
 	/**
-	 * Adds a point of the route line while the boat is being left clear: into the line as usual where it and the
-	 * last point are fully shown, and otherwise as a piece of its own, blending from how much of one end shows to
-	 * how much of the other does.
+	 * Adds a route line point while the boat is left clear: into the line where it and the last point fully show,
+	 * otherwise as a piece of its own, blending between how much each end shows.
 	 */
 	private void addFadedPoint(Line line, double x, double y, boolean placed, double hereX, double hereY)
 	{
@@ -3739,9 +3660,8 @@ class TrawlingPlusOverlay extends Overlay
 	}
 
 	/**
-	 * Draws straight pieces (from x, y, to x, y) with the stroke already set, each as its own line: Java2D fills each
-	 * as a parallelogram, far quicker than stroking them as one path. Pure stroking keeps each piece's ends where they
-	 * are rather than nudged to the pixel grid on their own, which opens gaps between them.
+	 * Draws straight pieces (from x, y, to x, y) with the stroke set, each as its own line, far quicker than one path;
+	 * pure stroking keeps each piece's ends off the pixel grid, where nudging them opens gaps.
 	 */
 	private void drawPieces(Graphics2D graphics, double[] p, int count)
 	{
@@ -3756,9 +3676,8 @@ class TrawlingPlusOverlay extends Overlay
 	}
 
 	/**
-	 * Fills and outlines a stop or the fishable area. The fill goes in a pixel row at a time with no soft edge, which
-	 * the outline drawn over it hides, and is left out when fully clear; the outline is drawn piece by piece like the
-	 * route line.
+	 * Fills and outlines a stop or the fishable area: the fill a pixel row at a time under the outline, left out when
+	 * fully clear, and the outline piece by piece like the route line.
 	 */
 	private void drawArea(Graphics2D graphics, Shape shape, Color line, Color fill, int pixels)
 	{
@@ -3837,9 +3756,8 @@ class TrawlingPlusOverlay extends Overlay
 	}
 
 	/**
-	 * Fills the flattened area a pixel row at a time, each row once, in the colour already set: a pixel is filled when
-	 * its middle is inside. Gives back false, having drawn nothing, for a shape folding over itself so much that a row
-	 * crosses it more than a few times.
+	 * Fills the flattened area a pixel row at a time in the colour set, a pixel when its middle is inside; false,
+	 * drawing nothing, for a shape folding over itself so a row crosses it more than a few times.
 	 */
 	private boolean fillRows(Graphics2D graphics, int points)
 	{
@@ -3991,9 +3909,8 @@ class TrawlingPlusOverlay extends Overlay
 	}
 
 	/**
-	 * The water's height at a place in local units: the sea's, once read at the boat. Before then, the world view's
-	 * own lookup, which reaches into the extra map loaded around the scene; the one
-	 * Perspective.localToCanvas(client, local, plane) uses stops at the scene's edge and gives 0 beyond it.
+	 * The water's height at a place in local units: the sea's, once read at the boat; until then the world view's own
+	 * lookup, which reaches into the extra map loaded round the scene, unlike Perspective's.
 	 */
 	private int water(WorldView view, int localX, int localY)
 	{
@@ -4022,9 +3939,8 @@ class TrawlingPlusOverlay extends Overlay
 	}
 
 	/**
-	 * How many tiles of map are loaded beyond each edge of a world view's scene. The GPU and 117 HD
-	 * plugins' extended map loading adds whole chunks around the top-level scene, up to the extended
-	 * scene's size; other world views have none.
+	 * How many tiles of map are loaded beyond each edge of a world view's scene: the GPU and 117 HD plugins load whole
+	 * chunks round the top-level scene; other world views have none.
 	 */
 	private int tilesBeyondScene(WorldView view)
 	{

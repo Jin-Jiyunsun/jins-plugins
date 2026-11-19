@@ -10,9 +10,8 @@ import net.runelite.client.ui.overlay.OverlayLayer;
 import net.runelite.client.ui.overlay.OverlayPosition;
 
 /**
- * The display on the boat, drawn in a layer of its own above the game's health bars, hitsplats and overhead text,
- * which would otherwise cover it, but still under the interface. The route stays down on the water with the main
- * overlay; this only asks it to draw the display.
+ * The display on the boat, in its own layer above the game's health bars, hitsplats and overhead text but under the
+ * interface. The route stays with the main overlay.
  */
 class TrawlingPlusHelmOverlay extends Overlay
 {

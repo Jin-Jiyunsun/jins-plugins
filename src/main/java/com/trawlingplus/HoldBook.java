@@ -45,9 +45,8 @@ import net.runelite.client.ui.overlay.tooltip.TooltipManager;
 import net.runelite.client.util.AsyncBufferedImage;
 
 /**
- * A button on the cargo hold's screen, and the book it opens: drawn from the game's own Fractured Archive book
- * sprites, with the pages the plugin gives it. It only draws and reads the mouse and keyboard; nothing is sent to the
- * game. Clicks are handled as the Hub's Gauntlet Chest Popup handles its popup (see {@link #mouse}).
+ * A button on the cargo hold's screen and the trawling log it opens, drawn from the game's Fractured Archive book
+ * sprites. It only draws and reads input; clicks are handled as in the Hub's Gauntlet Chest Popup (see {@link #mouse}).
  */
 @Slf4j
 class HoldBook extends Overlay implements KeyListener
@@ -96,11 +95,8 @@ class HoldBook extends Overlay implements KeyListener
 	private static final int SEAL_FISH_SIZE = 16;
 	private static final float SEAL_FISH_SHADE_DARK = 0.85f;
 	private static final float SEAL_FISH_SHADE_LIGHT = 1f;
-	// A 1 px lit edge just past the fish's lower right outline, as the wax catches the light along a pressed-in rim,
-	// and a 1 px shadowed edge just inside its upper left outline, in the seal's own brightest and darkest colours (the
-	// game's has just three: its highlight, wax and ring), so a resource pack's seal gets its own. Only colours making up
-	// at least this share of the seal count, so a stray pixel isn't picked. Icon pixels at least this opaque count as
-	// the fish.
+	// The fish pressed into the seal, lit past its lower right edge and shadowed inside its upper left, in the seal's
+	// brightest and darkest colours of at least this share of it; icon pixels this opaque count as the fish.
 	private static final double SEAL_COLOUR_SHARE = 0.02;
 	private static final int SEAL_FISH_SOLID = 60;
 	// The middle of the seal's inner ring, measured on the trimmed sprite: a pixel left of the sprite's own middle.
@@ -137,9 +133,8 @@ class HoldBook extends Overlay implements KeyListener
 	private static final int ROWS = 9;
 	private static final int BOOK_WIDTH = COLUMNS * TILE;
 	private static final int BOOK_HEIGHT = ROWS * TILE;
-	// Where the plain page shows inside the frame, measured from the frame sprites: the top edge's border ends 8 px
-	// down, the bottom edge's starts 17 px up, the left and right edges' are 13 px wide, and the spine's dark middle
-	// covers 12 px from 11 px into the middle column. That leaves two pages of 202 x 281 px.
+	// Where the plain page shows inside the frame, measured from its sprites: borders of 8 px top, 17 px bottom and 13
+	// px each side, and the spine's 12 px dark middle, leaving two pages of 202 x 281 px.
 	private static final int PAGE_TOP = 8;
 	private static final int PAGE_BOTTOM = BOOK_HEIGHT - 17;
 	private static final int LEFT_PAGE_LEFT = 13;
@@ -147,9 +142,8 @@ class HoldBook extends Overlay implements KeyListener
 	private static final int RIGHT_PAGE_LEFT = (COLUMNS / 2) * TILE + 23;
 	private static final int PAGE_WIDTH = LEFT_PAGE_RIGHT - LEFT_PAGE_LEFT;
 	private static final int PAGE_HEIGHT = PAGE_BOTTOM - PAGE_TOP;
-	// The text keeps this far from the sides of its page, so it sits centred on the page, and the title and page
-	// number this far from its top and bottom; the close button and arrows sit this far from their page's corner,
-	// by their visible pixels.
+	// Margins: the text from its page's sides, the title and page number from its top and bottom, and the close button
+	// and arrows from their page's corner, by their visible pixels.
 	private static final int TEXT_INSET = 18;
 	private static final int TITLE_INSET = 16;
 	private static final int NUMBER_INSET = 10;
@@ -189,11 +183,8 @@ class HoldBook extends Overlay implements KeyListener
 	private static final int COVER_TITLE_Y = 70;
 	private static final Color GOLD_LEAF = new Color(214, 172, 72);
 
-	// The button is centred on a space the size of the hold's own close button, just left of it; where that can't be
-	// found, where the close button usually is, from the frame's top right. It is the Collections Logged book
-	// (25 x 25) with the Fishing skill icon's fish on its cover: the icon's rod and hook (its top 8 rows) cut off, the
-	// rest cut to its visible pixels and shrunk to 15 px across, centred on the middle of the cover (measured from the
-	// sprite: 10.65 px in, 10.78 px down). Hovered, the button is drawn a quarter brighter.
+	// The button: the Collections Logged book with the Fishing icon's fish (rod cut off, shrunk to 15 px) on its cover,
+	// centred where a hold close button sized space sits just left of the hold's own. A quarter brighter hovered.
 	private static final int BUTTON_BOOK = SpriteID.IconActivities25x25.COLLECTIONS_LOGGED;
 	private static final int BUTTON_FISH = SpriteID.Staticons.FISHING;
 	private static final int FISH_TOP = 8;
@@ -226,10 +217,8 @@ class HoldBook extends Overlay implements KeyListener
 	// The most lines a journal entry takes before its paragraphs are joined to save room.
 	private static final int MAX_ENTRY_LINES = 5;
 
-	// Section tabs: a thin ribbon with a notched end stuck to each section's first page, coming out from under the
-	// page's bottom edge. Each keeps its own distance from the spine, on whichever side its leaf lies. The open
-	// section's ribbon hangs this far below the book, and comes this far up over its page, fading in, while that page
-	// shows; the others start at the page's edge and stop level with the cover's.
+	// Section tabs: a thin notched ribbon from under each section's first page, each its own distance from the spine.
+	// The open section's hangs this far below the book and comes this far up over its page, fading in.
 	private static final int TAB_WIDTH = 9;
 	private static final int TAB_OUT = 6;
 	private static final int TAB_OPEN_OVER = 6;
@@ -489,9 +478,8 @@ class HoldBook extends Overlay implements KeyListener
 			return null;
 		}
 
-		// Over the middle of the hold's screen, which it is no bigger than, or of the game view when opened from
-		// anywhere, kept inside the game view: in fixed size mode the view stops short of the side panels and chat,
-		// so the book never covers them.
+		// Over the middle of the hold's screen, or of the game view when opened from anywhere, kept inside the game
+		// view so in fixed size mode it never covers the side panels or chat.
 		int viewX = client.getViewportXOffset();
 		int viewY = client.getViewportYOffset();
 		Rectangle around = holdUp && !anywhere ? hold.getBounds()
@@ -575,9 +563,8 @@ class HoldBook extends Overlay implements KeyListener
 		// While turning, the pages either side of the leaf: the lower spread's left page and the higher one's right.
 		int lower = turning ? Math.min(from, first) : first;
 		int higher = turning ? Math.max(from, first) : first;
-		// The tabs of every leaf lying still; the turning leaf carries the tabs of all the leaves it turns. A new open
-		// section whose tab is on the turning leaf only shows open once the leaf crosses over the spine, halfway
-		// through the turn; one lying still shows open at once.
+		// The tabs of every leaf lying still, and the turning leaf's with it. A newly open section's tab on the turning
+		// leaf shows open once the leaf crosses the spine; one lying still shows open at once.
 		int section = sectionOf(tabPages(showing), first);
 		boolean carried = section >= 0 && leafOf(section) >= leafOf(lower + 1) && leafOf(section) <= leafOf(higher);
 		int marked = turning && carried && turned < TURN_MILLIS / 2 ? from : first;
@@ -639,10 +626,9 @@ class HoldBook extends Overlay implements KeyListener
 	}
 
 	/**
-	 * The tabs of the leaves lying as the spread with this left page has them (the page showing on the right given
-	 * too), the spread whose section's tab is drawn open, leaving out a run of leaves (-1 for none) and maybe those on
-	 * the left: a leaf's tab hangs below the left page once the leaf is turned past, below the right page before.
-	 * Returns where each was drawn, by the page it leads to.
+	 * Draws the leaves' tabs as the spread with this left page has them, the given section's open, leaving out a run of
+	 * leaves (-1 for none) and maybe the left ones; a turned leaf's tab hangs below the left page, otherwise below the
+	 * right. Gives where each was drawn, by the page it leads to.
 	 */
 	private Map<Rectangle, Integer> drawTabs(Graphics2D graphics, List<BookPage> showing, int lying, int shownRight,
 		int shown, int skipFrom, int skipTo, boolean rightOnly, int x, int y, int mouseX, int mouseY)
@@ -868,9 +854,8 @@ class HoldBook extends Overlay implements KeyListener
 	}
 
 	/**
-	 * The ribbons of the pages lying on the left, which swing with the cover, drawn into one of its sides: the inside,
-	 * laid out as the open book's left half, or the outside, its spine edge at 0, where they hang only below the
-	 * cover's edge.
+	 * The ribbons of the pages on the left, which swing with the cover, drawn into one of its sides: the inside, laid
+	 * out as the open book's left half, or the outside, where they hang only below the cover's edge.
 	 */
 	private void drawCoverTabs(Graphics2D g, List<BookPage> showing, int first, boolean inside)
 	{
@@ -935,11 +920,9 @@ class HoldBook extends Overlay implements KeyListener
 	}
 
 	/**
-	 * Something swinging over the spine, a leaf or the cover: the side facing up, whose inner edge sits gap px from the
-	 * spine, at the given angle (0 lying right, pi lying left), its top at top. Drawn a pixel column at a time, each
-	 * column taller the further it stands off the book, up to the given share taller at its edge when upright, as if
-	 * lifting towards the viewer, then shaded below its first skipped rows. Its last rows below (a leaf's tab) hang off
-	 * it, growing with it but not shaded. It casts a shadow this wide beyond its edge, kept to the area under it.
+	 * Something swinging over the spine, a leaf or the cover: its side facing up, gap px from the spine, at an angle (0
+	 * lying right, pi left), drawn a pixel column at a time, taller towards its edge as it lifts and shaded below its
+	 * first skipped rows; its last rows (a tab) hang unshaded, and it casts a shadow this wide.
 	 */
 	private static void drawSwing(Graphics2D graphics, BufferedImage face, double angle, double spine, double gap,
 		double top, int skipped, int below, double turnLift, Rectangle under, int shadowWidth)
@@ -1250,10 +1233,8 @@ class HoldBook extends Overlay implements KeyListener
 	}
 
 	/**
-	 * One page: its title in the medium quill, then its lines in the small quill (text wrapped to the page, left
-	 * aligned or centred, centred in faded ink for a heading, a row with its name on the left and its value against
-	 * the right edge, or a blank line), and its number at the foot. Each line with a tooltip is put in tips, by where
-	 * it was drawn.
+	 * One page: its title in the medium quill, its lines in the small quill, and its number at the foot. Each line with
+	 * a tooltip is put in tips, by where it was drawn.
 	 */
 	private BufferedImage buildPage(BookPage content, int number, Map<Rectangle, String> tips)
 	{
@@ -1418,10 +1399,9 @@ class HoldBook extends Overlay implements KeyListener
 	}
 
 	/**
-	 * Text wrapped so its lines come out about even, each line break starting a new paragraph: of the widths taking no
-	 * more lines than the full width, the one leaving the least ragged edge (a paragraph's last line may run up to
-	 * half short), the widest on a tie. An entry, left aligned, that would run past its most lines joins its
-	 * paragraphs into one.
+	 * Text wrapped so its lines come out about even, each line break starting a paragraph: of the widths taking no more
+	 * lines than the full width, the least ragged, the widest on a tie. An entry that would run too long joins its
+	 * paragraphs.
 	 */
 	private List<String> balanced(String text, boolean centred, int width)
 	{
@@ -2069,9 +2049,8 @@ class HoldBook extends Overlay implements KeyListener
 	}
 
 	/**
-	 * A sprite at its full size, with the transparent space around it that the cache trims off put back, so pieces
-	 * line up as the game lays them out. A resource pack's replacement is used where there is one, if the book is set to
-	 * follow resource packs.
+	 * A sprite at full size, with the transparent margin the cache trims off put back so pieces line up as the game
+	 * lays them out; a resource pack's replacement where there is one, if the book follows packs.
 	 */
 	private BufferedImage sprite(int id)
 	{
@@ -2157,12 +2136,9 @@ class HoldBook extends Overlay implements KeyListener
 	}
 
 	/**
-	 * The mouse, handled as the Hub's Gauntlet Chest Popup handles its popup. Only left presses count, and none while
-	 * the game's right-click menu is open (as of the last frame drawn), so picking a menu option over the book still
-	 * reaches the game. A left press on the button or anywhere on the open book is acted on and kept from the game;
-	 * one out in the world (where the game offers walking) closes the book and still reaches the game. Releases,
-	 * clicks and right presses always reach it, so right-clicking the book shows the game's menu for whatever is under
-	 * it.
+	 * The mouse, as the Hub's Gauntlet Chest Popup handles it: a left press on the button or open book is used and kept
+	 * from the game unless its menu is open; one in the world closes the book and still reaches the game, as does
+	 * everything else.
 	 */
 	final MouseListener mouse = new MouseAdapter()
 	{

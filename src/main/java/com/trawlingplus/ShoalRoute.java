@@ -12,53 +12,42 @@ import java.util.Deque;
 import java.util.List;
 
 /**
- * One shoal route: a closed loop of path points with stops along it. Positions are world tile
- * coordinates, and distances are measured in tiles round the loop in the direction shoals swim,
- * which is the order routes.json lists the points in.
+ * One shoal route: a closed loop of path points with stops along it, in world tile coordinates, with distances in tiles
+ * round the loop in the direction shoals swim.
  */
 final class ShoalRoute
 {
 	private static final String RESOURCE = "routes.json";
 
-	// Longest gap between the points the overlay draws the route through, in tiles. Every gap being
-	// split is already a straight piece of the finished curve, so this only ever adds points along
-	// straights: bends are made of pieces shorter than this and keep exactly the points they have.
-	// The line looks the same at any spacing; closer points only stop it nearer the edge of the
-	// loaded map, and three tiles apart is close enough.
+	// Longest gap between the points the route is drawn through, in tiles: straights are split this often so the line
+	// stops near the edge of the loaded map; bends keep their points.
 	private static final double SAMPLE_SPACING = 3.0;
 
-	// Spacing of the points a route's curve is laid down as, in tiles. The line is drawn as straight
-	// pieces between them, and at a quarter of a tile the corners between pieces don't show, even on
-	// tight bends seen close up.
+	// Spacing of the points a route's curve is laid down as, in tiles, close enough that the corners between pieces
+	// don't show even on tight bends close up.
 	private static final double SMOOTH_SPACING = 0.25;
 
 	// A curve point this close to the line through the points either side of it is dropped, in tiles.
 	// It makes no visible difference, and takes most of the points out of long straight stretches.
 	private static final double CURVE_TOLERANCE = 0.01;
 
-	// Before light smoothing, long straight stretches are split into points this far apart, in tiles,
-	// so the curve only rounds off corners instead of swinging wide between them. On Rainbow Reef it
-	// stays within a quarter of a tile of where the recorded shoal actually swam.
+	// Before light smoothing, long straights are split into points this far apart, in tiles, so the curve only rounds
+	// off corners rather than swinging wide between them.
 	private static final double CATMULL_ROM_SPACING = 6.0;
 
-	// Heavy smoothing respaces the points this far apart all the way round, bends included, so it
-	// rounds the bends off too. At 5 tiles it sits about a fifth of a tile off the recorded laps on
-	// average and never more than a tile and a quarter, comfortably inside the 3 tiles a shoal may
-	// stray from its route before it stops being matched to it.
+	// Heavy smoothing respaces the points this far apart all round, bends included, rounding them off too; at 5 tiles
+	// it stays well inside the 3 tiles a shoal may stray before it stops matching its route.
 	private static final double B_SPLINE_SPACING = 5.0;
 
-	// Heavy smoothing doesn't pass through the recorded points, which left stops on tight bends most of
-	// a tile off the line. The curve is pulled onto each stop, the pull easing off to nothing this far
-	// either way round the route, in tiles, so the line bends gently onto the stop rather than kinking.
-	// Never further than halfway to the next stop, so no stretch is pulled towards two.
+	// How far either way round the route, in tiles, the heavy curve's pull onto each stop eases off to nothing, so it
+	// bends onto the stop rather than kinking; never past halfway to the next stop.
 	private static final double PIN_TILES = 10;
 
 	// A shoal this close to a stop counts as sitting at it, so its next stop is the one after.
 	static final double AT_STOP_TILES = 3.0;
 
-	// How far either way along the route a shoal is looked for, once it is known roughly where it was,
-	// in tiles. A shoal covers well under a tile a tick, so this is far more than it can have moved,
-	// and far less than the way round to the other side of a crossing.
+	// How far either way along the route a shoal is looked for once it's known roughly where it was, in tiles: far more
+	// than it can move in a tick, far less than the way round to a crossing's other side.
 	private static final double FOLLOW_WINDOW = 15;
 
 	// A position further than this from the stretch it was expected on has not been followed properly,
@@ -72,9 +61,8 @@ final class ShoalRoute
 	private final String species;
 	private final String name;
 	private final int stopTicks;
-	// The lap's timing, or null legs where it isn't known: how many ticks a shoal sits still at a stop, the share of
-	// each leg swum by each tick of it, the tick of the lap each leg starts on (the last tick still at its stop,
-	// counting from stop 0's) and how many ticks a whole lap takes.
+	// The lap's timing, or null legs where it isn't known: ticks a shoal sits still at a stop, the share of each leg
+	// swum each tick, the tick each leg starts on (counting from stop 0's), and the lap's length in ticks.
 	private final int stillTicks;
 	private final double[][] legs;
 	private final int[] legStart;
@@ -205,9 +193,8 @@ final class ShoalRoute
 		}
 		sampleDetail = detail(sampleX, sampleY);
 
-		// The box each run of points fits inside, worked out once here. A route is a thousand tiles
-		// round and only a stretch of it is ever on screen, so most of these can be dismissed with four
-		// comparisons rather than by asking the same of every point inside them.
+		// The box each run of points fits inside, worked out once, so runs nowhere near the screen are dismissed with
+		// four comparisons.
 		int blocks = (sampleX.length + BLOCK - 1) / BLOCK;
 		blockMinX = new double[blocks];
 		blockMinY = new double[blocks];
@@ -341,9 +328,8 @@ final class ShoalRoute
 	}
 
 	/**
-	 * Turns a closed loop of points into a smoother curve that doesn't have to pass through them, as a
-	 * denser loop of points, then bends it onto each stop so every stop sits on the line. It irons out
-	 * small wobbles and rounds bends off more; straight stretches stay straight.
+	 * Turns a closed loop of points into a smoother curve that needn't pass through them, as a denser loop, then bends
+	 * it onto each stop. It irons out wobbles and rounds bends; straights stay straight.
 	 */
 	static double[][] bSpline(double[][] points, double[][] stops)
 	{
@@ -395,10 +381,8 @@ final class ShoalRoute
 	}
 
 	/**
-	 * Moves a curve so it runs through every stop. Each stop is matched to the stretch of curve over
-	 * where it sits along the recorded path, not simply the nearest point, since a route can come back
-	 * past one of its stops on the way somewhere else. That stretch is moved across by however far the
-	 * stop is off it, the move easing off to nothing either way.
+	 * Moves a curve so it runs through every stop, each matched to the stretch of curve where it sits along the
+	 * recorded path (a route can pass back by a stop), the move easing off either way.
 	 */
 	private static void pin(double[][] curve, double[] along, double total, double[][] path, double[][] stops)
 	{
@@ -508,9 +492,8 @@ final class ShoalRoute
 	}
 
 	/**
-	 * Drops the points of a curve that aren't needed to draw it: those within CURVE_TOLERANCE of the
-	 * line through the points either side of them, once the ones between have gone. Long straight
-	 * stretches come out as a couple of points; bends keep theirs.
+	 * Drops the points of a curve within CURVE_TOLERANCE of the line through their neighbours, so straights come out as
+	 * a couple of points and bends keep theirs.
 	 */
 	private static double[][] trim(double[][] curve)
 	{
@@ -623,9 +606,8 @@ final class ShoalRoute
 
 	private static double knot(double[] a, double[] b)
 	{
-		// Centripetal Catmull-Rom, which curves through every point without overshooting or looping at sharp turns:
-		// the square root of the distance, as two square roots of its square, cheaper than a power. Coincident points
-		// would divide by zero, so keep every knot interval above zero.
+		// Centripetal Catmull-Rom, which curves through every point without overshooting at sharp turns; the distance's
+		// square root is taken as two square roots of its square, and knot gaps are kept above zero.
 		double dx = b[0] - a[0];
 		double dy = b[1] - a[1];
 		return Math.max(1e-6, Math.sqrt(Math.sqrt(dx * dx + dy * dy)));
@@ -791,9 +773,8 @@ final class ShoalRoute
 	}
 
 	/**
-	 * How far a position is from the box the whole route fits inside, or 0 while it is inside it. The
-	 * route is somewhere in that box, so this is never further than the route itself: a route whose box
-	 * is already further off than the nearest found so far cannot win, and need not be looked through.
+	 * How far a position is from the route's box, or 0 inside it: never further than the route itself, so a route whose
+	 * box is further than the best so far can be skipped.
 	 */
 	double boxDistance(double x, double y)
 	{
@@ -820,10 +801,8 @@ final class ShoalRoute
 	}
 
 	/**
-	 * Where a position sits on the route. Given where it was last found, the search is kept to that
-	 * stretch of the route: a route that crosses itself has two places equally close to the crossing,
-	 * and picking whichever is a hair nearer makes whatever is following it jump between the two. A
-	 * negative distance, or a position that has strayed from that stretch, searches the whole route.
+	 * Where a position sits on the route. Given where it was last found, only that stretch is searched, so following
+	 * doesn't jump across a crossing; a negative distance, or a position off that stretch, searches it all.
 	 */
 	Projection project(double x, double y, double near)
 	{
@@ -854,9 +833,8 @@ final class ShoalRoute
 
 			if (near >= 0)
 			{
-				// Any piece reaching into the window, not only one starting inside it: a long straight starts
-				// well behind a shoal partway along it, and leaving it out snapped the shoal ahead to the
-				// corner at its far end. Measured from the back of the window, round the loop.
+				// Any piece reaching into the window, not only one starting inside it, so a shoal part way along a long
+				// straight isn't snapped ahead to its end; measured from the back of the window, round the loop.
 				double reach = forward(near - window, pathDistance[i]);
 				if (reach > 2 * window && reach + segmentLength < length)
 				{
@@ -952,9 +930,8 @@ final class ShoalRoute
 	}
 
 	/**
-	 * Douglas-Peucker over the points as one open line: each point split off gets how far it lies from the piece it
-	 * splits, capped by the point that split its stretch, so the points at or above any tolerance are exactly those
-	 * Douglas-Peucker keeps at it.
+	 * Douglas-Peucker over the points as one open line: each split point gets its distance from the piece it splits,
+	 * capped by its parent's, so the points at or above any tolerance are those Douglas-Peucker keeps.
 	 */
 	private static double[] detail(double[] xs, double[] ys)
 	{
@@ -1019,11 +996,8 @@ final class ShoalRoute
 	}
 
 	/**
-	 * Marks each drawn point within the given distance of any of this route's threats, in tiles, then marks any
-	 * gap no longer than gapTiles between two marked stretches, so a brief dip out of range doesn't break a
-	 * dangerous stretch in two, then clears every point inside a hand-marked safe circle, whatever threats are
-	 * near it. Also works out which threats actually come close enough to threaten the route this way, and
-	 * where to place a skull and crossbones for each: the average of only its spawn points that do.
+	 * Marks each drawn point within a distance of this route's threats, joins marked stretches up to gapTiles apart and
+	 * clears points in hand-marked safe circles; also finds which threats come close, and each one's skull spot.
 	 */
 	void markDanger(double tiles, double gapTiles)
 	{

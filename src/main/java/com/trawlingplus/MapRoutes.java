@@ -1,5 +1,6 @@
 package com.trawlingplus;
 
+import java.awt.AlphaComposite;
 import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Graphics2D;
@@ -8,6 +9,7 @@ import java.awt.RenderingHints;
 import java.awt.geom.Ellipse2D;
 import java.awt.geom.Line2D;
 import java.awt.geom.Path2D;
+import java.awt.image.BufferedImage;
 import net.runelite.api.Client;
 import net.runelite.api.Point;
 
@@ -43,6 +45,10 @@ final class MapRoutes
 	// The thin dark edge round a shoal's mark. The arrow's goes under its colour, a little wider, so its thin barbs
 	// keep their colour.
 	private static final Color MARK_EDGE = Color.BLACK;
+	// Room around a mark's size for its edge, in pixels, and the picture a mark crossing a masked map's edge is drawn
+	// into first, so the hidden part can be taken off it. Client thread only.
+	private static final int MARK_MARGIN = 6;
+	private static BufferedImage markPicture;
 	private static final BasicStroke DOT_EDGE = new BasicStroke(1);
 	private static final BasicStroke MARK_ARROW_EDGE =
 		new BasicStroke(1.5f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND);
@@ -88,6 +94,12 @@ final class MapRoutes
 		private double middleX;
 		private double middleY;
 		private double radius;
+		// For a map shaped by the game's mask instead: whether each of its pixels shows the map, and where it sits.
+		private boolean[] shows;
+		private int showsX;
+		private int showsY;
+		private int showsWidth;
+		private int showsHeight;
 
 		void place(double tileX, double tileY, double screenX, double screenY, double eastX, double eastY,
 			double northX, double northY)
@@ -106,6 +118,48 @@ final class MapRoutes
 			middleX = box.x + box.width / 2.0;
 			middleY = box.y + box.height / 2.0;
 			radius = round ? Math.min(box.width, box.height) / 2.0 : 0;
+			shows = null;
+		}
+
+		/**
+		 * Shapes the map by a mask, centred in its box, in place of its round edge.
+		 */
+		void shape(boolean[] shows, int width, int height)
+		{
+			this.shows = shows;
+			showsWidth = width;
+			showsHeight = height;
+			showsX = box.x + (box.width - width) / 2;
+			showsY = box.y + (box.height - height) / 2;
+			radius = 0;
+		}
+
+		private boolean showsAt(double x, double y)
+		{
+			int pixelX = (int) Math.floor(x) - showsX;
+			int pixelY = (int) Math.floor(y) - showsY;
+			return pixelX >= 0 && pixelY >= 0 && pixelX < showsWidth && pixelY < showsHeight
+				&& shows[pixelY * showsWidth + pixelX];
+		}
+
+		/**
+		 * How far from the map's middle its edge is, going one way (a unit step across and down).
+		 */
+		double edgeFromMiddle(double wayX, double wayY)
+		{
+			if (shows == null)
+			{
+				return radius;
+			}
+			int most = Math.max(showsWidth, showsHeight);
+			for (int out = 0; out < most; out++)
+			{
+				if (!showsAt(middleX + wayX * out, middleY + wayY * out))
+				{
+					return Math.max(0, out - 0.5);
+				}
+			}
+			return most;
 		}
 
 		double x(double tileX, double tileY)
@@ -125,6 +179,10 @@ final class MapRoutes
 
 		boolean contains(double x, double y)
 		{
+			if (shows != null)
+			{
+				return showsAt(x, y);
+			}
 			if (radius > 0)
 			{
 				double offX = x - middleX;
@@ -283,7 +341,7 @@ final class MapRoutes
 
 	/**
 	 * One straight piece, running a fraction of a pixel past each end so pieces meeting leave no seam, and on a round
-	 * map (null for none) only the part inside it. Nothing for a piece whose ends landed on the same spot.
+	 * or masked map (null for none) only the parts inside it. Nothing for a piece whose ends landed on the same spot.
 	 */
 	static void drawPiece(Graphics2D graphics, MapView onto, Line2D.Double piece, double fromX, double fromY,
 		double toX, double toY)
@@ -318,6 +376,57 @@ final class MapRoutes
 				return;
 			}
 		}
+		if (onto != null && onto.shows != null)
+		{
+			drawShown(graphics, onto, piece, fromX, fromY, alongX, alongY, Math.sqrt(lengthSquared), start, end);
+			return;
+		}
+		drawShare(graphics, piece, fromX, fromY, alongX, alongY, start, end);
+	}
+
+	/**
+	 * A piece on a masked map, walked a pixel at a time, each stretch that shows drawn to the pixel edge it meets.
+	 */
+	private static void drawShown(Graphics2D graphics, MapView onto, Line2D.Double piece, double fromX, double fromY,
+		double alongX, double alongY, double length, double start, double end)
+	{
+		double left = Math.min(fromX, fromX + alongX);
+		double top = Math.min(fromY, fromY + alongY);
+		if (left + Math.abs(alongX) < onto.showsX || top + Math.abs(alongY) < onto.showsY
+			|| left > onto.showsX + onto.showsWidth || top > onto.showsY + onto.showsHeight)
+		{
+			return;
+		}
+		int steps = Math.max(1, (int) Math.ceil(length));
+		double half = 0.5 / steps;
+		double runFrom = Double.NaN;
+		double runTo = 0;
+		for (int step = 0; step <= steps; step++)
+		{
+			double share = (double) step / steps;
+			if (onto.showsAt(fromX + alongX * share, fromY + alongY * share))
+			{
+				if (Double.isNaN(runFrom))
+				{
+					runFrom = step == 0 ? start : share - half;
+				}
+				runTo = step == steps ? end : share + half;
+			}
+			else if (!Double.isNaN(runFrom))
+			{
+				drawShare(graphics, piece, fromX, fromY, alongX, alongY, runFrom, runTo);
+				runFrom = Double.NaN;
+			}
+		}
+		if (!Double.isNaN(runFrom))
+		{
+			drawShare(graphics, piece, fromX, fromY, alongX, alongY, runFrom, runTo);
+		}
+	}
+
+	private static void drawShare(Graphics2D graphics, Line2D.Double piece, double fromX, double fromY,
+		double alongX, double alongY, double start, double end)
+	{
 		piece.setLine(fromX + alongX * start, fromY + alongY * start, fromX + alongX * end, fromY + alongY * end);
 		graphics.draw(piece);
 	}
@@ -373,7 +482,10 @@ final class MapRoutes
 				double towardX = tipX - onto.x(behind[0], behind[1]);
 				double towardY = tipY - onto.y(behind[0], behind[1]);
 				double step = Math.sqrt(towardX * towardX + towardY * towardY);
-				if (!onto.contains(tipX, tipY) || step < 1e-6)
+				// On a masked map an arrow is cut at the edge like the line, so it slides under the frame rather than
+				// popping in and out whole.
+				boolean masked = onto.shows != null;
+				if (!masked && !onto.contains(tipX, tipY) || step < 1e-6)
 				{
 					continue;
 				}
@@ -385,6 +497,12 @@ final class MapRoutes
 				double alongY = towardY / step;
 				double backX = tipX - alongX * size;
 				double backY = tipY - alongY * size;
+				if (masked)
+				{
+					drawPiece(graphics, onto, barb, backX - alongY * aside, backY + alongX * aside, tipX, tipY);
+					drawPiece(graphics, onto, barb, backX + alongY * aside, backY - alongX * aside, tipX, tipY);
+					continue;
+				}
 				// Whole arrows only, so none pokes past a round map's edge.
 				if (!onto.contains(backX, backY))
 				{
@@ -407,15 +525,79 @@ final class MapRoutes
 		MapView onto, int dot, int arrow)
 	{
 		double[] at = alongRoute(shoal, client);
-		Point placed = at == null ? null : onto.at(at[0], at[1]);
-		if (placed == null)
+		if (at == null)
+		{
+			return;
+		}
+		boolean heading = at.length > 2 && shoal.stopBarNow(client.getTickCount()) < 0;
+		double towardX = heading ? onto.stepX(at[2], at[3]) : 0;
+		double towardY = heading ? onto.stepY(at[2], at[3]) : 0;
+		Color colour = config.shoalHeadingArrowColour();
+		if (onto.shows != null)
+		{
+			maskedMark(graphics, onto, (int) Math.round(onto.x(at[0], at[1])), (int) Math.round(onto.y(at[0], at[1])),
+				colour, dot, arrow, towardX, towardY);
+			return;
+		}
+		Point placed = onto.at(at[0], at[1]);
+		if (placed != null)
+		{
+			mark(graphics, placed.getX(), placed.getY(), colour, dot, arrow, towardX, towardY);
+		}
+	}
+
+	/**
+	 * A mark on a masked map, cut at the edge like the line, so it slides under the frame rather than popping in and
+	 * out whole.
+	 */
+	private static void maskedMark(Graphics2D graphics, MapView onto, int x, int y, Color colour, int dot, int arrow,
+		double towardX, double towardY)
+	{
+		int size = Math.max(dot, arrow) + MARK_MARGIN;
+		int left = x - size / 2;
+		int top = y - size / 2;
+		int shown = 0;
+		for (int down = 0; down < size; down++)
+		{
+			for (int across = 0; across < size; across++)
+			{
+				if (onto.showsAt(left + across, top + down))
+				{
+					shown++;
+				}
+			}
+		}
+		if (shown == size * size)
+		{
+			mark(graphics, x, y, colour, dot, arrow, towardX, towardY);
+			return;
+		}
+		if (shown == 0)
 		{
 			return;
 		}
 
-		boolean heading = at.length > 2 && shoal.stopBarNow(client.getTickCount()) < 0;
-		mark(graphics, placed.getX(), placed.getY(), config.shoalHeadingArrowColour(), dot, arrow,
-			heading ? onto.stepX(at[2], at[3]) : 0, heading ? onto.stepY(at[2], at[3]) : 0);
+		if (markPicture == null || markPicture.getWidth() < size)
+		{
+			markPicture = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
+		}
+		Graphics2D drawing = markPicture.createGraphics();
+		drawing.setComposite(AlphaComposite.Clear);
+		drawing.fillRect(0, 0, markPicture.getWidth(), markPicture.getHeight());
+		drawing.setComposite(AlphaComposite.SrcOver);
+		mark(drawing, x - left, y - top, colour, dot, arrow, towardX, towardY);
+		drawing.dispose();
+		for (int down = 0; down < size; down++)
+		{
+			for (int across = 0; across < size; across++)
+			{
+				if (!onto.showsAt(left + across, top + down))
+				{
+					markPicture.setRGB(across, down, 0);
+				}
+			}
+		}
+		graphics.drawImage(markPicture, left, top, left + size, top + size, 0, 0, size, size, null);
 	}
 
 	/**

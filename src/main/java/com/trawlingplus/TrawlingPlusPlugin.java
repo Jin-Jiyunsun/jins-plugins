@@ -1387,6 +1387,11 @@ public class TrawlingPlusPlugin extends Plugin
 	@Subscribe
 	public void onConfigChanged(ConfigChanged event)
 	{
+		if (SKIN_GROUPS.contains(event.getGroup())
+			|| "runelite".equals(event.getGroup()) && SKIN_PLUGINS.contains(event.getKey()))
+		{
+			clientThread.invokeLater(minimapOverlay::packMayChange);
+		}
 		if (TrawlingPlusConfig.GROUP.equals(event.getGroup()) && TrawlingPlusConfig.TIMER_BAR_KEY.equals(event.getKey()))
 		{
 			hideStopBar = config.showTimerBar();
@@ -4310,6 +4315,11 @@ public class TrawlingPlusPlugin extends Plugin
 		}
 		return nearest;
 	}
+
+	// The settings groups of the plugins that swap the game's pictures (Resource Packs, RuneLite's Interface Styles),
+	// and their on/off keys in RuneLite's own group.
+	private static final Set<String> SKIN_GROUPS = Set.of("resourcepacks", "interfaceStyles");
+	private static final Set<String> SKIN_PLUGINS = Set.of("resourcepacksplugin", "interfacestylesplugin");
 
 	// The world map orb by the minimap, in each of the game's layouts of it.
 	private static final Set<Integer> WORLD_MAP_ORBS = Set.of(

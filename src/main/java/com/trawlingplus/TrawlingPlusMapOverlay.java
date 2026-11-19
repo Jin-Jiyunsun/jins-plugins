@@ -214,8 +214,9 @@ class TrawlingPlusMapOverlay extends Overlay
 	}
 
 	/**
-	 * Every shoal as one mark, the same whether it's in view or not: a shoal in view where the game has it, and the
-	 * last one trawled, while out of view, where it likely is. Only for that one, out of view, is anything worked out.
+	 * Every shoal as one mark on its route's line, the same whether it's in view or not: a shoal in view where the
+	 * game has it along its route, and the last one trawled, while out of view, where it likely is. Only for that one,
+	 * out of view, is anything worked out.
 	 */
 	private void drawShoals(Graphics2D graphics, MapRoutes.MapView onto, double perTileX, double perTileY)
 	{
@@ -234,19 +235,18 @@ class TrawlingPlusMapOverlay extends Overlay
 				continue;
 			}
 			trawledInView |= trawled != null && shoal.getRoute() == trawled;
-			double[] at = shoal.position(client);
+			double[] at = MapRoutes.alongRoute(shoal, client);
 			Point placed = at == null ? null : onto.at(at[0], at[1]);
 			if (placed == null)
 			{
 				continue;
 			}
 
-			// The stop bar over it, read off the game; or else, as for a shoal out of view, the way its route runs where
-			// it is, followed along the route from where it was.
+			// The stop bar over it, read off the game; or else, as for a shoal out of view, the way its route runs
+			// there.
 			double left = shoal.stopBarNow(tick);
-			ShoalRoute route = shoal.getRoute();
-			double[] way = left < 0 && route != null ? route.pointAt(shoal.followRoute(at)) : null;
-			drawMark(graphics, placed, colour, left, way == null ? 0 : way[2] * perTileX, way == null ? 0 : way[3] * perTileY);
+			boolean heading = left < 0 && at.length > 2;
+			drawMark(graphics, placed, colour, left, heading ? at[2] * perTileX : 0, heading ? at[3] * perTileY : 0);
 		}
 
 		// The last trawled shoal, while out of view, where it likely is.

@@ -390,7 +390,7 @@ final class MapRoutes
 	static void shoal(Graphics2D graphics, TrawlingPlusConfig config, Client client, Shoal shoal,
 		MapView onto, int size)
 	{
-		double[] swimming = shoal.position(client);
+		double[] swimming = alongRoute(shoal, client);
 		Point at = swimming == null ? null : onto.at(swimming[0], swimming[1]);
 		if (at == null)
 		{
@@ -403,6 +403,18 @@ final class MapRoutes
 		graphics.setColor(Color.BLACK);
 		graphics.setStroke(DOT_EDGE);
 		graphics.drawOval(at.getX() - size, at.getY() - size, size * 2, size * 2);
+	}
+
+	/**
+	 * Where a shoal is along its route, as the route's point there with the way it runs (x, y, and a step along it),
+	 * so its mark sits on the line however the route is smoothed: smoothing rounds off bends, where the shoal itself
+	 * swims wider. Where the game has it if it has no route, as x and y only; null if it can't be placed.
+	 */
+	static double[] alongRoute(Shoal shoal, Client client)
+	{
+		double[] position = shoal.position(client);
+		ShoalRoute route = shoal.getRoute();
+		return position == null || route == null ? position : route.pointAt(shoal.followRoute(position));
 	}
 
 	/**

@@ -16,7 +16,8 @@ import net.runelite.client.ui.overlay.OverlayManager;
 
 /**
  * Dev-only tools for Trawling Plus, loaded by the dev client and never part of the released plugin: times its main
- * overlay through the package-private drawTimer hook, and fakes Curiosities finds.
+ * overlay and the maps' route lines through the package-private drawTimer and mapTimer hooks, and fakes Curiosities
+ * finds.
  */
 @PluginDescriptor(
 	name = "Trawling Plus Debug",
@@ -58,6 +59,7 @@ public class TrawlingPlusDebugPlugin extends Plugin
 	protected void startUp()
 	{
 		TrawlingPlusOverlay.drawTimer = timingOverlay;
+		MapRoutes.mapTimer = timingOverlay;
 		overlayManager.add(timingOverlay);
 	}
 
@@ -65,6 +67,7 @@ public class TrawlingPlusDebugPlugin extends Plugin
 	protected void shutDown()
 	{
 		TrawlingPlusOverlay.drawTimer = null;
+		MapRoutes.mapTimer = null;
 		overlayManager.remove(timingOverlay);
 	}
 

@@ -195,6 +195,51 @@ public class ShoalRouteTest
 		}
 	}
 
+	@Test
+	public void simplifiedRoutesStayWithinTheTolerance() throws IOException
+	{
+		for (ShoalRoute route : ShoalRoute.build(ShoalRoute.read(new Gson()), TrawlingPlusConfig.Smoothing.LIGHT))
+		{
+			int count = route.sampleCount();
+			for (double tolerance : new double[]{0.05, 0.5, 2, 20})
+			{
+				assertTrue(route.sampleKept(0, tolerance));
+				assertTrue(route.sampleKept(count - 1, tolerance));
+				int kept = 0;
+				for (int last = 0, next = 1; next < count; next++)
+				{
+					if (!route.sampleKept(next, tolerance))
+					{
+						continue;
+					}
+					kept++;
+					// Every point left out between two kept ones lies within the tolerance of the piece joining them.
+					for (int between = last + 1; between < next; between++)
+					{
+						double away = awayFromPiece(route, between, last, next);
+						assertTrue(route.getName() + " at " + tolerance + ": point " + between + " is " + away + " off",
+							away <= tolerance + 1e-9);
+					}
+					last = next;
+				}
+				// Simplifying leaves most of the points out at a tile or more.
+				assertTrue(route.getName(), tolerance < 1 || kept < count / 4);
+			}
+		}
+	}
+
+	private static double awayFromPiece(ShoalRoute route, int point, int from, int to)
+	{
+		double alongX = route.sampleX(to) - route.sampleX(from);
+		double alongY = route.sampleY(to) - route.sampleY(from);
+		double offX = route.sampleX(point) - route.sampleX(from);
+		double offY = route.sampleY(point) - route.sampleY(from);
+		double lengthSquared = alongX * alongX + alongY * alongY;
+		double share = lengthSquared == 0 ? 0
+			: Math.max(0, Math.min(1, (offX * alongX + offY * alongY) / lengthSquared));
+		return Math.hypot(offX - share * alongX, offY - share * alongY);
+	}
+
 	private static void assertPoint(double[] point, double x, double y, double dx, double dy)
 	{
 		assertEquals(x, point[0], 1e-9);

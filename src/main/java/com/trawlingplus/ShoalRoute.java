@@ -88,6 +88,9 @@ final class ShoalRoute
 	private final double[] sampleX;
 	private final double[] sampleY;
 	private final double[] sampleDistance;
+	// For each drawn point, the largest tolerance in tiles at which simplifying the route still keeps it, so a map can
+	// leave out the points that would barely bend the line at its zoom.
+	private final double[] sampleDetail;
 	private final double[] blockMinX;
 	private final double[] blockMinY;
 	private final double[] blockMaxX;
@@ -200,6 +203,7 @@ final class ShoalRoute
 			sampleY[i] = samples.get(i)[1];
 			sampleDistance[i] = samples.get(i)[2];
 		}
+		sampleDetail = detail(sampleX, sampleY);
 
 		// The box each run of points fits inside, worked out once here. A route is a thousand tiles
 		// round and only a stretch of it is ever on screen, so most of these can be dismissed with four
@@ -939,6 +943,82 @@ final class ShoalRoute
 	}
 
 	/**
+	 * Whether this drawn point is kept when the route is simplified to within a tolerance in tiles. The first and last
+	 * points always are.
+	 */
+	boolean sampleKept(int sample, double tolerance)
+	{
+		return sampleDetail[sample] >= tolerance;
+	}
+
+	/**
+	 * Douglas-Peucker over the points as one open line: each point split off gets how far it lies from the piece it
+	 * splits, capped by the point that split its stretch, so the points at or above any tolerance are exactly those
+	 * Douglas-Peucker keeps at it.
+	 */
+	private static double[] detail(double[] xs, double[] ys)
+	{
+		int count = xs.length;
+		double[] detail = new double[count];
+		if (count == 0)
+		{
+			return detail;
+		}
+		detail[0] = Double.POSITIVE_INFINITY;
+		detail[count - 1] = Double.POSITIVE_INFINITY;
+		// Stretches still to split: their first and last points, and the cap from the point that made them.
+		int[] firsts = new int[count];
+		int[] lasts = new int[count];
+		double[] caps = new double[count];
+		int stretches = 1;
+		firsts[0] = 0;
+		lasts[0] = count - 1;
+		caps[0] = Double.POSITIVE_INFINITY;
+		while (stretches > 0)
+		{
+			stretches--;
+			int first = firsts[stretches];
+			int last = lasts[stretches];
+			double cap = caps[stretches];
+			if (last - first < 2)
+			{
+				continue;
+			}
+
+			double alongX = xs[last] - xs[first];
+			double alongY = ys[last] - ys[first];
+			double lengthSquared = alongX * alongX + alongY * alongY;
+			int farthest = first + 1;
+			double farthestSquared = -1;
+			for (int i = first + 1; i < last; i++)
+			{
+				double offX = xs[i] - xs[first];
+				double offY = ys[i] - ys[first];
+				double share = lengthSquared == 0 ? 0
+					: Math.max(0, Math.min(1, (offX * alongX + offY * alongY) / lengthSquared));
+				double awayX = offX - share * alongX;
+				double awayY = offY - share * alongY;
+				double awaySquared = awayX * awayX + awayY * awayY;
+				if (awaySquared > farthestSquared)
+				{
+					farthestSquared = awaySquared;
+					farthest = i;
+				}
+			}
+
+			double split = Math.min(Math.sqrt(farthestSquared), cap);
+			detail[farthest] = split;
+			firsts[stretches] = first;
+			lasts[stretches] = farthest;
+			caps[stretches++] = split;
+			firsts[stretches] = farthest;
+			lasts[stretches] = last;
+			caps[stretches++] = split;
+		}
+		return detail;
+	}
+
+	/**
 	 * Marks each drawn point within the given distance of any of this route's threats, in tiles, then marks any
 	 * gap no longer than gapTiles between two marked stretches, so a brief dip out of range doesn't break a
 	 * dangerous stretch in two, then clears every point inside a hand-marked safe circle, whatever threats are
@@ -1078,22 +1158,13 @@ final class ShoalRoute
 	 */
 	boolean dangerAtDistance(double distance)
 	{
-		return dangerAtDistance(distance, 1);
-	}
-
-	/**
-	 * The same, for a line drawn through only every so many points, where a piece starts at a multiple of stride.
-	 */
-	boolean dangerAtDistance(double distance, int stride)
-	{
 		int count = sampleX.length;
 		if (count == 0)
 		{
 			return false;
 		}
 		int index = Arrays.binarySearch(sampleDistance, forward(0, distance));
-		int start = index >= 0 ? index : (-index - 2 + count) % count;
-		return dangerAt(start - start % stride);
+		return dangerAt(index >= 0 ? index : (-index - 2 + count) % count);
 	}
 
 	/**

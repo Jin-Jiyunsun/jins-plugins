@@ -34,18 +34,19 @@ class TrawlingPlusMinimapOverlay extends Overlay
 	private static final int THICKNESS = 1;
 	private static final int SHOAL = 3;
 
-	// What the minimap draws a tile as, if it cannot be measured. It usually can.
-	private static final double PIXELS_PER_TILE = 4;
-
-	// How far apart the two points used to measure the minimap's scale are, in tiles, and how much
-	// slack to leave around what it can show: the minimap is centred on the player rather than on the
-	// boat, and a boat is ten tiles long.
-	private static final int SCALE_TILES = 16;
+	// How far either side of the boat the two points the minimap's placing is measured from are, in tiles: far enough
+	// that rounding them to whole pixels barely matters. And how far from the player the minimap is asked to place a
+	// point, in local units, which reaches well past them.
+	private static final int SCALE_TILES = 64;
+	private static final int REACH = 128 * Perspective.LOCAL_TILE_SIZE;
+	// How much slack to leave around what the minimap can show, in tiles: it's centred on the player rather than on
+	// the boat, and a boat is ten tiles long.
 	private static final double EDGE_SLACK = 8;
 
 	private final Client client;
 	private final TrawlingPlusPlugin plugin;
 	private final TrawlingPlusConfig config;
+	private final MapRoutes.MapView mapView = new MapRoutes.MapView();
 
 	@Inject
 	TrawlingPlusMinimapOverlay(Client client, TrawlingPlusPlugin plugin, TrawlingPlusConfig config)
@@ -78,27 +79,14 @@ class TrawlingPlusMinimapOverlay extends Overlay
 			return null;
 		}
 
-		// The map is round inside a square widget, so a line has to be kept out of the corners, which are
-		// well outside the map. Each point is dropped by hand rather than by clipping the drawing to a
-		// circle: a clip that is not a rectangle takes Java2D off its quick path, and it is charged for
-		// on everything drawn afterwards. The frame laps over the edge of the circle in places and a line
-		// can still meet it there, which is better than the alternatives: drawing under the interface
-		// hides the line behind the map, and pulling the circle in far enough to clear the frame leaves a
-		// ring of map nothing is ever drawn on.
+		// The map is round inside a square widget, so a line is cut off where it meets the circle, by hand rather
+		// than by clipping the drawing to a circle: a clip that is not a rectangle takes Java2D off its quick path,
+		// and it is charged for on everything drawn afterwards. The frame laps over the edge of the circle in places
+		// and a line can still meet it there, which is better than the alternatives: drawing under the interface
+		// hides the line behind the map, and pulling the circle in far enough to clear the frame leaves a ring of
+		// map nothing is ever drawn on.
 		Rectangle bounds = minimap.getBounds();
-		double middleX = bounds.x + bounds.width / 2.0;
-		double middleY = bounds.y + bounds.height / 2.0;
 		double radius = Math.min(bounds.width, bounds.height) / 2.0;
-		// Squared, so each point is checked without a square root.
-		double radiusSquared = radius * radius;
-		MapRoutes.Projection onto = (x, y) ->
-		{
-			Point at = onMinimap(view, x, y);
-			return at == null || squared(at.getX() - middleX, at.getY() - middleY) > radiusSquared ? null : at;
-		};
-
-		Shape clip = graphics.getClip();
-		graphics.clip(bounds);
 
 		// The route the boat is nearest, the same one the water shows, rather than every route that
 		// reaches the loaded map. It is drawn whether or not its shoal is in view: a shoal swims out of
@@ -107,17 +95,30 @@ class TrawlingPlusMinimapOverlay extends Overlay
 		ShoalRoute route = plugin.getNearestRoute();
 		double[] boat = plugin.getBoatPlace();
 
-		// How much of a tile the minimap draws, measured off two points a known distance apart beside
-		// the boat. They are measured there rather than anywhere else because the minimap will not place
-		// a point much more than fifty tiles from the player. Turning with the compass moves the pair
-		// but does not change how far apart they end up.
-		double acrossX = boat == null ? view.getBaseX() + view.getSizeX() / 2.0 : boat[0];
-		double acrossY = boat == null ? view.getBaseY() + view.getSizeY() / 2.0 : boat[1];
-		Point middle = onMinimap(view, acrossX, acrossY);
-		Point along = onMinimap(view, acrossX + SCALE_TILES, acrossY);
-		double measured = middle == null || along == null ? 0
-			: Math.sqrt(squared(along.getX() - middle.getX(), along.getY() - middle.getY())) / SCALE_TILES;
-		double pixelsPerTile = measured > 0 ? measured : PIXELS_PER_TILE;
+		// Where tiles land on the minimap, from two points the game places either side of the boat. The minimap turns
+		// the world and scales it the same both ways, so the step one tile north makes is the step east turned a
+		// quarter, and every other point is placed from these with a few sums.
+		double middleX = boat == null ? view.getBaseX() + view.getSizeX() / 2.0 : boat[0];
+		double middleY = boat == null ? view.getBaseY() + view.getSizeY() / 2.0 : boat[1];
+		Point east = onMinimap(view, middleX + SCALE_TILES, middleY);
+		Point west = onMinimap(view, middleX - SCALE_TILES, middleY);
+		if (east == null || west == null)
+		{
+			return null;
+		}
+		double eastX = (east.getX() - west.getX()) / (2.0 * SCALE_TILES);
+		double eastY = (east.getY() - west.getY()) / (2.0 * SCALE_TILES);
+		mapView.place(middleX, middleY, (east.getX() + west.getX()) / 2.0, (east.getY() + west.getY()) / 2.0,
+			eastX, eastY, eastY, -eastX);
+		mapView.edges(bounds, true);
+		double pixelsPerTile = mapView.pixelsPerTile();
+		if (pixelsPerTile <= 0)
+		{
+			return null;
+		}
+
+		Shape clip = graphics.getClip();
+		graphics.clip(bounds);
 
 		// Only the stretch of route the minimap could show, which is a good deal less than the map that
 		// is loaded: the minimap holds a couple of dozen tiles where the scene holds a hundred. Without
@@ -131,8 +132,14 @@ class TrawlingPlusMinimapOverlay extends Overlay
 
 		if (route != null && route.overlaps(fromX, fromY, toX, toY))
 		{
-			MapRoutes.route(graphics, config, route, onto, THICKNESS, pixelsPerTile, fromX, fromY, toX, toY,
+			MapRoutes.MapTimer timer = MapRoutes.mapTimer;
+			long started = timer == null ? 0 : System.nanoTime();
+			MapRoutes.route(graphics, config, route, mapView, THICKNESS, fromX, fromY, toX, toY,
 				config.showDanger().onMaps() ? MapRoutes.withAlphaOf(config.dangerColour(), config.routeColour()) : null);
+			if (timer != null)
+			{
+				timer.mapTook(MapRoutes.MapTimer.MINIMAP, System.nanoTime() - started);
+			}
 		}
 
 		// Only a shoal the client is drawing in the world may be marked on the map.
@@ -140,7 +147,7 @@ class TrawlingPlusMinimapOverlay extends Overlay
 		{
 			if (plugin.isShown(shoal) && shoal.rendered(client))
 			{
-				MapRoutes.shoal(graphics, config, client, shoal, onto, SHOAL);
+				MapRoutes.shoal(graphics, config, client, shoal, mapView, SHOAL);
 			}
 		}
 
@@ -149,16 +156,7 @@ class TrawlingPlusMinimapOverlay extends Overlay
 	}
 
 	/**
-	 * The square of a distance, for comparing distances without a square root.
-	 */
-	private static double squared(double x, double y)
-	{
-		return x * x + y * y;
-	}
-
-	/**
-	 * World tile coordinates as a point on the minimap, or null when they are off the loaded map or
-	 * too far out for the minimap to hold.
+	 * World tile coordinates as a point on the minimap, placed by the game, or null when it has no minimap up.
 	 */
 	private Point onMinimap(WorldView view, double x, double y)
 	{
@@ -166,13 +164,7 @@ class TrawlingPlusMinimapOverlay extends Overlay
 			+ Perspective.LOCAL_HALF_TILE_SIZE;
 		int localY = (int) Math.round((y - view.getBaseY()) * Perspective.LOCAL_TILE_SIZE)
 			+ Perspective.LOCAL_HALF_TILE_SIZE;
-		if (localX < 0 || localY < 0 || localX >= view.getSizeX() * Perspective.LOCAL_TILE_SIZE
-			|| localY >= view.getSizeY() * Perspective.LOCAL_TILE_SIZE)
-		{
-			return null;
-		}
-
-		return Perspective.localToMinimap(client, new LocalPoint(localX, localY, view));
+		return Perspective.localToMinimap(client, new LocalPoint(localX, localY, view), REACH);
 	}
 
 	/**

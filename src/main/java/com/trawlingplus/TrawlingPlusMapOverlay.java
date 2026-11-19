@@ -31,12 +31,12 @@ import net.runelite.client.ui.overlay.worldmap.WorldMapOverlay;
 class TrawlingPlusMapOverlay extends Overlay
 {
 	private static final int THICKNESS = 2;
-	private static final int ARROW = 8;
-	// A shoal's mark: its dot, this many pixels across; the arrow just ahead of it while it's moving, a little bigger
-	// than the route's direction arrows and this far clear of the dot; and the game's stop bar under it while it's at
-	// a stop, this wide.
+	private static final int ARROW = 6;
+	// A shoal's mark: its dot, this many pixels across; the arrow just ahead of it while it's moving, bigger than the
+	// route's direction arrows and this far clear of the dot; and the game's stop bar under it while it's at a stop,
+	// this wide.
 	private static final int SHOAL_DOT = 8;
-	private static final int HEADING_ARROW = ARROW + 3;
+	private static final int HEADING_ARROW = 11;
 	private static final int HEADING_GAP = 2;
 	private static final int BAR_WIDTH = 26;
 
@@ -48,9 +48,8 @@ class TrawlingPlusMapOverlay extends Overlay
 	// itself.
 	static final BufferedImage DANGER_ICON = dangerIcon();
 
-	// How far apart the two points used to measure the map's zoom are, in tiles. Far enough that
-	// rounding them to whole pixels barely matters.
-	private static final int SCALE_TILES = 64;
+	// The tile the map is asked to place, which every other point is placed from.
+	private static final int PLACED_TILE = 3200;
 
 	/**
 	 * A small skull and crossbones, drawn once. White with a dark edge, so it reads on sea and land alike.
@@ -90,6 +89,7 @@ class TrawlingPlusMapOverlay extends Overlay
 	private final TrawlingPlusConfig config;
 	private final WorldMapOverlay worldMapOverlay;
 	private final SpriteManager spriteManager;
+	private final MapRoutes.MapView mapView = new MapRoutes.MapView();
 
 	@Inject
 	TrawlingPlusMapOverlay(Client client, TrawlingPlusPlugin plugin, TrawlingPlusConfig config,
@@ -107,34 +107,6 @@ class TrawlingPlusMapOverlay extends Overlay
 		setLayer(OverlayLayer.MANUAL);
 		drawAfterInterface(InterfaceID.WORLDMAP);
 		setPriority(PRIORITY_LOW);
-	}
-
-	/**
-	 * Whether the box a route fits inside reaches the part of the world the map is showing. The map
-	 * scales and shifts the world without turning it, so the box stays a box on screen.
-	 */
-	private boolean onScreen(ShoalRoute route, Rectangle within)
-	{
-		int left = Integer.MAX_VALUE;
-		int right = Integer.MIN_VALUE;
-		int top = Integer.MAX_VALUE;
-		int bottom = Integer.MIN_VALUE;
-		for (double[] corner : route.corners())
-		{
-			Point at = worldMapOverlay.mapWorldPointToGraphicsPoint(
-				new WorldPoint((int) Math.round(corner[0]), (int) Math.round(corner[1]), 0));
-			if (at == null)
-			{
-				// Nothing to go on, so let it draw rather than hide a route that may well be there.
-				return true;
-			}
-
-			left = Math.min(left, at.getX());
-			right = Math.max(right, at.getX());
-			top = Math.min(top, at.getY());
-			bottom = Math.max(bottom, at.getY());
-		}
-		return within.intersects(left, top, Math.max(1, right - left), Math.max(1, bottom - top));
 	}
 
 	/**
@@ -181,90 +153,61 @@ class TrawlingPlusMapOverlay extends Overlay
 		// is something done before boarding a boat and fitting a net to it.
 		Rectangle within = map.getBounds();
 
-		// How far the map is zoomed, as the pixels a tile takes up each way. Measured off points a known
-		// distance apart rather than read from a setting, and taken from the map itself so it holds
-		// wherever the map happens to be scrolled to. North is up, so the second of these comes out
-		// negative.
-		Point origin = worldMapOverlay.mapWorldPointToGraphicsPoint(new WorldPoint(3200, 3200, 0));
-		Point across = worldMapOverlay.mapWorldPointToGraphicsPoint(new WorldPoint(3200 + SCALE_TILES, 3200, 0));
-		Point up = worldMapOverlay.mapWorldPointToGraphicsPoint(new WorldPoint(3200, 3200 + SCALE_TILES, 0));
-		double perTileX = origin == null || across == null ? 0
-			: (across.getX() - origin.getX()) / (double) SCALE_TILES;
-		double perTileY = origin == null || up == null ? 0
-			: (up.getY() - origin.getY()) / (double) SCALE_TILES;
-		double pixelsPerTile = Math.abs(perTileX);
-
-		// Which stretch of the world the map is showing, worked out by running the scale backwards from
-		// the corners of the map. A point outside it cannot be drawn, and saying so in tiles costs two
-		// comparisons, where finding out by placing it on the map costs an object and a lookup. Zoomed
-		// in, that is most of a route: the map holds only a few dozen tiles at a time.
-		double fromX = Double.NEGATIVE_INFINITY;
-		double toX = Double.POSITIVE_INFINITY;
-		double fromY = Double.NEGATIVE_INFINITY;
-		double toY = Double.POSITIVE_INFINITY;
-		if (origin != null && perTileX != 0 && perTileY != 0)
+		// One tile placed by the map, and its zoom as the pixels a tile takes up. The map scales and shifts the world
+		// without turning it, north up, so every other point is placed from these with a few sums rather than by asking
+		// the map, which costs far more.
+		Point placed = worldMapOverlay.mapWorldPointToGraphicsPoint(new WorldPoint(PLACED_TILE, PLACED_TILE, 0));
+		double zoom = client.getWorldMap().getWorldMapZoom();
+		if (placed == null || zoom <= 0)
 		{
-			double[] edgeX = {3200 + (within.x - origin.getX()) / perTileX,
-				3200 + (within.x + within.width - origin.getX()) / perTileX};
-			double[] edgeY = {3200 + (within.y - origin.getY()) / perTileY,
-				3200 + (within.y + within.height - origin.getY()) / perTileY};
-			// A tile of slack, so a point just outside still draws the line running off the edge.
-			fromX = Math.min(edgeX[0], edgeX[1]) - 1;
-			toX = Math.max(edgeX[0], edgeX[1]) + 1;
-			fromY = Math.min(edgeY[0], edgeY[1]) - 1;
-			toY = Math.max(edgeY[0], edgeY[1]) + 1;
+			return null;
 		}
+		mapView.place(PLACED_TILE, PLACED_TILE, placed.getX(), placed.getY(), zoom, 0, 0, -zoom);
+		mapView.edges(within, false);
 
-		double leftX = fromX;
-		double rightX = toX;
-		double bottomY = fromY;
-		double topY = toY;
-		MapRoutes.Projection onto = (x, y) ->
-		{
-			if (x < leftX || x > rightX || y < bottomY || y > topY)
-			{
-				return null;
-			}
-
-			// The map only places whole tiles, which is a staircase once a tile is worth more than a
-			// pixel or two, so the part of a tile is stepped out by hand from the scale measured above.
-			int tileX = (int) Math.floor(x);
-			int tileY = (int) Math.floor(y);
-			Point at = worldMapOverlay.mapWorldPointToGraphicsPoint(new WorldPoint(tileX, tileY, 0));
-			if (at == null)
-			{
-				return null;
-			}
-
-			int px = (int) Math.round(at.getX() + (x - tileX) * perTileX);
-			int py = (int) Math.round(at.getY() + (y - tileY) * perTileY);
-			// Scrolled off the edge of the map, or hidden behind its own border. The line ends at the
-			// last point still on the map rather than being cut off exactly at its edge, which is near
-			// enough and keeps the points beyond it from being drawn at all.
-			return within.contains(px, py) ? new Point(px, py) : null;
-		};
+		// Which stretch of the world the map is showing, worked out by running the placing backwards from the corners
+		// of the map, with a tile of slack. A run of route outside it is passed over without placing any of it.
+		double fromX = PLACED_TILE + (within.x - placed.getX()) / zoom - 1;
+		double toX = PLACED_TILE + (within.x + within.width - placed.getX()) / zoom + 1;
+		double fromY = PLACED_TILE - (within.y + within.height - placed.getY()) / zoom - 1;
+		double toY = PLACED_TILE - (within.y - placed.getY()) / zoom + 1;
 
 		Shape clip = graphics.getClip();
 		graphics.clip(mapArea(within));
 
 		boolean danger = config.showDanger().onMaps();
+		Color lineDanger = danger ? MapRoutes.withAlphaOf(config.dangerColour(), config.routeColour()) : null;
+		Color arrowDanger = danger ? MapRoutes.withAlphaOf(config.dangerColour(), config.directionArrowColour()) : null;
+		MapRoutes.MapTimer timer = MapRoutes.mapTimer;
+		long lineNanos = 0;
+		long arrowNanos = 0;
 		for (ShoalRoute route : plugin.getShownRoutes())
 		{
-			// Whether any of the route could be on screen, from the box it fits inside, rather than by
-			// working out where every point of it lands only to throw the lot away. The map is panned
-			// and zoomed freely, so most of the time most routes are nowhere near it.
-			if (!onScreen(route, within))
+			// Whether any of the route could be on screen, from the box it fits inside. The map is panned and zoomed
+			// freely, so most of the time most routes are nowhere near it.
+			if (!route.overlaps(fromX, fromY, toX, toY))
 			{
 				continue;
 			}
 
-			MapRoutes.route(graphics, config, route, onto, THICKNESS, pixelsPerTile,
-				leftX, bottomY, rightX, topY, danger ? MapRoutes.withAlphaOf(config.dangerColour(), config.routeColour()) : null);
-			MapRoutes.arrows(graphics, config, route, onto, ARROW, pixelsPerTile, leftX, bottomY, rightX, topY,
-				danger ? MapRoutes.withAlphaOf(config.dangerColour(), config.directionArrowColour()) : null);
+			// The arrows first, so the line runs over them.
+			long started = timer == null ? 0 : System.nanoTime();
+			MapRoutes.arrows(graphics, config, route, mapView, ARROW, fromX, fromY, toX, toY, arrowDanger);
+			long drawn = timer == null ? 0 : System.nanoTime();
+			MapRoutes.route(graphics, config, route, mapView, THICKNESS, fromX, fromY, toX, toY, lineDanger);
+			if (timer != null)
+			{
+				arrowNanos += drawn - started;
+				lineNanos += System.nanoTime() - drawn;
+			}
+		}
+		if (timer != null)
+		{
+			timer.mapTook(MapRoutes.MapTimer.WORLD_LINES, lineNanos);
+			timer.mapTook(MapRoutes.MapTimer.WORLD_ARROWS, arrowNanos);
 		}
 
-		drawShoals(graphics, onto, perTileX, perTileY);
+		drawShoals(graphics, mapView, zoom, -zoom);
 
 		graphics.setClip(clip);
 		return null;
@@ -274,7 +217,7 @@ class TrawlingPlusMapOverlay extends Overlay
 	 * Every shoal as one mark, the same whether it's in view or not: a shoal in view where the game has it, and the
 	 * last one trawled, while out of view, where it likely is. Only for that one, out of view, is anything worked out.
 	 */
-	private void drawShoals(Graphics2D graphics, MapRoutes.Projection onto, double perTileX, double perTileY)
+	private void drawShoals(Graphics2D graphics, MapRoutes.MapView onto, double perTileX, double perTileY)
 	{
 		Color colour = config.shoalHeadingArrowColour();
 		int tick = client.getTickCount();
@@ -347,7 +290,7 @@ class TrawlingPlusMapOverlay extends Overlay
 			(int) Math.round(at.getY() + towardY / step * away));
 		Object antialiasing = graphics.getRenderingHint(RenderingHints.KEY_ANTIALIASING);
 		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-		graphics.fill(MapRoutes.arrowhead(middle, towardX, towardY, HEADING_ARROW));
+		graphics.fill(MapRoutes.arrowhead(middle.getX(), middle.getY(), towardX, towardY, HEADING_ARROW));
 		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
 			antialiasing != null ? antialiasing : RenderingHints.VALUE_ANTIALIAS_DEFAULT);
 	}

@@ -2507,7 +2507,7 @@ class TrawlingPlusOverlay extends Overlay
 		if (arrow != null)
 		{
 			double shown = predictedArrowFade * predictedArrowFade * (3 - 2 * predictedArrowFade);
-			graphics.setColor(withOpacity(config.predictedShoalColour(), shown));
+			graphics.setColor(withOpacity(config.shoalHeadingArrowColour(), shown));
 			graphics.fill(arrow);
 		}
 	}

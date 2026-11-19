@@ -34,6 +34,13 @@ public interface TrawlingPlusConfig extends Config
 	int MAX_LEAVING_SECONDS = 30;
 
 	@ConfigSection(
+		name = "Maps",
+		description = "Routes and shoals on the minimap and world map,<br>and where the shoal you last trawled likely is",
+		position = 6
+	)
+	String mapsSection = "maps";
+
+	@ConfigSection(
 		name = "Route line",
 		description = "The line each shoal swims along",
 		position = 8
@@ -67,13 +74,6 @@ public interface TrawlingPlusConfig extends Config
 		position = 28
 	)
 	String areaSection = "fishableArea";
-
-	@ConfigSection(
-		name = "Predicted shoal",
-		description = "Where a shoal likely is while it's out of sight,<br>from when it was last seen",
-		position = 34
-	)
-	String predictedSection = "predictedShoal";
 
 	@ConfigSection(
 		name = "Heads up display",
@@ -407,7 +407,8 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "showOnMaps",
 		name = "Show on maps",
 		description = "Which maps to show routes and shoals on.",
-		position = 1
+		position = 89,
+		section = mapsSection
 	)
 	default ShowOnMaps showOnMaps()
 	{
@@ -418,7 +419,8 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "showDanger",
 		name = "Show danger",
 		description = "Where to draw stretches of route near sea<br>creatures that attack boats in red.<br><b>Route</b>: on the route line in the water.<br><b>Maps</b>: on the maps shown, with skulls on<br>the world map.",
-		position = 2
+		position = 90,
+		section = mapsSection
 	)
 	default ShowDanger showDanger()
 	{
@@ -429,7 +431,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "routeDisplay",
 		name = "Route display",
 		description = "How much of the route to show.<br><b>Whole route</b>: the entire route nearest your boat.<br><b>Next stops</b>: from the shoal to its next few stops.",
-		position = 3
+		position = 1
 	)
 	default RouteDisplay routeDisplay()
 	{
@@ -444,7 +446,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "stopsAhead",
 		name = "Stops ahead",
 		description = "How many stops ahead of the shoal to show<br>with Next stops.",
-		position = 4
+		position = 2
 	)
 	default int stopsAhead()
 	{
@@ -455,7 +457,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "revealNextSection",
 		name = "Animate next section",
 		description = "Animate the shoal's route to its next stop.",
-		position = 5
+		position = 3
 	)
 	default boolean revealNextSection()
 	{
@@ -471,7 +473,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "animationDuration",
 		name = "Animation duration",
 		description = "How long the animation takes.",
-		position = 6
+		position = 4
 	)
 	default int animationDuration()
 	{
@@ -482,7 +484,7 @@ public interface TrawlingPlusConfig extends Config
 		keyName = "clearAroundBoat",
 		name = "Clear around boat",
 		description = "Hide the route line, direction arrows and stops<br>under your boat.",
-		position = 7
+		position = 5
 	)
 	default boolean clearAroundBoat()
 	{
@@ -654,7 +656,7 @@ public interface TrawlingPlusConfig extends Config
 	@ConfigItem(
 		keyName = "shoalHeadingArrowColour",
 		name = "Colour",
-		description = "Colour of the shoal heading arrow.",
+		description = "Colour of the shoal heading arrow, and of shoals<br>on the maps and the predicted arrow.",
 		position = 27,
 		section = headingArrowSection
 	)
@@ -1533,11 +1535,11 @@ public interface TrawlingPlusConfig extends Config
 
 	@ConfigItem(
 		keyName = "showPredictedArrow",
-		name = "Arrow",
+		name = "Predicted arrow",
 		description = "While aboard, point an arrow from the boat<br>to where the shoal you last trawled likely is,<br>"
 			+ "until it's back in sight. It goes after 10<br>minutes without a catch.",
-		position = 90,
-		section = predictedSection
+		position = 92,
+		section = mapsSection
 	)
 	default boolean showPredictedArrow()
 	{
@@ -1546,27 +1548,14 @@ public interface TrawlingPlusConfig extends Config
 
 	@ConfigItem(
 		keyName = "showPredictedOnMap",
-		name = "World map",
+		name = "Predicted shoal",
 		description = "Mark where the shoal you last trawled likely is<br>on the world map while it's out of sight, the<br>"
 			+ "same way as a shoal in sight, until you trawl<br>another.",
 		position = 91,
-		section = predictedSection
+		section = mapsSection
 	)
 	default boolean showPredictedOnMap()
 	{
 		return true;
-	}
-
-	@Alpha
-	@ConfigItem(
-		keyName = "predictedShoalColour",
-		name = "Colour",
-		description = "Colour of the arrow off the boat.",
-		position = 92,
-		section = predictedSection
-	)
-	default Color predictedShoalColour()
-	{
-		return new Color(255, 221, 0, 150);
 	}
 }

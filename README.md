@@ -1,7 +1,7 @@
 # Trawling Plus
 
 <p align="center">
-<img width="1614" height="1120" alt="splash" src="https://github.com/user-attachments/assets/e925e034-e2e1-4ac8-88a8-b09a4f61b4b2" />
+<img width="1845" height="1089" alt="splash" src="https://github.com/user-attachments/assets/35086c7b-f876-4180-81cb-c026e712ed73" />
 </p>
 
 Shows the routes that deep sea trawling shoals swim, so you can find and follow one without
@@ -60,10 +60,6 @@ stats, with the fish count following your own net there.
 
 ## Trawling log
 
-<p align="center">
-<img width="800" height="508" alt="trawlinglog" src="https://github.com/user-attachments/assets/7b9ab598-e055-4cb8-a2da-4ec909397d6c" />
-</p>
-
 A button on the cargo hold screen opens a book of your trawling. To read it anywhere on the boat, even while
 working the nets, right-click the cargo hold and choose Open Trawling Log.
 
@@ -78,6 +74,10 @@ working the nets, right-click the cargo hold and choose Open Trawling Log.
 - **Bookmark**: click the ribbon on a page to set the page the book will open to at the start of each session.
 
 Right-click the button or the total info box to reset the session, or Shift right-click to reset the lifetime counts.
+
+<p align="center">
+<img width="800" height="508" alt="trawlinglog" src="https://github.com/user-attachments/assets/7b9ab598-e055-4cb8-a2da-4ec909397d6c" />
+</p>
 
 ## Route data
 
@@ -102,7 +102,10 @@ Highly customisable: almost every feature can be switched off or recoloured. Her
 - **Fish**: switch each fish off to hide its routes.
 
 <p align="center">
-<img width="800" height="669" alt="nextstop" src="https://github.com/user-attachments/assets/0bc124e7-0984-4843-bc2c-130bedfb8747" />
+<img width="800" height="605" alt="nextstop" src="https://github.com/user-attachments/assets/21160c9e-b8d0-4d92-a2e7-e460ecef4e99" />
+</p>
+<p align="center">
+<img width="1400" height="700" alt="fishableareadanger" src="https://github.com/user-attachments/assets/2af32105-cace-4c28-9330-a75779789e94" />
 </p>
 
 ## Disclaimer on AI & License

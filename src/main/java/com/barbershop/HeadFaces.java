@@ -28,9 +28,6 @@ final class HeadFaces
 		}
 	}
 
-	/** Why the last search failed, for the debug plugin. */
-	static String lastProblem = "";
-
 	private HeadFaces()
 	{
 	}
@@ -41,7 +38,6 @@ final class HeadFaces
 		PlayerComposition composition = player.getPlayerComposition();
 		if (composition == null)
 		{
-			lastProblem = "no composition";
 			return null;
 		}
 		int[] ids = composition.getEquipmentIds();
@@ -51,7 +47,6 @@ final class HeadFaces
 		int jaw = ids[jawSlot];
 		if (hair == 0 && jaw == 0)
 		{
-			lastProblem = "hair and jaw slots already empty";
 			return null;
 		}
 
@@ -60,27 +55,19 @@ final class HeadFaces
 		int[] noJaw = withSlotEmptied(player, composition, ids, jawSlot);
 		if (with == null || noHair == null || noJaw == null)
 		{
-			lastProblem = "model missing";
 			return null;
 		}
 
 		int hairLength = with.length - noHair.length;
 		int jawLength = with.length - noJaw.length;
 		int hairStart = hairLength > 0 ? bestBlock(with, noHair) : 0;
-		int hairCost = lastCost;
 		int jawStart = jawLength > 0 ? bestBlock(with, noJaw) : 0;
-		lastProblem = (usedUnlit ? "unlit" : "lit") + ", faces " + with.length + ", hair " + hairStart + "+" + hairLength
-			+ " (off " + hairCost + "), jaw " + jawStart + "+" + jawLength + " (off " + lastCost + ")";
 		if (hairLength <= 0 && jawLength <= 0)
 		{
 			return null;
 		}
 		return new Ranges(with.length, hairStart, hairStart + Math.max(hairLength, 0), jawStart, jawStart + Math.max(jawLength, 0));
 	}
-
-	// Debug figures from the last search.
-	private static int lastCost;
-	private static boolean usedUnlit;
 
 	private static int[] withSlotEmptied(Player player, PlayerComposition composition, int[] ids, int slot)
 	{
@@ -97,7 +84,7 @@ final class HeadFaces
 	 * Where a block of faces was cut out of {@code with} to give {@code without}. Faces near the cut
 	 * can shade differently once it's gone, so this takes the spot where the fewest others disagree.
 	 */
-	static int bestBlock(int[] with, int[] without)
+	private static int bestBlock(int[] with, int[] without)
 	{
 		int n = without.length;
 		int cut = with.length - n;
@@ -120,7 +107,6 @@ final class HeadFaces
 				best = x;
 			}
 		}
-		lastCost = before[best] + after[best];
 		return best;
 	}
 
@@ -134,7 +120,6 @@ final class HeadFaces
 		int count = model.getFaceCount();
 		int[] keys = new int[count];
 		short[] unlit = model.getUnlitFaceColors();
-		usedUnlit = unlit != null;
 		int[] lit = model.getFaceColors1();
 		for (int i = 0; i < count; i++)
 		{

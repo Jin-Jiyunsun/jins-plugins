@@ -47,9 +47,9 @@ public class BarberShopDebugPlugin extends Plugin
 	protected void shutDown()
 	{
 		BarberShopPlugin.heightNudge = 0;
+		BarberShopPlugin.glassesNudgeDown = 0;
+		BarberShopPlugin.glassesNudgeBack = 0;
 		BarberShopPlugin.neckCut = 10;
-		BarberShopPlugin.neckWeldFull = 3;
-		BarberShopPlugin.neckWeldBand = 3;
 		clientThread.invoke(this::unpaint);
 	}
 
@@ -57,9 +57,9 @@ public class BarberShopDebugPlugin extends Plugin
 	public void onGameTick(GameTick event)
 	{
 		BarberShopPlugin.heightNudge = config.heightNudge();
+		BarberShopPlugin.glassesNudgeDown = config.glassesNudgeDown();
+		BarberShopPlugin.glassesNudgeBack = config.glassesNudgeBack();
 		BarberShopPlugin.neckCut = config.neckCut();
-		BarberShopPlugin.neckWeldFull = config.neckWeldFull();
-		BarberShopPlugin.neckWeldBand = Math.max(config.neckWeldBand(), config.neckWeldFull());
 		showColours();
 
 		Player player = client.getLocalPlayer();
@@ -83,8 +83,8 @@ public class BarberShopDebugPlugin extends Plugin
 		model = player.getModel();
 		if (ranges == null || model == null || model.getFaceCount() != ranges.getFaceCount())
 		{
-			client.addChatMessage(ChatMessageType.GAMEMESSAGE, "", "Barber Shop debug: head not found (" + HeadFaces.lastProblem
-				+ (model == null ? ", model now missing" : ", model now " + model.getFaceCount() + " faces") + ")", null);
+			client.addChatMessage(ChatMessageType.GAMEMESSAGE, "", "Barber Shop debug: head not found ("
+				+ (model == null ? "no model" : model.getFaceCount() + " faces") + ")", null);
 			ranges = null;
 			return;
 		}
@@ -104,7 +104,7 @@ public class BarberShopDebugPlugin extends Plugin
 			}
 		}
 		client.addChatMessage(ChatMessageType.GAMEMESSAGE, "",
-			"Barber Shop debug: painted (" + HeadFaces.lastProblem + "), priorities " + priorities(model, ranges), null);
+			"Barber Shop debug: painted " + ranges + ", priorities " + priorities(model, ranges), null);
 	}
 
 	/** How many found faces sit at each render priority; a clean find is almost all 6. */

@@ -17,6 +17,39 @@ public interface BarberShopDebugConfig extends Config
 	String headFacesSection = "headFaces";
 
 	@ConfigSection(
+		name = "Debug: glasses",
+		description = "Measures how far each pair of glasses should move on each body type",
+		position = 2
+	)
+	String glassesSection = "glasses";
+
+	@Range(min = -30, max = 30)
+	@ConfigItem(
+		keyName = "glassesNudgeDown",
+		name = "Glasses down",
+		description = "Moves the glasses down (positive) or up (negative),<br>on top of their built-in offset, in model units.",
+		section = glassesSection,
+		position = 0
+	)
+	default int glassesNudgeDown()
+	{
+		return 0;
+	}
+
+	@Range(min = -30, max = 30)
+	@ConfigItem(
+		keyName = "glassesNudgeBack",
+		name = "Glasses back",
+		description = "Moves the glasses back towards the ears (positive)<br>or forward (negative), on top of their built-in offset,<br>in model units.",
+		section = glassesSection,
+		position = 1
+	)
+	default int glassesNudgeBack()
+	{
+		return 0;
+	}
+
+	@ConfigSection(
 		name = "Debug: head height",
 		description = "Measures how far each head should move up or down",
 		position = 1
@@ -36,39 +69,13 @@ public interface BarberShopDebugConfig extends Config
 		return 0;
 	}
 
-	@Range(min = 0, max = 60)
-	@ConfigItem(
-		keyName = "neckWeldFull",
-		name = "Neck weld full",
-		description = "How far up from the bottom of the head<br>it follows your neck fully, in model units.",
-		section = headHeightSection,
-		position = 2
-	)
-	default int neckWeldFull()
-	{
-		return 3;
-	}
-
-	@Range(min = 0, max = 80)
-	@ConfigItem(
-		keyName = "neckWeldBand",
-		name = "Neck weld fade",
-		description = "Up to how far from the bottom of the head<br>the neck pull fades out, in model units.",
-		section = headHeightSection,
-		position = 3
-	)
-	default int neckWeldBand()
-	{
-		return 0;
-	}
-
 	@Range(min = 0, max = 30)
 	@ConfigItem(
 		keyName = "neckCut",
 		name = "Neck cut",
 		description = "How far above your chin the head's skin<br>starts being hidden, in model units,<br>letting your own neck show.",
 		section = headHeightSection,
-		position = 4
+		position = 2
 	)
 	default int neckCut()
 	{
@@ -90,7 +97,7 @@ public interface BarberShopDebugConfig extends Config
 	@ConfigItem(
 		keyName = "paintHeadFaces",
 		name = "Paint head faces",
-		description = "Paints the faces found as your hair and jaw magenta.<br>Set Barber Shop's Head to None first.",
+		description = "Paints the faces found as your hair and jaw magenta.<br>Set Barber Shop's head to None first.",
 		section = headFacesSection,
 		position = 0
 	)

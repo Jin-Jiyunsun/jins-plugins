@@ -47,8 +47,9 @@ public class BarberShopDebugPlugin extends Plugin
 	protected void shutDown()
 	{
 		BarberShopPlugin.heightNudge = 0;
-		BarberShopPlugin.neckWeldFull = 8;
-		BarberShopPlugin.neckWeldBand = 24;
+		BarberShopPlugin.neckCut = 10;
+		BarberShopPlugin.neckWeldFull = 3;
+		BarberShopPlugin.neckWeldBand = 3;
 		clientThread.invoke(this::unpaint);
 	}
 
@@ -56,6 +57,7 @@ public class BarberShopDebugPlugin extends Plugin
 	public void onGameTick(GameTick event)
 	{
 		BarberShopPlugin.heightNudge = config.heightNudge();
+		BarberShopPlugin.neckCut = config.neckCut();
 		BarberShopPlugin.neckWeldFull = config.neckWeldFull();
 		BarberShopPlugin.neckWeldBand = Math.max(config.neckWeldBand(), config.neckWeldFull());
 		showColours();

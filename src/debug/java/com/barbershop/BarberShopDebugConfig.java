@@ -46,7 +46,7 @@ public interface BarberShopDebugConfig extends Config
 	)
 	default int neckWeldFull()
 	{
-		return 8;
+		return 3;
 	}
 
 	@Range(min = 0, max = 80)
@@ -59,7 +59,20 @@ public interface BarberShopDebugConfig extends Config
 	)
 	default int neckWeldBand()
 	{
-		return 24;
+		return 0;
+	}
+
+	@Range(min = 0, max = 30)
+	@ConfigItem(
+		keyName = "neckCut",
+		name = "Neck cut",
+		description = "How far above your chin the head's skin<br>starts being hidden, in model units,<br>letting your own neck show.",
+		section = headHeightSection,
+		position = 4
+	)
+	default int neckCut()
+	{
+		return 10;
 	}
 
 	@ConfigItem(

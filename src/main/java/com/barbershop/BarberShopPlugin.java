@@ -66,8 +66,11 @@ public class BarberShopPlugin extends Plugin
 
 	// How far up from its lowest point the head follows the player's neck fully, and up to where
 	// that fades out, in model units; the debug plugin may change them while tuning.
-	static int neckWeldFull = 8;
-	static int neckWeldBand = 24;
+	static int neckWeldFull = 3;
+	static int neckWeldBand = 3;
+	// How far above the player's chin the head's skin starts being hidden; the debug plugin may change it.
+	static int neckCut = 10;
+	private int cutAt;
 	// How many of the player's nearest head vertices each neck vertex follows.
 	private static final int NECK_WELD_NEAREST = 3;
 
@@ -90,14 +93,25 @@ public class BarberShopPlugin extends Plugin
 	// Whether the game put the player in the scene during the frame being drawn; it doesn't while
 	// they're hidden, such as at the end of a teleport, even though they still have a model.
 	private volatile boolean playerAdded;
+	// Whether the head is set up and shown this frame, so the draw hook may move it.
+	private boolean tracking;
 	private final RenderCallback drawCallback = new RenderCallback()
 	{
 		@Override
 		public boolean addEntity(Renderable renderable, boolean ui)
 		{
-			if (!ui && renderable == client.getLocalPlayer())
+			Player player = client.getLocalPlayer();
+			if (!ui && renderable == player)
 			{
 				playerAdded = true;
+				if (tracking)
+				{
+					Model model = player.getModel();
+					if (model != null && model.getFaceCount() == ranges.getFaceCount())
+					{
+						track(player, model);
+					}
+				}
 			}
 			return true;
 		}
@@ -114,6 +128,8 @@ public class BarberShopPlugin extends Plugin
 	private int[] headBase2;
 	private int[] headBase3;
 	private boolean skinMatched;
+	// The head's skin colour (hue and saturation part), to tell its skin faces apart.
+	private int headSkinHueSat;
 	private boolean welded;
 	private int weldedFull;
 	private int weldedBand;
@@ -135,6 +151,8 @@ public class BarberShopPlugin extends Plugin
 	private HeadFit fit;
 	private int[] hiddenColours;
 	private int[] savedColours;
+	// The player's whole model's unanimated heights, for the neck line.
+	private float[] ownRestY;
 
 	// Headgear taken off, and a stand-in hairstyle put on when headgear had hidden the hair.
 	private int removedHeadgear;
@@ -178,6 +196,7 @@ public class BarberShopPlugin extends Plugin
 	{
 		boolean playerDrawn = playerAdded;
 		playerAdded = false;
+		tracking = false;
 
 		Player player = client.getLocalPlayer();
 		Head head = config.head();
@@ -196,6 +215,8 @@ public class BarberShopPlugin extends Plugin
 		}
 
 		dressHead(composition);
+		int ownSkin = playerSkin(composition);
+		int ownSkinHueSat = ownSkin < 0 ? -1 : ownSkin >> 7;
 		int now = Arrays.hashCode(composition.getEquipmentIds()) * 31 + Arrays.hashCode(composition.getColors());
 		Model model = player.getModel();
 		if (model == null)
@@ -219,10 +240,9 @@ public class BarberShopPlugin extends Plugin
 				hideObject();
 				return;
 			}
-			hideOwnHead(model);
+			hideOwnHead(model, ownSkinHueSat);
 			skinMatched = false;
 			welded = false;
-		welded = false;
 		}
 		// Going by the last frame: hide the head while the game isn't drawing the player.
 		if (fit == null || !playerDrawn)
@@ -231,9 +251,16 @@ public class BarberShopPlugin extends Plugin
 			return;
 		}
 
-		if (!skinMatched)
+		if (!skinMatched || cutAt != neckCut)
 		{
+			if (cutAt != neckCut)
+			{
+				cutAt = neckCut;
+				showOwnHead();
+				hideOwnHead(model, ownSkinHueSat);
+			}
 			matchSkinBrightness(model);
+			hideNeckStub();
 			skinMatched = true;
 		}
 		if (!welded || weldedFull != neckWeldFull || weldedBand != neckWeldBand)
@@ -243,6 +270,26 @@ public class BarberShopPlugin extends Plugin
 			fit.weld(headRestX, headRestY, headRestZ, headRestX.length, weldedFull, weldedBand, NECK_WELD_NEAREST);
 			welded = true;
 		}
+		if (player.getWorldView() == null || player.getLocalLocation() == null)
+		{
+			hideObject();
+			return;
+		}
+		track(player, model);
+		if (!client.isRuneLiteObjectRegistered(headObject))
+		{
+			client.registerRuneLiteObject(headObject);
+		}
+		tracking = true;
+	}
+
+	/**
+	 * Moves the head to match the player's hidden head and puts it where the player stands. Done at
+	 * the start of the frame, then again as the game adds the player to the scene, as their position
+	 * can still move in between (smoothed movement while walking).
+	 */
+	private void track(Player player, Model model)
+	{
 		fit.fit(model.getVerticesX(), model.getVerticesY(), model.getVerticesZ());
 		fit.apply(headRestX, headRestY, headRestZ,
 			headModel.getVerticesX(), headModel.getVerticesY(), headModel.getVerticesZ(), headRestX.length);
@@ -287,6 +334,48 @@ public class BarberShopPlugin extends Plugin
 			{
 				c2[face] = brighten(c2[face], shift);
 				c3[face] = brighten(c3[face], shift);
+			}
+		}
+	}
+
+	/** The colour an NPC gives the base skin colour, or the base colour if it keeps it. */
+	private static int npcSkin(short[] find, short[] replace)
+	{
+		if (find != null && replace != null)
+		{
+			for (int i = 0; i < find.length && i < replace.length; i++)
+			{
+				if (find[i] == BASE_SKIN)
+				{
+					return replace[i] & 0xFFFF;
+				}
+			}
+		}
+		return BASE_SKIN;
+	}
+
+	/**
+	 * Hides the head's skin faces that sit wholly below the neck line, where the player's own neck shows
+	 * instead. NPC necks face mostly down, away from the light, and come out a flat dark colour.
+	 */
+	private void hideNeckStub()
+	{
+		if (cutAt <= 0)
+		{
+			return;
+		}
+		float chin = neckLine();
+		int[] a = headModel.getFaceIndices1();
+		int[] b = headModel.getFaceIndices2();
+		int[] c = headModel.getFaceIndices3();
+		int[] c1 = headModel.getFaceColors1();
+		int[] c3 = headModel.getFaceColors3();
+		for (int face = 0; face < c1.length; face++)
+		{
+			if (c3[face] != -2 && (c1[face] >> 7) == headSkinHueSat
+				&& headRestY[a[face]] > chin && headRestY[b[face]] > chin && headRestY[c[face]] > chin)
+			{
+				c3[face] = -2;
 			}
 		}
 	}
@@ -427,6 +516,7 @@ public class BarberShopPlugin extends Plugin
 			// Faces still on the base skin colour are skin, including any an NPC swaps onto it.
 			data.recolor(BASE_SKIN, (short) skin);
 		}
+		headSkinHueSat = (skin != -1 ? skin : npcSkin(find, replace)) >> 7;
 		// Lit as the game lights characters, not as items on the ground or icons.
 		Model model = data.light(AMBIENT, CONTRAST, LIGHT_X, LIGHT_Y, LIGHT_Z);
 		if (model == null)
@@ -506,8 +596,26 @@ public class BarberShopPlugin extends Plugin
 				vertices.add(c[face]);
 			}
 		}
+		Set<Integer> body = new LinkedHashSet<>();
+		for (int face = 0; face < ranges.getFaceCount(); face++)
+		{
+			if (!ranges.contains(face))
+			{
+				body.add(a[face]);
+				body.add(b[face]);
+				body.add(c[face]);
+			}
+		}
+		body.removeAll(vertices);
+
+		ownRestY = rest.getVerticesY().clone();
 		int[] list = vertices.stream().mapToInt(Integer::intValue).toArray();
 		fit = HeadFit.of(list, rest.getVerticesX(), rest.getVerticesY(), rest.getVerticesZ());
+		if (fit != null)
+		{
+			fit.setBody(body.stream().mapToInt(Integer::intValue).toArray(),
+				rest.getVerticesX(), rest.getVerticesY(), rest.getVerticesZ());
+		}
 		return fit != null;
 	}
 
@@ -568,21 +676,42 @@ public class BarberShopPlugin extends Plugin
 		addedHair = 0;
 	}
 
-	private void hideOwnHead(Model model)
+	/**
+	 * Hides the player's own head, except their neck: skin faces wholly below the neck line stay, as the
+	 * game shades them and keeps them on the body; the new head's skin is hidden there instead.
+	 */
+	private void hideOwnHead(Model model, int skinHueSat)
 	{
 		debugRanges = ranges;
+		float line = neckLine();
+		int[] a = model.getFaceIndices1();
+		int[] b = model.getFaceIndices2();
+		int[] c = model.getFaceIndices3();
+		int[] c1 = model.getFaceColors1();
 		// The face colours are shared with the game's stored model, so this holds until it's rebuilt.
 		int[] colours = model.getFaceColors3();
 		savedColours = colours.clone();
 		hiddenColours = colours;
 		for (int face = 0; face < ranges.getFaceCount(); face++)
 		{
-			if (ranges.contains(face))
+			if (!ranges.contains(face))
+			{
+				continue;
+			}
+			boolean neck = skinHueSat >= 0 && cutAt > 0 && (c1[face] >> 7) == skinHueSat
+				&& ownRestY[a[face]] > line && ownRestY[b[face]] > line && ownRestY[c[face]] > line;
+			if (!neck)
 			{
 				// The game's mark for a face that isn't drawn.
 				colours[face] = -2;
 			}
 		}
+	}
+
+	/** Below this height (y points down) the player's own neck shows instead of the new head's. */
+	private float neckLine()
+	{
+		return fit.restBottom() - cutAt;
 	}
 
 	private void showOwnHead()
@@ -609,10 +738,6 @@ public class BarberShopPlugin extends Plugin
 		// animation height offset, as RuneLite's own model outlines place them.
 		headObject.setZ(footprintHeight(view, location, player.getFootprintSize()) - player.getAnimationHeightOffset());
 		headObject.setOrientation(player.getCurrentOrientation());
-		if (!client.isRuneLiteObjectRegistered(headObject))
-		{
-			client.registerRuneLiteObject(headObject);
-		}
 	}
 
 	/**

@@ -24,8 +24,14 @@ final class HeadFit
 	private float[] currentY;
 	private float[] currentZ;
 
+	// The rest of the player (body, gear), unanimated, for the neck weld to hold onto.
+	private int[] bodyVertices = new int[0];
+	private float[] bodyRestX = new float[0];
+	private float[] bodyRestY = new float[0];
+	private float[] bodyRestZ = new float[0];
+
 	// Neck weld, per vertex of the head being moved: how much it follows its nearest player
-	// vertices rather than the whole-head transform (0 to 1), which ones (indexes into vertices), and how much each.
+	// body vertices rather than the whole-head transform (0 to 1), which ones (indexes into bodyVertices), and how much each.
 	private float[] weldAmount;
 	private int[][] weldNearest;
 	private float[][] weldShare;
@@ -66,11 +72,26 @@ final class HeadFit
 		return inverse == null ? null : new HeadFit(vertices, rx, ry, rz, inverse);
 	}
 
+	/** Takes the unanimated positions of the player's body vertices, which the neck weld holds onto. */
+	void setBody(int[] vertices, float[] x, float[] y, float[] z)
+	{
+		bodyVertices = vertices;
+		bodyRestX = new float[vertices.length];
+		bodyRestY = new float[vertices.length];
+		bodyRestZ = new float[vertices.length];
+		for (int i = 0; i < vertices.length; i++)
+		{
+			bodyRestX[i] = x[vertices[i]];
+			bodyRestY[i] = y[vertices[i]];
+			bodyRestZ[i] = z[vertices[i]];
+		}
+	}
+
 	/**
-	 * Ties the bottom of the head being moved to the player's own head: within {@code full} of its
-	 * lowest point a vertex moves fully with its nearest player vertices, fading out from there to
-	 * {@code band}. The bottom of the player's head stays on their neck, so this
-	 * keeps the new head's neck there too when the neck bends.
+	 * Ties the bottom of the head being moved to the player's body: within {@code full} of its
+	 * lowest point a vertex moves fully with its nearest body vertices, fading out from there to
+	 * {@code band}. The nearest body vertices are the top of the player's neck and collar, so the
+	 * new head's neck stays on them when the body bends.
 	 */
 	void weld(float[] x, float[] y, float[] z, int count, float full, float band, int nearest)
 	{
@@ -82,7 +103,7 @@ final class HeadFit
 		weldAmount = new float[count];
 		weldNearest = new int[count][];
 		weldShare = new float[count][];
-		int k = Math.min(nearest, vertices.length);
+		int k = Math.min(nearest, bodyVertices.length);
 		for (int i = 0; i < count; i++)
 		{
 			float above = bottom - y[i];
@@ -96,11 +117,11 @@ final class HeadFit
 			int[] best = new int[k];
 			float[] bestDistance = new float[k];
 			Arrays.fill(bestDistance, Float.MAX_VALUE);
-			for (int j = 0; j < vertices.length; j++)
+			for (int j = 0; j < bodyVertices.length; j++)
 			{
-				float dx = restX[j] - x[i];
-				float dy = restY[j] - y[i];
-				float dz = restZ[j] - z[i];
+				float dx = bodyRestX[j] - x[i];
+				float dy = bodyRestY[j] - y[i];
+				float dz = bodyRestZ[j] - z[i];
 				float d = dx * dx + dy * dy + dz * dz;
 				for (int slot = 0; slot < k; slot++)
 				{
@@ -183,7 +204,7 @@ final class HeadFit
 			float amount = weldAmount != null && i < weldAmount.length ? weldAmount[i] : 0;
 			if (amount > 0)
 			{
-				// Moved as far as its nearest player vertices moved from rest.
+				// Moved as far as its nearest body vertices moved from rest.
 				float lx = (float) px;
 				float ly = (float) py;
 				float lz = (float) pz;
@@ -192,10 +213,10 @@ final class HeadFit
 				for (int slot = 0; slot < near.length; slot++)
 				{
 					int j = near[slot];
-					int v = vertices[j];
-					lx += share[slot] * (currentX[v] - restX[j]);
-					ly += share[slot] * (currentY[v] - restY[j]);
-					lz += share[slot] * (currentZ[v] - restZ[j]);
+					int v = bodyVertices[j];
+					lx += share[slot] * (currentX[v] - bodyRestX[j]);
+					ly += share[slot] * (currentY[v] - bodyRestY[j]);
+					lz += share[slot] * (currentZ[v] - bodyRestZ[j]);
 				}
 				ax += (lx - ax) * amount;
 				ay += (ly - ay) * amount;
@@ -205,6 +226,17 @@ final class HeadFit
 			toY[i] = ay;
 			toZ[i] = az;
 		}
+	}
+
+	/** The lowest point of the player's own head at rest (largest y, as y points down). */
+	float restBottom()
+	{
+		float bottom = -Float.MAX_VALUE;
+		for (float y : restY)
+		{
+			bottom = Math.max(bottom, y);
+		}
+		return bottom;
 	}
 
 	int[] getVertices()

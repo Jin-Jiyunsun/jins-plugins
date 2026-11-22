@@ -64,21 +64,20 @@ final class ShoalRoute
 	// The lap's timing, or null legs where it isn't known: ticks a shoal sits still at a stop, the share of each leg
 	// swum each tick, the tick each leg starts on (counting from stop 0's), and the lap's length in ticks.
 	private final int stillTicks;
-	private final double[][] legs;
+	private final float[][] legs;
 	private final int[] legStart;
 	private final int lapTicks;
-	private final double[] pathX;
-	private final double[] pathY;
-	private final double[] pathDistance;
 	private final double length;
 	private final double[][] stops;
 	private final double[] stopDistance;
-	private final double[] sampleX;
-	private final double[] sampleY;
-	private final double[] sampleDistance;
+	// The drawn points, also what a shoal is followed along. Floats halve their memory and still place a point to
+	// within a thousandth of a tile.
+	private final float[] sampleX;
+	private final float[] sampleY;
+	private final float[] sampleDistance;
 	// For each drawn point, the largest tolerance in tiles at which simplifying the route still keeps it, so a map can
 	// leave out the points that would barely bend the line at its zoom.
-	private final double[] sampleDetail;
+	private final float[] sampleDetail;
 	private final double[] blockMinX;
 	private final double[] blockMinY;
 	private final double[] blockMaxX;
@@ -100,7 +99,7 @@ final class ShoalRoute
 	private List<DangerousThreat> dangerousThreats = new ArrayList<>();
 
 	ShoalRoute(String species, String name, int stopTicks, double[][] path, double[][] stops, double[][] safe,
-		List<RouteData.Threat> threats, int stillTicks, double[][] legs)
+		List<RouteData.Threat> threats, int stillTicks, float[][] legs)
 	{
 		if (path.length < 2 || stops.length == 0)
 		{
@@ -126,15 +125,11 @@ final class ShoalRoute
 		this.threats = threats == null ? new ArrayList<>() : threats;
 
 		int points = path.length;
-		pathX = new double[points];
-		pathY = new double[points];
-		pathDistance = new double[points];
+		double[] pathDistance = new double[points];
 		double distance = 0;
 		for (int i = 0; i < points; i++)
 		{
 			int j = (i + 1) % points;
-			pathX[i] = path[i][0];
-			pathY[i] = path[i][1];
 			pathDistance[i] = distance;
 			distance += span(path[j][0] - path[i][0], path[j][1] - path[i][1]);
 		}
@@ -159,37 +154,31 @@ final class ShoalRoute
 		maxX = highX;
 		maxY = highY;
 
-		stopDistance = new double[stops.length];
-		for (int i = 0; i < stops.length; i++)
-		{
-			stopDistance[i] = project(stops[i][0], stops[i][1]).distance;
-		}
-
 		List<double[]> samples = new ArrayList<>();
 		for (int i = 0; i < points; i++)
 		{
 			int j = (i + 1) % points;
-			double segment = pathDistance(j) - pathDistance[i];
+			double segment = (j == 0 ? length : pathDistance[j]) - pathDistance[i];
 			int steps = Math.max(1, (int) Math.ceil(segment / SAMPLE_SPACING));
 			for (int step = 0; step < steps; step++)
 			{
 				double t = (double) step / steps;
 				samples.add(new double[]{
-					pathX[i] + t * (pathX[j] - pathX[i]),
-					pathY[i] + t * (pathY[j] - pathY[i]),
+					path[i][0] + t * (path[j][0] - path[i][0]),
+					path[i][1] + t * (path[j][1] - path[i][1]),
 					pathDistance[i] + t * segment
 				});
 			}
 		}
 
-		sampleX = new double[samples.size()];
-		sampleY = new double[samples.size()];
-		sampleDistance = new double[samples.size()];
+		sampleX = new float[samples.size()];
+		sampleY = new float[samples.size()];
+		sampleDistance = new float[samples.size()];
 		for (int i = 0; i < samples.size(); i++)
 		{
-			sampleX[i] = samples.get(i)[0];
-			sampleY[i] = samples.get(i)[1];
-			sampleDistance[i] = samples.get(i)[2];
+			sampleX[i] = (float) samples.get(i)[0];
+			sampleY[i] = (float) samples.get(i)[1];
+			sampleDistance[i] = (float) samples.get(i)[2];
 		}
 		sampleDetail = detail(sampleX, sampleY);
 
@@ -217,6 +206,12 @@ final class ShoalRoute
 			blockMinY[block] = southward;
 			blockMaxX[block] = eastward;
 			blockMaxY[block] = northward;
+		}
+
+		stopDistance = new double[stops.length];
+		for (int i = 0; i < stops.length; i++)
+		{
+			stopDistance[i] = project(stops[i][0], stops[i][1]).distance;
 		}
 	}
 
@@ -700,7 +695,7 @@ final class ShoalRoute
 			stop--;
 		}
 		int into = at - legStart[stop];
-		double[] leg = legs[stop];
+		float[] leg = legs[stop];
 		double share = into == 0 ? 0 : into > leg.length ? 1 : leg[into - 1];
 		int next = stop + 1 == stops.length ? 0 : stop + 1;
 		return stopDistance[stop] + forward(stopDistance[stop], stopDistance[next]) * share;
@@ -746,7 +741,7 @@ final class ShoalRoute
 		int next = stop + 1 == stops.length ? 0 : stop + 1;
 		double whole = forward(stopDistance[stop], stopDistance[next]);
 		double share = whole <= 0 ? 0 : behind / whole;
-		double[] leg = legs[stop];
+		float[] leg = legs[stop];
 		int best = 1;
 		// A leg of a single tick has no share to compare, and its one tick is the answer.
 		for (int into = 2; into <= leg.length; into++)
@@ -819,38 +814,38 @@ final class ShoalRoute
 
 	private Projection project(double x, double y, double near, double window)
 	{
-		int points = pathX.length;
+		int points = sampleX.length;
 		double bestOffset = Double.MAX_VALUE;
 		double bestDistance = 0;
 		for (int i = 0; i < points; i++)
 		{
 			int j = i + 1 == points ? 0 : i + 1;
-			double dx = pathX[j] - pathX[i];
-			double dy = pathY[j] - pathY[i];
+			double dx = sampleX[j] - sampleX[i];
+			double dy = sampleY[j] - sampleY[i];
 			double lengthSquared = dx * dx + dy * dy;
 			// Already measured when the route was built, rather than a square root for every piece on every call.
-			double segmentLength = pathDistance(j) - pathDistance[i];
+			double segmentLength = (j == 0 ? length : sampleDistance[j]) - sampleDistance[i];
 
 			if (near >= 0)
 			{
 				// Any piece reaching into the window, not only one starting inside it, so a shoal part way along a long
 				// straight isn't snapped ahead to its end; measured from the back of the window, round the loop.
-				double reach = forward(near - window, pathDistance[i]);
+				double reach = forward(near - window, sampleDistance[i]);
 				if (reach > 2 * window && reach + segmentLength < length)
 				{
 					continue;
 				}
 			}
 
-			double t = lengthSquared == 0 ? 0 : Math.max(0, Math.min(1, ((x - pathX[i]) * dx + (y - pathY[i]) * dy) / lengthSquared));
+			double t = lengthSquared == 0 ? 0 : Math.max(0, Math.min(1, ((x - sampleX[i]) * dx + (y - sampleY[i]) * dy) / lengthSquared));
 			// Compared squared, with one square root for the nearest at the end.
-			double awayX = x - (pathX[i] + t * dx);
-			double awayY = y - (pathY[i] + t * dy);
+			double awayX = x - (sampleX[i] + t * dx);
+			double awayY = y - (sampleY[i] + t * dy);
 			double offset = awayX * awayX + awayY * awayY;
 			if (offset < bestOffset)
 			{
 				bestOffset = offset;
-				bestDistance = pathDistance[i] + t * segmentLength;
+				bestDistance = sampleDistance[i] + t * segmentLength;
 			}
 		}
 		return new Projection(bestDistance % length, Math.sqrt(bestOffset));
@@ -933,16 +928,16 @@ final class ShoalRoute
 	 * Douglas-Peucker over the points as one open line: each split point gets its distance from the piece it splits,
 	 * capped by its parent's, so the points at or above any tolerance are those Douglas-Peucker keeps.
 	 */
-	private static double[] detail(double[] xs, double[] ys)
+	private static float[] detail(float[] xs, float[] ys)
 	{
 		int count = xs.length;
-		double[] detail = new double[count];
+		float[] detail = new float[count];
 		if (count == 0)
 		{
 			return detail;
 		}
-		detail[0] = Double.POSITIVE_INFINITY;
-		detail[count - 1] = Double.POSITIVE_INFINITY;
+		detail[0] = Float.POSITIVE_INFINITY;
+		detail[count - 1] = Float.POSITIVE_INFINITY;
 		// Stretches still to split: their first and last points, and the cap from the point that made them.
 		int[] firsts = new int[count];
 		int[] lasts = new int[count];
@@ -984,7 +979,9 @@ final class ShoalRoute
 			}
 
 			double split = Math.min(Math.sqrt(farthestSquared), cap);
-			detail[farthest] = split;
+			// Rounded up as it is stored, so a point is never left out at a tolerance it reaches.
+			float stored = (float) split;
+			detail[farthest] = stored < split ? Math.nextUp(stored) : stored;
 			firsts[stretches] = first;
 			lasts[stretches] = farthest;
 			caps[stretches++] = split;
@@ -1137,7 +1134,7 @@ final class ShoalRoute
 		{
 			return false;
 		}
-		int index = Arrays.binarySearch(sampleDistance, forward(0, distance));
+		int index = Arrays.binarySearch(sampleDistance, (float) forward(0, distance));
 		return dangerAt(index >= 0 ? index : (-index - 2 + count) % count);
 	}
 
@@ -1220,7 +1217,7 @@ final class ShoalRoute
 	 */
 	int sampleAt(double distance)
 	{
-		int index = Arrays.binarySearch(sampleDistance, forward(0, distance));
+		int index = Arrays.binarySearch(sampleDistance, (float) forward(0, distance));
 		if (index < 0)
 		{
 			index = -index - 1;
@@ -1235,11 +1232,6 @@ final class ShoalRoute
 	static double span(double x, double y)
 	{
 		return Math.sqrt(x * x + y * y);
-	}
-
-	private double pathDistance(int point)
-	{
-		return point == 0 ? length : pathDistance[point];
 	}
 
 	/**

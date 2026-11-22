@@ -11,10 +11,10 @@ import net.runelite.client.ui.overlay.components.TitleComponent;
 
 /**
  * How long Trawling Plus draws over the last WINDOW frames, as average / median milliseconds: the main overlay, its
- * route line split into building and stroking, and the route lines on the minimap and world map.
+ * route line split into building and stroking, the route lines on the minimap and world map, and the trawling log.
  */
 class TrawlingPlusDebugTimingOverlay extends OverlayPanel
-	implements TrawlingPlusOverlay.DrawTimer, MapRoutes.MapTimer
+	implements TrawlingPlusOverlay.DrawTimer, MapRoutes.MapTimer, HoldBook.BookTimer
 {
 	// About five seconds at 120 frames a second.
 	private static final int WINDOW = 600;
@@ -30,6 +30,11 @@ class TrawlingPlusDebugTimingOverlay extends OverlayPanel
 	private final long[][] maps = new long[MAP_PARTS.length][WINDOW];
 	private final int[] mapCounts = new int[MAP_PARTS.length];
 	private final int[] mapNext = new int[MAP_PARTS.length];
+	// The trawling log's work by part, as BookTimer numbers them; builds are rare, so they also keep a running count.
+	private final long[][] book = new long[3][WINDOW];
+	private final int[] bookCounts = new int[3];
+	private final int[] bookNext = new int[3];
+	private final int[] bookTotals = new int[3];
 
 	@Inject
 	TrawlingPlusDebugTimingOverlay(TrawlingPlusDebugConfig config)
@@ -62,10 +67,22 @@ class TrawlingPlusDebugTimingOverlay extends OverlayPanel
 		mapCounts[part] = Math.min(mapCounts[part] + 1, WINDOW);
 	}
 
+	/**
+	 * Takes how long one part of the trawling log's work took. Called on the client thread, as the log draws.
+	 */
+	@Override
+	public void bookTook(int part, long nanos)
+	{
+		book[part][bookNext[part]] = nanos;
+		bookNext[part] = (bookNext[part] + 1) % WINDOW;
+		bookCounts[part] = Math.min(bookCounts[part] + 1, WINDOW);
+		bookTotals[part]++;
+	}
+
 	@Override
 	public Dimension render(Graphics2D graphics)
 	{
-		boolean anyMap = false;
+		boolean anyMap = bookCounts[HoldBook.BookTimer.DRAW] > 0;
 		for (int mapCount : mapCounts)
 		{
 			anyMap |= mapCount > 0;
@@ -99,7 +116,32 @@ class TrawlingPlusDebugTimingOverlay extends OverlayPanel
 				row(MAP_PARTS[part], times(maps[part], mapCounts[part]));
 			}
 		}
+		int drawn = bookCounts[HoldBook.BookTimer.DRAW];
+		if (drawn > 0)
+		{
+			row("Log draw", times(book[HoldBook.BookTimer.DRAW], drawn));
+			row("Log draw max", millis(sorted(book[HoldBook.BookTimer.DRAW], drawn)[drawn - 1]));
+		}
+		buildRow("Log page build", HoldBook.BookTimer.PAGE);
+		buildRow("Log sprites build", HoldBook.BookTimer.SPRITES);
 		return super.render(graphics);
+	}
+
+	/** A build's average / slowest over its last builds, and how many there have been. */
+	private void buildRow(String name, int part)
+	{
+		int built = bookCounts[part];
+		if (built == 0)
+		{
+			return;
+		}
+		long[] sorted = sorted(book[part], built);
+		long sum = 0;
+		for (long sample : sorted)
+		{
+			sum += sample;
+		}
+		row(name + " (" + bookTotals[part] + ")", millis((double) sum / built) + " / " + millis(sorted[built - 1]) + " max");
 	}
 
 	private static String times(long[] samples, int count)

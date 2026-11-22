@@ -3530,7 +3530,7 @@ public class TrawlingPlusPlugin extends Plugin
 		List<BookPage.Line> session = new ArrayList<>();
 		List<BookPage.Line> life = new ArrayList<>();
 		// The lifetime total is added up here rather than with lifetimeTotal(), which would read every fish's saved
-		// count from the profile a second time; this runs once a tick while the book is open.
+		// count from the profile a second time; this runs every other tick while the book is open.
 		int lifeTotal = 0;
 		for (String kind : BOOK_FISH)
 		{

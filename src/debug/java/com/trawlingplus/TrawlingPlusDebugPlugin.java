@@ -9,7 +9,7 @@ import net.runelite.client.ui.overlay.OverlayManager;
 
 /**
  * Dev-only tools for Trawling Plus, never part of the released plugin: times its drawing through the drawTimer and
- * mapTimer hooks.
+ * mapTimer and bookTimer hooks.
  */
 @PluginDescriptor(
 	name = "Trawling Plus Debug",
@@ -35,6 +35,7 @@ public class TrawlingPlusDebugPlugin extends Plugin
 	{
 		TrawlingPlusOverlay.drawTimer = timingOverlay;
 		MapRoutes.mapTimer = timingOverlay;
+		HoldBook.bookTimer = timingOverlay;
 		overlayManager.add(timingOverlay);
 	}
 
@@ -43,6 +44,7 @@ public class TrawlingPlusDebugPlugin extends Plugin
 	{
 		TrawlingPlusOverlay.drawTimer = null;
 		MapRoutes.mapTimer = null;
+		HoldBook.bookTimer = null;
 		overlayManager.remove(timingOverlay);
 	}
 }

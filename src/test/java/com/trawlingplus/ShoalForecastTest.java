@@ -11,7 +11,7 @@ public class ShoalForecastTest
 	// five more ticks at each stop: a 16 tick lap.
 	private static final ShoalRoute ROUTE = new ShoalRoute("Test", "Timed", 0,
 		new double[][]{{0, 0}, {10, 0}, {10, 10}, {0, 10}},
-		new double[][]{{10, 0}, {0, 10}}, null, null, 5, new double[][]{{0.25, 0.5, 0.75}, {0.5}});
+		new double[][]{{10, 0}, {0, 10}}, null, null, 5, new float[][]{{0.25f, 0.5f, 0.75f}, {0.5f}});
 
 	@Test
 	public void followsFromLeavingAStop()

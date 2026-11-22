@@ -264,8 +264,11 @@ class HoldBook extends Overlay implements KeyListener
 	private final TrawlingPlusConfig config;
 	private final TrawlingPlusPlugin plugin;
 
-	// The pages, two to a spread, as the plugin last gave them: read again once a game tick while the book is open,
-	// so the counts on them stay current. Each page's image is redrawn only when the page has changed.
+	// How often the pages are read again while the book is open, in game ticks.
+	private static final int PAGES_EVERY_TICKS = 2;
+
+	// The pages, two to a spread, as the plugin last gave them: read again every PAGES_EVERY_TICKS while the book is
+	// open, so the counts on them stay current. A page's image is dropped then if the page has changed.
 	private volatile List<BookPage> pages = Collections.emptyList();
 	private final List<BookPage> pagesDrawn = new ArrayList<>();
 	private int pagesReadTick = -1;
@@ -364,6 +367,24 @@ class HoldBook extends Overlay implements KeyListener
 	// Set when a picture arrives, so the pages are drawn again with it.
 	private volatile boolean picturesChanged;
 
+	// Told how long the book takes to draw and build, by the debug plugin; null otherwise.
+	static BookTimer bookTimer;
+
+	/**
+	 * Takes how long one part of the book's work took, in nanoseconds.
+	 */
+	interface BookTimer
+	{
+		// A frame of the open or swinging book, page and sprite builds included.
+		int DRAW = 0;
+		// One page drawn into its picture.
+		int PAGE = 1;
+		// The frame, cover, buttons and fonts built from the sprites.
+		int SPRITES = 2;
+
+		void bookTook(int part, long nanos);
+	}
+
 	@Inject
 	HoldBook(Client client, TrawlingPlusConfig config, TrawlingPlusPlugin plugin, ConfigManager configManager,
 		TooltipManager tooltipManager, ItemManager itemManager)
@@ -395,6 +416,26 @@ class HoldBook extends Overlay implements KeyListener
 		bookmark = null;
 		seen = null;
 		forgetBounds();
+		forgetImages();
+		holdClose = null;
+		spritesMissingLogged = false;
+		closeTriedTick = -1;
+		pages = Collections.emptyList();
+		pagesReadTick = -1;
+		pictures.clear();
+		picturesAsked.clear();
+		picturesChanged = false;
+		menuOpen = false;
+		overWorld = false;
+	}
+
+	/** Lets go of the frame, cover, fonts and drawn pages, built again the next time the book or its button shows. */
+	private void forgetImages()
+	{
+		if (frame == null && pageImages.isEmpty())
+		{
+			return;
+		}
 		frame = null;
 		arrowLeft = null;
 		arrowRight = null;
@@ -404,24 +445,14 @@ class HoldBook extends Overlay implements KeyListener
 		iconHovered = null;
 		seal = null;
 		cover = null;
-		holdClose = null;
+		bodyFont = null;
+		titleFont = null;
 		spritesTriedTick = -1;
-		spritesMissingLogged = false;
 		overridesUsed.clear();
 		overridesCheckedTick = -1;
-		closeTriedTick = -1;
 		pageImages.clear();
 		pageTips.clear();
 		pagesDrawn.clear();
-		pages = Collections.emptyList();
-		pagesReadTick = -1;
-		pictures.clear();
-		picturesAsked.clear();
-		picturesChanged = false;
-		bodyFont = null;
-		titleFont = null;
-		menuOpen = false;
-		overWorld = false;
 	}
 
 	@Override
@@ -440,8 +471,8 @@ class HoldBook extends Overlay implements KeyListener
 		}
 		if (!holdUp && !free || !loadSprites())
 		{
-			// Opened from the button, the book belongs to the hold's screen and closes with it, at once, letting go
-			// of the images only a turn or swing draws into.
+			// Opened from the button, the book belongs to the hold's screen and closes with it, at once. With neither
+			// showing, every image it drew with is let go.
 			open = false;
 			anywhere = false;
 			coverStart = 0;
@@ -449,6 +480,7 @@ class HoldBook extends Overlay implements KeyListener
 			leafLeft = null;
 			coverInside = null;
 			coverOutside = null;
+			forgetImages();
 			forgetBounds();
 			holdClose = null;
 			closeTriedTick = -1;
@@ -490,7 +522,15 @@ class HoldBook extends Overlay implements KeyListener
 		// Room is left below the book for its section tabs.
 		int below = config.sectionRibbons() ? TAB_OUT : 0;
 		y = Math.max(viewY, Math.min(y, viewY + client.getViewportHeight() - BOOK_HEIGHT - below));
-		return drawBook(graphics, tick, now, swung, swinging, x, y, mouseX, mouseY);
+		BookTimer timer = bookTimer;
+		if (timer == null)
+		{
+			return drawBook(graphics, tick, now, swung, swinging, x, y, mouseX, mouseY);
+		}
+		long started = System.nanoTime();
+		Dimension drawn = drawBook(graphics, tick, now, swung, swinging, x, y, mouseX, mouseY);
+		timer.bookTook(BookTimer.DRAW, System.nanoTime() - started);
+		return drawn;
 	}
 
 	/** The button on the hold's screen, just left of its close button, pulsing until the book is first opened. */
@@ -530,10 +570,17 @@ class HoldBook extends Overlay implements KeyListener
 	private Dimension drawBook(Graphics2D graphics, int tick, long now, long swung, boolean swinging, int x, int y,
 		int mouseX, int mouseY)
 	{
-		if (tick != pagesReadTick)
+		if (pagesReadTick < 0 || tick < pagesReadTick || tick - pagesReadTick >= PAGES_EVERY_TICKS)
 		{
 			pages = plugin.bookPages();
 			pagesReadTick = tick;
+			for (int page = 0; page < pageImages.size(); page++)
+			{
+				if (page >= pages.size() || !pages.get(page).equals(pagesDrawn.get(page)))
+				{
+					pageImages.set(page, null);
+				}
+			}
 		}
 		if (picturesChanged)
 		{
@@ -1208,7 +1255,7 @@ class HoldBook extends Overlay implements KeyListener
 		}
 	}
 
-	/** A page's image, drawn again only when the page has changed; null past the last page. */
+	/** A page's image, drawn when it has none, as after the page changed; null past the last page. */
 	private BufferedImage pageImage(List<BookPage> showing, int page)
 	{
 		if (page >= showing.size())
@@ -1222,10 +1269,16 @@ class HoldBook extends Overlay implements KeyListener
 			pagesDrawn.add(null);
 		}
 		BookPage content = showing.get(page);
-		if (pageImages.get(page) == null || !content.equals(pagesDrawn.get(page)))
+		if (pageImages.get(page) == null)
 		{
 			Map<Rectangle, String> tips = new HashMap<>();
+			BookTimer timer = bookTimer;
+			long started = timer == null ? 0 : System.nanoTime();
 			pageImages.set(page, buildPage(content, page + 1, tips));
+			if (timer != null)
+			{
+				timer.bookTook(BookTimer.PAGE, System.nanoTime() - started);
+			}
 			pageTips.set(page, tips);
 			pagesDrawn.set(page, content);
 		}
@@ -1625,6 +1678,8 @@ class HoldBook extends Overlay implements KeyListener
 			return false;
 		}
 		spritesTriedTick = tick;
+		BookTimer timer = bookTimer;
+		long started = timer == null ? 0 : System.nanoTime();
 		BufferedImage[] book = new BufferedImage[12];
 		int[] ids = {CORNER_TOP_LEFT, EDGE_TOP, CLASP_TOP, CORNER_TOP_RIGHT, EDGE_LEFT, PAGE, SPINE, EDGE_RIGHT,
 			CORNER_BOTTOM_LEFT, EDGE_BOTTOM, CLASP_BOTTOM, CORNER_BOTTOM_RIGHT};
@@ -1703,6 +1758,10 @@ class HoldBook extends Overlay implements KeyListener
 		bodyFont = body;
 		titleFont = titles;
 		frame = built;
+		if (timer != null)
+		{
+			timer.bookTook(BookTimer.SPRITES, System.nanoTime() - started);
+		}
 		return true;
 	}
 

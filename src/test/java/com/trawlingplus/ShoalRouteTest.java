@@ -254,7 +254,7 @@ public class ShoalRouteTest
 		// The square, swum 10 -> 30 in four ticks and 30 -> 10 in two, sitting still five more ticks at each stop.
 		ShoalRoute timed = new ShoalRoute("Test", "Timed", 0,
 			new double[][]{{0, 0}, {10, 0}, {10, 10}, {0, 10}},
-			new double[][]{{10, 0}, {0, 10}}, null, null, 5, new double[][]{{0.25, 0.5, 0.75}, {0.5}});
+			new double[][]{{10, 0}, {0, 10}}, null, null, 5, new float[][]{{0.25f, 0.5f, 0.75f}, {0.5f}});
 		assertTrue(timed.timed());
 		assertEquals(16, timed.lapTicks());
 		assertEquals(0, timed.leaveTick(0));

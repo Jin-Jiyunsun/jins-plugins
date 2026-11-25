@@ -11,7 +11,7 @@ import net.runelite.client.ui.overlay.components.TitleComponent;
 
 /**
  * How long Trawling Plus draws over the last WINDOW frames, as average / median milliseconds: the main overlay, its
- * route line split into building and stroking, the route lines on the minimap and world map, and the trawling log.
+ * route line split into building and stroking, the route lines and stops on the minimap and world map, and the trawling log.
  */
 class TrawlingPlusDebugTimingOverlay extends OverlayPanel
 	implements TrawlingPlusOverlay.DrawTimer, MapRoutes.MapTimer, HoldBook.BookTimer
@@ -26,7 +26,8 @@ class TrawlingPlusDebugTimingOverlay extends OverlayPanel
 	private int count;
 	private int next;
 	// The maps' route drawing by part, as MapTimer numbers them.
-	private static final String[] MAP_PARTS = {"Minimap lines", "World map lines", "World map arrows"};
+	private static final String[] MAP_PARTS = {"Minimap lines", "World map lines", "World map arrows",
+		"Minimap stops", "World map stops"};
 	private final long[][] maps = new long[MAP_PARTS.length][WINDOW];
 	private final int[] mapCounts = new int[MAP_PARTS.length];
 	private final int[] mapNext = new int[MAP_PARTS.length];

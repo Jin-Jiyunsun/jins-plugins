@@ -36,6 +36,8 @@ class TrawlingPlusMapOverlay extends Overlay
 	// under it at a stop, this wide; and the arrow at the map's edge pointing to the last trawled one off the map.
 	private static final int SHOAL_DOT = 8;
 	private static final int HEADING_ARROW = 12;
+	// A stop's outline, across.
+	private static final int STOP = 7;
 	private static final int EDGE_ARROW = 17;
 	// How far the edge arrow's middle sits inside the map's edge.
 	private static final int EDGE_ARROW_INSET = 12;
@@ -211,10 +213,40 @@ class TrawlingPlusMapOverlay extends Overlay
 			timer.mapTook(MapRoutes.MapTimer.WORLD_ARROWS, arrowNanos);
 		}
 
+		if (config.showStops())
+		{
+			long started = timer == null ? 0 : System.nanoTime();
+			drawStops(graphics, fromX, fromY, toX, toY);
+			if (timer != null)
+			{
+				timer.mapTook(MapRoutes.MapTimer.WORLD_STOPS, System.nanoTime() - started);
+			}
+		}
 		drawShoals(graphics, mapView, within);
 
 		graphics.setClip(clip);
 		return null;
+	}
+
+	/**
+	 * Every shown route's stops in the given box of tiles, over the lines and under the shoals, the last trawled
+	 * route's next stop taken from where its shoal likely is while it's out of view.
+	 */
+	private void drawStops(Graphics2D graphics, double fromX, double fromY, double toX, double toY)
+	{
+		ShoalRoute trawled = config.showPredictedOnMap() ? plugin.getTrawledRoute() : null;
+		for (ShoalRoute route : plugin.getShownRoutes())
+		{
+			if (!route.overlaps(fromX, fromY, toX, toY))
+			{
+				continue;
+			}
+			long now = System.currentTimeMillis();
+			double likely = route == trawled ? plugin.getForecast().distance(route, now) : -1;
+			boolean likelyStopped = likely >= 0 && plugin.getForecast().stopLeft(route, now) >= 0;
+			MapRoutes.stops(graphics, config, route, mapView, STOP, fromX, fromY, toX, toY,
+				MapRoutes.stopStates(plugin, client, route, likely, likelyStopped));
+		}
 	}
 
 	/**

@@ -14,7 +14,7 @@ bait and cargo hold from a display on the boat, and keeps a trawling log of ever
 
 - **Shoal routes**: the nearest shoal's route, drawn in the water as a loop or the next few stops,
   with stops marked and an arrow showing which way the shoal is heading. Also optionally on the minimap and
-  world map, with arrows along the route and each shoal in sight shown as an arrow while it swims or a dot at a stop.
+  world map, with arrows and stops along the route and each shoal in sight shown as an arrow while it swims or a dot at a stop.
 - **Fishable area**: roughly how close your boat needs to be to fish the nearest shoal, with a dot on the
   boat showing whether you're in range. Turns gold while the shoal is shimmering, glistening or
   vibrant.

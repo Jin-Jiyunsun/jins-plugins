@@ -49,6 +49,8 @@ class TrawlingPlusMinimapOverlay extends Overlay
 	// minimap's edge pointing to the last trawled one off it.
 	private static final int SHOAL_DOT = 6;
 	private static final int HEADING_ARROW = 9;
+	// A stop's outline, across.
+	private static final int STOP = 5;
 	private static final int EDGE_ARROW = 11;
 	// How far the edge arrow's middle sits inside the minimap's edge.
 	private static final int EDGE_ARROW_INSET = 8;
@@ -165,9 +167,19 @@ class TrawlingPlusMinimapOverlay extends Overlay
 				danger ? MapRoutes.withAlphaOf(config.dangerColour(), config.directionArrowColour()) : null);
 			MapRoutes.route(graphics, config, route, mapView, THICKNESS, fromX, fromY, toX, toY,
 				danger ? MapRoutes.withAlphaOf(config.dangerColour(), config.routeColour()) : null);
+			long drawn = timer == null ? 0 : System.nanoTime();
+			if (config.showStops())
+			{
+				MapRoutes.stops(graphics, config, route, mapView, STOP, fromX, fromY, toX, toY,
+					MapRoutes.stopStates(plugin, client, route, -1, false));
+			}
 			if (timer != null)
 			{
-				timer.mapTook(MapRoutes.MapTimer.MINIMAP, System.nanoTime() - started);
+				timer.mapTook(MapRoutes.MapTimer.MINIMAP, drawn - started);
+				if (config.showStops())
+				{
+					timer.mapTook(MapRoutes.MapTimer.MINIMAP_STOPS, System.nanoTime() - drawn);
+				}
 			}
 		}
 

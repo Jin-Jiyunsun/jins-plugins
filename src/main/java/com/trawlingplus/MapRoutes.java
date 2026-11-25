@@ -6,6 +6,7 @@ import java.awt.Color;
 import java.awt.Graphics2D;
 import java.awt.Rectangle;
 import java.awt.RenderingHints;
+import java.awt.Shape;
 import java.awt.geom.Ellipse2D;
 import java.awt.geom.Line2D;
 import java.awt.geom.Path2D;
@@ -52,6 +53,15 @@ final class MapRoutes
 	private static final BasicStroke DOT_EDGE = new BasicStroke(1);
 	private static final BasicStroke MARK_ARROW_EDGE =
 		new BasicStroke(1.5f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND);
+	// A stop's outline in its colour, over a dark one twice as wide so it shows on any water.
+	private static final BasicStroke STOP_STROKE = new BasicStroke(1.5f, BasicStroke.CAP_BUTT, BasicStroke.JOIN_MITER);
+	private static final BasicStroke STOP_EDGE = new BasicStroke(3, BasicStroke.CAP_BUTT, BasicStroke.JOIN_MITER);
+	// Room around a stop's outline for its edge, in pixels, and its pictures on an upright map, plain and next.
+	private static final int STOP_PICTURE_MARGIN = 4;
+	// A stop as stopStates gives it: a shoal's next stop, or the one a shoal is sitting at, which isn't drawn.
+	static final byte STOP_NEXT = 1;
+	static final byte STOP_AT = 2;
+	private static final StopPicture[] STOP_PICTURES = {new StopPicture(), new StopPicture()};
 
 	// Told how long the maps' route drawing takes, by the debug plugin; null otherwise.
 	static MapTimer mapTimer;
@@ -64,6 +74,8 @@ final class MapRoutes
 		int MINIMAP = 0;
 		int WORLD_LINES = 1;
 		int WORLD_ARROWS = 2;
+		int MINIMAP_STOPS = 3;
+		int WORLD_STOPS = 4;
 
 		void mapTook(int part, long nanos);
 	}
@@ -535,8 +547,9 @@ final class MapRoutes
 		Color colour = config.shoalHeadingArrowColour();
 		if (onto.shows != null)
 		{
-			maskedMark(graphics, onto, (int) Math.round(onto.x(at[0], at[1])), (int) Math.round(onto.y(at[0], at[1])),
-				colour, dot, arrow, towardX, towardY);
+			masked(graphics, onto, (int) Math.round(onto.x(at[0], at[1])), (int) Math.round(onto.y(at[0], at[1])),
+				Math.max(dot, arrow) + MARK_MARGIN,
+				(drawing, x, y) -> mark(drawing, x, y, colour, dot, arrow, towardX, towardY));
 			return;
 		}
 		Point placed = onto.at(at[0], at[1]);
@@ -547,13 +560,19 @@ final class MapRoutes
 	}
 
 	/**
-	 * A mark on a masked map, cut at the edge like the line, so it slides under the frame rather than popping in and
-	 * out whole.
+	 * Draws a mark centred on a point.
 	 */
-	private static void maskedMark(Graphics2D graphics, MapView onto, int x, int y, Color colour, int dot, int arrow,
-		double towardX, double towardY)
+	private interface MarkDrawing
 	{
-		int size = Math.max(dot, arrow) + MARK_MARGIN;
+		void draw(Graphics2D graphics, double x, double y);
+	}
+
+	/**
+	 * A mark this many pixels across, edge included, on a masked map, cut at the edge like the line, so it slides
+	 * under the frame rather than popping in and out whole.
+	 */
+	private static void masked(Graphics2D graphics, MapView onto, int x, int y, int size, MarkDrawing mark)
+	{
 		int left = x - size / 2;
 		int top = y - size / 2;
 		int shown = 0;
@@ -569,7 +588,7 @@ final class MapRoutes
 		}
 		if (shown == size * size)
 		{
-			mark(graphics, x, y, colour, dot, arrow, towardX, towardY);
+			mark.draw(graphics, x, y);
 			return;
 		}
 		if (shown == 0)
@@ -585,7 +604,7 @@ final class MapRoutes
 		drawing.setComposite(AlphaComposite.Clear);
 		drawing.fillRect(0, 0, markPicture.getWidth(), markPicture.getHeight());
 		drawing.setComposite(AlphaComposite.SrcOver);
-		mark(drawing, x - left, y - top, colour, dot, arrow, towardX, towardY);
+		mark.draw(drawing, x - left, y - top);
 		drawing.dispose();
 		for (int down = 0; down < size; down++)
 		{
@@ -598,6 +617,170 @@ final class MapRoutes
 			}
 		}
 		graphics.drawImage(markPicture, left, top, left + size, top + size, 0, 0, size, size, null);
+	}
+
+	/**
+	 * Each of a route's stops as plain, the next stop of a shoal on it the game is drawing, or the one such a shoal is
+	 * sitting at; with none drawn, for the shoal likely this far round it (below 0 for none) and likely stopped or not.
+	 */
+	static byte[] stopStates(TrawlingPlusPlugin plugin, Client client, ShoalRoute route, double likely,
+		boolean likelyStopped)
+	{
+		byte[] states = new byte[route.stopCount()];
+		int tick = client.getTickCount();
+		boolean seen = false;
+		for (Shoal shoal : plugin.getShoals())
+		{
+			if (shoal.getRoute() != route || !plugin.isShown(shoal) || !shoal.rendered(client))
+			{
+				continue;
+			}
+			seen = true;
+			double[] position = shoal.position(client);
+			if (position != null)
+			{
+				markStops(states, route, shoal.followRoute(position), shoal.stopBarNow(tick) >= 0);
+			}
+		}
+		if (!seen && likely >= 0)
+		{
+			markStops(states, route, likely, likelyStopped);
+		}
+		return states;
+	}
+
+	private static void markStops(byte[] states, ShoalRoute route, double distance, boolean stopped)
+	{
+		int next = route.nextStop(distance);
+		if (states[next] != STOP_AT)
+		{
+			states[next] = STOP_NEXT;
+		}
+		if (!stopped)
+		{
+			return;
+		}
+		// Sitting at a stop moves the next stop on to the one after, so the one it's at comes just before; only when
+		// it really is there, rather than stopped short of it.
+		int at = (next + states.length - 1) % states.length;
+		double apart = Math.abs(distance - route.stopDistance(at)) % route.length();
+		if (Math.min(apart, route.length() - apart) <= ShoalRoute.AT_STOP_TILES)
+		{
+			states[at] = STOP_AT;
+		}
+	}
+
+	/**
+	 * A route's stops within a box of tiles, as outlines this many pixels across in the stop shape, a square turned
+	 * as the map turns, each a shoal is heading for in the next stop colour and none where a shoal is sitting.
+	 */
+	static void stops(Graphics2D graphics, TrawlingPlusConfig config, ShoalRoute route, MapView onto, int size,
+		double fromX, double fromY, double toX, double toY, byte[] states)
+	{
+		double pixelsPerTile = onto.pixelsPerTile();
+		if (pixelsPerTile <= 0)
+		{
+			return;
+		}
+		boolean circle = config.stopShape() == TrawlingPlusConfig.FishableShape.CIRCLE;
+		// A step east and north on screen, a pixel long, for a square's sides.
+		double eastX = onto.stepX(1, 0) / pixelsPerTile;
+		double eastY = onto.stepY(1, 0) / pixelsPerTile;
+		double northX = onto.stepX(0, 1) / pixelsPerTile;
+		double northY = onto.stepY(0, 1) / pixelsPerTile;
+		Color stopColour = config.stopColour();
+		Color nextColour = config.nextStopColour();
+		// A map that doesn't turn copies in a picture of each stop, far quicker than stroking its outline each time.
+		boolean upright = onto.shows == null && Math.abs(eastY) < 1e-9 && Math.abs(northX) < 1e-9;
+		int across = size + STOP_PICTURE_MARGIN;
+		for (int stop = 0; stop < route.stopCount(); stop++)
+		{
+			double tileX = route.stopX(stop);
+			double tileY = route.stopY(stop);
+			if (states[stop] == STOP_AT || tileX < fromX || tileX > toX || tileY < fromY || tileY > toY)
+			{
+				continue;
+			}
+			boolean isNext = states[stop] == STOP_NEXT;
+			Color colour = isNext ? nextColour : stopColour;
+			double x = onto.x(tileX, tileY);
+			double y = onto.y(tileX, tileY);
+			if (upright)
+			{
+				if (onto.contains(x, y))
+				{
+					BufferedImage picture = STOP_PICTURES[isNext ? 1 : 0].of(colour, circle, size);
+					graphics.drawImage(picture, (int) Math.round(x - across / 2.0), (int) Math.round(y - across / 2.0),
+						null);
+				}
+			}
+			else if (onto.shows != null)
+			{
+				masked(graphics, onto, (int) Math.round(x), (int) Math.round(y), size + MARK_MARGIN,
+					(drawing, atX, atY) -> stop(drawing, atX, atY, colour, size, circle, eastX, eastY, northX, northY));
+			}
+			else if (onto.contains(x, y))
+			{
+				stop(graphics, x, y, colour, size, circle, eastX, eastY, northX, northY);
+			}
+		}
+	}
+
+	/**
+	 * A stop drawn once into a picture, for a map that doesn't turn, kept until its colour, shape or size changes.
+	 * Client thread only.
+	 */
+	private static final class StopPicture
+	{
+		private Color colour;
+		private boolean circle;
+		private int size;
+		private BufferedImage picture;
+
+		BufferedImage of(Color colour, boolean circle, int size)
+		{
+			if (picture == null || !colour.equals(this.colour) || circle != this.circle || size != this.size)
+			{
+				this.colour = colour;
+				this.circle = circle;
+				this.size = size;
+				int across = size + STOP_PICTURE_MARGIN;
+				picture = new BufferedImage(across, across, BufferedImage.TYPE_INT_ARGB);
+				Graphics2D drawing = picture.createGraphics();
+				stop(drawing, across / 2.0, across / 2.0, colour, size, circle, 1, 0, 0, 1);
+				drawing.dispose();
+			}
+			return picture;
+		}
+	}
+
+	private static void stop(Graphics2D graphics, double x, double y, Color colour, int size, boolean circle,
+		double eastX, double eastY, double northX, double northY)
+	{
+		double half = size / 2.0;
+		Shape outline;
+		if (circle)
+		{
+			outline = new Ellipse2D.Double(x - half, y - half, size, size);
+		}
+		else
+		{
+			Path2D square = new Path2D.Double();
+			square.moveTo(x + (eastX + northX) * half, y + (eastY + northY) * half);
+			square.lineTo(x + (eastX - northX) * half, y + (eastY - northY) * half);
+			square.lineTo(x - (eastX + northX) * half, y - (eastY + northY) * half);
+			square.lineTo(x - (eastX - northX) * half, y - (eastY - northY) * half);
+			square.closePath();
+			outline = square;
+		}
+		Object[] hints = smooth(graphics);
+		graphics.setColor(withAlphaOf(MARK_EDGE, colour));
+		graphics.setStroke(STOP_EDGE);
+		graphics.draw(outline);
+		graphics.setColor(colour);
+		graphics.setStroke(STOP_STROKE);
+		graphics.draw(outline);
+		restore(graphics, hints);
 	}
 
 	/**

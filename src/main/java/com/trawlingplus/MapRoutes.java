@@ -620,6 +620,39 @@ final class MapRoutes
 	}
 
 	/**
+	 * How far a point on screen is from a route's line, in pixels, looking only at the runs reaching a box of tiles;
+	 * the largest double where none does.
+	 */
+	static double pixelsFrom(ShoalRoute route, MapView onto, double x, double y, double fromX, double fromY,
+		double toX, double toY)
+	{
+		int count = route.sampleCount();
+		double nearest = Double.MAX_VALUE;
+		for (int block = 0; block < route.blockCount(); block++)
+		{
+			if (!route.blockWithin(block, fromX, fromY, toX, toY))
+			{
+				continue;
+			}
+			int first = route.blockFrom(block);
+			int last = Math.min(route.blockTo(block), count - 1);
+			double atX = onto.x(route.sampleX(first), route.sampleY(first));
+			double atY = onto.y(route.sampleX(first), route.sampleY(first));
+			// Each piece from a point to the next, the one after the last point closing the loop.
+			for (int sample = first; sample <= last; sample++)
+			{
+				int next = (sample + 1) % count;
+				double nextX = onto.x(route.sampleX(next), route.sampleY(next));
+				double nextY = onto.y(route.sampleX(next), route.sampleY(next));
+				nearest = Math.min(nearest, Line2D.ptSegDistSq(atX, atY, nextX, nextY, x, y));
+				atX = nextX;
+				atY = nextY;
+			}
+		}
+		return nearest == Double.MAX_VALUE ? nearest : Math.sqrt(nearest);
+	}
+
+	/**
 	 * Each of a route's stops as plain, the next stop of a shoal on it the game is drawing, or the one such a shoal is
 	 * sitting at; with none drawn, for the shoal likely this far round it (below 0 for none) and likely stopped or not.
 	 */

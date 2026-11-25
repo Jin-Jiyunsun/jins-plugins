@@ -22,6 +22,8 @@ import net.runelite.client.game.SpriteManager;
 import net.runelite.client.ui.overlay.Overlay;
 import net.runelite.client.ui.overlay.OverlayLayer;
 import net.runelite.client.ui.overlay.OverlayPosition;
+import net.runelite.client.ui.overlay.tooltip.Tooltip;
+import net.runelite.client.ui.overlay.tooltip.TooltipManager;
 import net.runelite.client.ui.overlay.worldmap.WorldMapOverlay;
 
 /**
@@ -38,6 +40,10 @@ class TrawlingPlusMapOverlay extends Overlay
 	private static final int HEADING_ARROW = 12;
 	// A stop's outline, across.
 	private static final int STOP = 7;
+	// How close the mouse must be to a route's line to show its tooltip, and to a skull or shoal icon to leave the
+	// tooltip to it, in pixels.
+	private static final double ROUTE_HOVER = 5;
+	private static final double ICON_HOVER = 9;
 	private static final int EDGE_ARROW = 17;
 	// How far the edge arrow's middle sits inside the map's edge.
 	private static final int EDGE_ARROW_INSET = 12;
@@ -90,6 +96,7 @@ class TrawlingPlusMapOverlay extends Overlay
 	private final TrawlingPlusConfig config;
 	private final WorldMapOverlay worldMapOverlay;
 	private final SpriteManager spriteManager;
+	private final TooltipManager tooltipManager;
 	private final MapRoutes.MapView mapView = new MapRoutes.MapView();
 	private final MapRoutes.Clickable edgeArrow = new MapRoutes.Clickable();
 	private final MapRoutes.Clickable trawledMark = new MapRoutes.Clickable();
@@ -99,7 +106,7 @@ class TrawlingPlusMapOverlay extends Overlay
 
 	@Inject
 	TrawlingPlusMapOverlay(Client client, TrawlingPlusPlugin plugin, TrawlingPlusConfig config,
-		WorldMapOverlay worldMapOverlay, SpriteManager spriteManager)
+		WorldMapOverlay worldMapOverlay, SpriteManager spriteManager, TooltipManager tooltipManager)
 	{
 		super(plugin);
 		this.client = client;
@@ -107,6 +114,7 @@ class TrawlingPlusMapOverlay extends Overlay
 		this.config = config;
 		this.worldMapOverlay = worldMapOverlay;
 		this.spriteManager = spriteManager;
+		this.tooltipManager = tooltipManager;
 		setPosition(OverlayPosition.DYNAMIC);
 		// Right after the world map and at the lowest priority, so markers that RuneLite and other plugins draw
 		// after the same interface at a higher priority sit on top of the routes rather than under them.
@@ -223,9 +231,69 @@ class TrawlingPlusMapOverlay extends Overlay
 			}
 		}
 		drawShoals(graphics, mapView, within);
-
+		Shape area = graphics.getClip();
 		graphics.setClip(clip);
+		if (config.showRouteTooltips())
+		{
+			routeTip(area, placed, zoom);
+		}
 		return null;
+	}
+
+	/**
+	 * The tooltip of the route line under the mouse, if any: its fish and name, then its stops and how long a lap and
+	 * a stop take. Not over the shoal marks, the edge arrow, or a skull or shoal icon with a tooltip of its own.
+	 */
+	private void routeTip(Shape area, Point placed, double zoom)
+	{
+		Point mouse = client.getMouseCanvasPosition();
+		if (client.isMenuOpen() || area == null || !area.contains(mouse.getX(), mouse.getY())
+			|| trawledMark.at(mouse.getX(), mouse.getY()) != null || edgeArrow.at(mouse.getX(), mouse.getY()) != null
+			|| plugin.tooltipPointNear(mapView, mouse.getX(), mouse.getY(), ICON_HOVER))
+		{
+			return;
+		}
+
+		// The tiles under the mouse, with the hover reach round them.
+		double tileX = PLACED_TILE + (mouse.getX() - placed.getX()) / zoom;
+		double tileY = PLACED_TILE - (mouse.getY() - placed.getY()) / zoom;
+		double reach = ROUTE_HOVER / zoom + 1;
+		ShoalRoute nearest = null;
+		double nearestPixels = ROUTE_HOVER;
+		for (ShoalRoute route : plugin.getShownRoutes())
+		{
+			if (!route.overlaps(tileX - reach, tileY - reach, tileX + reach, tileY + reach))
+			{
+				continue;
+			}
+			double pixels = MapRoutes.pixelsFrom(route, mapView, mouse.getX(), mouse.getY(), tileX - reach,
+				tileY - reach, tileX + reach, tileY + reach);
+			if (pixels <= nearestPixels)
+			{
+				nearest = route;
+				nearestPixels = pixels;
+			}
+		}
+		if (nearest == null)
+		{
+			return;
+		}
+
+		String tip = nearest.getSpecies() + " at " + nearest.getName() + "</br>" + nearest.stopCount() + " stops";
+		if (nearest.timed())
+		{
+			tip += ", " + clock(nearest.lapTicks()) + " a lap, " + clock(nearest.stopTicks()) + " at each stop";
+		}
+		tooltipManager.add(new Tooltip(tip));
+	}
+
+	/**
+	 * Game ticks as minutes and seconds, such as 1:29.
+	 */
+	private static String clock(int ticks)
+	{
+		int seconds = (int) Math.round(ticks * 0.6);
+		return seconds / 60 + ":" + String.format("%02d", seconds % 60);
 	}
 
 	/**

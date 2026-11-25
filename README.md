@@ -15,6 +15,7 @@ bait and cargo hold from a display on the boat, and keeps a trawling log of ever
 - **Shoal routes**: the nearest shoal's route, drawn in the water as a loop or the next few stops,
   with stops marked and an arrow showing which way the shoal is heading. Also optionally on the minimap and
   world map, with arrows and stops along the route and each shoal in sight shown as an arrow while it swims or a dot at a stop.
+  Hover a route on the world map for its stops, lap time and time at each stop.
 - **Fishable area**: roughly how close your boat needs to be to fish the nearest shoal, with a dot on the
   boat showing whether you're in range. Turns gold while the shoal is shimmering, glistening or
   vibrant.
@@ -24,7 +25,7 @@ bait and cargo hold from a display on the boat, and keeps a trawling log of ever
 - **Predicted shoals**: shoals keep exact time, so the world map keeps showing the last shoal you trawled where it
   likely is while it's out of sight, with its stop timer at a stop. While you're aboard, arrows off your boat and at
   the edge of both maps point back to it, such as after banking, for 10 minutes after your last catch. Right-click a
-  shoal to track it without fishing it first, or to untrack it.
+  shoal to track it without fishing it first, or to untrack it; chat says which shoal you're tracking.
 
 <p align="center">
 <img width="800" height="693" alt="prediction" src="https://github.com/user-attachments/assets/2981f557-d8c4-40f6-8068-472232ba949c" />

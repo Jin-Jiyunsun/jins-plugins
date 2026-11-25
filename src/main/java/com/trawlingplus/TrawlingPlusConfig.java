@@ -1547,6 +1547,18 @@ public interface TrawlingPlusConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "showRouteTooltips",
+		name = "Route tooltips",
+		description = "Hover a route on the world map to see its<br>stops, lap time and time at each stop.",
+		position = 95,
+		section = mapsSection
+	)
+	default boolean showRouteTooltips()
+	{
+		return true;
+	}
+
+	@ConfigItem(
 		keyName = "showPredictedOnMap",
 		name = "Predicted shoal",
 		description = "Mark where the shoal you last trawled likely is<br>on the world map while it's out of sight, the<br>"

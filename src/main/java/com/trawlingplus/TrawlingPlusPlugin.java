@@ -1221,6 +1221,40 @@ public class TrawlingPlusPlugin extends Plugin
 	}
 
 	/**
+	 * Whether one of the plugin's world map points that shows a tooltip, a skull or a shoal icon, is within this many
+	 * pixels of a point on the canvas. Client thread only.
+	 */
+	boolean tooltipPointNear(MapRoutes.MapView onto, double x, double y, double pixels)
+	{
+		if (config.showDanger().onMaps())
+		{
+			for (DangerMarker point : dangerMarkers)
+			{
+				if (!hiddenFish.contains(point.fish) && near(onto, point, x, y, pixels))
+				{
+					return true;
+				}
+			}
+		}
+		for (ShoalMarker point : shoalMarkers)
+		{
+			if (!hiddenFish.contains(point.fish) && near(onto, point, x, y, pixels))
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static boolean near(MapRoutes.MapView onto, WorldMapPoint point, double x, double y, double pixels)
+	{
+		WorldPoint at = point.getWorldPoint();
+		double apartX = onto.x(at.getX(), at.getY()) - x;
+		double apartY = onto.y(at.getX(), at.getY()) - y;
+		return apartX * apartX + apartY * apartY <= pixels * pixels;
+	}
+
+	/**
 	 * Puts the shoal icon tooltips found so far on the world map for the fish switched on, and takes the rest off.
 	 */
 	private void showShoalMarkers()

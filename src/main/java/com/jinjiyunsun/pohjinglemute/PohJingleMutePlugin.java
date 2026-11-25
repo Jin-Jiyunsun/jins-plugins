@@ -50,7 +50,6 @@ public class PohJingleMutePlugin extends Plugin
 	@Override
 	protected void startUp()
 	{
-		restoreVolume = -1;
 		jingleWasActive = false;
 	}
 
@@ -111,18 +110,8 @@ public class PohJingleMutePlugin extends Plugin
 	private boolean isPohJingleActive()
 	{
 		List<MidiRequest> active = client.getActiveMidiRequests();
-		if (active == null)
-		{
-			return false;
-		}
-		for (MidiRequest request : active)
-		{
-			if (request.isJingle() && POH_JINGLES.contains(request.getArchiveId()))
-			{
-				return true;
-			}
-		}
-		return false;
+		return active != null && active.stream()
+			.anyMatch(request -> request.isJingle() && POH_JINGLES.contains(request.getArchiveId()));
 	}
 
 	private void restore()

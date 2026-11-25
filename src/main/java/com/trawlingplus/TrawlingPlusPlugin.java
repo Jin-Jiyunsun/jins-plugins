@@ -77,6 +77,10 @@ import net.runelite.api.worldmap.WorldMapRegion;
 import net.runelite.api.worldmap.WorldMapRenderer;
 import net.runelite.client.Notifier;
 import net.runelite.client.callback.ClientThread;
+import net.runelite.client.chat.ChatColorType;
+import net.runelite.client.chat.ChatMessageBuilder;
+import net.runelite.client.chat.ChatMessageManager;
+import net.runelite.client.chat.QueuedMessage;
 import net.runelite.client.callback.RenderCallback;
 import net.runelite.client.callback.RenderCallbackManager;
 import net.runelite.client.config.ConfigManager;
@@ -410,6 +414,9 @@ public class TrawlingPlusPlugin extends Plugin
 
 	@Inject
 	private Notifier notifier;
+
+	@Inject
+	private ChatMessageManager chatMessageManager;
 
 	@Inject
 	private OverlayManager overlayManager;
@@ -1109,11 +1116,38 @@ public class TrawlingPlusPlugin extends Plugin
 	 */
 	private void track(ShoalRoute route)
 	{
+		if (!route.getName().equals(trawledRouteName))
+		{
+			sayTracking("Now tracking: ", route);
+		}
 		trawledRouteName = route.getName();
 		predictedArrowTicksLeft = PREDICTED_ARROW_TIMEOUT_TICKS;
 		edgeArrowDismissed = false;
 		// In sight: no arrow until it has been out of sight, rather than for its first few ticks.
 		trawledInViewTicks = PREDICTED_ARROW_HOLD_TICKS;
+	}
+
+	/**
+	 * Forgets the followed shoal from its Untrack entry, saying so in chat.
+	 */
+	private void stopTracking(ShoalRoute route)
+	{
+		sayTracking("Stopped tracking: ", route);
+		untrack();
+	}
+
+	/**
+	 * A line in chat about the followed shoal, styled as RuneLite's notification messages but not one.
+	 */
+	private void sayTracking(String start, ShoalRoute route)
+	{
+		chatMessageManager.queue(QueuedMessage.builder()
+			.type(ChatMessageType.CONSOLE)
+			.runeLiteFormattedMessage(new ChatMessageBuilder()
+				.append(ChatColorType.HIGHLIGHT)
+				.append(start + route.getSpecies() + " at " + route.getName())
+				.build())
+			.build());
 	}
 
 	/**
@@ -3457,7 +3491,7 @@ public class TrawlingPlusPlugin extends Plugin
 			}
 			if (route.getName().equals(trawledRouteName))
 			{
-				addShoalEntry(i + added++, "Untrack", route, this::untrack);
+				addShoalEntry(i + added++, "Untrack", route, () -> stopTracking(route));
 			}
 			else
 			{
@@ -3481,7 +3515,7 @@ public class TrawlingPlusPlugin extends Plugin
 		{
 			if (WORLD_MAP_ORBS.contains(entries[i].getParam1()))
 			{
-				addShoalEntry(i, "Untrack", route, this::untrack);
+				addShoalEntry(i, "Untrack", route, () -> stopTracking(route));
 				return;
 			}
 		}
@@ -3497,7 +3531,7 @@ public class TrawlingPlusPlugin extends Plugin
 		ShoalRoute marked = mapOverlay.trawledMarkAt(mouse.getX(), mouse.getY());
 		if (marked != null)
 		{
-			addShoalEntry(-1, "Untrack", marked, this::untrack);
+			addShoalEntry(-1, "Untrack", marked, () -> stopTracking(marked));
 		}
 		ShoalRoute pointed = mapOverlay.edgeArrowAt(mouse.getX(), mouse.getY());
 		if (pointed != null)

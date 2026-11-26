@@ -53,11 +53,14 @@ class RiverBaker
 	private static final double DIAGONAL = CELL * Math.sqrt(2);
 	// Floor textures of water, seen in game: plain water, the sea's shallow shelf off Karamja (WATER_SHELF, 130), the
 	// open sea round the Fishing Platform (131), deep water by the Fishing Guild (WATER_DEEP, 132), and Tirannwn's
-	// crystal water (WATER_CRYSTAL_OPEN, 170, to its deepest, 174).
-	private static final Set<Integer> WATER_TEXTURES = Set.of(1, 130, 131, 132, 170, 171, 172, 173, 174);
+	// crystal water (WATER_CRYSTAL_OPEN, 170, to its deepest, 174), and Morytania's sea by Burgh de Rott (117 HD's
+	// WATER_SUNBAKED, 140 to 144, and WATER_CURSED, 150 to 153), and the Isle of Souls' fetid water (WATER_FETID, 175 to 178).
+	private static final Set<Integer> WATER_TEXTURES = Set.of(1, 130, 131, 132, 140, 141, 142, 143, 144, 150, 151, 152, 153,
+		170, 171, 172, 173, 174, 175, 176, 177, 178);
 	// Floor overlays of untextured water, seen in game: plain water's (6, untextured in places along Kourend's
-	// rivers), the Water Ravine Dungeon's (130) and the cave's round 1303, 9799 (41).
-	private static final Set<Integer> WATER_OVERLAYS = Set.of(6, 41, 130);
+	// rivers), the Water Ravine Dungeon's (130), the cave's round 1303, 9799 (41) and Land's End's and
+	// Burgh de Rott's and the Isle of Souls' seas by their spots (442, 475, 478, 580).
+	private static final Set<Integer> WATER_OVERLAYS = Set.of(6, 41, 130, 442, 475, 478, 580);
 	// A floor colour that isn't drawn.
 	private static final int HIDDEN_COLOUR = 12345678;
 	// How far inside an object's rough outline a cell's middle must be to count as blocked, local units.

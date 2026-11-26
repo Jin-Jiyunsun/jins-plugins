@@ -34,8 +34,10 @@ final class ShoreFish
 		"bait", new int[]{ItemID.RAW_SARDINE, ItemID.RAW_HERRING});
 	private static final Map<String, int[]> RARE_OPTIONS = Map.of("cage", new int[]{ItemID.RAW_LOBSTER},
 		"harpoon", new int[]{ItemID.RAW_TUNA, ItemID.RAW_SWORDFISH});
-	private static final Map<String, int[]> MEMBER_OPTIONS = Map.of(
-		"big net", new int[]{ItemID.RAW_MACKEREL, ItemID.RAW_COD, ItemID.RAW_BASS}, "harpoon", new int[]{ItemID.RAW_SHARK});
+	// Jatizso's and the Isle of Souls' big net/harpoon spots say just "Net".
+	private static final int[] BIG_NET = {ItemID.RAW_MACKEREL, ItemID.RAW_COD, ItemID.RAW_BASS};
+	private static final Map<String, int[]> MEMBER_OPTIONS = Map.of("big net", BIG_NET, "net", BIG_NET,
+		"harpoon", new int[]{ItemID.RAW_SHARK});
 	// Shore spots, by NPC id: each its spot type's fish and odds.
 	static final Map<Integer, int[][]> SPOTS = Map.ofEntries(
 		// Catherby.
@@ -50,7 +52,20 @@ final class ShoreFish
 		Map.entry(NpcID._0_50_49_SALTFISH, SALT), Map.entry(NpcID._0_51_49_SALTFISH, SALT),
 		Map.entry(NpcID._0_48_50_SALTFISH, SALT), Map.entry(NpcID._0_46_49_SALTFISH, SALT),
 		Map.entry(NpcID._0_44_52_SALTFISH, SALT), Map.entry(NpcID._0_43_51_SALTFISH, SALT),
-		Map.entry(NpcID._0_39_55_SALTFISH, SALT));
+		Map.entry(NpcID._0_39_55_SALTFISH, SALT),
+		// Rellekka.
+		Map.entry(NpcID._0_41_57_SALTFISH, SALT), Map.entry(NpcID._0_41_57_RAREFISH, RARE),
+		Map.entry(NpcID._0_41_57_MEMBERFISH, MEMBER),
+		// Land's End.
+		Map.entry(NpcID._0_23_53_SALTFISH, SALT), Map.entry(NpcID._0_23_53_RAREFISH, RARE),
+		Map.entry(NpcID._0_23_53_MEMBERFISH, MEMBER), Map.entry(NpcID._0_24_53_SALTFISH, SALT),
+		// Burgh de Rott.
+		Map.entry(NpcID._0_54_49_MEMBERFISH, MEMBER), Map.entry(NpcID._0_55_49_MEMBERFISH, MEMBER),
+		// Jatizso.
+		Map.entry(NpcID._0_37_59_LOBSTER, RARE), Map.entry(NpcID._0_37_59_TUNA, MEMBER),
+		// Isle of Souls.
+		Map.entry(NpcID._0_33_43_SALTFISH, SALT), Map.entry(NpcID._0_35_44_MEMBERFISH, MEMBER),
+		Map.entry(NpcID._0_35_46_RAREFISH, RARE));
 	// Every shore fish (any spot's), for the "sea" kind.
 	static final int[] FISH = SPOTS.values().stream().flatMapToInt(spot -> Arrays.stream(spot[0]))
 		.distinct().toArray();

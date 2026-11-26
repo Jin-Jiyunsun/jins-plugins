@@ -150,6 +150,8 @@ final class RiverSpotFish
 	static final int LAKE_RADIUS = 6;
 	private static final int LAKE_MARGIN = 7;
 	private static final int LAKE_REACH = 36;
+	// Fish only come to a fished spot's ring once the player is within this many tiles of it, not while walking there.
+	static final int FISHING_NEAR = 2;
 	static final int LAKE_PICK_REACH = 48;
 	// Lake water per fish at full amount, square local units (about 2.2 tiles).
 	private static final double LAKE_ROOM = 512 * 70;
@@ -565,6 +567,9 @@ final class RiverSpotFish
 		int homeLeast = -1;
 		int homeMost = -1;
 		int sharkShare = 100;
+		// Whether a shore's roaming mix comes only from its own spots, those with rings on it ("own spots" line),
+		// rather than every shore spot near it.
+		boolean ownSpots;
 		// Its marks, each kind's (MARK_WORDS order) tiles, halves (NORTH, SOUTH, EAST, WEST) or quarters (NORTHEAST...): fish
 		// blockers count as land, allowers as water; on surfacers deep fish (117 HD) come up to their usual depth; on
 		// divers other fish go down to the deepest, under logs across the water.
@@ -1507,6 +1512,7 @@ final class RiverSpotFish
 		int homeLeast = -1;
 		int homeMost = -1;
 		int sharkShare = 100;
+		boolean ownSpots = false;
 		try
 		{
 			int x0 = 0;
@@ -1549,6 +1555,10 @@ final class RiverSpotFish
 				else if (parts[0].equals("sharks") && parts.length > 1)
 				{
 					sharkShare = Integer.parseInt(parts[1]);
+				}
+				else if (parts[0].equals("own") && parts.length > 1 && parts[1].equals("spots"))
+				{
+					ownSpots = true;
 				}
 				else if (parts[0].equals("route") || parts[0].equals("lake") || parts[0].equals("shore"))
 				{
@@ -1690,6 +1700,7 @@ final class RiverSpotFish
 		saved.homeLeast = homeLeast;
 		saved.homeMost = homeMost;
 		saved.sharkShare = sharkShare;
+		saved.ownSpots = ownSpots;
 		saved.branchStops.addAll(branchStops);
 		saved.branchPaths.addAll(branchPaths);
 		saved.branchShares.addAll(branchShares);
@@ -1710,7 +1721,7 @@ final class RiverSpotFish
 		{
 			return;
 		}
-		LocalPoint at = spot.getLocalLocation();
+		LocalPoint at = tileOf(spot);
 		WorldView view = client.getTopLevelWorldView();
 		WorldPoint[] route = routeFor(spot);
 		if (at == null || view == null || route == null)
@@ -1728,6 +1739,10 @@ final class RiverSpotFish
 		if (!shoal.lake || onWater(shoal.river, at))
 		{
 			attach(shoal, spot, at);
+		}
+		else
+		{
+			log.debug("{}: spot {} at {} isn't on its water, no ring", label(route), spot.getId(), spot.getWorldLocation());
 		}
 	}
 
@@ -2372,6 +2387,16 @@ final class RiverSpotFish
 	/**
 	 * The shoal a spot is on, or null.
 	 */
+	/**
+	 * Where a spot is, on its tile: a spot that's moved is already on its new tile, though it's still drawn on its way
+	 * there a few client ticks.
+	 */
+	private static LocalPoint tileOf(NPC spot)
+	{
+		WorldView view = spot.getWorldView();
+		return view == null ? null : LocalPoint.fromWorld(view, spot.getWorldLocation());
+	}
+
 	private Shoal shoalOf(NPC spot)
 	{
 		for (Shoal shoal : shoals)
@@ -2485,6 +2510,8 @@ final class RiverSpotFish
 			y = at.getY() + offset[1];
 		}
 		Circle circle = new Circle(spot, shoal.river, x, y, ThreadLocalRandom.current().nextBoolean() ? 1 : -1);
+		log.debug("{}: ring for spot {} at {}, its middle {},{} local units off", label(shoal.route), spot.getId(),
+			spot.getWorldLocation(), Math.round(x - at.getX()), Math.round(y - at.getY()));
 		shoal.circles.put(spot, circle);
 		shoal.leaving = false;
 		// Fish already past the decision point skip it.
@@ -2937,7 +2964,7 @@ final class RiverSpotFish
 				continue;
 			}
 			Circle circle = shoal.circles.get(swimmer.home);
-			LocalPoint at = circle != null ? swimmer.home.getLocalLocation() : null;
+			LocalPoint at = circle != null ? tileOf(swimmer.home) : null;
 			if (at == null || at.getX() != swimmer.homeX || at.getY() != swimmer.homeY)
 			{
 				swimmer.shrinkingSince = cycle;
@@ -2960,7 +2987,7 @@ final class RiverSpotFish
 		for (NPC spot : shoal.circles.keySet())
 		{
 			int[][] shore = ShoreFish.SPOTS.get(spot.getId());
-			LocalPoint at = spot.getLocalLocation();
+			LocalPoint at = tileOf(spot);
 			if (shore == null || at == null || !has(shore[0], ItemID.RAW_LOBSTER)
 				|| kept.getOrDefault(spot, 0) >= homeLobsters(shoal, spot, random))
 			{
@@ -3046,7 +3073,7 @@ final class RiverSpotFish
 		for (NPC spot : riverSpots)
 		{
 			int[][] shore = ShoreFish.SPOTS.get(spot.getId());
-			LocalPoint at = spot.getLocalLocation();
+			LocalPoint at = tileOf(spot);
 			if (shore == null || at == null || !has(shore[0], ItemID.RAW_LOBSTER))
 			{
 				continue;
@@ -4286,13 +4313,15 @@ final class RiverSpotFish
 
 	/**
 	 * A shore's expected mix: each kind's odds summed over every shore spot within LAKE_REACH of its spawn points, so
-	 * shores side by side (Catherby's) each get all their spots' kinds, whichever shore a spot's ring is on. Shrimps,
-	 * anchovies and lobsters are left out: they only grow in on rings; sharks too on shores under SHARK_ROOM.
+	 * shores side by side (Catherby's) each get all their spots' kinds, whichever shore a spot's ring is on; or, baked
+	 * "own spots", only over the spots with rings on it. Shrimps, anchovies and lobsters are left out: they only grow
+	 * in on rings; sharks too on shores under SHARK_ROOM.
 	 */
 	private Map<Integer, Integer> shoreWants(Shoal shoal)
 	{
 		Map<Integer, Integer> wants = new HashMap<>();
-		for (NPC spot : riverSpots)
+		boolean own = shoal.saved != null && shoal.saved.ownSpots;
+		for (NPC spot : own ? shoal.circles.keySet() : riverSpots)
 		{
 			int[][] shore = ShoreFish.SPOTS.get(spot.getId());
 			WorldPoint at = spot.getWorldLocation();
@@ -4531,6 +4560,7 @@ final class RiverSpotFish
 			return false;
 		}
 		Circle circle = shoal.circles.remove(spot);
+		log.debug("{}: ring for spot {} at {} gone", label(shoal.route), spot.getId(), spot.getWorldLocation());
 		for (Swimmer swimmer : shoal.fish)
 		{
 			if (swimmer.circle == circle && grows(shoal, swimmer.item))
@@ -4757,6 +4787,8 @@ final class RiverSpotFish
 		Player player = client.getLocalPlayer();
 		Actor fishing = player == null ? null : player.getInteracting();
 		fishingNow = fishing;
+		boolean fishingNear = fishing != null
+			&& player.getWorldLocation().distanceTo2D(fishing.getWorldLocation()) <= FISHING_NEAR;
 		List<NPC> moved = this.moved;
 		moved.clear();
 		for (Iterator<Shoal> all = shoals.iterator(); all.hasNext(); )
@@ -4783,6 +4815,7 @@ final class RiverSpotFish
 			{
 				if (!circle.npc.getWorldLocation().equals(circle.spot))
 				{
+					log.debug("Spot {} moved from {} to {}", circle.npc.getId(), circle.spot, circle.npc.getWorldLocation());
 					moved.add(circle.npc);
 				}
 			}
@@ -4882,7 +4915,7 @@ final class RiverSpotFish
 			{
 				drift(shoal, ticks, cycle, random);
 			}
-			if (!shoal.leaving && fishing != null)
+			if (!shoal.leaving && fishingNear)
 			{
 				refill(shoal, fishing, cycle, random);
 			}
@@ -5312,11 +5345,16 @@ final class RiverSpotFish
 	{
 		if (spot != null && spotKind(spot.getId()) != null)
 		{
-			chosenSpot = spot;
 			// Plain text, lower case; the small net is "Net".
 			String picked = option == null ? null : Text.removeTags(option).toLowerCase().replace("small net", "net");
-			chosenFish = picked == null ? null
-				: ShoreFish.options(spot.getId(), OPTION_FISH).get(picked);
+			int[] fish = picked == null ? null : ShoreFish.options(spot.getId(), OPTION_FISH).get(picked);
+			// Other options (Examine) leave the choice as it was, so they don't widen what a fished ring draws.
+			if (fish == null)
+			{
+				return;
+			}
+			chosenSpot = spot;
+			chosenFish = fish;
 			if ("lure".equals(picked))
 			{
 				ItemContainer inventory = client.getItemContainer(InventoryID.INV);
@@ -5688,7 +5726,7 @@ final class RiverSpotFish
 				// One way for the whole ring, on the open water side (away from the spot), kept for the stream.
 				if (next == null && cycle >= circle.krillUntil)
 				{
-					LocalPoint spot = circle.npc.getLocalLocation();
+					LocalPoint spot = tileOf(circle.npc);
 					double ax = spot == null ? 0 : circle.x - spot.getX();
 					double ay = spot == null ? 0 : circle.y - spot.getY();
 					circle.krillWay = Math.hypot(ax, ay) > 1
@@ -5752,7 +5790,7 @@ final class RiverSpotFish
 	private static double[] comeInPlace(Shoal shoal, Circle circle, double angle, ThreadLocalRandom random)
 	{
 		// The way out from the spot to the ring's middle (none if the ring's on the spot).
-		LocalPoint spot = circle.npc.getLocalLocation();
+		LocalPoint spot = tileOf(circle.npc);
 		double ax = spot == null ? 0 : circle.x - spot.getX();
 		double ay = spot == null ? 0 : circle.y - spot.getY();
 		double out = Math.hypot(ax, ay);
@@ -5784,7 +5822,7 @@ final class RiverSpotFish
 	{
 		double angle = Math.atan2(swimmer.y - circle.y, swimmer.x - circle.x);
 		// Lobsters head out to sea: away from the spot, within 60 degrees.
-		LocalPoint spot = circle.npc.getLocalLocation();
+		LocalPoint spot = tileOf(circle.npc);
 		if (swimmer.item == ItemID.RAW_LOBSTER && spot != null
 			&& Math.hypot(circle.x - spot.getX(), circle.y - spot.getY()) > 1)
 		{
@@ -7087,7 +7125,7 @@ final class RiverSpotFish
 		shoal.circles.clear();
 		for (NPC spot : spots)
 		{
-			LocalPoint at = spot.getLocalLocation();
+			LocalPoint at = tileOf(spot);
 			if (at != null)
 			{
 				attach(shoal, spot, at);

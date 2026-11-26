@@ -28,3 +28,8 @@ shore-entrana
 shore-fishing-platform
 lake-fishing-guild
 shore-barbarian-outpost
+shore-rellekka
+shore-lands-end
+shore-burgh-de-rott
+shore-jatizso
+shore-isle-of-souls

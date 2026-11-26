@@ -625,6 +625,7 @@ public class LivelyFishingSpotsDebugPlugin extends Plugin
 		RiverSpotFish.SPLASH_MODEL[1] = config.debugLeapSplash().model;
 		RiverSpotFish.SPLASH_ANIMATION[1] = config.debugLeapSplash().animation;
 		RiverSpotFish.SPLASH_SIZE[1] = config.debugLeapSplashSize();
+		RiverSpotFish.SPLASH_AHEAD = config.debugLeapSplashAhead();
 		RiverSpotFish.SPLASH_HUE[0] = config.debugLeapSplashHue();
 		RiverSpotFish.SPLASH_SATURATION[0] = config.debugLeapSplashSaturation();
 		RiverSpotFish.SPLASH_LIGHTER[0] = config.debugLeapSplashLighter();

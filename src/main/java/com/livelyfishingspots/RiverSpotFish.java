@@ -85,11 +85,13 @@ final class RiverSpotFish
 	static final int[] SPLASH_MODEL = {55576, 49226};
 	static final int[] SPLASH_ANIMATION = {AnimationID.STRIKE_IMPACT, AnimationID.VFX_WATER_SPLASH_01};
 	static final int[] SPLASH_SIZE = {30, 70};
+	// The landing splash this far on ahead of the fish's lowest point, towards its head (local units).
+	static int SPLASH_AHEAD = 15;
 	// Its colour, if recoloured, without and with 117 HD (its water shows splashes differently): hue (0 to 63) and
 	// saturation (0 to 7) for every face, and lightness added; or a hue under 0 to leave it.
 	static final int[] SPLASH_HUE = {39, 39};
 	static final int[] SPLASH_SATURATION = {1, 1};
-	static final int[] SPLASH_LIGHTER = {36, 17};
+	static final int[] SPLASH_LIGHTER = {13, 25};
 	// Each kind of river or lake's fish, by its bake's "kind" line (lure if none).
 	private static final Map<String, int[]> KIND_FISH = Map.of("lure", LURE_FISH, "barbarian", LEAPING_FISH,
 		"sea", ShoreFish.FISH);
@@ -4873,9 +4875,9 @@ final class RiverSpotFish
 				}
 				shoal.nextSolo = Math.max(shoal.nextSolo + (int) (spawnGap(random) * SOLO_EVERY), cycle);
 			}
-			// Leaping fish swim up their rivers, so nothing drifts down them.
 			// Splashes go once played.
 			shoal.splashes.removeIf(splash -> !splash.isActive());
+			// Leaping fish swim up their rivers, so nothing drifts down them.
 			if (!shoal.lake && !onlyAtSpot && shoal.kinds != LEAPING_FISH)
 			{
 				drift(shoal, ticks, cycle, random);
@@ -5058,7 +5060,7 @@ final class RiverSpotFish
 				int past = Math.max(left, over(leapAge, ticks, LEAP_RUN_TICKS + LEAP_TICKS));
 				if (past >= 0 && swimmer.shown)
 				{
-					double back = past * swimmer.swimming * LEAP_SPEED * swimmer.along;
+					double back = past * swimmer.swimming * LEAP_SPEED * swimmer.along - (left >= 0 ? 0 : SPLASH_AHEAD);
 					double[] at = lowestPoint(swimmer.fish);
 					splash(shoal, left >= 0 ? 0 : 1, at[0] - swimmer.headX * back, at[1] - swimmer.headY * back,
 						(int) Math.round(swimmer.surface));
@@ -5191,7 +5193,7 @@ final class RiverSpotFish
 	{
 		int hd = seeThrough ? 1 : 0;
 		int hue = SPLASH_HUE[hd];
-		int madeFrom = Objects.hash(SPLASH_MODEL[kind], SPLASH_SIZE[kind], hue, SPLASH_SATURATION[hd], SPLASH_LIGHTER[hd]);
+		int madeFrom = Objects.hash(SPLASH_MODEL[kind], hue, SPLASH_SATURATION[hd], SPLASH_LIGHTER[hd]);
 		if (splashModels[kind] == null || splashMadeFrom[kind] != madeFrom)
 		{
 			splashMadeFrom[kind] = madeFrom;
@@ -5201,13 +5203,6 @@ final class RiverSpotFish
 				return;
 			}
 			data = data.cloneVertices().cloneColors();
-			// Centred over where it's put (some splash models aren't), then sized.
-			float[] xs = data.getVerticesX();
-			float[] zs = data.getVerticesZ();
-			int count = data.getVerticesCount();
-			data.translate((int) -(FishModels.max(xs, count) + FishModels.min(xs, count)) / 2, 0,
-				(int) -(FishModels.max(zs, count) + FishModels.min(zs, count)) / 2);
-			data.scale(SPLASH_SIZE[kind], SPLASH_SIZE[kind], SPLASH_SIZE[kind]);
 			short[] colours = data.getFaceColors();
 			if (hue >= 0)
 			{
@@ -5217,13 +5212,48 @@ final class RiverSpotFish
 					colours[f] = (short) (hue << 10 | SPLASH_SATURATION[hd] << 7 | light);
 				}
 			}
-			// Lit as the game lights spot animations.
-			splashModels[kind] = data.light(64, 850, -30, -50, -30);
+			// Lit as if every face pointed straight up: one even light that keeps each face's lightness
+			// as it is (the huge contrast leaves no light from the side), so brightness is the recolour's.
+			Model lit = data.light(128, 100000, 0, -66, 0);
+			// 117 HD lights from the normals itself, so those point up too.
+			int[] normalsX = lit.getVertexNormalsX();
+			int[] normalsY = lit.getVertexNormalsY();
+			int[] normalsZ = lit.getVertexNormalsZ();
+			if (normalsX != null && normalsY != null && normalsZ != null)
+			{
+				Arrays.fill(normalsX, 0);
+				Arrays.fill(normalsY, -256);
+				Arrays.fill(normalsZ, 0);
+			}
+			// Flat-shaded faces (third colour -1) get their normal from their own slope in 117 HD, so they're
+			// made smooth-shaded with the same colour at each corner, which looks the same otherwise.
+			int[] colours1 = lit.getFaceColors1();
+			int[] colours2 = lit.getFaceColors2();
+			int[] colours3 = lit.getFaceColors3();
+			for (int f = 0; f < colours3.length; f++)
+			{
+				if (colours3[f] == -1)
+				{
+					colours2[f] = colours1[f];
+					colours3[f] = colours1[f];
+				}
+			}
+			splashModels[kind] = lit;
 		}
 		RuneLiteObject splash = client.createRuneLiteObject();
 		splash.setModel(splashModels[kind]);
-		// Played once, then gone.
-		AnimationController played = new AnimationController(client, SPLASH_ANIMATION[kind]);
+		// Played once, then gone. Sized after each frame is posed, as the game sizes spot animations: sizing the
+		// model first leaves the animation's moves full size, which spreads and shifts the splash.
+		int size = SPLASH_SIZE[kind];
+		AnimationController played = new AnimationController(client, SPLASH_ANIMATION[kind])
+		{
+			@Override
+			public Model animate(Model model, AnimationController pose)
+			{
+				Model posed = super.animate(model, pose);
+				return posed == model ? posed : posed.scale(size, size, size);
+			}
+		};
 		played.setOnFinished(done -> splash.setActive(false));
 		splash.setAnimationController(played);
 		splash.setLocation(new LocalPoint((int) x, (int) y, shoal.worldView), shoal.plane);
@@ -5287,7 +5317,7 @@ final class RiverSpotFish
 			String picked = option == null ? null : Text.removeTags(option).toLowerCase().replace("small net", "net");
 			chosenFish = picked == null ? null
 				: ShoreFish.options(spot.getId(), OPTION_FISH).get(picked);
-			if ("lure".equalsIgnoreCase(option))
+			if ("lure".equals(picked))
 			{
 				ItemContainer inventory = client.getItemContainer(InventoryID.INV);
 				if (inventory != null && inventory.contains(ItemID.HUNTING_STRIPY_BIRD_FEATHER))

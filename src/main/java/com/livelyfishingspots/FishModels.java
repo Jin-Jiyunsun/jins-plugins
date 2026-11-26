@@ -255,6 +255,8 @@ final class FishModels
 	// Models waiting to be made, and their keys, so none is queued twice.
 	private final Deque<int[]> toMake = new ArrayDeque<>();
 	private final Set<Long> queued = new HashSet<>();
+	// Keys of models that couldn't be made, not tried again until dropped.
+	private final Set<Long> failed = new HashSet<>();
 	private final Client client;
 
 	FishModels(Client client)
@@ -971,7 +973,17 @@ final class FishModels
 	 */
 	Model model(int item, int size, int pitch, int bank, int frame)
 	{
-		return models.computeIfAbsent(key(item, size, pitch, bank, frame), key -> load(item, size, pitch, bank, frame));
+		long key = key(item, size, pitch, bank, frame);
+		if (failed.contains(key))
+		{
+			return null;
+		}
+		Model model = models.computeIfAbsent(key, made -> load(item, size, pitch, bank, frame));
+		if (model == null)
+		{
+			failed.add(key);
+		}
+		return model;
 	}
 
 	/**
@@ -1001,7 +1013,7 @@ final class FishModels
 	void queue(int item, int size, int pitch, int bank, int frame, boolean waiting)
 	{
 		long key = key(item, size, pitch, bank, frame);
-		if (models.containsKey(key) || !queued.add(key))
+		if (models.containsKey(key) || failed.contains(key) || !queued.add(key))
 		{
 			return;
 		}
@@ -1176,6 +1188,7 @@ final class FishModels
 		models.keySet().removeIf(key -> itemOf(key) == item);
 		toMake.removeIf(wanted -> wanted[0] == item);
 		queued.removeIf(key -> itemOf(key) == item);
+		failed.removeIf(key -> itemOf(key) == item);
 	}
 
 	/**
@@ -1268,6 +1281,7 @@ final class FishModels
 		models.keySet().removeIf(key -> !swimming.contains(itemOf(key)));
 		toMake.removeIf(wanted -> !swimming.contains(wanted[0]));
 		queued.removeIf(key -> !swimming.contains(itemOf(key)));
+		failed.removeIf(key -> !swimming.contains(itemOf(key)));
 	}
 
 	/**
@@ -1278,5 +1292,6 @@ final class FishModels
 		models.clear();
 		toMake.clear();
 		queued.clear();
+		failed.clear();
 	}
 }

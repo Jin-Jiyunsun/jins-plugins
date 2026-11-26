@@ -1191,7 +1191,7 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 	)
 	default int debugLeapSplashLighter()
 	{
-		return 36;
+		return 13;
 	}
 
 	@Range(min = -1, max = 63)
@@ -1230,7 +1230,20 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 	)
 	default int debugLeapSplashLighterHd()
 	{
-		return 17;
+		return 25;
+	}
+
+	@Range(min = -64, max = 64)
+	@ConfigItem(
+		keyName = "debugLeapSplashAhead",
+		name = "Landing splash ahead",
+		description = "How far towards the fish's head<br>the landing splash goes (local<br>units, 128 a tile)",
+		section = debugSplashes,
+		position = 10
+	)
+	default int debugLeapSplashAhead()
+	{
+		return 15;
 	}
 
 	@Range(min = 10, max = 90)

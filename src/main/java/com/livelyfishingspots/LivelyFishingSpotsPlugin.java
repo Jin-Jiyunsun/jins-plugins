@@ -32,8 +32,8 @@ import net.runelite.client.plugins.PluginManager;
 @Slf4j
 @PluginDescriptor(
 	name = "Lively Fishing Spots",
-	description = "Fish swimming at fishing spots, rivers and lakes",
-	tags = {"fishing", "fish", "spot", "sailing", "sea", "river", "lake", "shoal", "swimming", "visual"}
+	description = "Fish swimming at fishing spots, rivers, lakes and shores",
+	tags = {"fishing", "fish", "spot", "sailing", "sea", "river", "lake", "shore", "shoal", "swimming", "visual"}
 )
 public class LivelyFishingSpotsPlugin extends Plugin
 {

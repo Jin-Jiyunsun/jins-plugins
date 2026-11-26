@@ -1,11 +1,11 @@
-# POH Jingle Muter
+# Music & Jingle Muter
 
-Mutes the jingle that plays when you enter a player-owned house, so the house music starts straight away.
+Mutes the music tracks and jingles you choose.
 
-- Works for every house style and theme.
-- The jingle is skipped entirely; your music volume is back to normal a moment later.
-- Optional: list other jingle IDs to mute, and music tracks (by name or ID) to silence until the next track plays.
-- Optional: show each track and jingle in chat as it starts, to find the ones to mute.
+- List tracks by name, as shown in the music tab, or by ID. A muted track stays silent until the next track plays.
+- List jingles by ID.
+- Turn on "Show track IDs" to see each track and jingle in chat as it starts.
+- Muted jingles starts with the player-owned house entrance jingles; clear it if you want to hear them.
 
 ## Disclaimer on AI & License
 

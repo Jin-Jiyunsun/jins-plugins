@@ -1,7 +1,8 @@
 package com.jinjiyunsun.pohjinglemute;
 
-import com.google.common.collect.ImmutableSet;
 import com.google.inject.Provides;
+import java.awt.Color;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -16,7 +17,6 @@ import net.runelite.api.MidiRequest;
 import net.runelite.api.events.ClientTick;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.gameval.DBTableID;
-import net.runelite.api.gameval.VarbitID;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.chat.ChatMessageManager;
 import net.runelite.client.chat.QueuedMessage;
@@ -25,29 +25,21 @@ import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.events.ConfigChanged;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
+import net.runelite.client.util.ColorUtil;
 import net.runelite.client.util.Text;
 
 @PluginDescriptor(
-	name = "POH Jingle Muter",
-	description = "Mutes the jingle that plays when entering a player-owned house",
-	tags = {"poh", "house", "jingle", "music", "mute", "sound", "annoyance", "annoying"}
+	name = "Music & Jingle Muter",
+	description = "Mutes the music tracks and jingles you choose",
+	tags = {"music", "track", "jingle", "mute", "sound", "annoyance", "annoying"}
 )
 public class PohJingleMutePlugin extends Plugin
 {
-	// Entrance jingle MIDI IDs, one per house style; there are no gamevals for these
-	private static final Set<Integer> POH_JINGLES = ImmutableSet.of(
-		16,  // Tropical Wood
-		18,  // Whitewashed Stone
-		19,  // Fremennik-Style Wood
-		20,  // Basic Wood, Twisted theme
-		21,  // Basic Stone
-		22,  // Fancy Stone
-		112, // Deathly Mansion, Wilderness theme
-		279, // Hosidius
-		286, // Festive (Cosy cabin theme)
-		307, // Canifis
-		308  // Civitas
-	);
+	// The red the game uses in its own chat messages
+	private static final Color PREFIX_COLOR = new Color(0xEF1020);
+	// Readable on both the opaque and the transparent chatbox
+	private static final Color ID_COLOR = new Color(0xFF9900);
+	private static final Color NAME_COLOR = new Color(0x4FA8FF);
 
 	@Inject
 	private Client client;
@@ -63,9 +55,9 @@ public class PohJingleMutePlugin extends Plugin
 
 	// Volume to put back on the next client tick, or -1 when nothing is muted
 	private int restoreVolume = -1;
-	private boolean muteTargetWasActive;
+	// Listed requests already dealt with, as "jingle 299" or "track 496", so one that stays listed is never muted twice
+	private Set<String> handledTargets = new HashSet<>();
 
-	private boolean mutePohJingles;
 	private Set<Integer> mutedJingles = new HashSet<>();
 	private Set<Integer> mutedTracks = new HashSet<>();
 	private Map<Integer, String> trackNames = new HashMap<>();
@@ -83,7 +75,7 @@ public class PohJingleMutePlugin extends Plugin
 	@Override
 	protected void startUp()
 	{
-		muteTargetWasActive = false;
+		handledTargets = new HashSet<>();
 		listsChanged = true;
 		lastRequests = new HashSet<>();
 	}
@@ -122,27 +114,29 @@ public class PohJingleMutePlugin extends Plugin
 			Map<String, Integer> idsByName = trackIdsByName();
 			trackNames = new HashMap<>();
 			idsByName.forEach((name, id) -> trackNames.put(id, name));
-			mutePohJingles = config.mutePohJingles();
 			mutedJingles = parseIds(config.mutedJingles(), null);
 			mutedTracks = parseIds(config.mutedTracks(), idsByName);
 		}
 
-		// Read before muting, so a request stopped this tick is still posted
-		postNewRequests();
-		boolean active = isMuteTargetActive();
+		List<MidiRequest> active = client.getActiveMidiRequests();
+		// Before muting, so a request stopped this tick is still posted
+		postNewRequests(active);
 
-		// Restore a tick after muting: the request is gone by then and the next track not yet requested
+		Set<String> targets = muteTargets(active);
+		// Forget targets that have stopped, so they're muted again if they come back
+		handledTargets.retainAll(targets);
+
+		// Restore a tick after muting: the request is gone by then and the next track not yet requested.
+		// A target that appears on this tick is left unhandled and muted next tick
 		if (restoreVolume >= 0)
 		{
 			restore();
 		}
-		// Only on a target appearing, so one that survives never toggles the volume each tick
-		else if (active && !muteTargetWasActive)
+		else if (!handledTargets.containsAll(targets))
 		{
 			mute();
+			handledTargets.addAll(targets);
 		}
-
-		muteTargetWasActive = active;
 	}
 
 	private void mute()
@@ -159,30 +153,34 @@ public class PohJingleMutePlugin extends Plugin
 		client.setMusicVolume(0);
 	}
 
-	private boolean isMuteTargetActive()
+	// Listed requests now playing; a shared empty set when none, as is usual, to save making one each tick
+	private Set<String> muteTargets(List<MidiRequest> active)
 	{
-		List<MidiRequest> active = client.getActiveMidiRequests();
-		if (active == null)
+		Set<String> targets = null;
+		if (active != null)
 		{
-			return false;
-		}
-
-		// Cutscenes reuse house jingles (Basic Wood in Daddy's Home), so leave those playing
-		boolean inCutscene = client.getVarbitValue(VarbitID.CUTSCENE_STATUS) == 1;
-		for (MidiRequest request : active)
-		{
-			int id = request.getArchiveId();
-			if (request.isJingle()
-				? mutedJingles.contains(id) || (mutePohJingles && POH_JINGLES.contains(id) && !inCutscene)
-				: mutedTracks.contains(id))
+			for (MidiRequest request : active)
 			{
-				return true;
+				int id = request.getArchiveId();
+				if (request.isJingle() ? mutedJingles.contains(id) : mutedTracks.contains(id))
+				{
+					if (targets == null)
+					{
+						targets = new HashSet<>();
+					}
+					targets.add(key(request));
+				}
 			}
 		}
-		return false;
+		return targets == null ? Collections.emptySet() : targets;
 	}
 
-	private void postNewRequests()
+	private static String key(MidiRequest request)
+	{
+		return (request.isJingle() ? "jingle " : "track ") + request.getArchiveId();
+	}
+
+	private void postNewRequests(List<MidiRequest> active)
 	{
 		// Forgetting what was seen means turning the option on posts what's already playing
 		if (!config.showTrackIds())
@@ -192,12 +190,11 @@ public class PohJingleMutePlugin extends Plugin
 		}
 
 		Set<String> current = new HashSet<>();
-		List<MidiRequest> active = client.getActiveMidiRequests();
 		if (active != null)
 		{
 			for (MidiRequest request : active)
 			{
-				String key = (request.isJingle() ? "jingle " : "track ") + request.getArchiveId();
+				String key = key(request);
 				current.add(key);
 				// Only while logged in: the login screen has its own music, and chat isn't shown there
 				if (!lastRequests.contains(key) && client.getGameState() == GameState.LOGGED_IN)
@@ -215,17 +212,18 @@ public class PohJingleMutePlugin extends Plugin
 		String message;
 		if (request.isJingle())
 		{
-			message = "Jingle " + id;
+			message = "Jingle " + ColorUtil.wrapWithColorTag(String.valueOf(id), ID_COLOR);
 		}
 		else
 		{
 			String name = trackNames.get(id);
-			message = "Track " + id + (name == null ? "" : ": " + name);
+			message = "Track " + ColorUtil.wrapWithColorTag(String.valueOf(id), ID_COLOR)
+				+ (name == null ? "" : ": " + ColorUtil.wrapWithColorTag(name, NAME_COLOR));
 		}
 		chatMessageManager.queue(QueuedMessage.builder()
 			.type(ChatMessageType.GAMEMESSAGE)
 			// Names the plugin, for players who forget the option is on
-			.runeLiteFormattedMessage("[POH Jingle Muter] " + message)
+			.runeLiteFormattedMessage("[" + ColorUtil.wrapWithColorTag("Music & Jingle Muter", PREFIX_COLOR) + "] " + message)
 			.build());
 	}
 

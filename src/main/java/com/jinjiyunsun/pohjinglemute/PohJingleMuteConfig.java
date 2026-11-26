@@ -10,34 +10,30 @@ public interface PohJingleMuteConfig extends Config
 	String GROUP = "pohjinglemute";
 
 	@ConfigItem(
-		keyName = "mutePohJingles",
-		name = "Mute house jingles",
-		description = "Mutes the jingle that plays when entering<br>"
-			+ "a player-owned house.",
-		position = 0
-	)
-	default boolean mutePohJingles()
-	{
-		return true;
-	}
-
-	@ConfigItem(
 		keyName = "mutedJingles",
 		name = "Muted jingles",
-		description = "Other jingle IDs to mute, separated by commas.",
-		position = 1
+		description = "Jingle IDs to mute, separated by commas,<br>"
+			+ "e.g. 20, 112, 299<br>"
+			+ "Starts with the house entrance jingles.<br>"
+			+ "With Show track IDs on, a jingle's ID is<br>"
+			+ "the orange number in chat.",
+		position = 0
 	)
+	// The player-owned house entrance jingles, one per house style
 	default String mutedJingles()
 	{
-		return "";
+		return "16, 18, 19, 20, 21, 22, 112, 279, 286, 307, 308";
 	}
 
 	@ConfigItem(
 		keyName = "mutedTracks",
 		name = "Muted tracks",
 		description = "Music tracks to mute until the next track plays.<br>"
-			+ "Track names or IDs, separated by commas.",
-		position = 2
+			+ "Track names or IDs, separated by commas,<br>"
+			+ "e.g. 138, The Trade Parade<br>"
+			+ "With Show track IDs on, the name is blue<br>"
+			+ "and the ID is the orange number in chat.",
+		position = 1
 	)
 	default String mutedTracks()
 	{
@@ -49,7 +45,7 @@ public interface PohJingleMuteConfig extends Config
 		name = "Show track IDs",
 		description = "Posts each track and jingle in chat as it starts,<br>"
 			+ "to find the ones to mute.",
-		position = 3
+		position = 2
 	)
 	default boolean showTrackIds()
 	{

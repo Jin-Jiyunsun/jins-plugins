@@ -1,5 +1,6 @@
 package com.trawlingplus;
 
+import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.Constants;
 import net.runelite.api.NPC;
@@ -11,6 +12,7 @@ import net.runelite.api.coords.LocalPoint;
 /**
  * A shoal in the scene and the route it has been matched to, if any.
  */
+@Slf4j
 final class Shoal
 {
 	// How long the heading arrow takes to fade fully in or out, in milliseconds: about a game tick.
@@ -55,11 +57,15 @@ final class Shoal
 	private int barScale;
 	private int barStopTicks;
 	private long stopEndsMillis = -1;
+	private boolean timedFromStep;
 	private boolean sawNoBar;
 
 	// A bar first seen this far below full didn't just start: a shoal's entity loads a tick or two before the fish
 	// inside it, so a bar can seem to appear mid stop.
 	private static final int FRESH_SLACK = 6;
+	// Added to the ticks a bar step's fill gives: on recorded stops it reads about half a tick short of the bar's
+	// last tick, and the shoal sets off a tick after that.
+	private static final double STEP_OFFSET_TICKS = 1.5;
 	// Hidden until the shoal is seen swimming, and whenever it sits still.
 	private boolean headingArrowHidden = true;
 	private double headingArrowOpacity;
@@ -173,18 +179,35 @@ final class Shoal
 		if (left < 0)
 		{
 			// No bar, so the shoal is on the move and there is no stop to count down.
+			if (barLeft >= 0)
+			{
+				log.debug("Stop timer: {} set off with {} s on the clock, timed from {}", routeName(),
+					stopEndsMillis < 0 ? "no time" : String.format("%.2f", (stopEndsMillis - System.currentTimeMillis()) / 1000.0),
+					stopEndsMillis < 0 ? "nothing" : timedFromStep ? "a bar step" : "the start");
+			}
 			stopEndsMillis = -1;
 			sawNoBar = true;
 		}
 		else if (barLeft < 0 || left > barLeft)
 		{
-			// A stop has begun, so its clock is set running, but only if the shoal was watched moving before it and its
-			// bar turned up full; a bar already part way down belongs to a stop that began unseen, which isn't timed.
+			// A stop has begun, so its clock is set running if the shoal was watched moving before it and its bar
+			// turned up full; a bar already part way down belongs to a stop that began unseen, timed from its first step.
 			boolean fromTheStart = sawNoBar && scale > 0 && left >= scale - FRESH_SLACK;
 			stopEndsMillis = fromTheStart
 				? System.currentTimeMillis() + (long) barStopTicks * Constants.GAME_TICK_LENGTH
 				: -1;
+			timedFromStep = false;
 			sawNoBar = false;
+		}
+		else if (left < barLeft && stopEndsMillis < 0 && barStopTicks > 0 && scale > 0)
+		{
+			// A stop that began unseen is timed from the bar's first step down: the server steps it every 2 ticks, and
+			// at a step its fill gives the ticks left to within about a tick and a half.
+			double ticksLeft = (double) left * barStopTicks / scale + STEP_OFFSET_TICKS;
+			stopEndsMillis = System.currentTimeMillis() + Math.round(ticksLeft * Constants.GAME_TICK_LENGTH);
+			timedFromStep = true;
+			log.debug("Stop timer: {} timed from bar {} -> {}/{} at {} ticks a stop: {} s left", routeName(), barLeft,
+				left, scale, barStopTicks, String.format("%.2f", ticksLeft * Constants.GAME_TICK_LENGTH / 1000.0));
 		}
 
 		barLeft = left;
@@ -199,6 +222,11 @@ final class Shoal
 		barStopTicks = ticks;
 	}
 
+	private String routeName()
+	{
+		return route == null ? "unmatched shoal" : route.getSpecies() + " at " + route.getName();
+	}
+
 	/**
 	 * How full the game's bar over the shoal is at its stop, from 0 to 1 as the game has it, or -1 while it is on
 	 * the move.
@@ -209,8 +237,8 @@ final class Shoal
 	}
 
 	/**
-	 * How long the shoal has left at this stop, in seconds, or -1 unless the stop was watched from its first tick: a
-	 * guess from how far down the bar is would be worse than nothing.
+	 * How long the shoal has left at this stop, in seconds, or -1 until it is known: from the stop's first tick, or
+	 * from the bar's first step down for a stop that began unseen.
 	 */
 	double secondsAtStop()
 	{

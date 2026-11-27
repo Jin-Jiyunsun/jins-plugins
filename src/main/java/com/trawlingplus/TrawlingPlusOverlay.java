@@ -1243,8 +1243,14 @@ class TrawlingPlusOverlay extends Overlay
 		}
 		if (laid[TIME_LINE])
 		{
-			count = addHelmLine(count, Math.max(0, Math.round(seconds)) + "s",
+			// Tenths rounded down, so the count reaches 0.0s as the stop ends.
+			long tenths = Math.max(0, (long) Math.floor(seconds * 10));
+			String whole = tenths / 10 + ".";
+			int timeAt = count;
+			count = addHelmLine(count, whole + tenths % 10 + "s",
 				TrawlingPlusNetOverlay.opaque(config.timeLeftColour()), opacity[TIME_LINE], letters);
+			// Centred as if the tenths were always the widest digit, so the whole seconds hold still between them.
+			width[timeAt] = letters.stringWidth(whole) + widestDigit(letters) + letters.stringWidth("s");
 		}
 		if (laid[HOLD_LINE])
 		{
@@ -1258,10 +1264,8 @@ class TrawlingPlusOverlay extends Overlay
 		{
 			return false;
 		}
-		// Placed by its bottom line of text, or with only the bar, where that line would be.
-		String placedBy = count > 0 ? text[0] : "";
-
-		Point at = steady(helmPoint(graphics, boat, deck, hull, placedBy, true));
+		// Placed by its centre rather than a line's text, so a line changing width doesn't move it.
+		Point at = steady(helmPoint(graphics, boat, deck, hull, "", true));
 		if (at == null)
 		{
 			return false;
@@ -1286,7 +1290,7 @@ class TrawlingPlusOverlay extends Overlay
 			solid = Math.max(solid, barShowing);
 			barHeight = (count > 0 ? BAR_GAP : 0) + barBack.getHeight();
 		}
-		int left = at.getX() + (letters.stringWidth(placedBy) - wide) / 2;
+		int left = at.getX() - wide / 2;
 		int top = at.getY() - letters.getAscent() - (count - 1) * lineHeight;
 
 		// The background's size this frame, growing and shrinking towards what it holds. Starts at its size when it
@@ -1367,6 +1371,16 @@ class TrawlingPlusOverlay extends Overlay
 			drawHold(graphics, centre + shiftX, boxTop + shiftY - HOLD_GAP, now);
 		}
 		return true;
+	}
+
+	private static int widestDigit(FontMetrics letters)
+	{
+		int widest = 0;
+		for (char digit = '0'; digit <= '9'; digit++)
+		{
+			widest = Math.max(widest, letters.charWidth(digit));
+		}
+		return widest;
 	}
 
 	/**

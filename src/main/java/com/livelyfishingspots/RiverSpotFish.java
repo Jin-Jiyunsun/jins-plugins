@@ -2385,9 +2385,6 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * The shoal a spot is on, or null.
-	 */
-	/**
 	 * Where a spot is, on its tile: a spot that's moved is already on its new tile, though it's still drawn on its way
 	 * there a few client ticks.
 	 */
@@ -2397,6 +2394,9 @@ final class RiverSpotFish
 		return view == null ? null : LocalPoint.fromWorld(view, spot.getWorldLocation());
 	}
 
+	/**
+	 * The shoal a spot is on, or null.
+	 */
 	private Shoal shoalOf(NPC spot)
 	{
 		for (Shoal shoal : shoals)

@@ -25,8 +25,8 @@ swimming along the shore.
 - **Barbarian fishing**: at Otto's Grotto and Mount Quidamortem, leaping trout and salmon swim up
   the river and its waterfalls, and even **leap** and land with a splash!
 - **Shore fish**: at Catherby, Karamja, the Fishing Guild, Lumbridge Swamp, Al Kharid, Draynor Village,
-  Mudskipper Point, Entrana, the Fishing Platform and the Barbarian Outpost, the fish swim around the shore,
-  and join the rings as you fish.
+  Mudskipper Point, Entrana, the Fishing Platform, the Barbarian Outpost, Rellekka, Land's End, Burgh de Rott,
+  Jatizso, the Isle of Souls, Miscellania, the Tirannwn coast, Gwenith, Drumstick Isle, The Dibber, Crabclaw Bay, north of Port Piscarilius, the Farming Guild, Shipwreck Cove, Fortis Bay, Sunset Bay, Aldarin, Mistrock, the Tlati Rainforest coast, Tal Teklan, Corsair Cove, the Myths' Guild, the Ruins of Unkah, Ape Atoll, the Great Conch, Chinchompa Island, Wyrmscraig, Dognose Island, Laguna Aurorae, the Shimmering Atoll, Lledrith Island, The Pandemonium, Vatrachos Island and Anglers' Retreat, the fish swim around the shore, and join the rings as you fish.
 
 With 117 HD, since it has transparent water, fish swim deeper, and lobsters, shrimps and anchovies
 appear. Other renderers draw the water solid, so only fish at the surface are shown.

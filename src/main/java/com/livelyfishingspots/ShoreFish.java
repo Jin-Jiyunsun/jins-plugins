@@ -34,7 +34,7 @@ final class ShoreFish
 		"bait", new int[]{ItemID.RAW_SARDINE, ItemID.RAW_HERRING});
 	private static final Map<String, int[]> RARE_OPTIONS = Map.of("cage", new int[]{ItemID.RAW_LOBSTER},
 		"harpoon", new int[]{ItemID.RAW_TUNA, ItemID.RAW_SWORDFISH});
-	// Jatizso's and the Isle of Souls' big net/harpoon spots say just "Net".
+	// Some big net/harpoon spots (Jatizso's, the Isle of Souls', the Farming Guild's) say just "Net".
 	private static final int[] BIG_NET = {ItemID.RAW_MACKEREL, ItemID.RAW_COD, ItemID.RAW_BASS};
 	private static final Map<String, int[]> MEMBER_OPTIONS = Map.of("big net", BIG_NET, "net", BIG_NET,
 		"harpoon", new int[]{ItemID.RAW_SHARK});
@@ -65,7 +65,41 @@ final class ShoreFish
 		Map.entry(NpcID._0_37_59_LOBSTER, RARE), Map.entry(NpcID._0_37_59_TUNA, MEMBER),
 		// Isle of Souls.
 		Map.entry(NpcID._0_33_43_SALTFISH, SALT), Map.entry(NpcID._0_35_44_MEMBERFISH, MEMBER),
-		Map.entry(NpcID._0_35_46_RAREFISH, RARE));
+		Map.entry(NpcID._0_35_46_RAREFISH, RARE),
+		// Miscellania.
+		Map.entry(NpcID._0_40_60_RAREFISH, RARE),
+		// Tirannwn coast.
+		Map.entry(NpcID._0_33_51_MEMBERFISH, MEMBER), Map.entry(NpcID._0_33_52_MEMBERFISH, MEMBER),
+		Map.entry(NpcID._0_34_53_MEMBERFISH, MEMBER), Map.entry(NpcID._0_33_52_RAREFISH, RARE),
+		Map.entry(NpcID._0_34_53_RAREFISH, RARE),
+		// Sailing islands.
+		Map.entry(NpcID._0_47_46_SALTFISH, SALT), Map.entry(NpcID._0_47_41_MEMBERFISH, MEMBER),
+		Map.entry(NpcID._0_49_37_MEMBERFISH, MEMBER), Map.entry(NpcID._0_50_38_MEMBERFISH, MEMBER),
+		Map.entry(NpcID._0_51_37_RAREFISH, RARE), Map.entry(NpcID._0_49_39_RAREFISH, RARE),
+		Map.entry(NpcID._0_29_46_RAREFISH, RARE), Map.entry(NpcID._0_38_42_RAREFISH, RARE),
+		Map.entry(NpcID._0_38_42_MEMBERFISH, MEMBER), Map.entry(NpcID._0_24_43_RAREFISH, RARE),
+		Map.entry(NpcID._0_24_43_MEMBERFISH, MEMBER), Map.entry(NpcID._0_18_43_MEMBERFISH, MEMBER),
+		Map.entry(NpcID._0_29_53_MEMBERFISH, MEMBER), Map.entry(NpcID._0_32_49_RAREFISH, RARE),
+		Map.entry(NpcID._0_33_55_RAREFISH, RARE), Map.entry(NpcID._0_33_55_MEMBERFISH, MEMBER),
+		Map.entry(NpcID._0_40_34_MEMBERFISH, MEMBER), Map.entry(NpcID._0_40_34_RAREFISH, RARE),
+		// Kourend.
+		Map.entry(NpcID._0_28_56_SALTFISH, SALT), Map.entry(NpcID._0_28_56_RAREFISH, RARE),
+		Map.entry(NpcID._0_28_56_MEMBERFISH, MEMBER), Map.entry(NpcID._0_26_54_SALTFISH, SALT),
+		Map.entry(NpcID._0_26_54_RAREFISH, RARE), Map.entry(NpcID._0_26_54_MEMBERFISH, MEMBER),
+		Map.entry(NpcID._0_27_59_SALTFISH, SALT), Map.entry(NpcID._0_27_59_RAREFISH, RARE),
+		// Varlamore.
+		Map.entry(NpcID._0_24_46_MEMBERFISH, MEMBER), Map.entry(NpcID._0_24_46_RAREFISH, RARE),
+		Map.entry(NpcID._0_27_46_MEMBERFISH, MEMBER), Map.entry(NpcID._0_27_46_SALTFISH, SALT),
+		Map.entry(NpcID._0_24_51_MEMBERFISH, MEMBER), Map.entry(NpcID._0_24_51_SALTFISH, SALT),
+		Map.entry(NpcID._0_21_44_RAREFISH, RARE), Map.entry(NpcID._0_21_46_SALTFISH, SALT),
+		Map.entry(NpcID._0_20_46_SALTFISH, SALT), Map.entry(NpcID._0_19_49_MEMBERFISH, MEMBER),
+		Map.entry(NpcID._0_20_47_SALTFISH, SALT),
+		// Other coasts.
+		Map.entry(NpcID._0_47_57_SALTFISH, SALT), Map.entry(NpcID._0_39_44_SALTFISH, SALT),
+		Map.entry(NpcID._0_38_45_RAREFISH, RARE), Map.entry(NpcID._0_49_43_RAREFISH, RARE),
+		Map.entry(NpcID._0_43_42_MEMBERFISH, MEMBER), Map.entry(NpcID._0_42_42_MEMBERFISH, MEMBER),
+		Map.entry(NpcID._0_18_57_MEMBERFISH, MEMBER), Map.entry(NpcID._0_19_58_MEMBERFISH, MEMBER),
+		Map.entry(NpcID._0_18_58_MEMBERFISH, MEMBER));
 	// Every shore fish (any spot's), for the "sea" kind.
 	static final int[] FISH = SPOTS.values().stream().flatMapToInt(spot -> Arrays.stream(spot[0]))
 		.distinct().toArray();

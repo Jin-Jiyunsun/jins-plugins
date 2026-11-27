@@ -1,12 +1,15 @@
 package com.livelyfishingspots;
 
+import java.lang.ref.SoftReference;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 import net.runelite.api.Client;
@@ -24,6 +27,10 @@ final class FishModels
 	private static final int UPRIGHT = 1;
 	// Tip step in degrees; a model is made per step, since placed models only turn about upright.
 	static final double PITCH_STEP = 5;
+	// Lobsters and dark crabs, tilting and rolling with 117 HD's bed, come in coarser steps, so fewer models are made;
+	// dark crabs (big models) coarser still.
+	private static final double BED_PITCH_STEP = 7.5;
+	private static final double CRAB_PITCH_STEP = 10;
 
 	// Slices used to straighten a model.
 	private static final int STRAIGHTEN_SLICES = 20;
@@ -223,6 +230,8 @@ final class FishModels
 		Map.entry(ItemID.BRUT_STURGEON, STURGEON),
 		Map.entry(ItemID.RAW_LOBSTER, new Look(new int[]{0, 0, 45, 17, 30, 3, 0, -90, 0, 40, 60, 30, 30, 0, 1500,
 			35, 0, 100, 0, 100, 50, 0, 0, 50, 50, 0, 35, 0, 6, 0, 0, 50, 100, 0, 0, 100})),
+		Map.entry(ItemID.RAW_DARK_CRAB, new Look(new int[]{0, 0, 40, 17, 30, 3, 0, -90, 0, 40, 60, 30, 30, 0, 1500,
+			35, 0, 100, 0, 100, 50, 0, 0, 50, 50, 0, 35, 0, 6, 0, 0, 50, 100, 0, 0, 100})),
 		Map.entry(ItemID.RAW_TUNA, BASS),
 		Map.entry(ItemID.RAW_SWORDFISH, new Look(new int[]{-90, 19, 45, 17, 16, 2, 25, -90, 0, 40, 60, 30, 10, 10, 1500,
 			35, 100, 100, 0, 120, 66, 80, -10, 100, 100, 0, 35, 0, 6, 0, 0, 50, 100, 0, 0, 100})),
@@ -233,23 +242,57 @@ final class FishModels
 	// Kinds whose every face takes this hue (0 to 63).
 	private static final Map<Integer, Integer> HUES = Map.of(SHORE_ANCHOVIES, 42);
 
-	// Made models, by item, size, tip and frame.
-	private final Map<Long, Model> models = new HashMap<>();
+	// Made models, by item, size, tip and frame. Held softly: when memory runs low the JVM drops those no fish is
+	// wearing before it would run out, and they're made again when next wanted.
+	private final Map<Long, SoftReference<Model>> models = new HashMap<>();
+	// The last models made, held firmly so a fish waiting for one always gets it before the JVM can drop it.
+	private static final int RECENT_HELD = 32;
+	private final Map<Long, Model> recent = new LinkedHashMap<>()
+	{
+		@Override
+		protected boolean removeEldestEntry(Map.Entry<Long, Model> eldest)
+		{
+			return size() > RECENT_HELD;
+		}
+	};
 
 	/**
-	 * How many models are made, for the debug panel.
+	 * How many models are made and still held, for the debug panel.
 	 */
 	int count()
 	{
-		return models.size();
+		return made().size();
 	}
 
 	/**
-	 * The made models, for the debug panel.
+	 * The made models still held, for the debug panel.
 	 */
 	Collection<Model> made()
 	{
-		return models.values();
+		Collection<Model> held = new ArrayList<>();
+		for (SoftReference<Model> ref : models.values())
+		{
+			Model model = ref.get();
+			if (model != null)
+			{
+				held.add(model);
+			}
+		}
+		return held;
+	}
+
+	/**
+	 * A cached model, or null if never made or dropped by the JVM (its entry then removed).
+	 */
+	private Model cached(long key)
+	{
+		SoftReference<Model> ref = models.get(key);
+		Model model = ref == null ? null : ref.get();
+		if (ref != null && model == null)
+		{
+			models.remove(key);
+		}
+		return model;
 	}
 
 	// Models waiting to be made, and their keys, so none is queued twice.
@@ -969,7 +1012,16 @@ final class FishModels
 	}
 
 	/**
-	 * A model banked sideways (steps of PITCH_STEP, right side down), made and cached on first use.
+	 * A kind's tip and bank step in degrees: CRAB_PITCH_STEP for dark crabs, BED_PITCH_STEP for lobsters, else
+	 * PITCH_STEP.
+	 */
+	static double pitchStep(int item)
+	{
+		return item == ItemID.RAW_DARK_CRAB ? CRAB_PITCH_STEP : ShoreFish.isLobster(item) ? BED_PITCH_STEP : PITCH_STEP;
+	}
+
+	/**
+	 * A model banked sideways (steps of pitchStep, right side down), made and cached on first use.
 	 */
 	Model model(int item, int size, int pitch, int bank, int frame)
 	{
@@ -978,10 +1030,19 @@ final class FishModels
 		{
 			return null;
 		}
-		Model model = models.computeIfAbsent(key, made -> load(item, size, pitch, bank, frame));
+		Model model = cached(key);
 		if (model == null)
 		{
-			failed.add(key);
+			model = load(item, size, pitch, bank, frame);
+			if (model == null)
+			{
+				failed.add(key);
+			}
+			else
+			{
+				models.put(key, new SoftReference<>(model));
+				recent.put(key, model);
+			}
 		}
 		return model;
 	}
@@ -1013,7 +1074,7 @@ final class FishModels
 	void queue(int item, int size, int pitch, int bank, int frame, boolean waiting)
 	{
 		long key = key(item, size, pitch, bank, frame);
-		if (models.containsKey(key) || failed.contains(key) || !queued.add(key))
+		if (cached(key) != null || failed.contains(key) || !queued.add(key))
 		{
 			return;
 		}
@@ -1038,7 +1099,7 @@ final class FishModels
 			int[] wanted = toMake.pollFirst();
 			long key = key(wanted[0], wanted[1], wanted[2], wanted[3], wanted[4]);
 			queued.remove(key);
-			if (!models.containsKey(key))
+			if (cached(key) == null)
 			{
 				model(wanted[0], wanted[1], wanted[2], wanted[3], wanted[4]);
 				made++;
@@ -1084,7 +1145,8 @@ final class FishModels
 		}
 		// Tip about tipPivot, scaled to its size; its head faces (sin, -cos) of its turn.
 		double turn = Math.toRadians(look.turn);
-		standUp(model, look.roll, look.tilt, pitch * PITCH_STEP, bank * PITCH_STEP, look.tipPivot * 100.0 / size,
+		double step = pitchStep(item);
+		standUp(model, look.roll, look.tilt, pitch * step, bank * step, look.tipPivot * 100.0 / size,
 			look.tipPivotUp * 100.0 / size, Math.sin(turn), -Math.cos(turn), KEEP_HEIGHT.contains(item));
 		int scale = size * 128 / 100;
 		model.scale(scale, scale, scale);
@@ -1186,6 +1248,7 @@ final class FishModels
 	void remake(int item)
 	{
 		models.keySet().removeIf(key -> itemOf(key) == item);
+		recent.keySet().removeIf(key -> itemOf(key) == item);
 		toMake.removeIf(wanted -> wanted[0] == item);
 		queued.removeIf(key -> itemOf(key) == item);
 		failed.removeIf(key -> itemOf(key) == item);
@@ -1270,7 +1333,7 @@ final class FishModels
 
 	Model made(int item, int size, int pitch, int bank, int frame)
 	{
-		return models.get(key(item, size, pitch, bank, frame));
+		return cached(key(item, size, pitch, bank, frame));
 	}
 
 	/**
@@ -1279,6 +1342,7 @@ final class FishModels
 	void keepOnly(Set<Integer> swimming)
 	{
 		models.keySet().removeIf(key -> !swimming.contains(itemOf(key)));
+		recent.keySet().removeIf(key -> !swimming.contains(itemOf(key)));
 		toMake.removeIf(wanted -> !swimming.contains(wanted[0]));
 		queued.removeIf(key -> !swimming.contains(itemOf(key)));
 		failed.removeIf(key -> !swimming.contains(itemOf(key)));
@@ -1290,6 +1354,7 @@ final class FishModels
 	void clear()
 	{
 		models.clear();
+		recent.clear();
 		toMake.clear();
 		queued.clear();
 		failed.clear();

@@ -56,15 +56,16 @@ class RiverBaker
 	// 131), water by the Fishing Guild (WATER_DROPOFF, 132), Miscellania's sea (WATER_DEEP, 133, and WATER_ICY, 160), the
 	// sea by the Ruins of Unkah (WATER_TRENCH, 134, and WATER_STORMY, 135 to 139), Tirannwn's crystal water
 	// (WATER_CRYSTAL_OPEN, 170, to its deepest, 174), Morytania's sea by Burgh de Rott (WATER_SUNBAKED, 140 to 144, and
-	// WATER_CURSED, 150 to 153), the Isle of Souls' fetid water (WATER_FETID, 175 to 178) and the sea by Tal Teklan
-	// (WATER_JAGGED, 185 to 189).
+	// WATER_CURSED, 150 to 153), the Isle of Souls' fetid water (WATER_FETID, 175 to 178), the sea by Tal Teklan
+	// (WATER_JAGGED, 185 to 189) and the Wilderness' east coast (WATER_SCALDING, 155 to 159).
 	private static final Set<Integer> WATER_TEXTURES = Set.of(1, 25, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140,
-		141, 142, 143, 144, 150, 151, 152, 153, 160, 170, 171, 172, 173, 174, 175, 176, 177, 178, 185, 186, 187, 188, 189);
+		141, 142, 143, 144, 150, 151, 152, 153, 155, 156, 157, 158, 159, 160, 170, 171, 172, 173, 174, 175, 176,
+		177, 178, 185, 186, 187, 188, 189);
 	// Floor overlays of untextured water, seen in game: plain water's (6, untextured in places along Kourend's
 	// rivers), swamp water's edge (7), the Water Ravine Dungeon's (130), the cave's round 1303, 9799 (41) and Land's
-	// End's, Burgh de Rott's, the Isle of Souls', Miscellania's, Tal Teklan's and Wyrmscraig's seas by their spots (442,
-	// 475, 478, 580, 535, 610, 444).
-	private static final Set<Integer> WATER_OVERLAYS = Set.of(6, 7, 41, 130, 442, 444, 475, 478, 535, 580, 610);
+	// End's, Burgh de Rott's, the Isle of Souls', Miscellania's, Tal Teklan's, Wyrmscraig's and the
+	// Wilderness' east coast's seas by their spots (442, 475, 478, 580, 535, 610, 444, 520).
+	private static final Set<Integer> WATER_OVERLAYS = Set.of(6, 7, 41, 130, 442, 444, 475, 478, 520, 535, 580, 610);
 	// A floor colour that isn't drawn.
 	private static final int HIDDEN_COLOUR = 12345678;
 	// How far inside an object's rough outline a cell's middle must be to count as blocked, local units.

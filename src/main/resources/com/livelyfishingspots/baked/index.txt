@@ -64,3 +64,5 @@ shore-vatrachos-island
 shore-anglers-retreat
 shore-bandit-camp
 shore-piscatoris
+shore-wilderness-east
+shore-resource-area

@@ -24,12 +24,13 @@ final class ShoreFish
 	static final int SHRIMP = FishModels.SHORE_SHRIMP;
 	static final int ANCHOVIES = FishModels.SHORE_ANCHOVIES;
 	// Each spot type's fish and odds (each type's odds sum to 100, so spots count evenly in a mix): net/bait,
-	// cage/harpoon, big net/harpoon and Piscatoris' net/harpoon (monkfish).
+	// cage/harpoon, big net/harpoon, Piscatoris' net/harpoon (monkfish) and the Wilderness' cage (dark crabs).
 	private static final int[][] SALT = {{SHRIMP, ANCHOVIES, ItemID.RAW_SARDINE, ItemID.RAW_HERRING}, {14, 2, 42, 42}};
 	private static final int[][] RARE = {{ItemID.RAW_LOBSTER, ItemID.RAW_TUNA, ItemID.RAW_SWORDFISH}, {25, 60, 15}};
 	private static final int[][] MEMBER = {{ItemID.RAW_MACKEREL, ItemID.RAW_COD, ItemID.RAW_BASS, ItemID.RAW_SHARK},
 		{32, 32, 32, 4}};
 	private static final int[][] SWAN = {{ItemID.RAW_MONKFISH, ItemID.RAW_TUNA, ItemID.RAW_SWORDFISH}, {40, 45, 15}};
+	private static final int[][] CRABS = {{ItemID.RAW_DARK_CRAB}, {100}};
 	// The fish each menu option draws, by spot type (Harpoon differs between them).
 	private static final Map<String, int[]> SALT_OPTIONS = Map.of("net", new int[]{SHRIMP, ANCHOVIES},
 		"bait", new int[]{ItemID.RAW_SARDINE, ItemID.RAW_HERRING});
@@ -41,6 +42,7 @@ final class ShoreFish
 		"harpoon", new int[]{ItemID.RAW_SHARK});
 	private static final Map<String, int[]> SWAN_OPTIONS = Map.of("net", new int[]{ItemID.RAW_MONKFISH},
 		"harpoon", new int[]{ItemID.RAW_TUNA, ItemID.RAW_SWORDFISH});
+	private static final Map<String, int[]> CRABS_OPTIONS = Map.of("cage", new int[]{ItemID.RAW_DARK_CRAB});
 	// Shore spots, by NPC id: each its spot type's fish and odds.
 	static final Map<Integer, int[][]> SPOTS = Map.ofEntries(
 		// Catherby.
@@ -104,21 +106,23 @@ final class ShoreFish
 		Map.entry(NpcID._0_18_57_MEMBERFISH, MEMBER), Map.entry(NpcID._0_19_58_MEMBERFISH, MEMBER),
 		Map.entry(NpcID._0_18_58_MEMBERFISH, MEMBER),
 		// Piscatoris (monkfish).
-		Map.entry(NpcID.SWAN_FISHINGSPOT, SWAN));
+		Map.entry(NpcID.SWAN_FISHINGSPOT, SWAN),
+		// Wilderness (dark crabs): the east coast and the Resource Area.
+		Map.entry(NpcID._52_59_CRABS, CRABS), Map.entry(NpcID._49_61_CRABS, CRABS));
 	// Every shore fish (any spot's), for the "sea" kind.
 	static final int[] FISH = SPOTS.values().stream().flatMapToInt(spot -> Arrays.stream(spot[0]))
 		.distinct().toArray();
 	// Shore fish that only come with see-through, deep water (117 HD), as at sea.
-	static final Set<Integer> UNDER_WATER = Set.of(ItemID.RAW_LOBSTER, SHRIMP, ANCHOVIES);
+	static final Set<Integer> UNDER_WATER = Set.of(ItemID.RAW_LOBSTER, ItemID.RAW_DARK_CRAB, SHRIMP, ANCHOVIES);
 	// Fishing XP per catch, to tell catches apart.
 	static final Map<Integer, Integer> CATCH_XP = Map.ofEntries(Map.entry(SHRIMP, 10), Map.entry(ANCHOVIES, 40),
 		Map.entry(ItemID.RAW_SARDINE, 20), Map.entry(ItemID.RAW_HERRING, 30), Map.entry(ItemID.RAW_MACKEREL, 20),
 		Map.entry(ItemID.RAW_COD, 45), Map.entry(ItemID.RAW_BASS, 100), Map.entry(ItemID.RAW_SHARK, 110),
 		Map.entry(ItemID.RAW_LOBSTER, 90), Map.entry(ItemID.RAW_TUNA, 80), Map.entry(ItemID.RAW_SWORDFISH, 100),
-		Map.entry(ItemID.RAW_MONKFISH, 120));
+		Map.entry(ItemID.RAW_MONKFISH, 120), Map.entry(ItemID.RAW_DARK_CRAB, 130));
 	// The fish each menu option draws, by spot type.
 	private static final Map<int[][], Map<String, int[]>> OPTIONS = Map.of(SALT, SALT_OPTIONS, RARE, RARE_OPTIONS,
-		MEMBER, MEMBER_OPTIONS, SWAN, SWAN_OPTIONS);
+		MEMBER, MEMBER_OPTIONS, SWAN, SWAN_OPTIONS, CRABS, CRABS_OPTIONS);
 
 	/**
 	 * The fish each menu option draws at a shore spot, or these if it isn't one.
@@ -187,7 +191,7 @@ final class ShoreFish
 	private static final Set<Integer> KRILL_FISH = Set.of(SHRIMP, ANCHOVIES);
 	// Kinds that never roam a shore: they only grow in on a fished spot's ring, on any shore (lobsters roam a shore
 	// baked "lobsters roam"; elsewhere only their spot's own, SPOT_LOBSTERS).
-	static final Set<Integer> RING_ONLY = Set.of(SHRIMP, ANCHOVIES, ItemID.RAW_LOBSTER);
+	static final Set<Integer> RING_ONLY = Set.of(SHRIMP, ANCHOVIES, ItemID.RAW_LOBSTER, ItemID.RAW_DARK_CRAB);
 	// Each cage spot keeps this many lobsters of its own (unless its shore's bake says "home lobsters"), wandering
 	// within this far of it (local units; tuning spinners).
 	static int SPOT_LOBSTERS = 3;
@@ -234,11 +238,38 @@ final class ShoreFish
 	}
 
 	/**
-	 * Whether a kind never schools: sharks, swordfish, monkfish and (where they roam) lobsters.
+	 * Whether a kind never schools: sharks, swordfish, monkfish and (where they roam) lobsters and dark crabs.
 	 */
 	static boolean alone(int item)
 	{
-		return isBig(item) || item == ItemID.RAW_LOBSTER || item == ItemID.RAW_MONKFISH;
+		return isBig(item) || isLobster(item) || item == ItemID.RAW_MONKFISH;
+	}
+
+	/**
+	 * Whether a kind crawls the bed as lobsters do: lobsters and dark crabs.
+	 */
+	static boolean isLobster(int item)
+	{
+		return item == ItemID.RAW_LOBSTER || item == ItemID.RAW_DARK_CRAB;
+	}
+
+	/**
+	 * A spot's lobster-like kind (lobster or dark crab), or -1 if it has none or isn't a shore spot.
+	 */
+	static int lobsterAt(int npc)
+	{
+		int[][] shore = SPOTS.get(npc);
+		if (shore != null)
+		{
+			for (int item : shore[0])
+			{
+				if (isLobster(item))
+				{
+					return item;
+				}
+			}
+		}
+		return -1;
 	}
 
 	/**

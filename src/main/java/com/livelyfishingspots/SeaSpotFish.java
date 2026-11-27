@@ -647,7 +647,7 @@ final class SeaSpotFish
 		{
 			Look look = swimmer.look;
 			double most = look.tip / 100.0 * ((look.rise > 0 ? BOB_PITCH : 0) + (look.dipDepth > 0 ? DIP_PITCH : 0));
-			int steps = (int) Math.ceil(most / FishModels.PITCH_STEP);
+			int steps = (int) Math.ceil(most / FishModels.pitchStep(swimmer.item));
 			int frames = swimmer.wiggles ? FishModels.WIGGLE_FRAMES : 1;
 			for (int pitch = -steps; pitch <= steps; pitch++)
 			{
@@ -1062,7 +1062,7 @@ final class SeaSpotFish
 		// Tip with the bob and dip; level while resting.
 		double tip = look.tip / 100.0 * ((look.rise > 0 && bobAt >= 0 ? BOB_PITCH * Perspective.SINE[bobAt] / 65536 : 0)
 			- (swimmer.dippingSince >= 0 && look.dipDepth > 0 ? DIP_PITCH * Math.sin(2 * through) : 0));
-		int pitch = (int) Math.round(tip / FishModels.PITCH_STEP);
+		int pitch = (int) Math.round(tip / FishModels.pitchStep(swimmer.item));
 		// Wiggle frames at the kind's rate.
 		int frame = swimmer.wiggles
 			? (int) ((long) (cycle + swimmer.wiggleStart) * look.wiggleRate / 50 % FishModels.WIGGLE_FRAMES) : 0;

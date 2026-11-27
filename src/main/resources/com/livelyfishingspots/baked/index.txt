@@ -63,3 +63,4 @@ shore-the-pandemonium
 shore-vatrachos-island
 shore-anglers-retreat
 shore-bandit-camp
+shore-piscatoris

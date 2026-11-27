@@ -24,11 +24,12 @@ final class ShoreFish
 	static final int SHRIMP = FishModels.SHORE_SHRIMP;
 	static final int ANCHOVIES = FishModels.SHORE_ANCHOVIES;
 	// Each spot type's fish and odds (each type's odds sum to 100, so spots count evenly in a mix): net/bait,
-	// cage/harpoon and big net/harpoon.
+	// cage/harpoon, big net/harpoon and Piscatoris' net/harpoon (monkfish).
 	private static final int[][] SALT = {{SHRIMP, ANCHOVIES, ItemID.RAW_SARDINE, ItemID.RAW_HERRING}, {14, 2, 42, 42}};
 	private static final int[][] RARE = {{ItemID.RAW_LOBSTER, ItemID.RAW_TUNA, ItemID.RAW_SWORDFISH}, {25, 60, 15}};
 	private static final int[][] MEMBER = {{ItemID.RAW_MACKEREL, ItemID.RAW_COD, ItemID.RAW_BASS, ItemID.RAW_SHARK},
 		{32, 32, 32, 4}};
+	private static final int[][] SWAN = {{ItemID.RAW_MONKFISH, ItemID.RAW_TUNA, ItemID.RAW_SWORDFISH}, {40, 45, 15}};
 	// The fish each menu option draws, by spot type (Harpoon differs between them).
 	private static final Map<String, int[]> SALT_OPTIONS = Map.of("net", new int[]{SHRIMP, ANCHOVIES},
 		"bait", new int[]{ItemID.RAW_SARDINE, ItemID.RAW_HERRING});
@@ -38,6 +39,8 @@ final class ShoreFish
 	private static final int[] BIG_NET = {ItemID.RAW_MACKEREL, ItemID.RAW_COD, ItemID.RAW_BASS};
 	private static final Map<String, int[]> MEMBER_OPTIONS = Map.of("big net", BIG_NET, "net", BIG_NET,
 		"harpoon", new int[]{ItemID.RAW_SHARK});
+	private static final Map<String, int[]> SWAN_OPTIONS = Map.of("net", new int[]{ItemID.RAW_MONKFISH},
+		"harpoon", new int[]{ItemID.RAW_TUNA, ItemID.RAW_SWORDFISH});
 	// Shore spots, by NPC id: each its spot type's fish and odds.
 	static final Map<Integer, int[][]> SPOTS = Map.ofEntries(
 		// Catherby.
@@ -99,7 +102,9 @@ final class ShoreFish
 		Map.entry(NpcID._0_38_45_RAREFISH, RARE), Map.entry(NpcID._0_49_43_RAREFISH, RARE),
 		Map.entry(NpcID._0_43_42_MEMBERFISH, MEMBER), Map.entry(NpcID._0_42_42_MEMBERFISH, MEMBER),
 		Map.entry(NpcID._0_18_57_MEMBERFISH, MEMBER), Map.entry(NpcID._0_19_58_MEMBERFISH, MEMBER),
-		Map.entry(NpcID._0_18_58_MEMBERFISH, MEMBER));
+		Map.entry(NpcID._0_18_58_MEMBERFISH, MEMBER),
+		// Piscatoris (monkfish).
+		Map.entry(NpcID.SWAN_FISHINGSPOT, SWAN));
 	// Every shore fish (any spot's), for the "sea" kind.
 	static final int[] FISH = SPOTS.values().stream().flatMapToInt(spot -> Arrays.stream(spot[0]))
 		.distinct().toArray();
@@ -109,10 +114,11 @@ final class ShoreFish
 	static final Map<Integer, Integer> CATCH_XP = Map.ofEntries(Map.entry(SHRIMP, 10), Map.entry(ANCHOVIES, 40),
 		Map.entry(ItemID.RAW_SARDINE, 20), Map.entry(ItemID.RAW_HERRING, 30), Map.entry(ItemID.RAW_MACKEREL, 20),
 		Map.entry(ItemID.RAW_COD, 45), Map.entry(ItemID.RAW_BASS, 100), Map.entry(ItemID.RAW_SHARK, 110),
-		Map.entry(ItemID.RAW_LOBSTER, 90), Map.entry(ItemID.RAW_TUNA, 80), Map.entry(ItemID.RAW_SWORDFISH, 100));
+		Map.entry(ItemID.RAW_LOBSTER, 90), Map.entry(ItemID.RAW_TUNA, 80), Map.entry(ItemID.RAW_SWORDFISH, 100),
+		Map.entry(ItemID.RAW_MONKFISH, 120));
 	// The fish each menu option draws, by spot type.
 	private static final Map<int[][], Map<String, int[]>> OPTIONS = Map.of(SALT, SALT_OPTIONS, RARE, RARE_OPTIONS,
-		MEMBER, MEMBER_OPTIONS);
+		MEMBER, MEMBER_OPTIONS, SWAN, SWAN_OPTIONS);
 
 	/**
 	 * The fish each menu option draws at a shore spot, or these if it isn't one.
@@ -228,11 +234,11 @@ final class ShoreFish
 	}
 
 	/**
-	 * Whether a kind never schools: sharks, swordfish and (where they roam) lobsters.
+	 * Whether a kind never schools: sharks, swordfish, monkfish and (where they roam) lobsters.
 	 */
 	static boolean alone(int item)
 	{
-		return isBig(item) || item == ItemID.RAW_LOBSTER;
+		return isBig(item) || item == ItemID.RAW_LOBSTER || item == ItemID.RAW_MONKFISH;
 	}
 
 	/**

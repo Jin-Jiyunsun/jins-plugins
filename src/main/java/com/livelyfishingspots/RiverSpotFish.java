@@ -4180,7 +4180,7 @@ final class RiverSpotFish
 			return 1;
 		}
 		Group group = new Group(random);
-		// Sharks, swordfish and lobsters never school, like sturgeon: one picked comes alone.
+		// Sharks, swordfish, monkfish and lobsters never school, like sturgeon: one picked comes alone.
 		int lead = shoal.shore ? neediest(shoal, kinds) : kind(kinds, random, false);
 		if (ShoreFish.alone(lead))
 		{

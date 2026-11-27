@@ -488,7 +488,7 @@ public interface TrawlingPlusConfig extends Config
 	)
 	default boolean clearAroundBoat()
 	{
-		return false;
+		return true;
 	}
 
 	@ConfigItem(
@@ -820,7 +820,7 @@ public interface TrawlingPlusConfig extends Config
 	)
 	default boolean showTimeAtStop()
 	{
-		return true;
+		return false;
 	}
 
 	@ConfigItem(

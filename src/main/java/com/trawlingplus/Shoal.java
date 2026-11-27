@@ -1,6 +1,5 @@
 package com.trawlingplus;
 
-import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.Constants;
 import net.runelite.api.NPC;
@@ -12,7 +11,6 @@ import net.runelite.api.coords.LocalPoint;
 /**
  * A shoal in the scene and the route it has been matched to, if any.
  */
-@Slf4j
 final class Shoal
 {
 	// How long the heading arrow takes to fade fully in or out, in milliseconds: about a game tick.
@@ -57,7 +55,6 @@ final class Shoal
 	private int barScale;
 	private int barStopTicks;
 	private long stopEndsMillis = -1;
-	private boolean timedFromStep;
 	private boolean sawNoBar;
 
 	// A bar first seen this far below full didn't just start: a shoal's entity loads a tick or two before the fish
@@ -179,12 +176,6 @@ final class Shoal
 		if (left < 0)
 		{
 			// No bar, so the shoal is on the move and there is no stop to count down.
-			if (barLeft >= 0)
-			{
-				log.debug("Stop timer: {} set off with {} s on the clock, timed from {}", routeName(),
-					stopEndsMillis < 0 ? "no time" : String.format("%.2f", (stopEndsMillis - System.currentTimeMillis()) / 1000.0),
-					stopEndsMillis < 0 ? "nothing" : timedFromStep ? "a bar step" : "the start");
-			}
 			stopEndsMillis = -1;
 			sawNoBar = true;
 		}
@@ -196,7 +187,6 @@ final class Shoal
 			stopEndsMillis = fromTheStart
 				? System.currentTimeMillis() + (long) barStopTicks * Constants.GAME_TICK_LENGTH
 				: -1;
-			timedFromStep = false;
 			sawNoBar = false;
 		}
 		else if (left < barLeft && stopEndsMillis < 0 && barStopTicks > 0 && scale > 0)
@@ -205,9 +195,6 @@ final class Shoal
 			// at a step its fill gives the ticks left to within about a tick and a half.
 			double ticksLeft = (double) left * barStopTicks / scale + STEP_OFFSET_TICKS;
 			stopEndsMillis = System.currentTimeMillis() + Math.round(ticksLeft * Constants.GAME_TICK_LENGTH);
-			timedFromStep = true;
-			log.debug("Stop timer: {} timed from bar {} -> {}/{} at {} ticks a stop: {} s left", routeName(), barLeft,
-				left, scale, barStopTicks, String.format("%.2f", ticksLeft * Constants.GAME_TICK_LENGTH / 1000.0));
 		}
 
 		barLeft = left;
@@ -220,11 +207,6 @@ final class Shoal
 	void seedStopTicks(int ticks)
 	{
 		barStopTicks = ticks;
-	}
-
-	private String routeName()
-	{
-		return route == null ? "unmatched shoal" : route.getSpecies() + " at " + route.getName();
 	}
 
 	/**

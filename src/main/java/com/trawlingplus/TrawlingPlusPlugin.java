@@ -243,6 +243,8 @@ public class TrawlingPlusPlugin extends Plugin
 	private static final List<String> BOOK_FISH = List.of("giant krill", "haddock", "yellowfin", "halibut", "bluefin",
 		"marlin");
 	private static final String RESET_SESSION = "Reset session";
+	// Set once Clear around boat has been turned on for this user.
+	private static final String CLEAR_RESET_KEY = "clearAroundBoatReset";
 	// The lifetime counts at which each fish earns its next star in the trawling log (bronze, silver, gold): the last
 	// set by how long players stay on each fish, each earlier one 1.6 times fewer, snapped to round numbers.
 	private static final Map<String, int[]> STAR_MILESTONES = Map.of(
@@ -727,6 +729,12 @@ public class TrawlingPlusPlugin extends Plugin
 		overlayManager.add(minimapOverlay);
 		// Clears the unused key the book's last spread used to be kept under.
 		configManager.unsetConfiguration(TrawlingPlusConfig.GROUP, HoldBook.OLD_SPREAD_KEY);
+		// Turns Clear around boat on once for everyone, now that it's on by default; it can be turned off again after.
+		if (configManager.getConfiguration(TrawlingPlusConfig.GROUP, CLEAR_RESET_KEY) == null)
+		{
+			configManager.setConfiguration(TrawlingPlusConfig.GROUP, "clearAroundBoat", true);
+			configManager.setConfiguration(TrawlingPlusConfig.GROUP, CLEAR_RESET_KEY, true);
+		}
 		overlayManager.add(holdBook);
 		mouseManager.registerMouseListener(holdBook.mouse);
 		keyManager.registerKeyListener(holdBook);

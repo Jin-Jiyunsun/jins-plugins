@@ -698,6 +698,20 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 		return 40;
 	}
 
+	@Range(min = 0, max = 100)
+	@Units(Units.PERCENT)
+	@ConfigItem(
+		keyName = "debugRiverAnglerfishBedShare",
+		name = "Anglerfish bed share",
+		description = "Deepest an anglerfish goes, of<br>117 HD's bed depth where it is",
+		section = debugRiverDips,
+		position = 10
+	)
+	default int debugRiverAnglerfishBedShare()
+	{
+		return 85;
+	}
+
 	@Range(max = 100)
 	@Units(Units.PERCENT)
 	@ConfigItem(

@@ -348,6 +348,8 @@ final class RiverSpotFish
 	static double BED_SHARE = 0.6;
 	// Swordfish (long, with their sword) keep higher, at most this share (tuning spinner).
 	static double SWORDFISH_BED_SHARE = 0.4;
+	// Anglerfish go deeper, for a wider spread of depths: sink and depth together at most this share (tuning spinner).
+	static double ANGLERFISH_BED_SHARE = 0.85;
 	// Lobsters read the bed this far ahead and behind for their tilt, and sit this much into it (local units; sink a
 	// tuning spinner).
 	static double BED_LOOK = 32;
@@ -4262,7 +4264,7 @@ final class RiverSpotFish
 			return 1;
 		}
 		Group group = new Group(random);
-		// Sharks, swordfish, monkfish and lobsters never school, like sturgeon: one picked comes alone.
+		// Kinds that never school (ShoreFish.alone), like sturgeon: one picked comes alone.
 		int lead = shoal.shore ? neediest(shoal, kinds) : kind(kinds, random, false);
 		if (ShoreFish.alone(lead))
 		{
@@ -6522,6 +6524,8 @@ final class RiverSpotFish
 			: diving ? DIVE_DEPTH
 			: swimmer.deep == 0 || swimmer.surfacing ? 0
 			: krill && swimmer.deep < 0 ? swimmer.deep
+			: FOLLOW_BED && swimmer.item == ItemID.RAW_ANGLERFISH ? Math.min(schoolDeep(swimmer),
+				Math.max(0, river.bedAt(x, y) * ANGLERFISH_BED_SHARE - swimmer.look.sink))
 			: FOLLOW_BED ? Math.min(schoolDeep(swimmer),
 				river.bedAt(x, y) * (swimmer.item == ItemID.RAW_SWORDFISH ? SWORDFISH_BED_SHARE : BED_SHARE))
 			: schoolDeep(swimmer) * Math.min(1, river.clearanceAt(x, y) / SHALLOW_ROOM);

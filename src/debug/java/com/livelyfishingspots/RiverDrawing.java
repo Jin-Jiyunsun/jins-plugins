@@ -315,6 +315,7 @@ final class RiverDrawing
 	private static final double SCHOOL_PAD = 24;
 	// Debug: forks' picked tiles and paths, light blue.
 	private static final Color FORK_COLOUR = new Color(120, 200, 255);
+	private static final Color CURRENT_COLOUR = new Color(80, 220, 255);
 	// Debug: the room's hatching, teal lines going up to the right.
 	private static final TexturePaint HATCH = hatch();
 	// Debug: cos and sin of the 8 points round each fish in a school's outline.
@@ -442,6 +443,71 @@ final class RiverDrawing
 	}
 
 	/**
+	 * Debug: a lake's current: its middle (the spawn points' average) with the ring fish keep their way out of, and
+	 * arrows round it, the current's way, through the middle of the band from the banks its goals lie in.
+	 */
+	private void drawCurrent(Graphics2D graphics, WorldView view, Shoal shoal)
+	{
+		double middleX = 0;
+		double middleY = 0;
+		for (double[] spawn : shoal.spawns)
+		{
+			middleX += spawn[0] / shoal.spawns.length;
+			middleY += spawn[1] / shoal.spawns.length;
+		}
+		// Out from the middle each way, the furthest place before the first bank still the band's middle from one.
+		int arrows = 16;
+		double band = (RiverSpotFish.CURRENT_EDGE_LEAST + RiverSpotFish.CURRENT_EDGE_MOST) / 2;
+		double[][] round = new double[arrows][];
+		for (int n = 0; n < arrows; n++)
+		{
+			// Clockwise (north up) is the angle going down.
+			double angle = -shoal.saved.current * 2 * Math.PI * n / arrows;
+			double cos = Math.cos(angle);
+			double sin = Math.sin(angle);
+			double best = 0;
+			for (double out = 0; out < 4096; out += 16)
+			{
+				double room = shoal.river.clearanceAt(middleX + out * cos, middleY + out * sin);
+				if (room <= 0)
+				{
+					break;
+				}
+				best = room >= band ? out : best;
+			}
+			round[n] = new double[]{middleX + best * cos, middleY + best * sin};
+		}
+		graphics.setColor(CURRENT_COLOUR);
+		double clear = RiverSpotFish.CURRENT_MIDDLE_CLEAR;
+		for (int a = 0; a <= LANE_ANGLES; a++)
+		{
+			double[] way = LANE_WAYS[a % LANE_ANGLES];
+			mark(shoal, middleX + clear * way[0], middleY + clear * way[1]);
+		}
+		line(graphics, view);
+		mark(shoal, middleX, middleY);
+		for (int n = 0; n < arrows; n++)
+		{
+			double[] from = round[n];
+			double[] to = round[(n + 1) % arrows];
+			double dx = to[0] - from[0];
+			double dy = to[1] - from[1];
+			markArrow(shoal, from[0] + dx * 0.15, from[1] + dy * 0.15, from[0] + dx * 0.85, from[1] + dy * 0.85, 40);
+		}
+		project(view);
+		if (screenX[0] != Integer.MIN_VALUE)
+		{
+			graphics.drawLine(screenX[0] - 5, screenY[0], screenX[0] + 5, screenY[0]);
+			graphics.drawLine(screenX[0], screenY[0] - 5, screenX[0], screenY[0] + 5);
+		}
+		for (int n = 0; n < arrows; n++)
+		{
+			drawArrow(graphics, 1 + 4 * n);
+		}
+		marked = 0;
+	}
+
+	/**
 	 * Debug: ranges, banks, path and room, spots, fish steering, schools and picked points, each part shown by its
 	 * toggle.
 	 */
@@ -549,6 +615,10 @@ final class RiverDrawing
 					}
 				}
 				marked = 0;
+			}
+			if (shoal.lake && drawPicked && shoal.saved != null && shoal.saved.current != 0)
+			{
+				drawCurrent(graphics, view, shoal);
 			}
 			if (drawPath && river.pathX != null)
 			{

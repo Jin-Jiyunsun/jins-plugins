@@ -650,7 +650,24 @@ public class LivelyFishingSpotsDebugPlugin extends Plugin
 		RiverSpotFish.INNER_LANE_SPEED = config.debugRiverInnerLaneSpeed() / 100.0;
 		RiverSpotFish.CIRCLE_CLEARANCE = config.debugRiverCircleClearance();
 		RiverSpotFish.SCATTER_RATE = 1.0 / (config.debugRiverScatterSeconds() * 50.0);
+		RiverSpotFish.KARAMBWANJI_SCATTER_RATE = 1.0 / (config.debugLookKarambwanjiScatterSeconds() * 50.0);
+		RiverSpotFish.KARAMBWANJI_SPLIT_SHARE = config.debugLookKarambwanjiSplitShare() / 100.0;
+		RiverSpotFish.KARAMBWANJI_MERGE_WAIT = config.debugLookKarambwanjiMergeSeconds() * 50;
+		RiverSpotFish.KARAMBWANJI_REGROUP_LEAST = config.debugLookKarambwanjiRegroupLeast() / 20;
+		RiverSpotFish.KARAMBWANJI_REGROUP_MOST = Math.max(RiverSpotFish.KARAMBWANJI_REGROUP_LEAST,
+			config.debugLookKarambwanjiRegroupMost() / 20);
+		RiverSpotFish.KARAMBWANJI_REGROUP_RANGE = config.debugLookKarambwanjiRegroupRange();
+		RiverSpotFish.KARAMBWANJI_PAUSE_LEAST = config.debugLookKarambwanjiPauseLeast() / 20;
+		RiverSpotFish.KARAMBWANJI_PAUSE_MOST = Math.max(RiverSpotFish.KARAMBWANJI_PAUSE_LEAST,
+			config.debugLookKarambwanjiPauseMost() / 20);
+		RiverSpotFish.KARAMBWANJI_HOVER = config.debugLookKarambwanjiHover() / 100.0;
 		RiverSpotFish.LAKE_JOIN_CHANCE = config.debugRiverLakeJoinChance();
+		RiverSpotFish.CURRENT_SHARE = config.debugRiverCurrentShare() / 100.0;
+		RiverSpotFish.CURRENT_MIDDLE_CLEAR = config.debugRiverCurrentMiddleClear();
+		RiverSpotFish.CURRENT_EDGE_LEAST = config.debugRiverCurrentEdgeLeast();
+		RiverSpotFish.CURRENT_EDGE_MOST = Math.max(config.debugRiverCurrentEdgeLeast(), config.debugRiverCurrentEdgeMost());
+		RiverSpotFish.CURRENT_LEAST = Math.toRadians(config.debugRiverCurrentLeast());
+		RiverSpotFish.CURRENT_MOST = Math.toRadians(Math.max(config.debugRiverCurrentLeast(), config.debugRiverCurrentMost()));
 		// Eager circles: every passing fish joins, and fillers come at once.
 		boolean eager = config.debugRiverEagerCircles();
 		RiverSpotFish.JOIN_CHANCE = eager ? 100 : 60;

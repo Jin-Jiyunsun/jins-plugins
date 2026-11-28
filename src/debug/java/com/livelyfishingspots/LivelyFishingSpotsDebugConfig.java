@@ -151,7 +151,7 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 	@ConfigItem(
 		keyName = "debugRiverDrawPoints",
 		name = "Picked points",
-		description = "Yellow tiles numbered in order: each<br>route's start, waypoints and end<br>(magenta while picking one). Yellow<br>rings at lake spawns. Red outlines<br>on fish blockers",
+		description = "Yellow tiles numbered in order: each<br>route's start, waypoints and end<br>(magenta while picking one). Yellow<br>rings at lake spawns; a lake's current<br>in light blue. Red outlines<br>on fish blockers",
 		section = debugRivers,
 		position = 10
 	)
@@ -242,7 +242,7 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 
 	@ConfigSection(
 		name = "Debug: karambwanji look",
-		description = "Temporary tuning of the karambwanji<br>model",
+		description = "Temporary tuning of the karambwanji<br>model and schools",
 		position = 107,
 		closedByDefault = true
 	)
@@ -583,6 +583,85 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 	default int debugRiverLakeSpeed()
 	{
 		return 65;
+	}
+
+	@Range(min = 0, max = 100)
+	@Units(Units.PERCENT)
+	@ConfigItem(
+		keyName = "debugRiverCurrentShare",
+		name = "Lake current share",
+		description = "How many lake goals follow a<br>baked current round the lake",
+		section = debugSwimming,
+		position = 10
+	)
+	default int debugRiverCurrentShare()
+	{
+		return 80;
+	}
+
+	@Range(min = 0, max = 180)
+	@ConfigItem(
+		keyName = "debugRiverCurrentLeast",
+		name = "Lake current least",
+		description = "Fewest degrees on round the<br>lake a current's goal lies, degrees",
+		section = debugSwimming,
+		position = 11
+	)
+	default int debugRiverCurrentLeast()
+	{
+		return 20;
+	}
+
+	@Range(min = 0, max = 180)
+	@ConfigItem(
+		keyName = "debugRiverCurrentMost",
+		name = "Lake current most",
+		description = "Most degrees on round the<br>lake a current's goal lies, degrees",
+		section = debugSwimming,
+		position = 12
+	)
+	default int debugRiverCurrentMost()
+	{
+		return 100;
+	}
+
+	@Range(min = 0, max = 1024)
+	@ConfigItem(
+		keyName = "debugRiverCurrentMiddleClear",
+		name = "Lake current middle clear",
+		description = "How far fish keep their way from<br>a current lake's middle where<br>they can, local units (128 a tile)",
+		section = debugSwimming,
+		position = 13
+	)
+	default int debugRiverCurrentMiddleClear()
+	{
+		return 320;
+	}
+
+	@Range(min = 0, max = 2048)
+	@ConfigItem(
+		keyName = "debugRiverCurrentEdgeLeast",
+		name = "Lake current edge, least",
+		description = "Nearest to a bank a current's<br>goals lie, local units (128 a tile)",
+		section = debugSwimming,
+		position = 14
+	)
+	default int debugRiverCurrentEdgeLeast()
+	{
+		return 160;
+	}
+
+	@Range(min = 0, max = 2048)
+	@ConfigItem(
+		keyName = "debugRiverCurrentEdgeMost",
+		name = "Lake current edge, most",
+		description = "Furthest from a bank a current's<br>goals lie, local units (128 a tile)",
+		section = debugSwimming,
+		position = 15
+	)
+	default int debugRiverCurrentEdgeMost()
+	{
+		return 384;
 	}
 
 	@Range(min = 0, max = 100)
@@ -2301,6 +2380,131 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 	default int debugLookKarambwanjiDipMillis()
 	{
 		return 1500;
+	}
+
+	@Range(min = 1, max = 3600)
+	@Units(Units.SECONDS)
+	@ConfigItem(
+		keyName = "debugLookKarambwanjiScatterSeconds",
+		name = "School scatter every",
+		description = "How long, on average, a karambwanji<br>school swims before it breaks up",
+		section = debugLookKarambwanji,
+		position = 17
+	)
+	default int debugLookKarambwanjiScatterSeconds()
+	{
+		return 10;
+	}
+
+	@Range(min = 0, max = 100)
+	@Units(Units.PERCENT)
+	@ConfigItem(
+		keyName = "debugLookKarambwanjiSplitShare",
+		name = "Split share",
+		description = "How often a school breaking up<br>splits into 2-3 smaller schools<br>instead of scattering",
+		section = debugLookKarambwanji,
+		position = 18
+	)
+	default int debugLookKarambwanjiSplitShare()
+	{
+		return 75;
+	}
+
+	@Range(min = 0, max = 600)
+	@Units(Units.SECONDS)
+	@ConfigItem(
+		keyName = "debugLookKarambwanjiMergeSeconds",
+		name = "Merge after split",
+		description = "How long split schools wait<br>before they may merge again",
+		section = debugLookKarambwanji,
+		position = 19
+	)
+	default int debugLookKarambwanjiMergeSeconds()
+	{
+		return 10;
+	}
+
+	@Range(min = 0, max = 60000)
+	@Units(Units.MILLISECONDS)
+	@ConfigItem(
+		keyName = "debugLookKarambwanjiRegroupLeast",
+		name = "Regroup after, least",
+		description = "Shortest wait before a lone<br>karambwanji looks for a school",
+		section = debugLookKarambwanji,
+		position = 20
+	)
+	default int debugLookKarambwanjiRegroupLeast()
+	{
+		return 4000;
+	}
+
+	@Range(min = 0, max = 60000)
+	@Units(Units.MILLISECONDS)
+	@ConfigItem(
+		keyName = "debugLookKarambwanjiRegroupMost",
+		name = "Regroup after, most",
+		description = "Longest wait before a lone<br>karambwanji looks for a school",
+		section = debugLookKarambwanji,
+		position = 21
+	)
+	default int debugLookKarambwanjiRegroupMost()
+	{
+		return 7500;
+	}
+
+	@Range(min = 0, max = 2048)
+	@ConfigItem(
+		keyName = "debugLookKarambwanjiRegroupRange",
+		name = "Regroup range",
+		description = "How far a lone karambwanji or<br>a small school looks for a school,<br>local units (128 a tile)",
+		section = debugLookKarambwanji,
+		position = 22
+	)
+	default int debugLookKarambwanjiRegroupRange()
+	{
+		return 256;
+	}
+
+	@Range(min = 0, max = 20000)
+	@Units(Units.MILLISECONDS)
+	@ConfigItem(
+		keyName = "debugLookKarambwanjiPauseLeast",
+		name = "Pause, least",
+		description = "Shortest pause a karambwanji<br>or its school makes on a lake",
+		section = debugLookKarambwanji,
+		position = 23
+	)
+	default int debugLookKarambwanjiPauseLeast()
+	{
+		return 500;
+	}
+
+	@Range(min = 0, max = 20000)
+	@Units(Units.MILLISECONDS)
+	@ConfigItem(
+		keyName = "debugLookKarambwanjiPauseMost",
+		name = "Pause, most",
+		description = "Longest pause a karambwanji<br>or its school makes on a lake",
+		section = debugLookKarambwanji,
+		position = 24
+	)
+	default int debugLookKarambwanjiPauseMost()
+	{
+		return 1500;
+	}
+
+	@Range(min = 0, max = 100)
+	@Units(Units.PERCENT)
+	@ConfigItem(
+		keyName = "debugLookKarambwanjiHover",
+		name = "Pause speed",
+		description = "How fast karambwanji still swim<br>while pausing, of travelling speed",
+		section = debugLookKarambwanji,
+		position = 25
+	)
+	default int debugLookKarambwanjiHover()
+	{
+		return 35;
 	}
 
 

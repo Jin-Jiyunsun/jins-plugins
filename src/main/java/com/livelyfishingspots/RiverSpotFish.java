@@ -173,6 +173,18 @@ final class RiverSpotFish
 	private static final double LAKE_GOAL_REACHED = 128;
 	private static final double LAKE_GOAL_LEAST = 384;
 	private static final int LAKE_GOAL_CHOICES = 6;
+	// A lake with a current ("current" line): this share of goals lie further round its middle (its spawn points'
+	// average) the current's way, between these many degrees on (tuning spinners).
+	static double CURRENT_SHARE = 0.8;
+	static double CURRENT_LEAST = Math.toRadians(20);
+	static double CURRENT_MOST = Math.toRadians(100);
+	// On a lake with a current, fish keep their way this far from its middle where they can (local units, tuning
+	// spinner).
+	static double CURRENT_MIDDLE_CLEAR = 320;
+	// Goals following a current lie in a band this far from the banks (local units), so fish go round near the
+	// edges without hugging them (tuning spinners).
+	static double CURRENT_EDGE_LEAST = 160;
+	static double CURRENT_EDGE_MOST = 384;
 	// These kinds (always alone) pick the farthest from every other fish (where each is, or is heading) of this many
 	// such places, so they spread over the water rather than gathering.
 	private static final Set<Integer> SPREAD_GOALS = Set.of(ItemID.TBWT_RAW_KARAMBWAN, ItemID.RAW_ANGLERFISH);
@@ -204,6 +216,11 @@ final class RiverSpotFish
 	private static final double LAKE_PIKE_PAUSE = 2.5;
 	private static final double LAKE_STOP_CHANCE = 1 / 1500.0;
 	private static final double LAKE_HOVER = 0.08;
+	// Karambwanji are restless: short pauses (client ticks), still swimming at this share of travelling speed (tuning
+	// spinners).
+	static int KARAMBWANJI_PAUSE_LEAST = 25;
+	static int KARAMBWANJI_PAUSE_MOST = 75;
+	static double KARAMBWANJI_HOVER = 0.35;
 	private static final int LAKE_DOMINO_TICKS = 6;
 	private static final int LAKE_SET_OFF_BURST = 25;
 	// Share per client tick a lake fish eases its speed while slowing to a pause; gentler than elsewhere.
@@ -222,6 +239,10 @@ final class RiverSpotFish
 	private static final int REGROUP_LEAST = 250;
 	private static final int REGROUP_MOST = 500;
 	private static final double REGROUP_RANGE = 192;
+	// Karambwanji, any of them alone, look for a school sooner and further (tuning spinners).
+	static int KARAMBWANJI_REGROUP_LEAST = 200;
+	static int KARAMBWANJI_REGROUP_MOST = 375;
+	static double KARAMBWANJI_REGROUP_RANGE = 256;
 	// Every LAKE_TRIM_EVERY client ticks (100 game ticks, a minute), a lake over its count lets up to LAKE_TRIM_MOST
 	// free fish shrink away: of the kind most over its share, the one furthest from the player.
 	private static final int LAKE_TRIM_EVERY = 3000;
@@ -394,8 +415,16 @@ final class RiverSpotFish
 	// (client ticks), and the push outwards from the group's middle.
 	private static final int SCATTER_LEAST = 4;
 	static double SCATTER_RATE = 1.0 / 3300;
+	// Karambwanji schools break up more often; this share of the time they split into 2-3 smaller schools instead,
+	// each at least SPLIT_LEAST fish, which may merge again after a while (client ticks) (tuning spinners).
+	static double KARAMBWANJI_SCATTER_RATE = 1.0 / 500;
+	static double KARAMBWANJI_SPLIT_SHARE = 0.75;
+	static int KARAMBWANJI_MERGE_WAIT = 500;
+	private static final int SPLIT_LEAST = 3;
 	// Schools scatter less with little room: fully only with this much room to the banks round them (local units).
 	private static final double SCATTER_ROOM = 384;
+	// Karambwanji, being small, need less.
+	private static final double KARAMBWANJI_SCATTER_ROOM = 192;
 	// Scattered fish don't leap for this many client ticks after.
 	static int SCATTER_LEAP_WAIT = 250;
 	private static final double BURST_SPEED = 1.8;
@@ -597,6 +626,8 @@ final class RiverSpotFish
 		// Whether a shore's roaming mix comes only from its own spots, those with rings on it ("own spots" line),
 		// rather than every shore spot near it.
 		boolean ownSpots;
+		// A lake's current: 1 clockwise, -1 anticlockwise ("current clockwise" or "current anticlockwise" line), or 0.
+		int current;
 		// Its marks, each kind's (MARK_WORDS order) tiles, halves (NORTH, SOUTH, EAST, WEST) or quarters (NORTHEAST...): fish
 		// blockers count as land, allowers as water; on surfacers deep fish (117 HD) come up to their usual depth; on
 		// divers other fish go down to the deepest, under logs across the water.
@@ -713,7 +744,7 @@ final class RiverSpotFish
 		/**
 		 * Distance to the bank, local units; 0 off the water.
 		 */
-		private double clearanceAt(double x, double y)
+		double clearanceAt(double x, double y)
 		{
 			int c = cellAt(x, y);
 			return c >= 0 ? clearance[c] : 0;
@@ -1014,6 +1045,8 @@ final class RiverSpotFish
 		// The client ticks it last rolled to scatter, and to leap together.
 		private int rolledAt = -1;
 		private int leapRolledAt = -1;
+		// Karambwanji: the client tick from which it may merge with another school.
+		private int mergeFrom = -1;
 
 		private Group(ThreadLocalRandom random)
 		{
@@ -1158,7 +1191,7 @@ final class RiverSpotFish
 		private double lobsterUnder = Double.NaN;
 		private double lobsterTip;
 		// Lakes, on its own: where it's heading; the client tick it sets off from a pause, or -1; and the client
-		// tick a scattered fish starts looking for a school, or -1.
+		// tick a scattered (or any lone karambwanji) fish starts looking for a school, or -1.
 		private double goalX = Double.NaN;
 		private double goalY;
 		private int setOffAt = -1;
@@ -1555,6 +1588,7 @@ final class RiverSpotFish
 		int homeMost = -1;
 		int sharkShare = 100;
 		boolean ownSpots = false;
+		int current = 0;
 		try
 		{
 			int x0 = 0;
@@ -1601,6 +1635,10 @@ final class RiverSpotFish
 				else if (parts[0].equals("own") && parts.length > 1 && parts[1].equals("spots"))
 				{
 					ownSpots = true;
+				}
+				else if (parts[0].equals("current") && parts.length > 1)
+				{
+					current = parts[1].equals("clockwise") ? 1 : parts[1].equals("anticlockwise") ? -1 : 0;
 				}
 				else if (parts[0].equals("route") || parts[0].equals("lake") || parts[0].equals("shore"))
 				{
@@ -1743,6 +1781,7 @@ final class RiverSpotFish
 		saved.homeMost = homeMost;
 		saved.sharkShare = sharkShare;
 		saved.ownSpots = ownSpots;
+		saved.current = current;
 		saved.branchStops.addAll(branchStops);
 		saved.branchPaths.addAll(branchPaths);
 		saved.branchShares.addAll(branchShares);
@@ -2968,13 +3007,59 @@ final class RiverSpotFish
 	 */
 	private static double[] lakeGoal(Shoal shoal, double fromX, double fromY, ThreadLocalRandom random)
 	{
+		// With a current, most goals lie a way further round the lake's middle, the current's way, near the edges, and
+		// no way crosses the middle; the rest, or failing that, anywhere up to halfway round the current's way; then
+		// anywhere not across the middle; then anywhere.
+		int current = shoal.saved == null || shoal.spawns == null ? 0 : shoal.saved.current;
+		double[] goal = current != 0 && random.nextDouble() < CURRENT_SHARE
+			? lakeGoal(shoal, fromX, fromY, random, current, true, false) : null;
+		goal = goal == null && current != 0 ? lakeGoal(shoal, fromX, fromY, random, current, true, true) : goal;
+		goal = goal == null && current != 0 ? lakeGoal(shoal, fromX, fromY, random, 0, true, false) : goal;
+		return goal != null ? goal : lakeGoal(shoal, fromX, fromY, random, 0, false, false);
+	}
+
+	/**
+	 * As lakeGoal, the current's way round if any (1 clockwise, -1 anticlockwise, 0 none): CURRENT_LEAST to
+	 * CURRENT_MOST on and in the band from the banks, or if loose, anywhere up to halfway round; and if clear, only
+	 * straight ways that keep CURRENT_MIDDLE_CLEAR from the lake's middle.
+	 */
+	private static double[] lakeGoal(Shoal shoal, double fromX, double fromY, ThreadLocalRandom random, int current,
+		boolean clear, boolean loose)
+	{
+		double middleX = 0;
+		double middleY = 0;
+		for (int n = 0; (current != 0 || clear) && n < shoal.spawns.length; n++)
+		{
+			middleX += shoal.spawns[n][0] / shoal.spawns.length;
+			middleY += shoal.spawns[n][1] / shoal.spawns.length;
+		}
+		double fromAngle = Math.atan2(fromY - middleY, fromX - middleX);
 		double[] best = null;
 		double fewest = Double.MAX_VALUE;
 		int found = 0;
-		for (int tries = 0; tries < 24 && found < LAKE_GOAL_CHOICES; tries++)
+		for (int tries = 0; tries < (current != 0 ? 96 : 24) && found < LAKE_GOAL_CHOICES; tries++)
 		{
 			double[] goal = openPlace(shoal.river, random);
 			if (Math.hypot(goal[0] - fromX, goal[1] - fromY) < LAKE_GOAL_LEAST)
+			{
+				continue;
+			}
+			if (current != 0)
+			{
+				// Clockwise (north up) is the angle going down.
+				double on = Math.IEEEremainder(current * (fromAngle - Math.atan2(goal[1] - middleY, goal[0] - middleX)),
+					2 * Math.PI);
+				if (loose ? on <= 0 : on < CURRENT_LEAST || on > CURRENT_MOST)
+				{
+					continue;
+				}
+				double room = loose ? 0 : shoal.river.clearanceAt(goal[0], goal[1]);
+				if (!loose && (room < CURRENT_EDGE_LEAST || room > CURRENT_EDGE_MOST))
+				{
+					continue;
+				}
+			}
+			if (clear && apartFromWay(middleX, middleY, fromX, fromY, goal[0], goal[1]) < CURRENT_MIDDLE_CLEAR)
 			{
 				continue;
 			}
@@ -2987,6 +3072,18 @@ final class RiverSpotFish
 			}
 		}
 		return best == null ? null : waypoint(shoal.river, fromX, fromY, best[0], best[1], random);
+	}
+
+	/**
+	 * How far a point is from the straight way between two others.
+	 */
+	private static double apartFromWay(double x, double y, double fromX, double fromY, double toX, double toY)
+	{
+		double dx = toX - fromX;
+		double dy = toY - fromY;
+		double length = dx * dx + dy * dy;
+		double share = length == 0 ? 0 : Math.max(0, Math.min(1, ((x - fromX) * dx + (y - fromY) * dy) / length));
+		return Math.hypot(x - fromX - share * dx, y - fromY - share * dy);
 	}
 
 	/**
@@ -3661,7 +3758,9 @@ final class RiverSpotFish
 			pike += member.item == ItemID.RAW_PIKE ? 1 : 0;
 		}
 		double longer = hiding * (group != null ? 1 + pike / (double) members.size() : pike > 0 ? LAKE_PIKE_PAUSE : 1);
-		int until = cycle + (int) (random.nextInt(LAKE_PAUSE_LEAST, LAKE_PAUSE_MOST + 1) * longer);
+		int until = cycle + (int) ((swimmer.item == ItemID.TBWT_RAW_KARAMBWANJI
+			? random.nextInt(KARAMBWANJI_PAUSE_LEAST, KARAMBWANJI_PAUSE_MOST + 1)
+			: random.nextInt(LAKE_PAUSE_LEAST, LAKE_PAUSE_MOST + 1)) * longer);
 		double ux = swimmer.headX;
 		double uy = swimmer.headY;
 		double apart = Double.isNaN(goalX) ? 0 : Math.hypot(goalX - fromX, goalY - fromY);
@@ -4796,7 +4895,9 @@ final class RiverSpotFish
 				continue;
 			}
 			group.rolledAt = cycle;
-			if (random.nextDouble() >= ticks * SCATTER_RATE || climbing(group))
+			boolean karambwanji = group.members.get(0).item == ItemID.TBWT_RAW_KARAMBWANJI;
+			if (random.nextDouble() >= ticks * (karambwanji ? KARAMBWANJI_SCATTER_RATE : SCATTER_RATE)
+				|| climbing(group))
 			{
 				continue;
 			}
@@ -4808,8 +4909,15 @@ final class RiverSpotFish
 				middleY += member.y / group.members.size();
 			}
 			// Less likely with little room round it: as likely as its room to the banks against SCATTER_ROOM.
-			if (random.nextDouble() * SCATTER_ROOM > shoal.river.clearanceAt(middleX, middleY))
+			if (random.nextDouble() * (karambwanji ? KARAMBWANJI_SCATTER_ROOM : SCATTER_ROOM)
+				> shoal.river.clearanceAt(middleX, middleY))
 			{
+				continue;
+			}
+			if (karambwanji && shoal.lake && group.members.size() >= 2 * SPLIT_LEAST
+				&& random.nextDouble() < KARAMBWANJI_SPLIT_SHARE)
+			{
+				split(group, middleX, middleY, cycle, random);
 				continue;
 			}
 			for (Swimmer member : new ArrayList<>(group.members))
@@ -4822,7 +4930,7 @@ final class RiverSpotFish
 				if (shoal.lake)
 				{
 					member.goalX = Double.NaN;
-					member.regroupAt = cycle + random.nextInt(REGROUP_LEAST, REGROUP_MOST + 1);
+					member.regroupAt = cycle + regroupWait(member, random);
 				}
 				double dx = member.x - middleX;
 				double dy = member.y - middleY;
@@ -4832,6 +4940,65 @@ final class RiverSpotFish
 				member.repelY += SCATTER_PUSH * Math.sin(angle);
 			}
 		}
+	}
+
+	/**
+	 * Splits a karambwanji school into 2-3 smaller ones, by side of its middle, each darting off its own way.
+	 */
+	private static void split(Group group, double middleX, double middleY, int cycle, ThreadLocalRandom random)
+	{
+		int parts = group.members.size() >= 3 * SPLIT_LEAST ? random.nextInt(2, 4) : 2;
+		double base = random.nextDouble(2 * Math.PI);
+		double sector = 2 * Math.PI / parts;
+		List<List<Swimmer>> sides = new ArrayList<>();
+		for (int n = 0; n < parts; n++)
+		{
+			sides.add(new ArrayList<>());
+		}
+		for (Swimmer member : group.members)
+		{
+			double angle = Math.atan2(member.y - middleY, member.x - middleX) - base;
+			angle = ((angle % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+			sides.get(Math.min(parts - 1, (int) (angle / sector))).add(member);
+		}
+		for (int n = 0; n < parts; n++)
+		{
+			List<Swimmer> side = sides.get(n);
+			Group part = side.size() > 1 ? new Group(random) : null;
+			if (part != null)
+			{
+				part.mergeFrom = cycle + KARAMBWANJI_MERGE_WAIT;
+			}
+			double angle = base + (n + 0.5) * sector;
+			for (Swimmer member : side)
+			{
+				ungroup(member);
+				member.goalX = Double.NaN;
+				member.burstUntil = cycle + BURST_CYCLES;
+				member.leapsFrom = Math.max(member.leapsFrom, cycle + SCATTER_LEAP_WAIT);
+				member.repelX += SCATTER_PUSH * Math.cos(angle);
+				member.repelY += SCATTER_PUSH * Math.sin(angle);
+				if (part != null)
+				{
+					join(part, member, random);
+				}
+				else
+				{
+					member.across = random.nextDouble(-1, 1) * SPREAD;
+					member.regroupAt = cycle + regroupWait(member, random);
+				}
+			}
+		}
+	}
+
+	/**
+	 * Client ticks a fish left alone waits before looking for a school.
+	 */
+	private static int regroupWait(Swimmer swimmer, ThreadLocalRandom random)
+	{
+		return swimmer.item == ItemID.TBWT_RAW_KARAMBWANJI
+			? random.nextInt(KARAMBWANJI_REGROUP_LEAST, KARAMBWANJI_REGROUP_MOST + 1)
+			: random.nextInt(REGROUP_LEAST, REGROUP_MOST + 1);
 	}
 
 	/**
@@ -4852,18 +5019,26 @@ final class RiverSpotFish
 	/**
 	 * Lakes: scattered fish, once alone a while, join a nearby school with room, or pair up with another scattered
 	 * fish into a new one. Rainbow fish school only with rainbow fish, shore fish only with their school sort
-	 * (ShoreFish.schoolSort).
+	 * (ShoreFish.schoolSort). Any lone karambwanji looks for one, and small karambwanji schools merge.
 	 */
 	private static void regroup(Shoal shoal, int cycle, ThreadLocalRandom random)
 	{
+		boolean karambwanji = false;
 		for (Swimmer swimmer : shoal.fish)
 		{
+			boolean small = swimmer.item == ItemID.TBWT_RAW_KARAMBWANJI;
+			karambwanji |= small;
+			if (small && swimmer.regroupAt < 0 && alone(swimmer))
+			{
+				swimmer.regroupAt = cycle + regroupWait(swimmer, random);
+			}
 			if (swimmer.regroupAt < 0 || cycle < swimmer.regroupAt || !alone(swimmer))
 			{
 				continue;
 			}
+			double range = small ? KARAMBWANJI_REGROUP_RANGE : REGROUP_RANGE;
 			Swimmer nearest = null;
-			double nearestApart = REGROUP_RANGE * REGROUP_RANGE;
+			double nearestApart = range * range;
 			for (Swimmer other : shoal.fish)
 			{
 				if (other == swimmer || (other.item == RAINBOW) != (swimmer.item == RAINBOW)
@@ -4898,6 +5073,67 @@ final class RiverSpotFish
 			}
 			join(group, swimmer, random);
 		}
+		if (karambwanji)
+		{
+			merge(shoal, cycle, random);
+		}
+	}
+
+	/**
+	 * Karambwanji schools with room for each other, near enough and free to merge, join up: the smaller into the
+	 * bigger.
+	 */
+	private static void merge(Shoal shoal, int cycle, ThreadLocalRandom random)
+	{
+		double range = KARAMBWANJI_REGROUP_RANGE * KARAMBWANJI_REGROUP_RANGE;
+		for (Swimmer swimmer : shoal.fish)
+		{
+			Group group = swimmer.group;
+			if (!mergeable(swimmer, cycle))
+			{
+				continue;
+			}
+			Group nearest = null;
+			double nearestApart = range;
+			for (Swimmer other : shoal.fish)
+			{
+				Group with = other.group;
+				if (with == group || !mergeable(other, cycle)
+					|| group.members.size() + with.members.size() > KARAMBWANJI_SCHOOL_MOST)
+				{
+					continue;
+				}
+				double dx = with.middleX - group.middleX;
+				double dy = with.middleY - group.middleY;
+				double apart = dx * dx + dy * dy;
+				if (apart < nearestApart)
+				{
+					nearest = with;
+					nearestApart = apart;
+				}
+			}
+			if (nearest != null)
+			{
+				Group into = nearest.members.size() >= group.members.size() ? nearest : group;
+				Group from = into == group ? nearest : group;
+				for (Swimmer member : new ArrayList<>(from.members))
+				{
+					ungroup(member);
+					join(into, member, random);
+				}
+			}
+		}
+	}
+
+	/**
+	 * Whether a fish leads (comes first in) a karambwanji school that may merge now, its middle worked out.
+	 */
+	private static boolean mergeable(Swimmer swimmer, int cycle)
+	{
+		Group group = swimmer.group;
+		return swimmer.item == ItemID.TBWT_RAW_KARAMBWANJI && group != null && group.members.size() > 1
+			&& group.members.get(0) == swimmer && group.middleAt >= 0 && cycle >= group.mergeFrom
+			&& swimmer.circle == null && swimmer.shrinkingSince < 0;
 	}
 
 	private static boolean alone(Swimmer swimmer)
@@ -6516,7 +6752,7 @@ final class RiverSpotFish
 		boolean pausing = shoal.lake && swimmer.circle == null && cycle < swimmer.setOffAt && swimmer.leapingSince < 0;
 		if (pausing)
 		{
-			want = travel * LAKE_HOVER * own;
+			want = travel * (swimmer.item == ItemID.TBWT_RAW_KARAMBWANJI ? KARAMBWANJI_HOVER : LAKE_HOVER) * own;
 		}
 		double ease = pausing ? LAKE_STOP_EASE : in >= 1 ? 0.02 : 0.05;
 		swimmer.swimming += (want - swimmer.swimming) * Math.min(1, ease * ticks);

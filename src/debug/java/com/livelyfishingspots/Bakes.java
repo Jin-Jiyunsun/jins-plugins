@@ -29,7 +29,8 @@ final class Bakes
 	 * give, then "kind K" if its fish aren't lure/bait ones (barbarian: leaping fish; sea: shore fish), then "rings grow" if
 	 * fish grow in on its rings rather than joining them (places too tight to swim in to a spot), then "lobsters roam"
 	 * if a shore's lobsters roam it as other fish do, then "home lobsters N N", "sharks N", then "own spots" if a
-	 * shore's roaming mix comes only from the spots with rings on it, then "water X Y" gives the first
+	 * shore's roaming mix comes only from the spots with rings on it, then "current clockwise" (or anticlockwise) if
+	 * a lake's fish circle it that way, then "water X Y" gives the first
 	 * row's world cell (y) and the cell the rows count from (x); the lines after hold the rows, going north, split by commas: each row's water as gap, length, gap,
 	 * length..., each gap from the end of the run before (the first from X); "N*" in front repeats the row N times, and
 	 * "-" is a row with none. "path X Y" gives the first path point (world local units), and each "step" line the steps
@@ -73,6 +74,10 @@ final class Bakes
 		if (saved != null && saved.ownSpots)
 		{
 			text.append("own spots").append('\n');
+		}
+		if (saved != null && saved.current != 0)
+		{
+			text.append(saved.current > 0 ? "current clockwise" : "current anticlockwise").append('\n');
 		}
 		text.append("water ").append(x0).append(' ').append(y0).append('\n');
 		StringBuilder line = new StringBuilder();

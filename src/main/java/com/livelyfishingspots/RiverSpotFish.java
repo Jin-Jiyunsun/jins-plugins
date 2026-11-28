@@ -83,7 +83,7 @@ final class RiverSpotFish
 	// stay near the surface, as some do at sea, but always all under it: their full-size model's height past their
 	// sink, plus this much, plus up to this much more each.
 	private static final int KARAMBWAN_DEEPER = 50;
-	private static final int HOME_KARAMBWAN_CLEAR = 3;
+	private static final int ALL_UNDER_CLEAR = 3;
 	private static final int HOME_KARAMBWAN_DEEPEST = 25;
 	// Lakes with sturgeon keep about this share of their fish sturgeon: a lone fish arriving is one, half the time,
 	// only while there are fewer (they're never in its schools, and top-ups come alone, so left to chance they'd
@@ -183,6 +183,8 @@ final class RiverSpotFish
 	private static final double LAKE_JOIN_RANGE = 512;
 	private static final double LAKE_WANDER = 128;
 	private static final double LAKE_SOLO_SHARE = 1 / 3.0;
+	// Karambwanji, in big schools, come alone this often, so about a quarter swim alone.
+	private static final double KARAMBWANJI_SOLO_SHARE = 0.8;
 	// While a lake circle being fished has room, the chance a school or solo fish picking its next goal heads for
 	// the circle's edge instead, so it passes close enough to decide whether to join.
 	private static final double LAKE_LURE_CHANCE = 0.3;
@@ -321,6 +323,10 @@ final class RiverSpotFish
 	// Chance a group is flat, spread across the river and short along it; the rest are round, give or take.
 	private static final double FLAT_CHANCE = 0.2;
 	private static final int FLAT_MOST = 3;
+	// Karambwanji come in big schools, never flat, this many fish, spread over a wider round to fit them.
+	private static final int KARAMBWANJI_SCHOOL_LEAST = 8;
+	private static final int KARAMBWANJI_SCHOOL_MOST = 16;
+	private static final double KARAMBWANJI_SCHOOL_WIDER = Math.sqrt(KARAMBWANJI_SCHOOL_MOST / (double) GROUP_MOST);
 	private static final double OWN_SPEED = 0.15;
 	// Single fish on their own come on top of the groups, one per this many fish's spacing.
 	private static final double SOLO_EVERY = 2;
@@ -3081,14 +3087,11 @@ final class RiverSpotFish
 			int keepUnder = 0;
 			if (kind == ItemID.TBWT_RAW_KARAMBWAN && seeThrough && deep)
 			{
-				Model full = models.made(kind, size(kind, GROW_STEPS), 0, 0, 0);
-				if (full == null)
+				keepUnder = allUnder(kind);
+				if (keepUnder < 0)
 				{
-					models.queue(kind, size(kind, GROW_STEPS), 0, 0, true);
 					continue;
 				}
-				keepUnder = Math.max(0, (int) Math.ceil(FishModels.spread(full.getVerticesY(), full.getVerticesCount())
-					- FishModels.look(kind).sink)) + HOME_KARAMBWAN_CLEAR;
 			}
 			double[] place = nearHome(shoal.river, at.getX(), at.getY(), ShoreFish.homeRange(kind), random);
 			Swimmer swimmer = place == null ? null
@@ -3106,6 +3109,22 @@ final class RiverSpotFish
 				return;
 			}
 		}
+	}
+
+	/**
+	 * How far past its sink a kind swims to be all under the water: its full-size upright model's height past its sink,
+	 * plus ALL_UNDER_CLEAR; -1 (with the model queued) until that model is made.
+	 */
+	private int allUnder(int item)
+	{
+		Model full = models.made(item, size(item, GROW_STEPS), 0, 0, 0);
+		if (full == null)
+		{
+			models.queue(item, size(item, GROW_STEPS), 0, 0, true);
+			return -1;
+		}
+		return Math.max(0, (int) Math.ceil(FishModels.spread(full.getVerticesY(), full.getVerticesCount())
+			- FishModels.look(item).sink)) + ALL_UNDER_CLEAR;
 	}
 
 	/**
@@ -4364,10 +4383,12 @@ final class RiverSpotFish
 			.toArray();
 		// A rainbow fish group is all rainbow fish, and tighter, being smaller.
 		boolean rainbow = rainbow(kinds, random);
-		double radius = GROUP_RADIUS * scale(kind(kinds, random, rainbow));
+		boolean big = lead == ItemID.TBWT_RAW_KARAMBWANJI;
+		double radius = GROUP_RADIUS * scale(kind(kinds, random, rainbow)) * (big ? KARAMBWANJI_SCHOOL_WIDER : 1);
 		// Mostly round, a little oval either way; sometimes flat, and then small.
-		boolean flat = random.nextDouble() < FLAT_CHANCE;
-		int count = Math.min(most, random.nextInt(GROUP_LEAST, (flat ? FLAT_MOST : GROUP_MOST) + 1));
+		boolean flat = !big && random.nextDouble() < FLAT_CHANCE;
+		int count = Math.min(most, big ? random.nextInt(KARAMBWANJI_SCHOOL_LEAST, KARAMBWANJI_SCHOOL_MOST + 1)
+			: random.nextInt(GROUP_LEAST, (flat ? FLAT_MOST : GROUP_MOST) + 1));
 		double wide = flat ? 1.6 : random.nextDouble(0.85, 1.2);
 		double deep = flat ? 0.35 : random.nextDouble(0.85, 1.2);
 		// On a lake, the school starts heading for a goal, its fish placed round the place facing it.
@@ -4465,7 +4486,8 @@ final class RiverSpotFish
 		{
 			return 0;
 		}
-		if (most < GROUP_LEAST || schooled && random.nextDouble() < LAKE_SOLO_SHARE)
+		if (most < GROUP_LEAST || schooled && random.nextDouble()
+			< (has(kinds, ItemID.TBWT_RAW_KARAMBWANJI) ? KARAMBWANJI_SOLO_SHARE : LAKE_SOLO_SHARE))
 		{
 			boolean hasSturgeon = has(kinds, STURGEON);
 			int sturgeon = 0;
@@ -4849,7 +4871,8 @@ final class RiverSpotFish
 				{
 					continue;
 				}
-				boolean school = other.group != null && other.group.members.size() < GROUP_MOST && other.circle == null
+				boolean school = other.group != null && other.group.members.size() < (other.item == ItemID.TBWT_RAW_KARAMBWANJI
+					? KARAMBWANJI_SCHOOL_MOST : GROUP_MOST) && other.circle == null
 					&& other.shrinkingSince < 0;
 				boolean ready = other.regroupAt >= 0 && cycle >= other.regroupAt && alone(other);
 				double dx = other.x - swimmer.x;
@@ -4889,7 +4912,8 @@ final class RiverSpotFish
 	private static void join(Group group, Swimmer swimmer, ThreadLocalRandom random)
 	{
 		double angle = random.nextDouble(2 * Math.PI);
-		double out = GROUP_RADIUS * swimmer.scale * Math.sqrt(random.nextDouble());
+		double out = GROUP_RADIUS * swimmer.scale * Math.sqrt(random.nextDouble())
+			* (swimmer.item == ItemID.TBWT_RAW_KARAMBWANJI ? KARAMBWANJI_SCHOOL_WIDER : 1);
 		swimmer.slot = out * Math.cos(angle);
 		swimmer.slotAlong = out * Math.sin(angle);
 		swimmer.regroupAt = -1;
@@ -5871,7 +5895,7 @@ final class RiverSpotFish
 	 * independently and can overlap: on rings that grow their own fish, every kind it draws; on any shore, shrimps,
 	 * anchovies and lobsters, which never roam. A kind's first comes a random part of its gap after fishing starts.
 	 * Lane fish come in the widest gap of their lane, shrimps and anchovies anywhere round it (they don't mind room);
-	 * but when fishing starts, shrimps and anchovies all come at once, from one way.
+	 * but when fishing starts, shrimps, anchovies and karambwanji all come at once, from one way.
 	 */
 	private void growRing(Shoal shoal, Circle circle, int cycle, ThreadLocalRandom random)
 	{
@@ -5894,7 +5918,7 @@ final class RiverSpotFish
 				circle.nextOf.put(item, cycle + (next == null ? random.nextInt(ShoreFish.ringGap(item, random) + 1)
 					: ShoreFish.ringGap(item, random)));
 			}
-			if (ShoreFish.isKrill(item) && (next == null || cycle < circle.krillUntil))
+			if (ShoreFish.streamsIn(item) && (next == null || cycle < circle.krillUntil))
 			{
 				// One way for the whole ring, on the open water side (away from the spot), kept for the stream.
 				if (next == null && cycle >= circle.krillUntil)
@@ -5925,7 +5949,7 @@ final class RiverSpotFish
 			// Spot lobsters nearby still to join count as there.
 			int coming = ShoreFish.isLobster(item) ? homeLobstersNear(shoal, circle) : 0;
 			if (next == null || cycle < next || there.getOrDefault(item, 0) + coming >= target.getValue()
-				|| !ShoreFish.isKrill(item) && !hasRoom(shoal, circle, item))
+				|| !ShoreFish.streamsIn(item) && !hasRoom(shoal, circle, item))
 			{
 				continue;
 			}
@@ -6625,6 +6649,11 @@ final class RiverSpotFish
 			: FOLLOW_BED ? Math.min(schoolDeep(swimmer),
 				river.bedAt(x, y) * (swimmer.item == ItemID.RAW_SWORDFISH ? SWORDFISH_BED_SHARE : BED_SHARE))
 			: schoolDeep(swimmer) * Math.min(1, river.clearanceAt(x, y) / SHALLOW_ROOM);
+		// Karambwanji (117 HD only) stay all under the water, circling too, once their full-size model is made.
+		if (swimmer.item == ItemID.TBWT_RAW_KARAMBWANJI && swimmer.keepUnder == 0)
+		{
+			swimmer.keepUnder = Math.max(0, allUnder(swimmer.item));
+		}
 		// Never above its least depth, even circling or over a shallow bed.
 		depth = Math.max(depth, swimmer.keepUnder);
 		// Divers' own pace both ways, for fish not swimming deep.

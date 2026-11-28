@@ -195,7 +195,7 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 	@ConfigSection(
 		name = "Debug: splashes",
 		description = "Temporary tuning of the splashes<br>leaping fish make",
-		position = 108,
+		position = 109,
 		closedByDefault = true
 	)
 	String debugSplashes = "debugSplashes";
@@ -203,7 +203,7 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 	@ConfigSection(
 		name = "Debug: dead bodies",
 		description = "Temporary tuning of the dead bodies<br>drifting down the rivers",
-		position = 109,
+		position = 110,
 		closedByDefault = true
 	)
 	String debugBodies = "debugBodies";
@@ -211,7 +211,7 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 	@ConfigSection(
 		name = "Debug: range and performance",
 		description = "Temporary tuning of how far from<br>you fish are kept, and how often<br>they decide",
-		position = 110,
+		position = 111,
 		closedByDefault = true
 	)
 	String debugRange = "debugRange";
@@ -241,6 +241,14 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 	String debugLookShark = "debugLookShark";
 
 	@ConfigSection(
+		name = "Debug: karambwanji look",
+		description = "Temporary tuning of the karambwanji<br>model",
+		position = 107,
+		closedByDefault = true
+	)
+	String debugLookKarambwanji = "debugLookKarambwanji";
+
+	@ConfigSection(
 		name = "Debug: depth and 117 HD bed",
 		description = "Temporary tuning of bobs, depths<br>and the 117 HD bed",
 		position = 103,
@@ -251,7 +259,7 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 	@ConfigSection(
 		name = "Debug: leaps",
 		description = "Temporary tuning of leaping fish<br>jumping out of the water",
-		position = 107,
+		position = 108,
 		closedByDefault = true
 	)
 	String debugLeaps = "debugLeaps";
@@ -508,6 +516,20 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 	default int debugRiverShareRainbow()
 	{
 		return 7;
+	}
+
+	@Range(min = 0, max = 1000)
+	@Units(Units.PERCENT)
+	@ConfigItem(
+		keyName = "debugRiverLakeShare",
+		name = "Nearest lake share",
+		description = "Sets the fish share of the lake or<br>shore nearest you, saving its bake<br>(not while baking; 0 leaves it)",
+		section = debugRiverShares,
+		position = 4
+	)
+	default int debugRiverLakeShare()
+	{
+		return 0;
 	}
 
 	@Range(min = 1, max = 600)
@@ -2059,6 +2081,228 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 	{
 		return 1500;
 	}
+
+	@Range(min = -500, max = 500)
+	@ConfigItem(
+		keyName = "debugLookKarambwanjiSink",
+		name = "Fish sink",
+		description = "How far under the water<br>it rests, local units",
+		section = debugLookKarambwanji,
+		position = 0
+	)
+	default int debugLookKarambwanjiSink()
+	{
+		return 5;
+	}
+
+	@Range(min = 0, max = 500)
+	@ConfigItem(
+		keyName = "debugLookKarambwanjiRise",
+		name = "Fish bob",
+		description = "How far down from where<br>it rests it bobs, local units",
+		section = debugLookKarambwanji,
+		position = 1
+	)
+	default int debugLookKarambwanjiRise()
+	{
+		return 4;
+	}
+
+	@Range(min = -180, max = 180)
+	@ConfigItem(
+		keyName = "debugLookKarambwanjiRoll",
+		name = "Fish roll",
+		description = "Degrees rolled up off its side",
+		section = debugLookKarambwanji,
+		position = 2
+	)
+	default int debugLookKarambwanjiRoll()
+	{
+		return -90;
+	}
+
+	@Range(min = -180, max = 180)
+	@ConfigItem(
+		keyName = "debugLookKarambwanjiTilt",
+		name = "Fish tilt",
+		description = "Degrees tilted head up",
+		section = debugLookKarambwanji,
+		position = 3
+	)
+	default int debugLookKarambwanjiTilt()
+	{
+		return 15;
+	}
+
+	@Range(min = 1, max = 500)
+	@ConfigItem(
+		keyName = "debugLookKarambwanjiSize",
+		name = "Fish size",
+		description = "Percent of the item's size",
+		section = debugLookKarambwanji,
+		position = 4
+	)
+	default int debugLookKarambwanjiSize()
+	{
+		return 18;
+	}
+
+	@Range(min = -360, max = 360)
+	@ConfigItem(
+		keyName = "debugLookKarambwanjiTurn",
+		name = "Fish turn",
+		description = "Degrees turned to face<br>the way it swims",
+		section = debugLookKarambwanji,
+		position = 5
+	)
+	default int debugLookKarambwanjiTurn()
+	{
+		return -90;
+	}
+
+	@Range(min = 0, max = 127)
+	@ConfigItem(
+		keyName = "debugLookKarambwanjiLightest",
+		name = "Fish min lightness",
+		description = "Lightest every face is,<br>of 127",
+		section = debugLookKarambwanji,
+		position = 6
+	)
+	default int debugLookKarambwanjiLightest()
+	{
+		return 30;
+	}
+
+	@Range(min = 0, max = 500)
+	@ConfigItem(
+		keyName = "debugLookKarambwanjiWag",
+		name = "Fish wag",
+		description = "Percent of the tail wag",
+		section = debugLookKarambwanji,
+		position = 7
+	)
+	default int debugLookKarambwanjiWag()
+	{
+		return 100;
+	}
+
+	@Range(min = 0, max = 500)
+	@ConfigItem(
+		keyName = "debugLookKarambwanjiTip",
+		name = "Fish tipping",
+		description = "Percent of the tip<br>as it bobs and dips",
+		section = debugLookKarambwanji,
+		position = 8
+	)
+	default int debugLookKarambwanjiTip()
+	{
+		return 100;
+	}
+
+	@Range(min = 1, max = 500)
+	@ConfigItem(
+		keyName = "debugLookKarambwanjiPace",
+		name = "Fish speed",
+		description = "Percent of the river speed",
+		section = debugLookKarambwanji,
+		position = 9
+	)
+	default int debugLookKarambwanjiPace()
+	{
+		return 100;
+	}
+
+	@Range(min = 0, max = 500)
+	@ConfigItem(
+		keyName = "debugLookKarambwanjiSurge",
+		name = "Fish surge",
+		description = "Percent of the surge",
+		section = debugLookKarambwanji,
+		position = 10
+	)
+	default int debugLookKarambwanjiSurge()
+	{
+		return 100;
+	}
+
+	@Range(min = -500, max = 500)
+	@ConfigItem(
+		keyName = "debugLookKarambwanjiTipPivot",
+		name = "Fish tip pivot",
+		description = "How far ahead of its middle<br>it tips about, local units",
+		section = debugLookKarambwanji,
+		position = 11
+	)
+	default int debugLookKarambwanjiTipPivot()
+	{
+		return 0;
+	}
+
+	@Range(min = -500, max = 500)
+	@ConfigItem(
+		keyName = "debugLookKarambwanjiTipPivotUp",
+		name = "Fish tip pivot height",
+		description = "How far above its middle<br>it tips about, local units",
+		section = debugLookKarambwanji,
+		position = 13
+	)
+	default int debugLookKarambwanjiTipPivotUp()
+	{
+		return 0;
+	}
+
+	@Range(min = -500, max = 500)
+	@ConfigItem(
+		keyName = "debugLookKarambwanjiPivot",
+		name = "Fish wag pivot",
+		description = "How far ahead of its middle<br>it wags about, local units",
+		section = debugLookKarambwanji,
+		position = 12
+	)
+	default int debugLookKarambwanjiPivot()
+	{
+		return 16;
+	}
+
+	@Range(min = 1, max = 600)
+	@ConfigItem(
+		keyName = "debugLookKarambwanjiDipEvery",
+		name = "Fish dip every",
+		description = "Seconds between dips,<br>on average",
+		section = debugLookKarambwanji,
+		position = 14
+	)
+	default int debugLookKarambwanjiDipEvery()
+	{
+		return 10;
+	}
+
+	@Range(min = 0, max = 500)
+	@ConfigItem(
+		keyName = "debugLookKarambwanjiDipDepth",
+		name = "Fish dip depth",
+		description = "How much deeper a dip goes,<br>local units",
+		section = debugLookKarambwanji,
+		position = 15
+	)
+	default int debugLookKarambwanjiDipDepth()
+	{
+		return 10;
+	}
+
+	@Range(min = 1, max = 10000)
+	@ConfigItem(
+		keyName = "debugLookKarambwanjiDipMillis",
+		name = "Fish dip length",
+		description = "Milliseconds a dip takes,<br>down and back up",
+		section = debugLookKarambwanji,
+		position = 16
+	)
+	default int debugLookKarambwanjiDipMillis()
+	{
+		return 1500;
+	}
+
 
 	@Range(min = 1, max = 300)
 	@Units(Units.PERCENT)

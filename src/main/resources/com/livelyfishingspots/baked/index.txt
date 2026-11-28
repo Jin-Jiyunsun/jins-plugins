@@ -69,3 +69,4 @@ shore-resource-area
 shore-port-piscarilius
 shore-karamja-north-east
 shore-lubufu
+lake-tai-bwo-wannai

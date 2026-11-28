@@ -220,6 +220,11 @@ public class LivelyFishingSpotsDebugPlugin extends Plugin
 					saveBaked(files);
 					files.forEach((name, text) -> Bakes.reloadBaked(rivers, name, text));
 				}
+				if ("debugRiverLakeShare".equals(key) && !config.debugRiverBake())
+				{
+					String name = baker.setNearestShare(config.debugRiverLakeShare());
+					log.debug("Fish share {} set on {}", config.debugRiverLakeShare(), name);
+				}
 				debugBake = config.debugRiverBake();
 				tune();
 				if (look)
@@ -554,6 +559,7 @@ public class LivelyFishingSpotsDebugPlugin extends Plugin
 		ShoreFish.KRILL_STREAM = config.debugLookKrillStream() / 20;
 		FishModels.ONE_SIDED_DEPTH.put(ItemID.RAW_LOBSTER, config.debugLookLobsterThickness());
 		main.fishModels().tuneLook(ItemID.RAW_LOBSTER, LOOK_PLACES, new int[]{config.debugLookLobsterSink(), config.debugLookLobsterRise(), config.debugLookLobsterRoll(), config.debugLookLobsterTilt(), config.debugLookLobsterSize(), config.debugLookLobsterTurn(), config.debugLookLobsterLightest(), config.debugLookLobsterWag(), config.debugLookLobsterTip(), config.debugLookLobsterPace(), config.debugLookLobsterSurge(), config.debugLookLobsterTipPivot(), config.debugLookLobsterPivot(), config.debugLookLobsterDipEvery(), config.debugLookLobsterDipDepth(), config.debugLookLobsterDipMillis(), config.debugLookLobsterTipPivotUp()});
+		main.fishModels().tuneLook(ItemID.TBWT_RAW_KARAMBWANJI, LOOK_PLACES, new int[]{config.debugLookKarambwanjiSink(), config.debugLookKarambwanjiRise(), config.debugLookKarambwanjiRoll(), config.debugLookKarambwanjiTilt(), config.debugLookKarambwanjiSize(), config.debugLookKarambwanjiTurn(), config.debugLookKarambwanjiLightest(), config.debugLookKarambwanjiWag(), config.debugLookKarambwanjiTip(), config.debugLookKarambwanjiPace(), config.debugLookKarambwanjiSurge(), config.debugLookKarambwanjiTipPivot(), config.debugLookKarambwanjiPivot(), config.debugLookKarambwanjiDipEvery(), config.debugLookKarambwanjiDipDepth(), config.debugLookKarambwanjiDipMillis(), config.debugLookKarambwanjiTipPivotUp()});
 		FishModels.THICKNESS.put(ItemID.RAW_SHARK, config.debugLookSharkThickness());
 		main.fishModels().remake(ItemID.RAW_SHARK);
 	}

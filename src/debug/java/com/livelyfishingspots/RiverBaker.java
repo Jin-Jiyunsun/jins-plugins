@@ -651,6 +651,41 @@ class RiverBaker
 	/**
 	 * Saves a river or lake's new text, if any, into its bake file (with whatever else is in it), and shows it at once.
 	 */
+	/**
+	 * Sets the fish share (percent) of the lake or shore whose spawn points are nearest the player (within 32 tiles),
+	 * saving and reloading its bake; not while baking, which would save over it. Returns its file name, or null.
+	 */
+	String setNearestShare(int share)
+	{
+		Player player = client.getLocalPlayer();
+		if (player == null || share < 1)
+		{
+			return null;
+		}
+		WorldPoint me = player.getWorldLocation();
+		WorldPoint[] nearest = null;
+		double best = 32;
+		for (WorldPoint[] route : rivers.routesAndLakes())
+		{
+			double apart = route[0].getPlane() == me.getPlane() && rivers.isLake(route)
+				? RiverSpotFish.toSpawns(route, me.getX(), me.getY()) : Double.MAX_VALUE;
+			if (apart < best)
+			{
+				best = apart;
+				nearest = route;
+			}
+		}
+		RiverSpotFish.Baked saved = nearest == null ? null : rivers.baked.get(nearest[0]);
+		if (saved == null || saved.fishShare == share)
+		{
+			return null;
+		}
+		saved.fishShare = share;
+		String name = Bakes.bakedName(nearest[0]);
+		saveBake(name, nearest[0], Bakes.textOf(saved));
+		return name;
+	}
+
 	private void saveBake(String name, WorldPoint first, String text)
 	{
 		if (text != null)

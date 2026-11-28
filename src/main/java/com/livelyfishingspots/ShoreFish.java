@@ -25,7 +25,7 @@ final class ShoreFish
 	static final int ANCHOVIES = FishModels.SHORE_ANCHOVIES;
 	// Each spot type's fish and odds (each type's odds sum to 100, so spots count evenly in a mix): net/bait,
 	// cage/harpoon, big net/harpoon, Piscatoris' net/harpoon (monkfish), the Wilderness' cage (dark crabs), Port
-	// Piscarilius' bait (anglerfish) and Karamja's fish (karambwan).
+	// Piscarilius' bait (anglerfish), Karamja's fish (karambwan) and the Holy Lake's net (karambwanji).
 	private static final int[][] SALT = {{SHRIMP, ANCHOVIES, ItemID.RAW_SARDINE, ItemID.RAW_HERRING}, {14, 2, 42, 42}};
 	private static final int[][] RARE = {{ItemID.RAW_LOBSTER, ItemID.RAW_TUNA, ItemID.RAW_SWORDFISH}, {25, 60, 15}};
 	private static final int[][] MEMBER = {{ItemID.RAW_MACKEREL, ItemID.RAW_COD, ItemID.RAW_BASS, ItemID.RAW_SHARK},
@@ -34,6 +34,7 @@ final class ShoreFish
 	private static final int[][] CRABS = {{ItemID.RAW_DARK_CRAB}, {100}};
 	private static final int[][] ANGLERFISH = {{ItemID.RAW_ANGLERFISH}, {100}};
 	private static final int[][] KARAMBWAN = {{ItemID.TBWT_RAW_KARAMBWAN}, {100}};
+	private static final int[][] KARAMBWANJI = {{ItemID.TBWT_RAW_KARAMBWANJI}, {100}};
 	// The fish each menu option draws, by spot type (Harpoon differs between them).
 	private static final Map<String, int[]> SALT_OPTIONS = Map.of("net", new int[]{SHRIMP, ANCHOVIES},
 		"bait", new int[]{ItemID.RAW_SARDINE, ItemID.RAW_HERRING});
@@ -48,6 +49,7 @@ final class ShoreFish
 	private static final Map<String, int[]> CRABS_OPTIONS = Map.of("cage", new int[]{ItemID.RAW_DARK_CRAB});
 	private static final Map<String, int[]> ANGLERFISH_OPTIONS = Map.of("bait", new int[]{ItemID.RAW_ANGLERFISH});
 	private static final Map<String, int[]> KARAMBWAN_OPTIONS = Map.of("fish", new int[]{ItemID.TBWT_RAW_KARAMBWAN});
+	private static final Map<String, int[]> KARAMBWANJI_OPTIONS = Map.of("net", new int[]{ItemID.TBWT_RAW_KARAMBWANJI});
 	// Shore spots, by NPC id: each its spot type's fish and odds.
 	static final Map<Integer, int[][]> SPOTS = Map.ofEntries(
 		// Catherby.
@@ -118,23 +120,26 @@ final class ShoreFish
 		Map.entry(NpcID.PISCARILIUSFISH, ANGLERFISH),
 		// Karamja (karambwan): the north-east coast, and Lubufu's spot by Brimhaven.
 		Map.entry(NpcID._0_45_48_KARAMBWAN, KARAMBWAN), Map.entry(NpcID.GENERAL_KARAMBWAN, KARAMBWAN),
-		Map.entry(NpcID.LUBUFU_KARAMBWAN, KARAMBWAN));
+		Map.entry(NpcID.LUBUFU_KARAMBWAN, KARAMBWAN),
+		// Karamja (karambwanji): the Holy Lake south of Tai Bwo Wannai.
+		Map.entry(NpcID._0_43_47_KARAMBWANJI, KARAMBWANJI), Map.entry(NpcID.GENERAL_KARAMBWANJI, KARAMBWANJI));
 	// Every shore fish (any spot's), for the "sea" kind.
 	static final int[] FISH = SPOTS.values().stream().flatMapToInt(spot -> Arrays.stream(spot[0]))
 		.distinct().toArray();
 	// Shore fish that only come with see-through, deep water (117 HD), as at sea.
-	static final Set<Integer> UNDER_WATER = Set.of(ItemID.RAW_LOBSTER, ItemID.RAW_DARK_CRAB, SHRIMP, ANCHOVIES);
+	static final Set<Integer> UNDER_WATER = Set.of(ItemID.RAW_LOBSTER, ItemID.RAW_DARK_CRAB, SHRIMP, ANCHOVIES,
+		ItemID.TBWT_RAW_KARAMBWANJI);
 	// Fishing XP per catch, to tell catches apart.
 	static final Map<Integer, Integer> CATCH_XP = Map.ofEntries(Map.entry(SHRIMP, 10), Map.entry(ANCHOVIES, 40),
 		Map.entry(ItemID.RAW_SARDINE, 20), Map.entry(ItemID.RAW_HERRING, 30), Map.entry(ItemID.RAW_MACKEREL, 20),
 		Map.entry(ItemID.RAW_COD, 45), Map.entry(ItemID.RAW_BASS, 100), Map.entry(ItemID.RAW_SHARK, 110),
 		Map.entry(ItemID.RAW_LOBSTER, 90), Map.entry(ItemID.RAW_TUNA, 80), Map.entry(ItemID.RAW_SWORDFISH, 100),
 		Map.entry(ItemID.RAW_MONKFISH, 120), Map.entry(ItemID.RAW_DARK_CRAB, 130),
-		Map.entry(ItemID.RAW_ANGLERFISH, 120), Map.entry(ItemID.TBWT_RAW_KARAMBWAN, 50));
+		Map.entry(ItemID.RAW_ANGLERFISH, 120), Map.entry(ItemID.TBWT_RAW_KARAMBWAN, 50), Map.entry(ItemID.TBWT_RAW_KARAMBWANJI, 5));
 	// The fish each menu option draws, by spot type.
 	private static final Map<int[][], Map<String, int[]>> OPTIONS = Map.of(SALT, SALT_OPTIONS, RARE, RARE_OPTIONS,
 		MEMBER, MEMBER_OPTIONS, SWAN, SWAN_OPTIONS, CRABS, CRABS_OPTIONS, ANGLERFISH, ANGLERFISH_OPTIONS,
-		KARAMBWAN, KARAMBWAN_OPTIONS);
+		KARAMBWAN, KARAMBWAN_OPTIONS, KARAMBWANJI, KARAMBWANJI_OPTIONS);
 
 	/**
 	 * The fish each menu option draws at a shore spot, or these if it isn't one.
@@ -148,6 +153,8 @@ final class ShoreFish
 	// one; while a spot is fished, fish of the kinds it draws grow in on its lanes, and shrink away once it isn't,
 	// apart from the lake's own fish. At most so many shrimps and anchovies grown in (tuning spinner).
 	static int RING_SPAWN_KRILL_MOST = 60;
+	// Karambwanji grown in on a ring, at most (fewer than shrimps).
+	static final int RING_SPAWN_KARAMBWANJI_MOST = 20;
 	// Client ticks on average between a circling shrimp or anchovy moving to a lane next to its own (tuning spinner).
 	static int KRILL_LANE_EVERY = 50;
 	// Degrees either side of their one way that shrimps and anchovies grow in at, when fishing starts (tuning
@@ -223,6 +230,15 @@ final class ShoreFish
 	static boolean isKrill(int item)
 	{
 		return KRILL_FISH.contains(item);
+	}
+
+	/**
+	 * Whether a kind fills a fished ring in a stream all at once from one way (shrimps, anchovies and karambwanji),
+	 * rather than one at a time.
+	 */
+	static boolean streamsIn(int item)
+	{
+		return isKrill(item) || item == ItemID.TBWT_RAW_KARAMBWANJI;
 	}
 
 	/**
@@ -316,8 +332,8 @@ final class ShoreFish
 
 	/**
 	 * How many of each kind a ring growing its own fish holds (drawn: the kinds the ring draws): each drawn kind's
-	 * share of its spot's odds, of CIRCLE_MOST for lane fish (at most its RING_MOST) and of RING_SPAWN_KRILL_MOST
-	 * for shrimps and anchovies; at least each kind's least.
+	 * share of its spot's odds, of CIRCLE_MOST for lane fish (at most its RING_MOST), of RING_SPAWN_KRILL_MOST
+	 * for shrimps and anchovies and of RING_SPAWN_KARAMBWANJI_MOST for karambwanji; at least each kind's least.
 	 */
 	static Map<Integer, Integer> ringTargets(int spot, IntPredicate drawn)
 	{
@@ -339,7 +355,8 @@ final class ShoreFish
 			{
 				boolean krill = isKrill(item);
 				double share = shore[1][k] / (double) odds[krill ? 1 : 0];
-				int most = krill ? RING_SPAWN_KRILL_MOST : RiverSpotFish.CIRCLE_MOST;
+				int most = krill ? RING_SPAWN_KRILL_MOST : item == ItemID.TBWT_RAW_KARAMBWANJI ? RING_SPAWN_KARAMBWANJI_MOST
+					: RiverSpotFish.CIRCLE_MOST;
 				int target = Math.max(least(item), (int) Math.round(share * most));
 				targets.put(item, Math.min(target, RiverSpotFish.RING_MOST.getOrDefault(item, target)));
 			}

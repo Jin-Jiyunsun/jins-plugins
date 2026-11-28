@@ -45,7 +45,7 @@ final class FishModels
 	private static final double WIGGLE_WAVES = 1.2;
 	// Kinds whose item model is a relief facing one way, given a mirrored back.
 	private static final Set<Integer> ONE_SIDED = Set.of(ItemID.HUNTING_RAW_FISH_SPECIAL, ItemID.BRUT_SPAWNING_TROUT,
-		ItemID.BRUT_SPAWNING_SALMON, ItemID.BRUT_STURGEON, ItemID.RAW_LOBSTER);
+		ItemID.BRUT_SPAWNING_SALMON, ItemID.BRUT_STURGEON, ItemID.RAW_LOBSTER, ItemID.TBWT_RAW_KARAMBWANJI);
 	// Their depth from the back, percent, by kind; 50 if none (the debug plugin may tune it).
 	static final Map<Integer, Integer> ONE_SIDED_DEPTH = new HashMap<>(Map.of(ItemID.BRUT_SPAWNING_TROUT, 100,
 		ItemID.BRUT_SPAWNING_SALMON, 100, ItemID.RAW_LOBSTER, 40));
@@ -217,6 +217,9 @@ final class FishModels
 		Map.entry(SHORE_SHRIMP, KRILL),
 		Map.entry(SHORE_ANCHOVIES, KRILL),
 		Map.entry(ItemID.RAW_SARDINE, SARDINE),
+		// Karambwanji: the item model is one side of a fish lying flat (given a back), belly fins on its +z side.
+		Map.entry(ItemID.TBWT_RAW_KARAMBWANJI, new Look(new int[]{-90, 15, 18, 17, 5, 4, 16, -90, 0, 40, 60, 30, 10, 10, 1500,
+			30, 100, 100, 0, 100, 50, 0, 0, 100, 100, 0, 35, 0, 6, 0, 0, 50, 100, 0, 0, 100})),
 		Map.entry(ItemID.RAW_HERRING, HERRING),
 		Map.entry(ItemID.RAW_MACKEREL, new Look(new int[]{-90, 0, 30, 17, 10, 6, 16, -90, 0, 40, 60, 30, 10, 12, 1500,
 			25, 100, 100, 0, 100, 50, 0, 0, 90, 105, 0, 35, 0, 6, 0, 0, 50, 100, 0, 0, 100})),

@@ -67,3 +67,5 @@ shore-piscatoris
 shore-wilderness-east
 shore-resource-area
 shore-port-piscarilius
+shore-karamja-north-east
+shore-lubufu

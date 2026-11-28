@@ -79,6 +79,12 @@ final class RiverSpotFish
 	// Trout pausing at a hiding spot pause this many times longer.
 	private static final double LAKE_HIDE_PAUSE = 3;
 	private static final double[] ANY_DEPTH = {0, 1};
+	// With see-through water, roaming karambwan swim at least this far under the surface (local units); a spot's own
+	// stay near the surface, as some do at sea, but always all under it: their full-size model's height past their
+	// sink, plus this much, plus up to this much more each.
+	private static final int KARAMBWAN_DEEPER = 50;
+	private static final int HOME_KARAMBWAN_CLEAR = 3;
+	private static final int HOME_KARAMBWAN_DEEPEST = 25;
 	// Lakes with sturgeon keep about this share of their fish sturgeon: a lone fish arriving is one, half the time,
 	// only while there are fewer (they're never in its schools, and top-ups come alone, so left to chance they'd
 	// pile up).
@@ -167,6 +173,10 @@ final class RiverSpotFish
 	private static final double LAKE_GOAL_REACHED = 128;
 	private static final double LAKE_GOAL_LEAST = 384;
 	private static final int LAKE_GOAL_CHOICES = 6;
+	// These kinds (always alone) pick the farthest from every other fish (where each is, or is heading) of this many
+	// such places, so they spread over the water rather than gathering.
+	private static final Set<Integer> SPREAD_GOALS = Set.of(ItemID.TBWT_RAW_KARAMBWAN, ItemID.RAW_ANGLERFISH);
+	private static final int SPREAD_GOAL_CHOICES = 12;
 	private static final double LAKE_CROWD_RANGE = 384;
 	// How near a lake fish comes to a circle before deciding whether to join (local units), how far a solo
 	// fish wanders either side of its way, and the share of new arrivals that are solo when schooled.
@@ -493,6 +503,10 @@ final class RiverSpotFish
 	private static final int WAG = 20;
 	private static final double WAG_DISTANCE = 72;
 	private static final double REFERENCE_SPEED = 3.2;
+	// Wiggling arms (karambwan) go this many times their sea rate at their own pace (tuning spinner), and keep at
+	// least this share of it when slow or stopped.
+	static double WIGGLE_SPEED = 2;
+	private static final double WIGGLE_LEAST = 0.25;
 	static int BOB_CYCLES = 60;
 	static int BOB_REST_CYCLES = 30;
 	private static final double DIP_PITCH = 20;
@@ -1125,6 +1139,8 @@ final class RiverSpotFish
 		private int circleLane;
 		// Shrimps and anchovies circling: how far up between their ring height and the surface, 0 to 1.
 		private final double height = ThreadLocalRandom.current().nextDouble();
+		// Least depth past its sink it ever swims at (a spot's own karambwan with see-through water: all under it).
+		private int keepUnder;
 		private final Set<Circle> decided = new HashSet<>();
 		// A filler fish's circle, joined when it gets there, or null.
 		private Circle bound;
@@ -1205,6 +1221,11 @@ final class RiverSpotFish
 		private int pitch;
 		// Lobsters on the bed: banked to its slope across their heading, in tilt steps.
 		private int bank;
+		// Kinds whose arms wiggle at sea (karambwan) wiggle here too, at full size: frame shown, and how far through
+		// the frames (0 to WIGGLE_FRAMES).
+		private final boolean wiggles;
+		private double wiggle;
+		private int frame;
 		// Nose up along the water's slope, degrees: as last read, and eased towards it.
 		private double slopeWant;
 		private double slope;
@@ -1245,6 +1266,8 @@ final class RiverSpotFish
 			surgePhase = random.nextInt(SURGE_CYCLES);
 			wag = random.nextDouble(2 * Math.PI);
 			bobClock = random.nextInt(BOB_CYCLES + BOB_REST_CYCLES);
+			wiggles = FishModels.wiggles(item);
+			wiggle = random.nextDouble(FishModels.WIGGLE_FRAMES);
 		}
 	}
 
@@ -2033,9 +2056,13 @@ final class RiverSpotFish
 			double most = look.tip / 100.0 * ((look.rise > 0 ? BOB_PITCH : 0) + (look.dipDepth > 0 ? DIP_PITCH : 0));
 			most = kinds == LEAPING_FISH ? Math.max(most, LEAP_PITCH) : most;
 			int steps = (int) Math.ceil(most / FishModels.pitchStep(item));
+			int frames = FishModels.wiggles(item) ? FishModels.WIGGLE_FRAMES : 1;
 			for (int pitch = -steps; pitch <= steps; pitch++)
 			{
-				models.queue(item, size(item, GROW_STEPS), pitch, 0, false);
+				for (int frame = 0; frame < frames; frame++)
+				{
+					models.queue(item, size(item, GROW_STEPS), pitch, frame, false);
+				}
 			}
 		}
 		for (int item : kinds)
@@ -2957,7 +2984,46 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * Keeps SPOT_LOBSTERS lobsters at each cage spot with a ring on a shore, growing in one a tick within
+	 * A lone fish's new place on a lake, as lakeGoal but the farthest of SPREAD_GOAL_CHOICES from every other fish
+	 * (where it is, or where it's heading); or null.
+	 */
+	private static double[] spreadGoal(Shoal shoal, Swimmer self, double fromX, double fromY, ThreadLocalRandom random)
+	{
+		double[] best = null;
+		double farthest = -1;
+		int found = 0;
+		for (int tries = 0; tries < 48 && found < SPREAD_GOAL_CHOICES; tries++)
+		{
+			double[] goal = openPlace(shoal.river, random);
+			if (Math.hypot(goal[0] - fromX, goal[1] - fromY) < LAKE_GOAL_LEAST)
+			{
+				continue;
+			}
+			found++;
+			double nearest = Double.MAX_VALUE;
+			for (Swimmer swimmer : shoal.fish)
+			{
+				if (swimmer == self)
+				{
+					continue;
+				}
+				boolean heading = swimmer.circle == null && !Double.isNaN(swimmer.goalX);
+				double x = swimmer.circle != null ? swimmer.circle.x : heading ? swimmer.goalX : swimmer.x;
+				double y = swimmer.circle != null ? swimmer.circle.y : heading ? swimmer.goalY : swimmer.y;
+				nearest = Math.min(nearest, Math.hypot(x - goal[0], y - goal[1]));
+			}
+			if (nearest > farthest)
+			{
+				farthest = nearest;
+				best = goal;
+			}
+		}
+		return best == null ? null : waypoint(shoal.river, fromX, fromY, best[0], best[1], random);
+	}
+
+	/**
+	 * Keeps SPOT_LOBSTERS lobsters at each cage spot (and karambwan, at the surface, at each karambwan spot) with a
+	 * ring on a shore, growing in one a tick within
 	 * SPOT_LOBSTER_RANGE of it; they join any ring within SPOT_LOBSTER_JOIN fished for lobsters, going back home after,
 	 * and once their spot moves or goes, shrink away. None with fish only at the spot being fished.
 	 */
@@ -2968,7 +3034,7 @@ final class RiverSpotFish
 		Circle fished = fishing == null ? null : shoal.circles.get(fishing);
 		// Room on the fished ring for more lobsters, up to its lobster target.
 		int room = 0;
-		int fishedKind = fished == null ? -1 : ShoreFish.lobsterAt(fished.npc.getId());
+		int fishedKind = fished == null ? -1 : ShoreFish.homeKindAt(fished.npc.getId());
 		if (fishedKind >= 0 && drawn(fished, fishedKind))
 		{
 			room = ShoreFish.ringTargets(fished.npc.getId(), item -> drawn(fished, item))
@@ -3004,14 +3070,27 @@ final class RiverSpotFish
 		}
 		for (NPC spot : shoal.circles.keySet())
 		{
-			int kind = ShoreFish.lobsterAt(spot.getId());
+			int kind = ShoreFish.homeKindAt(spot.getId());
 			LocalPoint at = tileOf(spot);
 			if (kind < 0 || at == null || !shoreShown(kind)
 				|| kept.getOrDefault(spot, 0) >= homeLobsters(shoal, spot, random))
 			{
 				continue;
 			}
-			double[] place = nearHome(shoal.river, at.getX(), at.getY(), random);
+			// A karambwan waits for its full-size model, to know how deep keeps it all under.
+			int keepUnder = 0;
+			if (kind == ItemID.TBWT_RAW_KARAMBWAN && seeThrough && deep)
+			{
+				Model full = models.made(kind, size(kind, GROW_STEPS), 0, 0, 0);
+				if (full == null)
+				{
+					models.queue(kind, size(kind, GROW_STEPS), 0, 0, true);
+					continue;
+				}
+				keepUnder = Math.max(0, (int) Math.ceil(FishModels.spread(full.getVerticesY(), full.getVerticesCount())
+					- FishModels.look(kind).sink)) + HOME_KARAMBWAN_CLEAR;
+			}
+			double[] place = nearHome(shoal.river, at.getX(), at.getY(), ShoreFish.homeRange(kind), random);
 			Swimmer swimmer = place == null ? null
 				: spawn(shoal, 0, place, true, cycle, random, kind, null, 0);
 			if (swimmer != null)
@@ -3019,6 +3098,11 @@ final class RiverSpotFish
 				swimmer.home = spot;
 				swimmer.homeX = at.getX();
 				swimmer.homeY = at.getY();
+				// A spot's own karambwan swim near the surface, all under it; roaming ones deep.
+				swimmer.keepUnder = keepUnder;
+				swimmer.deep = kind != ItemID.TBWT_RAW_KARAMBWAN ? swimmer.deep
+					: keepUnder > 0 ? keepUnder + random.nextInt(HOME_KARAMBWAN_DEEPEST + 1) : 0;
+				swimmer.depthNow = swimmer.deep;
 				return;
 			}
 		}
@@ -3053,7 +3137,7 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * A home lobster's next goal: a short step any way from where it is, on water within SPOT_LOBSTER_RANGE of its
+	 * A home fish's next goal: a short step any way from where it is, on water within its home range of its
 	 * spot, so it heads every way rather than mostly out to the deeper side; null if none was found.
 	 */
 	private static double[] homeStep(River river, Swimmer swimmer, double fromX, double fromY, ThreadLocalRandom random)
@@ -3061,10 +3145,11 @@ final class RiverSpotFish
 		for (int tries = 0; tries < 8; tries++)
 		{
 			double angle = random.nextDouble(2 * Math.PI);
-			double step = random.nextDouble(0.3, 1) * ShoreFish.SPOT_LOBSTER_RANGE;
+			int range = ShoreFish.homeRange(swimmer.item);
+			double step = random.nextDouble(0.3, 1) * range;
 			double x = fromX + step * Math.cos(angle);
 			double y = fromY + step * Math.sin(angle);
-			if (river.isWater(x, y) && Math.hypot(x - swimmer.homeX, y - swimmer.homeY) <= ShoreFish.SPOT_LOBSTER_RANGE)
+			if (river.isWater(x, y) && Math.hypot(x - swimmer.homeX, y - swimmer.homeY) <= range)
 			{
 				return new double[]{x, y};
 			}
@@ -3073,11 +3158,11 @@ final class RiverSpotFish
 	}
 
 	/**
-	 * A place on the water within SPOT_LOBSTER_RANGE of a spot, or null if none was found.
+	 * A place on the water within range of a spot, or null if none was found.
 	 */
-	private static double[] nearHome(River river, int homeX, int homeY, ThreadLocalRandom random)
+	private static double[] nearHome(River river, int homeX, int homeY, int range, ThreadLocalRandom random)
 	{
-		return placeNear(river, homeX, homeY, ShoreFish.SPOT_LOBSTER_RANGE, 1, random);
+		return placeNear(river, homeX, homeY, range, 1, random);
 	}
 
 	/**
@@ -3387,8 +3472,9 @@ final class RiverSpotFish
 				goal = homeStep(river, swimmer, fromX, fromY, random);
 				if (goal == null)
 				{
-					goal = nearHome(river, swimmer.homeX, swimmer.homeY, random);
-					goal = goal == null || Math.hypot(goal[0] - fromX, goal[1] - fromY) <= 2 * ShoreFish.SPOT_LOBSTER_RANGE
+					int range = ShoreFish.homeRange(swimmer.item);
+					goal = nearHome(river, swimmer.homeX, swimmer.homeY, range, random);
+					goal = goal == null || Math.hypot(goal[0] - fromX, goal[1] - fromY) <= 2 * range
 						? goal : waypoint(river, fromX, fromY, goal[0], goal[1], random);
 				}
 			}
@@ -3420,7 +3506,8 @@ final class RiverSpotFish
 				goal = goal == null && swimmer.item == ItemID.RAW_LOBSTER
 					&& random.nextDouble() < ShoreFish.LOBSTER_HOME_CHANCE
 					? homeGoal(shoal, swimmer.item, fromX, fromY, random) : goal;
-				goal = goal != null ? goal : lakeGoal(shoal, fromX, fromY, random);
+				goal = goal != null ? goal : SPREAD_GOALS.contains(swimmer.item)
+					? spreadGoal(shoal, swimmer, fromX, fromY, random) : lakeGoal(shoal, fromX, fromY, random);
 			}
 			if (goal != null)
 			{
@@ -4587,6 +4674,8 @@ final class RiverSpotFish
 		int least = ShoreFish.isKrill(item) ? ShoreFish.KRILL_TOP - FishModels.look(item).sink
 			: DEEP_LEAST + (int) ((deepest - DEEP_LEAST) * band[0]);
 		int most = DEEP_LEAST + (int) ((deepest - DEEP_LEAST) * band[1]);
+		boolean karambwan = item == ItemID.TBWT_RAW_KARAMBWAN;
+		least = karambwan ? Math.min(most, Math.max(least, KARAMBWAN_DEEPER)) : least;
 		// Sharks keep to their own sink.
 		swimmer.deep = seeThrough && deep && item != ItemID.RAW_SHARK ? random.nextInt(least, most + 1) : 0;
 		swimmer.depthNow = swimmer.deep;
@@ -6507,6 +6596,13 @@ final class RiverSpotFish
 		{
 			swimmer.wag -= 2 * Math.PI;
 		}
+		// Arms wiggle at the kind's rate at its own pace, faster or slower with its speed, never slower than
+		// WIGGLE_LEAST of it.
+		if (swimmer.wiggles)
+		{
+			double speed = Math.max(WIGGLE_LEAST, swimmer.swimming / (REFERENCE_SPEED * ownPace(look)));
+			swimmer.wiggle = (swimmer.wiggle + look.wiggleRate / 50.0 * WIGGLE_SPEED * speed * ticks) % FishModels.WIGGLE_FRAMES;
+		}
 		// Deep fish (117 HD) swim deep, above 117 HD's bed (or shallower near banks), quickly up on fish surfacers (no bobs or dips there). Other
 		// fish stay at the surface, but go down DIVE_DEPTH on fish divers, under logs across the water. All come up to
 		// circle, lobsters and krill a little above their sink.
@@ -6529,6 +6625,8 @@ final class RiverSpotFish
 			: FOLLOW_BED ? Math.min(schoolDeep(swimmer),
 				river.bedAt(x, y) * (swimmer.item == ItemID.RAW_SWORDFISH ? SWORDFISH_BED_SHARE : BED_SHARE))
 			: schoolDeep(swimmer) * Math.min(1, river.clearanceAt(x, y) / SHALLOW_ROOM);
+		// Never above its least depth, even circling or over a shallow bed.
+		depth = Math.max(depth, swimmer.keepUnder);
 		// Divers' own pace both ways, for fish not swimming deep.
 		double depthEase = swimmer.deep == 0 ? DIVE_EASE : swimmer.surfacing ? SURFACE_EASE : DEPTH_EASE;
 		double wasDepth = swimmer.depthNow;
@@ -6994,21 +7092,24 @@ final class RiverSpotFish
 		int pitch = tilts ? (int) Math.round(tip / step) : 0;
 		int most = (int) (75 / step);
 		int bank = onBed && tilts ? Math.max(-most, Math.min(most, (int) Math.round(bedBank / step))) : 0;
-		if (pitch != swimmer.pitch || bank != swimmer.bank || swimmer.wantStep != swimmer.step)
+		// Wiggle frame, as at sea.
+		int frame = tilts && swimmer.wiggles ? (int) swimmer.wiggle : 0;
+		if (pitch != swimmer.pitch || bank != swimmer.bank || frame != swimmer.frame || swimmer.wantStep != swimmer.step)
 		{
 			// Use only made models; queue a missing one and keep the current model meanwhile.
 			int size = size(swimmer.item, swimmer.wantStep);
-			Model model = models.made(swimmer.item, size, pitch, bank, 0);
+			Model model = models.made(swimmer.item, size, pitch, bank, frame);
 			if (model != null)
 			{
 				swimmer.fish.setModel(model);
 				swimmer.pitch = pitch;
 				swimmer.bank = bank;
+				swimmer.frame = frame;
 				swimmer.step = swimmer.wantStep;
 			}
 			else
 			{
-				models.queue(swimmer.item, size, pitch, bank, 0, true);
+				models.queue(swimmer.item, size, pitch, bank, frame, true);
 			}
 		}
 	}

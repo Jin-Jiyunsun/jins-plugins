@@ -210,7 +210,7 @@ final class FishModels
 		Map.entry(ItemID.RAW_ANGLERFISH, ANGLERFISH),
 		Map.entry(ItemID.RAW_MONKFISH, new Look(new int[]{0, 0, 55, 17, 15, 6, 16, -42, 0, 40, 60, 30, 10, 10, 1500,
 			0, 100, 0, 0, 100, 50, 0, 0, 100, 100, 0, 35, 0, 6, 250, 0, 50, 100, 0, 0, 100})),
-		Map.entry(ItemID.TBWT_RAW_KARAMBWAN, new Look(new int[]{0, 12, 70, 17, 8, 0, 16, -90, 0, 40, 60, 30, 10, 0,
+		Map.entry(ItemID.TBWT_RAW_KARAMBWAN, new Look(new int[]{0, 12, 70, 17, 9, 0, 16, -90, 0, 40, 60, 30, 10, 0,
 			1500, 0, 100, 100, 0, 110, 13, 37, -13, 50, 25, 100, 33, 17, 6, 250, 0, 50, 100, 0, 0, 100})),
 		Map.entry(ItemID.RAW_SHRIMP, SHRIMP),
 		Map.entry(ItemID.RAW_ANCHOVIES, SHRIMP),
@@ -1195,6 +1195,15 @@ final class FishModels
 		int hue = colour >> 10 & 63;
 		int saturation = colour >> 7 & 7;
 		return saturation >= GREEN_SATURATION && hue >= GREEN_HUES[0] && hue <= GREEN_HUES[1];
+	}
+
+	/**
+	 * Whether a kind's arms wiggle (karambwan): shown in WIGGLE_FRAMES frames.
+	 */
+	static boolean wiggles(int item)
+	{
+		Look look = look(item);
+		return RESHAPED.contains(item) && look.wiggle > 0 && look.sweep > 0;
 	}
 
 	/**

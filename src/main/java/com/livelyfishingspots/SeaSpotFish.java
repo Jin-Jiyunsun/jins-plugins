@@ -615,7 +615,7 @@ final class SeaSpotFish
 		swimmer.gapLengths = GAP_LENGTHS.getOrDefault(item, FOLLOW_LENGTHS);
 		swimmer.swayed = sway(swimmer, cycle);
 		swimmer.wiggleStart = random.nextInt(50 * FishModels.WIGGLE_FRAMES);
-		swimmer.wiggles = FishModels.RESHAPED.contains(item) && swimmer.look.wiggle > 0 && swimmer.look.sweep > 0;
+		swimmer.wiggles = FishModels.wiggles(item);
 		swimmer.deeper = deeper;
 		int points = model.getVerticesCount();
 		swimmer.length = Math.max(FishModels.spread(model.getVerticesX(), points), FishModels.spread(model.getVerticesZ(), points));

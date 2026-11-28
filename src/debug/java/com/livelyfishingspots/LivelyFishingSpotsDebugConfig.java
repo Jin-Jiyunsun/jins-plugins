@@ -875,6 +875,20 @@ public interface LivelyFishingSpotsDebugConfig extends Config
 		return 150;
 	}
 
+	@Range(min = 10, max = 1000)
+	@Units(Units.PERCENT)
+	@ConfigItem(
+		keyName = "debugRiverWiggleSpeed",
+		name = "Wiggle speed",
+		description = "How fast karambwan arms wiggle<br>at their own pace, of their sea rate",
+		section = debugSwimming,
+		position = 9
+	)
+	default int debugRiverWiggleSpeed()
+	{
+		return 200;
+	}
+
 	@Range(min = 1, max = 600)
 	@Units(Units.SECONDS)
 	@ConfigItem(

@@ -588,6 +588,7 @@ public class LivelyFishingSpotsDebugPlugin extends Plugin
 		RiverSpotFish.DEPTH_TILT = config.debugRiverDepthTilt() / 100.0;
 		RiverSpotFish.FOLLOW_BED = config.debugRiverFollowBed();
 		RiverSpotFish.BED_SHARE = config.debugRiverBedShare() / 100.0;
+		RiverSpotFish.WIGGLE_SPEED = config.debugRiverWiggleSpeed() / 100.0;
 		RiverSpotFish.SWORDFISH_BED_SHARE = config.debugRiverSwordfishBedShare() / 100.0;
 		RiverSpotFish.ANGLERFISH_BED_SHARE = config.debugRiverAnglerfishBedShare() / 100.0;
 		RiverSpotFish.SCHOOL_DEPTH_SPREAD = config.debugRiverSchoolDepth() / 100.0;
